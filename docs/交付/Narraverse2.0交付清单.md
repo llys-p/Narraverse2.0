@@ -5,6 +5,8 @@
 - 来源：当前 `feature/module-four` 干净源码快照
 - 来源提交：`3c629ed8eafa017c1c63617b9f883d65934bf8d1`
 - 目标仓库：`llys-p/Narraverse2.0`（私有）
+- 当前目标分支：`main`
+- 当前快照提交：`6ba260b43985f74bf152b2bf9157074b100a40dc`
 - 交付形式：可重复构建的源码，不提供预编译 Windows 包
 
 ## 已交付
@@ -17,6 +19,7 @@
 - `package.json`、`pnpm-lock.yaml`、`denova-src/go.mod`、`denova-src/go.sum`
 - `Launch-Narraverse.cmd`
 - `tools/setup_narraverse2.ps1`
+- `docs/交付/Narraverse2.0交接指南.md`
 
 ## 初始化与运行链
 
@@ -45,19 +48,19 @@ Windows 交付入口会优先使用 Git for Windows 的 Git Bash，并在当前�
 
 上述生成物在新电脑上由初始化脚本和现有构建流程产生，不作为源码真源提交。
 
-## 验收清单
+## 验收清单（当前快照验证结果）
 
-- [ ] 干净克隆后初始化脚本完成
-- [ ] 前端构建完成
-- [ ] Go 构建完成
-- [ ] Module4 源资源与同步资源文件列表及 SHA-256 一致
-- [ ] Module4 定向测试、JavaScript 语法检查和 `app/app.js` 检查通过
-- [ ] Denova executable 可启动，根页面、`/api/status`、Narraverse 页面可访问
-- [ ] Module1 写作、Module2 游戏、Module3 叙界、Module4 开放沙盒入口存在
-- [ ] Module4 世界列表、创建、打开和页面滚动可用
-- [ ] Module3 保护性 smoke 通过
-- [ ] 第二个临时目录可重复执行初始化
-- [ ] 仓库未包含 secret 或机器专属路径
+- [x] 干净克隆后初始化脚本完成
+- [x] 前端构建完成
+- [x] Go 构建完成
+- [x] Module4 源资源与同步资源文件列表及 SHA-256 一致
+- [x] Module4 定向测试、JavaScript 语法检查和 `app/app.js` 检查通过
+- [x] Denova executable 可启动，根页面、`/api/status`、Narraverse 页面可访问
+- [x] Module1 写作、Module2 游戏、Module3 叙界、Module4 开放沙盒入口存在
+- [x] Module4 世界列表、创建、打开和页面滚动可用
+- [x] Module3 保护性 smoke 通过
+- [x] 第二个临时目录可重复执行初始化
+- [x] 仓库未包含 secret 或机器专属路径
 
 ## 已知限制
 
