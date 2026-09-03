@@ -1,0 +1,1152 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [Unreleased]
+
+### Added
+
+- Denova 返回“叙界”模式时会通知嵌入应用拉取工程增量；与一键启动的本地同步桥配合，新建冒险可在叙界与 Denova 之间同步设定、章节与 lore，旧冒险不会自动迁移。
+- Returning to Narraverse now notifies the embedded app to pull project updates. Together with the one-click local sync bridge, newly created adventures synchronize settings, chapters, and lore between Narraverse and Denova without migrating legacy adventures.
+- Denova 新增与写作、游戏同级的“叙界”模式：同源持久 iframe 在模式切换时不会重载，并支持无书籍直接进入、`?mode=narraverse` 深链接、主题/语言同步与失败重试。
+- Denova adds Narraverse as a top-level peer of Writing and Game. Its same-origin persistent iframe survives mode switches and supports book-independent startup, `?mode=narraverse` deep links, theme/locale sync, and recoverable loading errors.
+- 叙界静态运行时现在随 Denova 前端与嵌入式发布包分发；新增白名单同步脚本，构建不依赖开发机上的绝对源目录。
+- The Narraverse static runtime now ships with the Denova frontend and embedded release bundle. A whitelist-based sync script keeps release builds independent of developer-machine source paths.
+
+### Fixed
+
+- 叙界头像文件名中的全角括号已规范为 ASCII 括号，角色库生成器会使用相同规则解析头像，避免 Go embed 发布构建拒绝资源或角色头像丢失。
+- Full-width parentheses in Narraverse avatar filenames are normalized to ASCII, and the character-library generator applies the same lookup rule so Go embed releases accept the assets without dropping avatars.
+- Denova 发布构建重新追踪正式 `cmd/denova` 主程序入口；根目录运行时忽略规则现锚定为 `/denova/`，不再误伤源码目录。
+- Denova release builds once again track the production `cmd/denova` entrypoint. The root runtime ignore is now anchored as `/denova/` so it no longer hides the source directory.
+- 叙界静态资源同步白名单现在包含整个模块四运行时目录，Denova embedded 不会因漏同步而回退到缺少模块四脚本的旧页面。
+- The Narraverse asset sync whitelist now includes the complete Module 4 runtime directory, preventing Denova embedded builds from silently shipping a page without the Module 4 scripts.
+- Denova 的叙界 iframe 版本号已更新，部署模块四静态资源后会主动绕过旧的嵌入页面缓存。
+- The Denova Narraverse iframe version is bumped so deployments containing Module 4 assets bypass stale embedded-page caches.
+
+## [v0.3.3] - 2026-07-25
+
+### Fixed
+
+- 切换写作界面与对话框时不再强制重置输入法为半角英文；移除聊天输入框的 `inputmode`/`autocapitalize` 属性，保持与写作编辑器一致，避免焦点切换打断中文输入。
+- Switching between the Writing editor and the chat dialog no longer forces the input method back to half-width English. The chat composer's `inputmode`/`autocapitalize` attributes were removed to match the writing editor, so IME composition is no longer interrupted on focus change.
+- 打开多个 md 文件时，Ctrl+Z 撤回不再把其他标签页的文本带回当前文件；每个文件现在挂载独立的编辑器实例，拥有各自独立的撤销历史栈。
+- With multiple md files open, Ctrl+Z no longer pulls text from another tab into the current file. Each file now mounts its own editor instance with an independent undo history stack.
+
+## [v0.3.2] - 2026-07-23
+
+### Changed
+
+- 编辑器自动保存统一为修改后延迟保存：连续输入会重置延迟，停止输入后只保存最新草稿，不再依赖固定周期；目录与章节统计也不再每 3 秒扫描整本作品。
+- Writing-editor Auto Save now consistently uses after-delay semantics: continued typing resets the delay, and only the latest draft is saved after input stops. Workspace tree and chapter statistics also no longer scan the whole project every three seconds.
+- Git 自动版本改为修改后延迟创建：工作区修改会重置 30 秒空闲计时，停止修改且达到用户配置的最小间隔后才在后台创建版本。该功能默认开启、默认间隔 10 分钟，并可在设置中修改或关闭。
+- Automatic Git versions now use an after-change delay: workspace changes reset a 30-second idle timer, and a version is created in the background only after editing stops and the user-configured minimum interval has elapsed. The feature defaults to on with a 10-minute interval and can be changed or disabled in Settings.
+- 编辑器、写作 Agent、游戏 Agent 和配置 Agent 的文件修改统一使用同一套自动版本策略；独立的 Agent 字数阈值设置已移除，旧的 `version_agent_enabled` 与 `version_agent_char_threshold` 配置不再生效。
+- Editor, Writing Agent, Game Agent, and Configuration Agent file changes now share the same automatic-version policy. The separate Agent character threshold has been removed, and the legacy `version_agent_enabled` and `version_agent_char_threshold` settings no longer take effect.
+
+### Fixed
+
+- 写作编辑器不再把尚未结束的本地保存回灌误判为并发修改；保存期间继续输入并手动保存时，最新草稿会按新 revision 立即排队，且旧快照完成后仍准确显示未保存状态。
+- The Writing editor no longer mistakes an in-flight local save echo for a concurrent edit. Typing and manually saving during persistence now queues the latest draft against the new revision, while an older acknowledgement keeps the unsaved status accurate.
+- 文件成功落盘后会立即结束编辑器保存状态；章节字数统计改为后台合并刷新，不再让统计扫描阻塞手动保存或堆积并行请求。
+- The editor now finishes its saving state as soon as the file is durably written. Chapter statistics refresh in a coalesced background task instead of blocking manual saves or piling up parallel scans.
+- 普通文件保存不再同步检查或创建 Git 版本；保存期间触发的 Git 自动版本会串行后台执行，继续编辑只会重置下一轮空闲计时，不再阻塞保存响应。
+- Ordinary file saves no longer synchronously check or create Git versions. Automatic Git versions run serially in the background, and edits made during a version operation only reset the next idle cycle instead of blocking the save response.
+- 本地草稿与外部版本真实重叠时会保留双方版本并暂停自动保存；用户明确选择保留合并结果或载入工作区版本后才继续，非重叠修改仍自动合并。
+- When a local draft truly overlaps an external version, both versions are preserved and Auto Save pauses until the user keeps the merged result or loads the workspace version. Non-overlapping edits still merge automatically.
+
+## [v0.3.1] - 2026-07-23
+
+### Changed
+
+- 书籍设定的缺失文件现在在快捷按钮和管理列表中都以虚线轮廓与低饱和状态图标呈现；文件仍可点击，以便按需请求创作 Agent 创建。
+- Missing Book Settings files now use a dashed outline and a muted status icon in both shortcuts and the management list; they remain selectable so users can ask the Creation Agent to create them when needed.
+- 示例配置的默认服务端口更新为后端 `8011`、前端 `5174`。
+- The sample configuration now defaults to backend port `8011` and frontend port `5174`.
+
+### Added
+
+- `./scripts/bootstrap.sh fe` 新增 `--backend-port <port>`，可在前后端独立启动时显式指定 Vite 代理的后端端口。
+- `./scripts/bootstrap.sh fe` now accepts `--backend-port <port>` to explicitly set the Vite proxy backend port when frontend and backend start independently.
+- Agent Trace 现可一键复制运行 ID，并直接导出该次运行完整的原始 JSONL trace 文件，便于用户向开发者提供可复现的诊断资料；写作与游戏模式共用此入口。
+- Agent Trace now supports one-click Run ID copying and download of the complete original JSONL trace for the selected run, making reproducible support diagnostics easy to share; Writing and Game modes use the same entry point.
+
+### Fixed
+
+- 未显式传入 `--port` 时，后端端口冲突会原子地切换到后续可用端口并输出最终地址；显式指定的端口冲突会提供中英文原因和操作提示，等待用户按键后再退出。
+- When `--port` is not explicitly supplied, backend port conflicts now atomically fall back to a later available port and print the final address; an explicitly selected port reports a bilingual explanation and waits for user input before exiting.
+- 写作 Agent 运行中的 thinking 现在会自动展开；回合结束后仍保持可折叠，避免历史消息持续占据对话区域。
+- Running Writing Agent thinking now expands automatically, while completed turns remain collapsible to keep history compact.
+- Windows 自动保存不再将已落盘的配置误报为失败：Windows 不支持对配置目录句柄执行同步时，会跳过该目录同步；新增但尚未填写模型名的语言模型草稿也会在自动保存后保留，不再中断编辑。
+- Windows autosave no longer reports a persisted configuration as failed when Windows rejects directory-handle synchronization. Newly added language-model drafts without a model name are now retained after autosave instead of interrupting editing.
+- 修复游戏模式 Agent 的互动正文候选在异步 TurnResult 提交完成时可能被后续重试正文重复追加的问题；流式与非流式输出现在都只保留按事件顺序消费到的首个正文候选。
+- Fixed a Game Agent race where a later retry could be appended to the locked interactive narrative after an asynchronous TurnResult submission; streaming and non-streaming output now retain only the first narrative candidate consumed in event order.
+
+## [v0.3.0] - 2026-07-22
+
+### Brief / 简要说明
+
+#### 中文
+
+- Beta 不兼容：Agent 文件编辑、审阅反馈、游戏回合与状态结构协议已更新；后台 Shell、旧状态结构复审与三项工具结果配置移除，原先依赖 `hidden` 的 Actor 状态会直接可见。
+- 写作模式新增持久化 Change Review、正文评论与跨重启 Undo/Redo，并支持编辑器正则替换及带自动备份的工作区全局替换；完整章节修订后会直接同步进度与角色状态。
+- 游戏模式新增后台导演运行策略、故事级状态结构策略、可回放的 Actor 归档与恢复、自定义状态布局、已保存回复修正和全屏导演台。
+- 统一自动保存、revision 感知的三方合并、工作区变更账本、崩溃恢复与活动任务重连，更可靠地保护长期项目和并发编辑。
+- 上下文检查与复制、完整 Trace 展示、更平滑的流式消息，以及 Unicode 规范化安全升级，共同提升跨平台稳定性与问题诊断效率。
+
+#### English
+
+- Beta breaking: Agent editing, review feedback, Game turn, and state-schema contracts changed; background Shell, legacy schema review, and three tool-result settings were removed, and formerly `hidden` Actor state is now visible.
+- Writing adds durable Change Review, document comments, restart-safe undo/redo, regex editor replacement, and recoverable workspace-wide replacement; complete chapter revisions now synchronize progress and character state.
+- Game adds Director schedules, story-specific schema policies, replayable Actor archive/restore, customizable state layouts, saved-response correction, and a full-screen Director Desk.
+- Unified autosave, revision-aware three-way merging, workspace journaling, crash recovery, and active-run reconnection better protect long projects and concurrent edits.
+- Context inspection and copying, complete trace display, smoother streaming, and a Unicode-normalization security upgrade improve reliability and diagnosis across platforms.
+
+### Added
+
+- 写作模式新增 Change Review：每轮 Agent 修改都会生成摘要卡，可查看累计或单轮的多文件 Unified / Split Diff、添加行内评论，并执行可跨重启保留的 Undo / Redo。
+- Writing Mode adds Change Review: every Agent edit run produces a summary card with cumulative or per-run multi-file Unified / Split diffs, inline comments, and restart-safe undo/redo.
+- 正文编辑器新增持久化评论，可从文本选区或行级入口创建、原位编辑和删除；待处理评论会随下一条用户消息作为可信引用交给创作 Agent，发送失败时自动恢复。
+- The manuscript editor adds durable comments from text selections or line actions, with in-place editing and deletion. Pending comments become trusted references for the next Agent message and are restored if sending fails.
+- 游戏模式新增已保存 AI 回复的手动修正，以及覆盖主舞台的全屏导演台；规划、事件、规则审计和执行过程集中展示，角色与世界变化保留在状态感知侧栏。
+- Game Mode adds manual correction of saved AI replies and a full-screen Director Desk over the story stage, centralizing plans, events, rule audits, and execution while actor and world changes remain visible in a state-aware sidebar.
+- 顶部书名升级为带封面的书籍快捷切换器，桌面和移动端都可在不离开当前页面、不切换写作/游戏模式的前提下换书；书籍管理与快捷切换共享最近打开或手动拖拽排序。
+- The top-bar title becomes a cover-aware book switcher on desktop and mobile. It changes books without leaving the page or changing Writing/Game mode, and shares recent or manual drag ordering with Book Management.
+- 新增持久化工作区变更账本，为 Agent 修改保存内容寻址快照和跨文件操作记录；原子写入、启动恢复和显式冲突共同保护 Review、Undo / Redo 与外部编辑。
+- A durable workspace-change ledger records content-addressed Agent edits and cross-file operations; atomic writes, startup recovery, and explicit conflicts protect Review, undo/redo, and external edits.
+
+- 写作与游戏模式共用的工作台通知槽新增一次性 GitHub Star 提示：仅在当前会话完成有效 Agent 回合后出现，新版本提醒始终优先；关闭或打开仓库后不再提示，并完整支持中英文、明暗主题、桌面与移动布局。
+- The shared Writing and Game workbench notice slot now includes a one-time GitHub Star prompt after a successful Agent turn in the current session. Update notices always take priority; dismissing the prompt or opening the repository keeps it quiet, with bilingual, light/dark, desktop, and mobile support.
+- 游戏模式 Actor 状态新增可回放的归档与恢复：敌人死亡或角色永久退场时保留完整历史状态，仅从活动上下文、检定与状态页签中退出；重新登场必须显式恢复。舞台状态面板与导演台提供中英文只读归档索引，并展示归档原因和来源回合。
+- Game Mode Actor state now supports replayable archive and restore transitions. Dead enemies and permanently departed characters retain their complete historical state while leaving active model context, rule checks, and state tabs; returning requires an explicit restore. The stage ledger and Director Console expose a bilingual read-only archive index with reason and source-turn provenance.
+- 游戏模式新故事开局新增故事级后台导演运行策略：支持“按需自动（推荐）”“仅手动”和“每 X 回合自动”；自动模式会在首回合落盘后先初始化规划，固定间隔从首回合起按配置节奏运行，手动模式仍可从导演台显式触发。
+- New Game Mode stories now have a story-scoped Background Director schedule with Automatic When Needed (recommended), Manual Only, and Automatic Every X Turns modes. Automatic modes initialize planning after the first persisted turn, interval mode follows its configured cadence from that opening turn, and manual mode remains explicitly runnable from the Director backstage.
+- 上下文分析器新增全上下文、SystemPrompt 区、消息组与来源片段的一键复制；游戏模式的“本轮互动指令与动态上下文”会在保留模型实际收到的完整原文同时，继续按本轮行动、导演本轮规则、`agent-brief.md`、`StoryDirector`、Actor 状态手册、动态策略等来源展开。
+- Context Analysis now supports one-click copying for the full context, the SystemPrompt section, message groups, and individual source parts. In Game Mode, the current-turn instruction and dynamic context retain the exact model-visible message while expanding into sources such as the current action, turn-specific director rules, `agent-brief.md`, `StoryDirector`, the Actor state guide, and dynamic strategy prompts.
+- 游戏模式的故事线选择器新增批量删除：可在同一面板中多选或全选故事线，查看受影响清单后统一确认删除；操作支持中英文、明暗主题和窄屏布局。
+- The Game Mode story picker now supports batch deletion: select multiple or all stories in one panel, review the affected list, and confirm once, with bilingual, light/dark, and narrow-screen support.
+- 游戏模式的新故事线配置新增故事级“状态结构”策略：可选择“按模板动态适配”“固定使用模板”或“为故事动态生成”，并在同一区域选择基础状态模板；配置支持中英文、明暗主题与自适应布局。
+- New Game Mode story setup adds a story-level State Schema policy with Adapt a Template, Use a Fixed Template, and Generate for This Story modes, plus an integrated base-template picker with bilingual, theme-aware, adaptive UI.
+- 状态模板字段新增可选的 `group` 与 `display` 展示提示，状态结构树按“模板 → 分组 → 字段”展示；状态面板新增“自定义布局”，可通过鼠标或键盘拖动分区和字段、跨分区移动字段、在窄屏使用方向按钮并恢复默认。布局按“故事 + 模板”保存在本地 UI 偏好中，同模板 Actor 共享且不会进入模型上下文；Schema 字段数组仅作为兜底顺序，旧 Beta `order` / `display_groups` 输入会被忽略。
+- Actor state fields now accept optional `group` and `display` presentation hints, and the state structure tree renders Template → Group → Field nesting. The stage ledger adds a custom layout editor for pointer/keyboard section and field sorting, cross-section moves, narrow-screen direction controls, and reset. Layouts persist locally by story + template, are shared by Actors using that template, and never enter model context; the schema field array is only the fallback order, and legacy Beta `order` / `display_groups` inputs are ignored.
+- TRPG 状态绑定的 modifier 与公式项支持可选 `value_path`，用于读取用户自定义 object 中的嵌套数值，并在校验、计算和审计结果中保留结构化来源；内置面板现已使用可直接绑定的普通 number 字段，不依赖该能力。
+- TRPG state-binding modifiers and formula terms support optional `value_path` reads from user-defined nested object values, retaining the structured source through validation, computation, and audit output. Built-in panels now use directly bindable number fields and do not depend on this capability.
+- 写作模式编辑器查找栏新增替换与正则匹配：可展开替换输入框，支持替换当前匹配或全部替换；开启正则后查找与替换均按正则表达式执行，替换文本支持 `$1` 等捕获组引用。
+- The Writing Mode editor search bar now supports replace and regex matching: expand a replace field to replace the current match or all matches; with regex enabled, both find and replace use regular expressions, and the replacement text supports capture group references like `$1`.
+- 写作模式全局搜索新增正则匹配与全局替换：搜索面板可切换正则模式（RE2 语法、大小写敏感，非法正则内联提示），并可展开替换行对整个工作区执行全部替换；替换文本支持 `$1`、`$&`、`$<name>` 捕获组引用（与编辑器内替换语义一致），执行前自动创建“全局替换前自动备份”可恢复版本，替换期间被并发修改的文件会安全跳过并提示。
+- Writing Mode global search now supports regex matching and global replace: the search panel can toggle regex mode (RE2 syntax, case-sensitive, with inline feedback for invalid patterns) and expand a replace row to replace all matches across the workspace. Replacement text supports `$1`, `$&`, and `$<name>` capture group references (consistent with in-editor replace); a restorable “before global replace” version is created automatically, and files changed concurrently during the replace are safely skipped and reported.
+
+### Changed
+
+- Beta 不兼容：`edit_file` 改为单文件批量协议 `{file_path, edits[]}`，文件 revision 不再暴露给 Agent；写入由服务端以精确内容 revision 原子校验。同轮只读工具仍可并行，写工具与前台 Shell 按工作区串行；后台 Shell 模式不再支持。
+- Beta breaking: `edit_file` now uses the single-file batch contract `{file_path, edits[]}`, and file revisions are no longer exposed to the Agent. The server atomically validates writes against exact content revisions. Read-only tools may still run in parallel, while write tools and foreground Shell are serialized per workspace; background Shell is no longer supported.
+- Beta 不兼容：聊天请求的 `review_feedback` 改为按可信账本来源分组的数组；Diff 与正文评论统一只保留编辑和删除，不再提供 Resolve / Reopen，旧 `resolved` 标记按普通未删除评论读取。
+- Beta breaking: chat request `review_feedback` is now an array grouped by trusted ledger source. Diff and document comments keep Edit and Delete only; Resolve/Reopen is removed, and legacy `resolved` markers are read as ordinary non-deleted comments.
+- Beta 不兼容：游戏正文 Agent 使用统一的 `submit_interactive_turn` 提交状态变化与选项，以结构化 Actor / 字段 ID 替代模型生成的 JSON Pointer；各模块独立验收并只重试失败部分，旧工具名仅用于历史展示。
+- Beta breaking: the Game Agent now submits state changes and choices through `submit_interactive_turn`, using structured actor and field IDs instead of model-authored JSON Pointers. Modules are accepted independently so only failed parts retry; legacy tool names remain for historical display only.
+- 游戏正文 Agent 改用从有效 schema 与当前分支状态生成的有界状态手册，明确当前值、类型约束和更新规则；正文后的 thinking、工具调用与重试统一折叠为可展开 Trace，写作、自动化和导演台保持一致。
+- The Game Agent now receives a bounded state handbook generated from the effective schema and current branch state, including current values, constraints, and update rules. Thinking, tool calls, and retries after prose collapse into one expandable trace consistently across Writing, Automations, and the Director Desk.
+- 资料库、方案预设和 Skills 统一资源目录的搜索、分组、计数、新建与空状态；资料库正文使用与章节一致的所见即所得 Markdown 编辑器，并可在渲染内容中直接搜索、高亮和继续编辑。
+- Lore, Presets, and Skills now share consistent resource-directory search, grouping, counts, creation, and empty states. Lore content uses the same WYSIWYG Markdown editor as chapters, with search and highlighting directly in editable rendered content.
+- 自动化不再为新工作区预置停用任务；“续写章节”和“自动 Review”改为新建时主动选择的双语模板。升级仅清理从未使用的旧种子，并保留所有已有使用痕迹的任务。
+- New workspaces no longer receive disabled automation tasks. Continue Writing and Automatic Review are now bilingual templates selected explicitly during creation; upgrades remove only untouched legacy seeds and preserve every task with usage history.
+- 设置页移除“用户配置 / 当前工作区”双层切换，通用、写作和游戏偏好统一保存为用户配置；工作区只保留 Agents 页明确提供的定制。写作与游戏输入区的模型菜单同时提供 reasoning effort 快捷选择。
+- Settings removes the User/Current Workspace split: common, Writing, and Game preferences are user-scoped, while workspace customization is limited to options explicitly exposed on the Agents page. The shared model menu also provides quick reasoning-effort selection.
+- 删除 Skill、恢复内置 Skill、放弃未保存修改和删除空剧情线等操作统一使用支持异步错误提示的应用内确认弹窗；从源码运行的依赖现在明确包含 `ripgrep`。
+- Destructive actions such as deleting or restoring Skills, discarding drafts, and deleting empty branches now use in-app confirmation with asynchronous error feedback. Source builds now explicitly require `ripgrep`.
+
+- 写作模式简化章节状态同步：新写完整章节或实质性改写章节时，Agent 在完成本轮修订后直接同步 `setting/progress.md` 与 `setting/character-states.md`；“初稿 / 成章”仅保留为 UI 编辑标记，不再作为下一章判断、上下文选择或状态同步的门槛，实际章节路径与非空正文优先于进度摘要。
+- Writing Mode simplifies chapter-state synchronization: after writing a complete chapter or making a substantive story rewrite, the Agent now updates `setting/progress.md` and `setting/character-states.md` after the run's final revision. Draft/Final remains a UI editing label only and no longer gates next-chapter selection, context, or state synchronization; actual chapter paths and non-empty chapter content take precedence over the progress summary.
+- Agent 工具上下文收敛为单一边界：工具结果仅在执行完成时按全局 `agent_tool_result_limit_kb` 有界化，后续轮次原样保留有效的 call/result 对，旧历史交给普通上下文压缩；`read_lore_items` 仍使用来源回执避免重复正文。Beta 不兼容：移除 `tool_result_keep_recent`、`tool_result_context_budget_kb` 与 `tool_result_preview_chars`，旧配置键读取时忽略。
+- Agent tool context now has one size boundary: results are bounded once at completion by the global `agent_tool_result_limit_kb`, valid call/result pairs remain exact across subsequent turns, and normal context compaction owns older history; `read_lore_items` still uses source receipts to avoid duplicating bodies. Beta breaking: `tool_result_keep_recent`, `tool_result_context_budget_kb`, and `tool_result_preview_chars` are removed, and legacy keys are ignored when read.
+- 游戏模式移除单次 `state_changes` 的操作数量硬上限，工具 Schema、提交解码、状态编译与 `TurnResult` 不再因第 25 项或更多操作拒绝复杂回合。Agent 仍会收到“常规回合建议不超过 24 项”的软提示，并明确复杂开局或确有更多事实变化时可以超过。
+- Game Mode removes the hard operation-count limit from one `state_changes` submission, so the tool schema, submission decoder, state compiler, and `TurnResult` no longer reject complex turns at the 25th operation or beyond. The Agent still receives soft guidance to keep routine turns at 24 changes or fewer, with an explicit allowance for complex openings or genuinely larger fact changes.
+- 游戏模式新建故事线配置页重构为紧凑布局：名称、导演、目标字数与行动建议数量合并为同一自适应行，继承导演模块的四个选择器并排一行，分区标题与说明同行展示，底部操作改为吸底栏，滚动时始终可见。
+- Game Mode's new story setup panel is rebuilt as a compact layout: name, director, target length, and choice count share one adaptive row, the four inherited-module pickers sit in a single row, section titles show inline with their descriptions, and the action footer stays pinned at the bottom while scrolling.
+- 游戏模式简化 Actor State Schema：字段与特质移除 `visibility`，旧数据中的 `visible` / `hidden` / `spoiler` 会在读取时忽略，所有历史状态均按普通可见信息进入状态面板与 Agent 上下文；结构初始化同时移除 `evidence_kind`，继续保留 `source`、`requirement` 与 `reason`。Beta 不兼容：原先依赖 `hidden` 隐藏的状态将直接可见，幕后规划应维护在 Director 私有文件中。
+- Game Mode simplifies the Actor State Schema by removing `visibility` from fields and traits. Legacy `visible`, `hidden`, and `spoiler` values are ignored on read, so all historical state is treated as ordinary visible information in the state panel and Agent context. Schema initialization also removes `evidence_kind` while retaining `source`, `requirement`, and `reason`. Beta breaking: state previously hidden with `hidden` becomes directly visible; private future planning belongs in the Director's private files.
+- 游戏模式输入栏的末端操作统一按“模型选择 → 行动选择 → 发送”排列，让模型入口固定在左、行动选择位于中间，并与写作模式的模型优先顺序保持一致。
+- Game Mode composer actions now follow Model → Choices → Send, keeping model selection on the left, action choices in the middle, and the model-first order consistent with Writing Mode.
+- 游戏模式状态面板的 Object 字段不再把嵌套对象与数组拼成一行文字；叶子项改用紧凑的 `key: value` 列表，只有下一层对象才缩进，长内容可使用完整字段宽度换行，并保持明暗主题一致。
+- Object fields in the Game Mode state panel no longer flatten nested objects and arrays into one text line. Leaf entries now use compact `key: value` lists, only deeper objects are indented, long content wraps across the full field width, and light/dark theming stays consistent.
+- 状态结构初始化从后台 Director 完整移交给前台 Game Agent：动态模式先通过专用结构工具暂存模板/字段，再通过 `state_changes` 初始化 Actor 与值；结构、开局正文、初始状态和行动建议在首回合一次性原子提交，失败不会留下半成品。固定模板模式不暴露结构工具，开局前返回配置页会安全重建冻结结构，首回合提交后策略即锁定。Beta 不兼容：旧故事统一固定使用已有冻结结构，不再启动 Director 迁移或复审；旧 `state_schema_adaptation_mode` 配置、后台运行 API 和复审操作已移除。
+- State-schema initialization moves completely from the background Director to the foreground Game Agent: dynamic modes stage templates and fields through a dedicated tool, then initialize Actors and values through `state_changes`. Schema, opening prose, initial state, and choices commit atomically with the first turn, leaving no partial result on failure. Fixed mode exposes no schema tool; returning to setup before the opening safely rebuilds the frozen schema, and the policy locks after the first turn. Beta breaking: old stories keep their existing frozen schema and never start a Director migration or review; the legacy `state_schema_adaptation_mode`, background run APIs, and review actions are removed.
+- 方案预设刷新后默认定位到配置管理 Agent，同时展开当前模式下的全部资源分组，并按“故事导演 → 叙事风格 → 状态系统 → TRPG 检定 → 图像方案 → 事件包”排列；用户仍可单独折叠分组或一键收起全部。
+- Presets now open on Config Manager Agent after refresh, expand every resource group visible in the current mode, and order them as Story Director → Narrative Style → State System → TRPG Checks → Image Presets → Event Packages; users can still collapse individual groups or collapse all at once.
+- 五套内置状态系统预设重构为精简的集中式结构：只预建故事、主角和世界实体三个 Actor；场景、世界与任务归入故事状态，地点与势力归入世界实体，技能、物品和关系归入所属角色。“面板”和“状态”改为普通字段分组，不再要求用户编辑纯 JSON；默认 TRPG 提供等级、六维、攻击 AC、防御 DC、生命与法力，修仙、西幻、末世和无限流分别生成符合题材的字段，末世不会制造空面板。故事状态移除场景要素、生效规则和世界背景三个重复字段，并新增可直接承接下一段的“可承接钩子”。
+- The five built-in actor-state presets now use a lean centralized structure with only three initial Actors (story, protagonist, and world entities). Scene, world, and quests live in story state; locations and factions share the world entity; abilities, items, and relationships live on their owning Actor. Panel and State are now groups of ordinary fields instead of raw JSON objects. Default TRPG provides level, six attributes, attack AC, defense DC, health, and mana, while cultivation, Western fantasy, apocalypse, and infinite-flow each generate setting-appropriate fields; apocalypse creates no empty panel. Story state removes the redundant Scene Elements, Active Rules, and World Background fields and adds a directly actionable Continuation Hook.
+- 状态布局拖拽按分区与字段分别计算碰撞目标，拖动时使用本地预览与独立浮层、松手后仅持久化一次，并为清空后的分区保留明确放置区域，减少嵌套拖动抖动和跳位。
+- State-layout dragging now resolves section and field collisions separately, uses a local live preview and independent drag overlay, persists only once on drop, and keeps an explicit drop zone for emptied sections to reduce nested-drag jitter and position jumps.
+- 兼容性说明：内置状态预设的 Beta Schema 变更只影响新故事及主动恢复内置预设的配置；已有故事继续使用冻结的故事级 Schema，不会自动重写状态。
+- Compatibility note: this Beta schema change affects new stories and configurations explicitly restored to a built-in preset; existing stories continue using their frozen story-local schema and are not rewritten automatically.
+- 游戏模式正文后的状态面板按分区一页平铺，每个分区使用带图标标题与字段数的独立区块，组内使用自适应多列网格；默认分区来自字段形状及 `group` / `display` 提示，用户布局可覆盖最终顺序。预览态展示当前布局排序最前的两个分区并可一键展开全部；世界状态的对象值会展开为独立字段参与分组，空世界页签不再渲染。
+- The state panel after game-mode prose lays sections out on one page with icon headers, field counts, and adaptive grids. Default grouping comes from value shape plus `group` / `display` hints, while the user's layout controls final ordering. Preview shows the first two sections in the current layout with one-click expansion; record-valued world facts expand into individual grouped fields, and empty World tabs are omitted.
+- 本回合状态变化收敛为头部一行摘要（数值 ±delta、增删项、已更新），变更字段以左侧色条和值旁 chip 标记，不再为每个字段重复展示“本回合已更新”说明行。
+- Turn state changes now collapse into a one-line header summary (numeric ±delta, added/removed items, updated) with changed fields marked by a left accent bar and an inline chip, replacing the repeated per-field “updated this turn” notes.
+- 兼容性说明：状态显示偏好为“默认预览/默认展开/默认折叠/仅导演台”四档，预览态由旧的按高度裁剪改为按分区切割；旧版“默认显示”偏好自动并入“默认展开”。
+- Compatibility note: the state display preference offers Preview/Expanded/Collapsed/Director-only, and the preview mode now cuts by section instead of clamping height; the short-lived "Visible" preference migrates to "Expanded" automatically.
+- 自动保存统一到一套 after-delay 内核与场景适配层：仅在用户停止编辑达到配置延迟后写入，同一资源最多一个请求执行中，并把后续修改合并为最新待保存快照；手动保存、切换前 flush 与自动保存共享同一队列。
+- Autosave now uses one after-delay core with thin scenario adapters: writes start only after the configured quiet period, each resource permits one in-flight request, later edits collapse to the latest pending snapshot, and manual save plus navigation flush share that queue.
+- 资料库与方案预设移除重复的写作工作区标题栏，关闭入口并入当前资源工具栏；配置管理 Agent 统一置于目录搜索之前，资料库不再重复展示目录说明。
+- Lore and Presets no longer show a duplicate writing-workspace title bar; closing now lives in the active resource toolbar, Config Manager is consistently placed before directory search, and Lore no longer repeats its directory description.
+- Agents 与 Skills 的配置 Agent 面板现在支持键盘和鼠标拖拽调宽，并分别记忆用户调整后的宽度。
+- Config Agent panes in Agents and Skills can now be resized with the keyboard or pointer and remember their widths independently.
+- Settings、Agents、资料库、方案预设、创作者设定、开场方案、Automations、Skills、共享文风参考和回复目标字数统一改为自动保存，并移除重复的通用“保存”按钮；新建、导入、重命名/迁移、删除及运行时文档提交仍保留为明确操作。
+- Settings, Agents, Lore, Presets, creator configuration, opening presets, Automations, Skills, shared style references, and reply-length targets now autosave without redundant generic Save buttons; create, import, rename/move, delete, and runtime-document submission remain explicit actions.
+- 配置页共享“等待 / 保存中 / 已保存 / 校验阻止 / 失败重试”状态，并把 Cmd/Ctrl+S 统一为不可见的立即 flush 命令；Skills 文档与目录文件 API 新增精确内容 revision，以保护外部编辑。
+- Configuration surfaces share pending, saving, saved, validation-blocked, and retryable-error feedback, while Cmd/Ctrl+S consistently flushes without exposing a button. Skill documents and supporting-file APIs now include exact content revisions to protect external edits.
+- 兼容性说明：Automations 更新接口现在必须携带 `base_revision`；配置管理 Agent 的 `write_automations` update 必须携带 `read_automations` 返回的 `revision`。旧调用方需先读取最新任务再更新。
+- Compatibility note: Automation updates now require `base_revision`, and Config Manager Agent `write_automations` updates must carry the `revision` returned by `read_automations`. Existing callers must read the latest task before updating it.
+- Home、Settings、Agents、Skills 和 Automations 统一使用共享页面框架、分区导航、表单字段、资源目录、空状态与确认弹窗；资料库和方案预设同时复用自适应面板与移动端入口。
+- Home, Settings, Agents, Skills, and Automations now share page shells, section navigation, form fields, resource directories, empty states, and confirmation dialogs; Lore and Presets also reuse adaptive panes and mobile entry points.
+- 写作与游戏模式的 Agent 对话统一为单一挂载的聊天面板，并共享持久化输入偏好、上下文分析展示、文本测量和底部滚动控制，避免布局切换时重复初始化会话状态。
+- Writing and Game modes now use a single-mounted Agent chat pane with shared persisted composer preferences, context-analysis disclosure, text measurement, and bottom-scroll control, avoiding duplicate session initialization during layout changes.
+- 互动资源选择器和方案预设编辑器统一使用可访问的选择、字段、分区、JSON 校验和状态组件；删除仅供旧实现自身使用的重复面板与辅助组件。
+- Interactive resource pickers and preset editors now share accessible selection, field, section, JSON-validation, and status components; duplicate panels and helpers used only by legacy implementations were removed.
+- 自动化左侧任务目录支持按项目独立展开或折叠；折叠后仍保留运行中数量和任务数量，全局任务组使用同一交互。
+- The Automations task catalog can expand or collapse each project independently while keeping running and task counts visible; the global task group follows the same interaction.
+
+### Fixed
+
+- 更新故事导演配置的发布回归测试，使其匹配“新故事默认运行方式”的当前双语字段命名，避免有效构建被旧文案断言阻断。
+- Updated the Story Director release regression test to match the current bilingual Default New-Story Schedule field, preventing valid builds from being blocked by a stale copy assertion.
+- Change Review 的多文件滚动、文件跳转、Diff 选区、评论草稿、面板尺寸和延迟加载更加稳定；后台刷新不再打断输入，窄屏导航和 Skills 工具栏也能自适应展示。
+- Change Review now keeps multi-file scrolling, file jumps, diff selection, comment drafts, panel sizing, and lazy loading stable. Background refreshes no longer interrupt input, and compact navigation and the Skills toolbar adapt to narrow screens.
+- 正文评论修复多行重叠选区卡死、等价 Markdown 被误判为外部修改、提交闪烁、键盘编辑失效和行级入口难以命中等问题；评论锚点仍会拒绝真正的正文或 revision 冲突。
+- Document comments no longer freeze on overlapping multi-line selections, misclassify equivalent Markdown as an external edit, flicker on submit, lose keyboard editing, or make line actions difficult to target; real content and revision conflicts are still rejected.
+- Agent 修改到达时不再静默覆盖未保存草稿；编辑器自动保存、Review、Undo / Redo、版本恢复和自动化触发均绑定正确工作区，避免切换作品、乱序事件或符号链接别名导致内容串写、死锁或错误刷新。
+- Agent changes no longer silently overwrite unsaved drafts. Editor autosave, Review, undo/redo, version restore, and automation triggers stay bound to the correct workspace, preventing cross-workspace writes, deadlocks, and stale refreshes during switches, out-of-order events, or symbolic-link aliases.
+- 旧故事或尚未冻结 schema 的运行时会在缺失时恢复内置初始 Actor；游戏回合提交明确显示 accepted / rejected / pending 与待重试模块，并按故事目标字数约束首段生成，降低正文过长挤占状态提交的概率。
+- Legacy stories and runtimes without a frozen schema restore built-in initial Actors when missing. Game turn traces distinguish accepted, rejected, and pending submissions with retry modules, while story target length bounds the opening generation so long prose is less likely to crowd out state submission.
+- 修复写作模式发送消息后输入框未清空，以及作品作者字段无法清空的问题；书架会用本地化文案展示空作者。
+- Fixed the Writing composer retaining sent content and book metadata refusing to clear the author field; bookshelf cards now show a localized empty-author label.
+- 文件、资料、风格、选区与审阅意见引用会随已发送消息原子持久化，失败时恢复；已成功提交给 Agent 的评论不会继续残留在 Diff 中。
+- File, lore, style, selection, and review references now persist atomically with sent messages and recover on failure; comments successfully submitted to the Agent no longer remain in the diff.
+
+- 将 `golang.org/x/text` 升级至 `v0.39.0`，修复无效 Unicode 输入可能在 Actor ID 规范化路径中触发无限循环的 `GO-2026-5970` 漏洞。
+- Upgraded `golang.org/x/text` to `v0.39.0`, fixing `GO-2026-5970`, where invalid Unicode input could trigger an infinite loop in the Actor ID normalization path.
+- 修复 Agent `prefill failed: unexpected control character ... char 2000`：上下文层不再按 JSON 外形猜测并截断或替换工具结果，OpenAI 请求始终把 tool content 作为不透明字符串发送。
+- Fixed Agent `prefill failed: unexpected control character ... char 2000`: the context layer no longer guesses from JSON shape or truncates/replaces tool results, and OpenAI requests always send tool content as an opaque string.
+- 游戏模式的 `submit_interactive_turn` 现在会在冻结 Schema 校验前，将可无歧义解释的数字、布尔、object 和 list 字符串编码规范为原生 JSON；冲突或模糊值仍会原子拒绝，Object 内部记录则保持原样。一次提交中的独立状态错误会合并到同一回执并精确定位 `initial_state` 字段，工具说明也改用原生 JSON 示例，避免弱模型逐字段重试。
+- Game Mode's `submit_interactive_turn` now normalizes unambiguous string encodings of numbers, booleans, objects, and lists into native JSON before frozen-schema validation. Conflicting or ambiguous encodings remain atomically rejected, while entries inside Object values are preserved as submitted. Independent state errors from one submission are returned together with precise `initial_state` paths, and the tool guide uses native JSON examples to avoid field-by-field retries from weaker models.
+- 游戏模式切换故事线时会将当前选择写入工作区故事索引，并在加载时优先采用该共享值；同一工作区从其他浏览器打开时会恢复最后选择的故事线，不再被各浏览器独立的本地缓存覆盖。
+- Switching stories in Game Mode now persists the current selection in the workspace story index and treats that shared value as authoritative on load. Opening the same workspace in another browser restores the last selected story instead of being overridden by per-browser local cache.
+- 状态面板预览不再固定优先“概览/持有”或“面板/状态”，而是严格展示当前排序最前的两个分区；展开全部继续沿用同一顺序，不会改变用户的布局配置。
+- The state-panel preview no longer hard-codes Overview/Holdings or Panel/State; it strictly shows the first two sections in the current order, and Expand All preserves that order without modifying the saved layout.
+- 流式 thinking 与正文现在统一先以不可见目标内容预留下一帧高度，在消息列表完成锁底后再揭示新增文字；写作、游戏及子 Agent 消息共用同一暂存层，避免新行先出现在视口下方再被瞬间抬升。
+- Streaming reasoning and prose now reserve the next frame's target height invisibly and reveal new text only after the message list reaches the bottom. Writing, Game, and sub-agent messages share the same staging layer, preventing new lines from flashing below the viewport before jumping upward.
+- 消息列表在没有活跃流式输出时会完全关闭自动锁底与内容增高跟随，状态面板展开、折叠或切换页签不再先跳到底部再复位；流式输出期间的底部跟随、切换会话时的一次性定位和用户显式“回到底部”仍保持原有行为。
+- Message lists now fully disable automatic bottom-following and size-growth scrolling while no output is actively streaming, so expanding, collapsing, or switching tabs in the state panel no longer jumps to the bottom and then snaps back. Streaming follow, one-shot positioning after session switches, and explicit Back to Bottom actions retain their existing behavior.
+- 写作模式创作 Agent 的运行中思考与工具轨迹改为默认收起并保留动态状态提示，仍可按需完整展开；流式消息去重与展示模型现在复用未变化的历史消息引用，避免超长 thinking 持续挂载并触发整段历史 Markdown 重渲染导致浏览器失去响应。游戏模式保留运行中实时展开行为，所有 thinking 与工具内容均未截断。
+- In Writing Mode, active reasoning and tool traces now stay collapsed by default with a live status indicator while remaining fully expandable on demand. Streaming deduplication and view projection preserve unchanged historical message identities, preventing very long thinking output from staying mounted and repeatedly re-rendering the entire Markdown history. Game Mode retains its live expanded traces, and no thinking or tool content is truncated.
+- 状态面板中的名称型记录统一直接使用可读的 map key 作为 ID，不再生成英文、拼音或 slug 标识；Object 字段只校验根值为对象，不再要求每条记录必须是对象、补写重复的名称字段或校验键名与内部名称一致。已有故事状态不会被自动改写，提示词仍引导 Agent 使用稳定、可读的键。
+- Named state-panel records use their readable map keys directly as IDs instead of generating English, transliterated, or slug identifiers. Object fields validate only that the root value is an object; individual entries no longer have to be objects, receive duplicate name fields, or match an inner name. Existing story state is not rewritten, while prompts continue guiding the Agent toward stable, readable keys.
+- 游戏模式正文后的状态面板会预先挂载全部 Actor 与世界页签内容，切换页签不再因首次加载重置消息区滚动；展开全部会保持预览分区在原位并将其余分区追加在后，切换页签、展开或折叠等直接查看操作也不会再触发自动锁底。
+- The state panel after Game Mode prose now mounts every Actor and World tab up front, preventing first-load scroll resets when switching tabs. Expand All keeps preview sections in place and appends the remaining sections, while direct viewing actions such as switching, expanding, or collapsing no longer trigger bottom-following.
+- 游戏新故事开局会按独立变化边界审查状态结构，氧气、完整度、警戒值和倒计时等资源不再被通用叙事字段错误覆盖；结构工具在一次 finalize 回执中给出精确的初值清单，首个 `submit_interactive_turn` 会原子校验所有可写初始字段均有具体值。开局结构项若误用可唯一映射的初始 Actor ID，会安全归一化并始终保存规范 Template ID，避免 `story` / `story_context` 混淆触发无意义重试。
+- New Game openings now review state schemas by independent change boundaries, so resources such as oxygen, integrity, alert levels, and countdowns are no longer hidden in generic narrative fields. The schema tool returns an exact initialization checklist in its first finalized receipt, and the first `submit_interactive_turn` atomically verifies that every writable initial field has a concrete value. Opening schema items that use an unambiguously mapped initial Actor ID are safely canonicalized and always persist the canonical Template ID, avoiding pointless `story` / `story_context` retries.
+- 游戏 Agent 默认仍关闭供应商扩展 thinking（可在 Agents 配置中显式开启），但只要 Provider 实际返回 thinking，前台就会逐帧原样展示并完整持久化；简短规划与意图分析只通过提示词约束，不再由输出链路截断或改写。工具输入也移除了非流式 200 字节、会话恢复 32 KiB、Plan 展示 32 KiB/12,000 字符和写文件流式预览 500 字符等隐式上限，展开、完成及恢复时均保留完整原文；下一轮模型上下文继续保留原始工具参数，并复用执行完成时生成的有界工具结果。
+- The Game Agent still disables provider-specific extended thinking by default, with an explicit Agents override, but any thinking actually returned by the provider is now streamed verbatim and persisted in full. Concise planning and intent analysis are guided only by the prompt rather than output rewriting. Tool inputs also no longer have the implicit 200-byte non-streaming, 32 KiB session/Plan, 12,000-character Plan-card, or 500-character live write-preview display limits; expanded, completed, and restored views retain the full original input. The next model turn keeps the original tool arguments and reuses the result already bounded at tool completion.
+- 游戏首回合的状态结构与回合提交工具现在提供开局来源、证据类型、字段类型、决策枚举及列表上限的严格 schema；`state_changes` 明确要求原生 JSON 数组并对合法的单层字符串编码数组做有界兼容，重试提示会保留正文已经成立的状态事实，减少反复工具报错和状态丢失。
+- Opening Game turns now expose strict schemas for source provenance, evidence kinds, field types, decisions, and list bounds. `state_changes` explicitly requires a native JSON array while tolerating one valid string-encoded array layer, and retry guidance preserves state facts already established in prose to reduce repeated tool failures and dropped state.
+- 状态预设编辑器遇到“面板/状态”这类嵌套 object 默认值时改用 JSON 编辑，浅层 object 仍保留结构化编辑，不再把嵌套内容显示或误写为 `[object Object]`。
+- The actor-state preset editor now uses JSON editing for nested Panel/State object defaults while preserving structured editing for shallow objects, preventing nested values from appearing or being overwritten as `[object Object]`.
+- Agent 会话列表现在整行单击即可切换；生成中切换会立即停止旧流并显示目标会话，不再需要反复点击。会话统计保持固定宽度，过长的当前会话标题会在剩余空间内截断，不再挤压计数。
+- Agent session rows now switch from a single click anywhere on the main row. Switching during generation stops the old stream and selects the target immediately instead of requiring retries. Session counts keep their width while long current-session titles truncate within the remaining space.
+- 点击创作 Agent 输入区的待提交正文评论引用，现在会先打开评论所属章节，再按持久化文本锚点将对应评论滚动到可视区域并展开；同一章节内重复点击也会重新定位。
+- Clicking a pending document-review reference in the Writing Agent composer now opens its chapter first, then scrolls to and expands the exact comment from its durable text anchor; repeated clicks within the same chapter locate it again.
+- Automations 配置现在携带稳定 revision 并由后端 CAS 校验；外部文件更新会自动 reload，冲突时先三方合并并归档双方版本，再以本地优先结果重试，不再静默后写覆盖。
+- Automation definitions now carry stable revisions enforced by backend CAS. External file changes reload automatically; conflicts are three-way merged and both versions are archived before retrying the local-preferred result instead of silently applying last-write-wins.
+- 编辑器跨文档兜底保存改为按文档键批量排队：单个后台文档失败不会阻断后续文档，失败项会保留并提示重试；关闭当前文档自动保存也不会取消其他文档的待保存草稿。
+- Editor fallback saves now use a document-keyed batch: one background failure no longer blocks later documents, failed drafts remain retryable with visible feedback, and disabling autosave for the current document no longer cancels other queued drafts.
+- Agent 输入偏好保存失败会保留本地值和待保存请求；关闭面板或切换工作区不会丢失 after-delay 草稿，切换操作也不会被无关偏好保存失败硬阻塞。
+- Failed Agent composer-preference saves retain their local value and queued request. Closing the panel or switching workspaces no longer drops after-delay drafts, and unrelated preference failures no longer hard-block navigation.
+- Agent/外部文件更新会先 reload，并以草稿自身绑定的 revision 做三方合并；非重叠修改静默合并，真正重叠时先把 base、用户稿、外部稿和默认本地优先结果原子写入恢复记录，再继续保存并提示用户，不再用弹窗硬阻塞编辑。
+- Agent and external file updates now reload first and three-way merge against the revision bound to the draft. Non-overlapping edits merge silently; true overlaps atomically archive the base, local, external, and local-preferred merged versions before saving and notifying the user, without a blocking conflict dialog.
+- 设置文件与 Agent 配置写入共享按规范路径串行的 revision/原子替换内核，锁内读取并变更最新内容；并发修改不再用旧快照覆盖无关字段，失败写入也不会留下半文件。
+- Settings and Agent configuration writes now share a canonical-path revision and atomic-replacement core that mutates the latest content under one lock, preventing stale snapshots from dropping unrelated concurrent fields or leaving partial files.
+- 叙事风格方案右侧除顶部工具栏外统一为单一连续滚动区；名称、描述、文风参考、注入规则和规则正文会一起滚动，并铺满可用高度，不再把正文裁切在狭窄的嵌套面板中。
+- Narrative-style presets now use one continuous scroll surface below the top toolbar, so metadata, style references, injection rules, and rule content move together, fill the available height, and no longer clip the editor inside a narrow nested pane.
+- 资料库正文移除重复的“正文”外框，点击段落后的光标会精确落在所点位置，外部内容回灌也不再把光标移到文末；主写作编辑器同步保护同一文档的当前选区。
+- The Lore body no longer has a redundant Content frame. Clicks now place the caret at the selected paragraph, external refreshes no longer move it to the document end, and the main writing editor preserves the current selection during same-document syncs as well.
+- 自动保存按资源和设置层串行执行，在切换条目、配置类型、页面或进入删除确认前 flush，并在前一次写入后立即沿用新 revision；失败的方案保存会先重试再允许切换，迟到响应不会覆盖更新的本地草稿。
+- Autosave now serializes per resource and settings layer, flushes before resource, configuration-kind, page, or delete-confirmation transitions, and immediately advances revisions between queued writes. Failed preset saves retry before navigation, and late responses cannot replace newer local drafts.
+- 未编辑的配置会直接加载外部最新值且绝不触发回写；编辑中的文本和结构化草稿会在 revision 变化时按原始基线三方合并，并自动携带最新 revision 重试，不再要求用户刷新页面处理常规冲突。
+- Clean configuration drafts now load external updates without writing anything back. Dirty text and structured drafts three-way rebase from their original baseline and transparently retry with the latest revision, so ordinary conflicts no longer require a page refresh.
+- Automations 配置写入不再回传触发状态、最近运行等服务端运行时字段；Skills 刷新会重新读取当前文档，过期 revision 返回 409 而不会静默覆盖磁盘上的外部修改。
+- Automation configuration writes no longer echo server-owned trigger state or recent runs. Skills refresh reloads the selected document, and stale revisions return 409 instead of silently overwriting external file changes.
+- 写作模式现在会隔离参数不是合法 JSON 的工具调用及其结果；已经保存的异常调用链也会在下次请求前被过滤，长参数则使用合法 JSON 回执保留上下文，避免会话被永久冻结。
+- Writing Mode now isolates tool calls with invalid JSON arguments and their results; previously saved malformed pairs are filtered before the next request, while large arguments use a valid JSON receipt so sessions do not become permanently frozen.
+- 设置与 Agents 的分层草稿、自动保存和输入区偏好持久化现在会串行写入，并在 revision 冲突时按原始基线重新拉取、合并和重试；卸载或过期请求不再回写状态。
+- Layered drafts in Settings and Agents, autosave, and composer preference persistence now serialize writes and refetch, rebase, and retry from the original baseline on revision conflicts; unmounted or stale requests no longer publish state.
+- 自动化后台刷新、运行结束和语言切换不再覆盖未保存任务草稿，乱序工作区响应会被忽略；窄屏操作区、资源选择器和当前项语义也保持完整可用。
+- Automation background refreshes, run completion, and language changes no longer overwrite unsaved task drafts, and out-of-order workspace responses are ignored; narrow-screen actions, resource pickers, and current-item semantics remain fully usable.
+- 游戏模式现在会在刷新页面后重新连接当前故事与分支的活动 Agent 任务，回放本轮玩家输入、思考、工具调用和流式正文，并在持久化确认后继续合并同一回合。
+- Game Mode now reconnects to the active Agent task for the current story and branch after a page refresh, replaying the player action, reasoning, tool calls, and streamed prose before merging the same turn on persistence confirmation.
+- Windows 新建或切换书籍时不再因工作区变更存储对 `.denova` 目录执行不受支持的同步而失败；账本、内容 blob 和作品文件仍保留完整的文件级持久化同步。
+- Creating or switching books on Windows no longer fails when workspace-change storage encounters unsupported directory synchronization under `.denova`; ledger, content blob, and manuscript files retain full file-level durability synchronization.
+
+## [v0.2.0] - 2026-07-15
+
+### Brief / 简要说明
+
+#### 中文
+
+- Beta 不兼容提醒：0.2.0 开发期间出现但从未正式发布的中间格式不提供迁移；v0.1.18 已发布的故事、工作区、资料库、会话和配置数据继续保留必要的读取与数据保护逻辑。
+- 状态字段名称现在禁止使用路径分隔符 `/`，所有内置预设已改用无歧义名称；开发期自定义状态系统需要先重命名相关字段，已开始故事的冻结 Schema 不会被自动改写。
+- 写作工作台与可玩的 AI 互动叙事现在建立在同一套长期创作架构上；Story Director、Actor State、事件包、TRPG 检定、资料工作集和可检索 Turn 历史拥有明确的数据边界。
+- Agent/Subagent 工作流新增可配置 Skills、上下文压缩、工具结果保留策略、运行计划和本地 Trace，长对话与复杂工具调用更可控、更易排查。
+- 游戏主舞台的当前状态采用摘要优先的自适应布局，方案预设也能安全识别旧版无效覆盖并让用户手动恢复内置数据。
+
+#### English
+
+- Beta compatibility notice: intermediate formats created during 0.2.0 development were never released and are not migrated. Required read and data-protection paths remain for stories, workspaces, lore, sessions, and settings released in v0.1.18.
+- State field names can no longer use the `/` path separator, and all built-in presets now use unambiguous names. Development custom State Systems must rename affected fields, while frozen schemas in started stories are not rewritten automatically.
+- The writing workbench and playable AI narrative now share one long-lived creation architecture, with clear boundaries for Story Director plans, Actor State, Event Packages, TRPG checks, lore worksets, and searchable Turn history.
+- Agent and Subagent workflows add configurable Skills, context compaction, tool-result retention, run plans, and local traces, making long conversations and complex tool runs easier to control and inspect.
+- Game Mode's Current State uses a summary-first adaptive layout, while Presets can safely identify invalid legacy overrides and let users restore built-ins manually.
+
+### Added
+
+- 游戏模式新增分支级 Story Director 三文档：`director.md` 保存私密规划，`agent-brief.md` 只向正文 Agent 暴露可执行简报，`lore-context.md` 以当前、候场和暂离场管理资料工作集；逐文件 Patch、revision/hash 校验与原子提交避免无关文档被覆盖。
+- Game Mode adds three branch-scoped Story Director documents: private planning in `director.md`, prose-facing instructions in `agent-brief.md`, and Active/Candidate/Offstage lore in `lore-context.md`, with per-file patches, revision/hash checks, and atomic commits.
+- 新增可插拔故事导演模块：叙事风格、多个事件包、固定 d20 的 TRPG 检定、状态系统和图像方案可独立选择或关闭；事件卡支持铺垫、推进、回收、放弃和运行态审计。
+- Story Directors can now compose independently switchable Narrative Styles, multiple Event Packages, fixed-d20 TRPG Checks, State Systems, and image presets; event cards support seeding, progression, payoff, abandonment, and runtime audit.
+- 新增冻结的 Actor State Schema、初始 Actor、通用词条池与模板抽取规则；首轮后状态结构审查使用增量 Batch、来源证据、值策略、revision 校验和原子 Actor 操作完成一次故事级适配。
+- Added frozen Actor State schemas, initial Actors, reusable trait pools, and template draw rules. Post-opening schema review uses incremental batches, sourced evidence, value policies, revision checks, and atomic Actor operations for one story-scoped adaptation.
+- Game Agent 每轮通过独立的 `submit_actor_state_patches` 与 `submit_choices` 提交隐藏结果；模块可分别接受和重试，并支持故事级 2–10 个行动建议、终局空选项与 Unicode 去重。
+- The Game Agent now submits hidden turn data through independent `submit_actor_state_patches` and `submit_choices` tools, with per-module acceptance/retry, configurable 2–10 choices, terminal empty choices, and Unicode-aware duplicate checks.
+- 新增 `search_story_history`、带来源 Turn 的历史检查点和 Director 资料读取凭证，使历史事实、当前状态、稳定设定与未来意图分别归属 Turn、Actor State、Lore 和 Director。
+- Added `search_story_history`, source-Turn history checkpoints, and Director lore-read receipts, separating historical facts, current state, stable canon, and future intent across Turns, Actor State, Lore, and Director plans.
+- 资料库新增常驻/按需加载、名称目录、批量读取、语义类型整理、revision 冲突保护，以及酒馆角色卡 `ccv3`/`chara` 世界书导入、运行时清洗和来源审计。
+- Lore adds Resident/On-demand loading, name catalogs, batch reads, semantic type organization, revision-conflict protection, and Tavern card `ccv3`/`chara` world-book import with runtime cleanup and provenance.
+- Agent 系统新增可配置 Subagent、Skills、上下文压缩、工具结果保留策略、运行计划、自动化工作流与本地结构化 Trace；WebUI 提供统一 AI SDK 消息时间线、Director Console、方案预设和运行追踪。
+- The Agent system adds configurable Subagents, Skills, context compaction, tool-result retention, plans, automation workflows, and local structured traces; the WebUI adds unified AI SDK timelines, Director Console, presets, and run inspection.
+
+### Changed
+
+- Beta 不兼容：状态字段名称禁止包含路径分隔符 `/`；内置预设中的相关名称统一改用“与”，前端可视化编辑、后端预设保存、故事创建与 AI 状态结构适配都会拒绝该符号。开发期自定义状态系统需要先重命名字段；已开始故事继续保留冻结 Schema，不自动改写用户状态。
+- Beta breaking: State field names cannot contain the `/` path separator. Affected built-in preset names now use “and,” and the visual editor, server-side preset writes, story creation, and AI schema adaptation all reject the separator. Development custom State Systems must rename affected fields; started stories keep their frozen schemas without automatic state rewrites.
+- 游戏模式主舞台的“当前状态”改为摘要优先的自适应布局：数值指标会填满不完整末行，短字段与长文本分层排列，储物袋、功法、器物和故事上下文等结构化对象按字段进入可切换的二级 Tab，同一时间只展示一项，减少空白和纵向占用；宽窄屏及浅深色主题保持一致。
+- Game Mode's main-stage Current State now uses an adaptive, summary-first layout: numeric metrics fill incomplete final rows, compact facts and long-form text use separate flows, and structured objects such as Inventory, Techniques, Artifacts, and Story Context become switchable field-level sub-tabs that show one section at a time, reducing whitespace and vertical length across narrow/wide viewports and light/dark themes.
+- Beta 不兼容：0.2.0 最终导演格式直接使用三文档和最终模块引用；不再读取或迁移开发期的混合导演文档、Event System、Opening Selector、Teller orchestration、内嵌导演资源、`auto` 状态适配模式或旧合并提交协议。使用开发快照的工作区需要重新创建这些未发布资源。
+- Beta breaking: the final 0.2.0 format directly uses three Director documents and final module references. It no longer reads or migrates development-only combined Director documents, Event Systems, Opening Selectors, Teller orchestration, embedded Director resources, the `auto` adaptation mode, or the combined submission contract. Workspaces created from development snapshots must recreate those unreleased resources.
+- 游戏模式移除独立 Story Memory / Memory Structure 可写真源；旧文件不会自动删除或覆盖，但新运行时只使用 Turn、Actor State、Lore 和 Director 文档。
+- Game Mode removes Story Memory / Memory Structure as a separate writable source of truth. Existing files are not automatically deleted or overwritten, while new runtime behavior uses Turns, Actor State, Lore, and Director documents.
+- 工具结果不再支持真正无上限：默认安全上限提高到 1024 KB，旧配置中的 `agent_tool_result_limit_kb = 0` 会归一到该值；仍可配置更高的正数。
+- Tool results are no longer truly unbounded: the default safety limit is now 1024 KB, legacy `agent_tool_result_limit_kb = 0` values normalize to that limit, and larger positive limits remain configurable.
+- 状态结构审查中的当前 Actor 快照在 1 MiB 内完整保留，整份动态提示上限为 2 MiB；超限会返回明确的中英文错误，不会静默截断或提交半份上下文。
+- State-schema review preserves the complete current Actor snapshot up to 1 MiB and caps the full dynamic prompt at 2 MiB. Oversize input returns an explicit bilingual error instead of silent truncation or a partial prompt.
+- 默认 `triggered` Director 只在首轮、资料 revision 变化或 Game Agent 报告实质规划变化时运行；`every_turn` 与 `off` 仍可显式选择。
+- The default `triggered` Director now runs for the opening, lore-revision changes, or material planning changes reported by the Game Agent; `every_turn` and `off` remain explicit options.
+- 根目录开发脚本迁移到 `scripts/`；GitHub Release 构建现在校验 tag、包版本、CHANGELOG 与双语 README，并运行完整 Go/前端校验后生成五个平台包、双语说明与 SHA-256 校验。
+- Development scripts moved under `scripts/`. GitHub Release builds now verify the tag, package versions, CHANGELOG, and both READMEs, run complete Go/frontend checks, and produce five platform archives, bilingual notes, and SHA-256 checksums.
+
+### Fixed
+
+- 方案预设检测到无效 JSON 时会区分普通配置与旧版内置覆盖：后者提供明确说明和手动“恢复内置”操作，但不会自动修改或回退用户数据。
+- Presets with invalid JSON now distinguish ordinary edits from older built-in overrides. Overrides offer an explicit manual restore action without automatically changing or rolling back user data.
+- 资料库所有读改写操作现在在同一工作区跨 `LoreStore` 实例串行化，并使用同目录临时文件、`fsync` 与原子 rename 保存，修复并发创建、分类或更新时丢条目和留下半写 JSON 的问题。
+- Lore read-modify-write operations are serialized across `LoreStore` instances for the same workspace and saved through same-directory temp files, `fsync`, and atomic rename, preventing lost entries and partially written JSON during concurrent creates, classification, or updates.
+- 修复世界状态长期为空、基础 `story_context` Actor 缺失、状态字段重复初始化、`set(null)`、错误覆盖现值及状态结构审查未初始化已确认值等问题，并保留迁移与规则状态来源审计。
+- Fixed empty World State, missing foundational `story_context` Actors, duplicate initialization, `set(null)`, current-value overwrites, and confirmed values not being initialized during schema review, while retaining migration and rule-state provenance.
+- 修复 Game Agent 正文与隐藏提交时序、漏调工具后的同运行重试、重复提交覆盖、错误 JSON 牵连已接受模块，以及流式 thinking/工具卡抖动和失败回合无法复制/重试。
+- Fixed Game Agent prose/submission ordering, same-run correction after omitted tools, duplicate submission replacement, malformed JSON invalidating accepted sibling modules, streaming trace jitter, and missing copy/retry actions for failed turns.
+- 修复方案预设自动保存竞态、迟到响应覆盖、内置资源恢复、窄屏溢出、共享弹窗与导航行为；同时修复写作编辑器跨文件保存、光标恢复、Diff、单文件恢复和缺失设定入口。
+- Fixed preset autosave races, stale-response overwrites, built-in restore, narrow-screen overflow, shared dialogs/navigation, plus cross-file writing saves, cursor restoration, diffs, single-file restore, and missing-setting shortcuts.
+- 修复启动端口与前端代理、Gemini/OpenAI 兼容参数、SSE 心跳、上下文缓存边界、工具结果元数据和 Trace 关联中的稳定性问题。
+- Fixed startup ports and frontend proxying, Gemini/OpenAI-compatible parameters, SSE heartbeats, context-cache boundaries, tool-result metadata, and trace correlation.
+- 默认测试不再访问实时搜索引擎；只有显式设置 `DENOVA_LIVE_WEB_SEARCH_TEST=1` 才运行联网聚合检查，保持常规测试快速且可复现。
+- The default test suite no longer accesses live search engines; network aggregation runs only with `DENOVA_LIVE_WEB_SEARCH_TEST=1`, keeping normal tests fast and reproducible.
+
+### Removed
+
+- 删除所有仅服务于未发布 0.2.0 中间格式的后端迁移器、前端字段、API 适配器、模型提示和回归测试，包括导演三文档迁移、Event System 转 Event Package、Opening Selector 转 Actor State、旧 Actor State 模块版本、`TurnBrief`、旧 `StateDelta`/合并 Turn 提交、单 proposal 状态审查、纯文本 PlanDecision，以及基于 path、d100/别名和 v1 StateOps 的 TRPG 适配。
+- Removed backend migrators, frontend fields, API adapters, model guidance, and regression tests used only by unreleased 0.2.0 intermediate formats, including three-document migration, Event System-to-Package conversion, Opening Selector-to-Actor State conversion, old Actor State module versions, `TurnBrief`, legacy `StateDelta`/combined Turn submission, single-proposal schema review, plain-text PlanDecision, and path-, d100/alias-, or v1 StateOps-based TRPG adapters.
+- 删除独立 Hot Choices Agent、Opening Selector API/UI、旧聊天并行入口和不再使用的配置字段；最终协议由通用 Agent、Actor State、事件包和统一消息时间线承担。
+- Removed the standalone Hot Choices Agent, Opening Selector APIs/UI, parallel legacy chat endpoints, and unused settings; final protocols are handled by common Agent, Actor State, Event Package, and unified timeline abstractions.
+
+### Data protection
+
+- v0.1.18 已发布的 `.nova`/`.denova` 工作区发现、故事 JSONL、通用 StateOps、会话消息、资料库和配置读取路径继续保留；自动迁移或状态重写仍使用 revision 校验、备份或可回放事件。
+- Read paths remain for v0.1.18 `.nova`/`.denova` workspace discovery, story JSONL, generic StateOps, session messages, lore, and settings. Automatic migration or state rewrites continue to use revision checks, backups, or replayable events.
+
+## [v0.1.18] - 2026-07-01
+
+### Brief / 简要说明
+
+#### 中文
+
+- 完成 Denova 品牌与分发命名切换；兼容性提示：Release 包不再提供 `nova` / `nova.exe` / `nova-updater` 别名，新安装请直接运行 `denova` / `denova.exe`。
+- 新增新用户引导、消息中心、PWA/移动端主屏体验，以及可内嵌前端的单文件自托管能力。
+- 大幅补齐移动端写作与游戏模式的输入、弹窗、文件操作、故事记忆和分支导航体验。
+- 图像方案、书籍封面生成、互动图像回写、Plan Mode 展示、章节正文隐藏输出和资源保存冲突保护更稳定。
+
+#### English
+
+- Completed the Denova branding and distribution rename; compatibility note: release packages no longer include `nova`, `nova.exe`, or `nova-updater` aliases, and new installs should run `denova` / `denova.exe` directly.
+- Added onboarding, a message center, PWA/mobile home-screen support, and a self-hosting path where the backend can embed the web app.
+- Filled in more mobile Writing and Game Mode input, dialog, file action, story memory, and branch navigation workflows.
+- Made image presets, cover generation, interactive image writes, Plan Mode rendering, hidden chapter-body streaming, and resource conflict protection more reliable.
+
+### Added
+
+- 游戏模式：剧情页新增宽屏轮次导航，左侧横杠可快速定位每个对话轮次，悬停/聚焦时展示用户输入与 Agent 剧情正文预览；窄屏或舞台空间不足时自动隐藏。
+- WebUI：新增新用户引导，按“配置语言模型 API Key → 新建书籍 → 创作 Agent 预填第一章开头 → 一级模块导览”串联主流程；支持一键跳过、设置页重新打开，状态仅保存在浏览器本地，不写入用户或工作区配置。
+- WebUI：新增全局消息中心，顶部栏铃铛入口可查看 Denova 更新日志；打开某条消息会自动标记为已读，也可一键全部已读。已读状态保存到用户级 Denova 数据目录，不写入作品 workspace。
+- 游戏模式：行动选项默认会在故事输出结束后后台自动生成，用户点击输入框右侧“选择”后再展开；输入框左侧菜单保留“自动生成 / 手动生成”切换。
+- WebUI：新增 PWA manifest、应用图标（apple-touch-icon / 192 / 512 / maskable）与移动端 viewport meta（`viewport-fit=cover`、`theme-color`、`apple-mobile-web-app-capable` 等）。自托管后可在手机主屏“添加到桌面”以独立应用形态打开，并正确延伸到刘海安全区；图标由 `pnpm generate-icons`（sharp）从 `favicon.svg` 复现式生成。
+- 后端：静态资源服务对未知前端路径做 SPA 回退（返回 `index.html`）。手机刷新任意页面或深链打开不再返回 Hertz 默认 404；`/api/*` 路由不受影响。
+- 后端：Denova 二进制现在可内嵌前端（构建标签 `embedweb`），裸二进制无需磁盘 `web/` 目录即可提供前端服务，适合 `go install` / 单文件分发 / 最小化自托管。默认构建行为不变；release 仍附带 `web/` 作为磁盘快速路径与 updater 兼容，内嵌为独立运行的兜底。
+- 文档：README（中/英）新增「自托管与远程访问（手机访问）」章节，覆盖构建前端、开启远程访问、手机使用与 HTTPS 反向代理。
+
+### Fixed
+
+- 文档/更新：修正 README 徽章、Release 下载、源码克隆、Star History 与应用内更新检查使用的 GitHub 仓库标识，改为 `alfredxw/denova`，避免用户跳转或检查到旧 Release 页。
+- 游戏模式：互动图像生成完成后允许把展示事件写回当前分支父链上的继承回合，避免从旧分支接出的剧情线在生成祖先回合图像时误报“展示事件回合不属于当前分支”；图像生成上下文也改用当前快照分支读取故事记忆。
+- Agent：内置 `novel-lite` / `novel-standard` / `novel-heavy` 写作 Skill 明确要求按场景使用 `read_file`、`write_file`、`edit_file`、`task` 等工具，并在写入后检查工具结果与读回关键片段，避免工具失败时误向用户宣称文件已修改。
+- 对话渲染：游戏模式改为用后端落盘增量事件原地合并新回合，并把完整快照刷新降级为静默校准；同时移除通用对话和游戏剧情页在 `done` 事件上的临时“完成 / Done”活动行，并把流式正文改为 `streaming_target_content` 隐藏占位、下一帧再提升为可见 `content` 的两阶段提交，避免输出完成或换行瞬间因消息列表高度变化、live 消息切换到持久化快照而抖动或重新入场。本次为内部渲染行为优化，无用户数据迁移。
+- WebUI：桌面布局根与运行时错误边界由 `h-screen` 改为 `h-dvh`，与移动 shell 一致，避免 iOS Safari 地址栏导致的底部跳动。
+- WebUI：远程访问登录框用户名/密码输入框使用 16px 字号，避免 iOS Safari 聚焦时自动缩放页面（该登录浮层渲染在 app shell 之外，原先不享受 16px 字号覆盖规则）。
+- WebUI：章节版本对比的紧凑模式改用项目统一的 `useIsMobile()` 断点（767px），与移动 shell 及版本对比弹窗的 `max-md` 行为一致，消除 760–767px 区间的断点错位。
+- 移动端：聊天 Agent 与互动故事的浮动输入框现在会随软键盘上移，不再被键盘遮挡（此前在 iOS 上输入框会被键盘盖住）。新增 `useKeyboardInset` hook 基于 `visualViewport` 计算键盘高度，仅在输入聚焦时生效；桌面端与 Android（`dvh` 已自动收缩）不受影响。顺带为输入框加上 `enterKeyHint="send"` 等移动键盘提示。
+- 移动端：文件树每行的操作菜单（新建 / 重命名 / 复制 / 移动 / 删除 / 引用）按钮在触摸下常显（原先仅 hover 可见，手机上无法触达文件操作），并加大行与内联输入框的触摸区、补上 `enterKeyHint`。
+- 移动端：标签页关闭按钮在触摸下常显、当前标签常显（原先仅 hover 可见，手机上无法关闭标签）。
+- 移动端：移动顶栏新增「命令」按钮，没有实体键盘的手机也能打开命令面板（原先仅 ⌘K / Ctrl+K）。
+- 移动端：写作编辑器阅读区在手机上改用更紧凑的横向留白（`px-4`，桌面仍为 `px-10`），避免窄屏正文被两侧大留白挤压。
+- 移动端：聊天消息的助手操作（重新生成 / 切换版本等）与消息元信息在触摸下常显（原先仅 hover 可见，手机上无法触达）。
+- 修复：命令面板（⌘K / Ctrl+K）打开即崩溃（`Cannot read properties of undefined (reading 'subscribe')`，触发前端错误边界白屏）。根因是 `CommandDialog` 未用 cmdk 的 `<Command>` 根包裹内容，导致 `CommandInput`/`CommandList`/`CommandItem` 拿不到 cmdk store；补上 `<Command>` 包裹后面板在桌面与移动端均可正常打开。
+- 移动端（共享原语）：`Dialog` / `AlertDialog` 内容默认限制在视口高度内并可滚动（`max-h-[calc(100dvh-2rem)] overflow-y-auto`），长内容弹窗在手机上不再溢出屏幕；自带 `max-h` / `overflow` 的弹窗不受影响（tailwind-merge 优先消费者值）。
+- 移动端（共享原语）：`Popover` 内容新增 `max-w-[calc(100vw-1rem)]`，窄屏下不再溢出到屏幕外。
+- 移动端（互动模式）：故事记忆（StoryMemory）记录列表在窄屏改用卡片渲染（原先的 `table-fixed` 列表在手机上列宽被挤压到几个字符、内容不可读，且 `overflow-x-hidden` 无法横向滚动）；桌面端仍保持表格。复用 `AdaptiveSurface` 提供的 `isMobile` 与既有字段渲染逻辑。
+- 移动端（互动模式）：剧情分支时间线（BranchTimeline）工作台视图在手机上新增「回到当前节点」按钮（桌面端用缩略导航 MiniMap 定位，移动端 MiniMap 隐藏，故补充此按钮以便手动平移后重新定位到当前剧情线）；分支切换 pills 触摸区在移动端加大。该视图的图本身已可触摸拖拽平移、切换分支自动居中、选中节点后可创建分支，本次补齐移动端导航缺口。
+- 移动端：修复创作 Agent / 互动故事输入框在预填长 prompt（如「和创作 Agent 聊灵感」自动注入的启动 prompt）时 textarea 无限增高、composer 撑满大半屏挤压对话区的问题；移动端将 composer textarea 的最大行数限制为 5（桌面仍为 10），长内容在框内滚动而非顶高整个输入区。
+
+### Changed
+
+- 项目改名：应用名、Go module、命令目录、前端标题、PWA manifest、README、配置模板、内置 Agent 提示、npm 包名和 GitHub Release 产物统一从 Nova/nova 切换为 Denova/denova。新工作区与新配置默认使用 `.denova` / `DENOVA_*`；已有 `.nova` 工作区与 `NOVA_*` 环境变量继续兼容读取。GitHub Release 包不再附带 `nova`、`nova.exe` 或 `nova-updater` 别名，用户新下载后直接运行 `denova` / `denova.exe`。
+- WebUI：Chat 输入框默认以双行展开显示，Plan Mode 不再占用独立按钮，改为放入输入动作菜单；开启 Plan Mode 时在输入区底部工具行显示轻量 `Plan` 状态提示，并保留 `Shift+Tab` 快捷切换。游戏模式输入框保持单行。
+- 移动端：Agent 面板从右侧抽屉改为**底部常驻面板**（与编辑器竖向分割），恢复桌面端「编辑器 + Agent 同屏可见」的核心操作逻辑。使用 `react-resizable-panels` 做竖向分割，可拖拽分隔条调节编辑器/Agent 比例。Agent 不再需要点导航打开；快捷创作按钮始终可达。桌面端不受影响。
+- 设置：新增 `hide_novel_chapter_body_in_live_output` 配置，开启后隐藏章节正文在 Agent 流中的输出，并保留目标路径和已生成字符数；默认关闭以保持原有实时输出行为。
+- Agent 调试：完整 LLM 输入日志默认关闭，即使 `--dev-mode` 启动也需要在开发模式设置页的「调试」分区手动开启；日志写入改为后台异步队列，`provider_request_id` 以独立关联事件追加到 `log/llm-inputs.jsonl`，避免模型请求热路径同步重写大文件。
+
+### Changed
+
+- 方案预设：图像方案升级为可配置注入位置的规则列表，支持分别注入图像 Agent system prompt 和最终图像请求 prompt；旧单段 prompt 会兼容迁移为图像请求规则。
+- WebUI：书籍管理里的“编辑信息”改为独立弹窗，扩大书名、作者、简介和封面生成区域，避免在书架卡片内编辑过于拥挤。
+- WebUI：书籍管理手机端书架改为以封面为主的紧凑自适应网格，iPhone 15 Pro 等窄屏宽度下书卡只展示封面和书名，减少纵向占用。
+- WebUI：图像放大查看器改用 `react-zoom-pan-pinch` 管理缩放、拖拽/触控板滚动平移和触控板 pinch；工具栏按钮保持 25% 步进，手势缩放改为按比例变化。
+
+### Fixed
+
+- Agent：写作模式生成小说章节时，开启 `hide_novel_chapter_body_in_live_output` 后，SSE 推流前 middleware 会在 `write_file` 写入 `chapters/` 或 `drafts/` 时只向前端发送目标文件路径、隐藏提示和已生成字符数，不再输出大量章节正文或省略号占位；字符进度会按增量轻量节流，并在工具结束前用完整参数解码校准最终值，口径与 `wc -m` 保持一致，前端工具卡片会提示章节正文仅在 Agent 流中隐藏、文件仍会正常写入。
+- 书籍管理：编辑书籍信息时可直接选择图像方案并生成书籍封面，生成结果立即写入固定展示路径 `assets/image/cover.png`，旧封面会自动备份到 `assets/image/covers/backups/`。
+- WebUI：书架卡片和当前书籍区域会展示同一固定封面；没有封面时保持简洁书本占位，酒馆角色卡导入的 `assets/image/cover.png` 也会正常展示。
+- WebUI：书架封面即使暂时没有 `cover_updated_at` 版本号，也会尝试读取固定路径 `assets/image/cover.png`，避免本地已有封面却显示占位图。
+- WebUI：设置页、Agents 页和游戏设置页保存时带上资源版本，后端检测到 Agent 或其他页面已更新同一配置/资源时返回冲突错误，避免旧自动保存覆盖新内容。
+- 游戏模式：互动图像重新生成完成并追加新版本后，回合内联预览会自动切到最新图片，不再停留在用户之前手动查看的旧版本。
+- WebUI：将 `react-virtuoso` 锁定到满足 pnpm minimum-release-age 策略的版本，避免 `pnpm --dir web test` 在执行测试前被供应链校验拦截。
+- WebUI：滚动消息列表时同步记录实际 Virtuoso 滚动容器，避免“回到底部”按钮在测试或 ref 变化后无法恢复底部锁定。
+- 写作 Agent：优化 Plan Mode 卡片交互与输出展示。问题卡限制高度并固定操作区，卡片生成、内容增长、题目切换和布局变化会将卡片底部对齐到对话输入框顶部，且不打断后续工具数据的自动跟随；连续多轮 Plan 按当前 run 原地更新；生成中只展示 running 后新变化的 root thinking 预览，停滞后自动隐藏；提交问题答案或选择最终计划操作后隐藏按钮并显示完成态，内部回答/批准协议、卡片前后说明和误触发的 `plan_questions`/`proposed_plan` 协议工具卡不再重复展示；最终计划改用轻量 Markdown 模板并复用聊天 Markdown 样式。
+
+## [v0.1.17] - 2026-06-27
+
+### Added
+
+- 游戏模式：新增“互动图像”，默认手动生成；输入框左侧菜单提供侧边配置，可切换为手动或每 X 轮生成，每个剧情回合操作区提供手动生成/重新生成按钮。
+- Agent：新增通用 `image` Agent，默认仅启用 Skills 和图像生成工具；互动图像通过 `interactive-image` Skill、`purpose=interactive_image` 和专用 System Prompt 复用该通用 Agent。
+- 后端：新增 `POST /api/interactive/stories/:id/images/generate`，互动图像保存到 `assets/interactive/images/<story>/<branch>/<turn>/<timestamp>/`，结果以 `interactive_image.v1` display event 挂到对应回合，不移动分支 head、不写入叙事正文、不进入下一轮模型上下文。
+- 方案预设：新增独立“图像方案”资源和 `GET/POST/PATCH/DELETE /api/image-presets`，内置 `游戏CG`、`写实`、`2D插画` 三种方案，写作 Agent 与游戏互动图像默认使用 `游戏CG`。
+- 写作模式：新增内置 `chapter-illustration` Skill 和通用 `generate_image` Agent 工具，创作 Agent 可基于当前或指定章节生成一张非剧透插画，结果保存到 `assets/illustrations/` 并在工具卡片中预览，用户可手动插入为 Markdown 图像。
+- 后端：新增受保护的 workspace asset 图像读取接口，仅允许读取 `assets/` 下的图像文件，供章节插画和 Markdown 渲染使用。
+
+### Changed
+
+- WebUI：中文界面中 Automation Agent 统一改称“自动化Agent”，包括 Agents 页、自动化模型继承提示和自动化 Agent 内置中文提示。
+- WebUI：顶层“互动模式 / Interactive Mode”更名为“游戏模式 / Game Mode”，强调其定位是互动文字冒险游戏工作台；内部 `interactive` API、配置键和存储目录保持不迁移。
+- WebUI：顶层“叙事编排 / Narrative Direction”更名为“方案预设 / Presets”，内部 `teller` 路由、一级菜单行为和模式切换规则保持不迁移；该页现在并列管理叙事方案和图像方案。
+- Breaking：旧 `Teller.image_prompt` 已下线，不迁移、不读取、不展示、不兜底；图像生成风格改由独立图像方案预设保存到 `image-presets/*.json`。
+- 游戏模式：互动叙事 Agent 不再要求用 XML 标签包裹正文，默认直接输出故事正文；历史或异常输出里的旧正文包装仍会兼容清洗。
+- Agent：通用 General SubAgent 的内置默认范围收窄为仅写作 Agent 和 Automation Agent 启用；互动叙事 Agent 和配置管理 Agent 默认继承关闭，仍可在 Agents 页单独开启。
+- Agent：自定义 SubAgent 的 `parents` 改为显式父 Agent 归属列表，空列表不再表示所有父 Agent 共享；Agents 页新增“仅从当前父 Agent 移除”和“全部删除”两种删除范围。
+- Agent：工具结果默认不再截断，设置页 Agent 分区新增按 KB 配置的工具结果截断上限；设置为 `0` 或留空时不截断。
+- Agent：`read_file` 默认读取窗口固化为从第 1 行开始最多 2000 行，只有显式指定更大的 `limit` 时才读取更多，并同步更新工具描述避免默认使用过小扫描窗口。
+- 游戏模式：`read_interactive_memories` 不再限制最多 6 条、每条 4KB 或总计 12KB；互动记忆入库不再按 12KB 裁剪文本，Agent 显式读取时返回所有可见请求项的完整正文。
+- WebUI：设置页将原“模型”分区改名为“语言模型”，将原“图像 API”分区改名为“图像模型”，并从设置页移除后端/前端端口输入和访问地址端口展示；端口仍可通过环境变量或配置文件在启动时设置。
+- Agent：图像生成工具改为通用 `generate_image`，章节插画 Skill 改用中文流程调用该工具；生成尺寸改为调用时在 2K/3K/4K 预设中选择，设置页不再配置默认图像尺寸，输出格式限制为 `png` 或 `jpeg`。
+
+### Fixed
+
+- WebUI：Agents 页操作 General SubAgent 开关时先按本地草稿即时刷新开关与状态标记，保存继续异步执行，避免点击后等待配置保存才反馈。
+- WebUI：修复设置页语言模型配置点击“添加语言模型”后，新建空模型配置被立即过滤掉、看起来没有反应的问题。
+- 模型配置：修复多语言模型配置中 API Key 留空时不再继承默认模型 API Key 的问题；设置页将 `default` 配置直接标记为“默认模型”。
+
+## [v0.1.16] - 2026-06-27
+
+### Added
+
+- 后端新增统一图像生成 API：支持配置多个 OpenAI 标准 Images API profile，`POST /api/images/generate` 会调用所选图像模型并将结果保存到当前工作区 `assets/image/generated/`。
+- 设置页新增图像 API 配置区，可用 shadcn 表单组件配置默认图像 API、多个 OpenAI 图像 profile、默认尺寸、质量和输出格式。
+
+### Fixed
+
+- WebUI：修复默认模型配置未填写别名时仍继承模板里的 “DeepSeek 写作” 并在输入区出现无效模型选项的问题；默认模型现在始终使用稳定 `default` 配置 ID，未填别名时显示模型名。
+- WebUI：一级菜单默认展开并把默认宽度从 152px 调整到 180px，同时迁移旧默认宽度，让常用菜单文字默认完整展示；用户手动拖拽后的宽度仍会保留。
+
+## [v0.1.15] - 2026-06-27
+
+### Added
+
+- Agent 开发模式 LLM 输入日志会在响应返回后回写 `provider_request_id`，`log/llm-inputs.jsonl` 可直接关联完整请求输入和供应商请求 ID。
+- Agent 模型响应日志新增 `provider_request_id`：当 OpenAI 兼容供应商返回请求 ID 时，后端会打印该 ID，便于向模型 API 供应商提供 debug 信息。
+- 应用内更新新增独立 `nova-updater`：Release 包会携带同平台 updater，设置页先下载暂存更新，再通过“重启并安装”退出当前 Nova、替换主程序和资源目录，并自动启动新版本。
+
+### Changed
+
+- WebUI：一级菜单展开态支持拖拽调整宽度，默认宽度可容纳五字菜单名，最小宽度保留至少两个中文字的可读空间。
+- WebUI：模型配置新增可选别名，模型选择器优先显示别名、未填写时显示模型名；设置页 Temperature 输入框改为 0-1 的紧凑数字框，上下文长度选项改用统一组件样式。
+- WebUI：默认模型改为与其他模型一致的 `model_profiles` 列表配置，默认项使用 `id = "default"`，也支持设置别名。
+- WebUI：底部状态栏右侧不再显示空闲状态和当前模型名，仅在生成中保留运行状态提示。
+- Agent：创作 Agent 不再直接注入默认 Writing Skill 的 SKILL.md 正文，也不再用后端正则判断写作意图；本轮动态提示只说明当前选择的 Writing Skill，涉及正文写作/续写时由模型通过 `skill` 工具自行加载对应 Skill。
+- Agent：默认写作 Skill 从 `novel-standard` 改为 `novel-lite`；用户仍可在创作 Agent 输入菜单或设置页自行切换默认 Skill。
+- Agent：`config.toml` 模板预置 `writer`、`reviewer`、`fixer` 等写作 SubAgent，它们不再由 Go 默认值或内置 Writing Skill 运行时策略控制；用户可在 Agents 页像管理自定义 SubAgent 一样覆盖或关闭。
+- Agent：系统提示词明确限制 SubAgent 委派时机，除非用户主动要求或已加载 Skill 流程要求，否则父 Agent 不应主动拉起 SubAgent。
+- Agent：创作 Agent 的本轮动态上下文会注入前端 IDE 当前聚焦文件和打开文件路径；该状态只包含有界路径信息，不注入文件正文，需要正文时仍必须显式通过工具读取。
+- Agent：默认不限制空闲等待时间；设置页和 `NOVA_AGENT_IDLE_TIMEOUT_SECONDS` 仍可配置正数秒数启用空闲超时，配置为 `0` 表示不限制。
+- Agent：移除独立章节初稿目录和对应设置开关；章节初稿统一写入 `chapters/`，通过章节状态从初稿确认成章。
+
+### Fixed
+
+- Agent：修复真实模型用量明细刷新后只在互动 Agent 可用的问题；创作 Agent、配置管理 Agent 和固定 Agent 会话 API 现在会保留 `agent_kind`、token 统计和 `usage_calls`，并在持久化层按每种 Agent 只保留最近 10 条用量记录，避免历史无限膨胀。
+- Agent：修复运行中配置刷新没有合入根 `config.toml` global 层的问题，避免 Agents 页和实际写作 Agent 只看到用户级/工作区级残留的部分 SubAgent。
+- WebUI：修复编辑 SubAgent 可用父 Agent 时立即写入列表导致弹窗消失的问题；弹窗内改动现在会先保存在本地未提交内容，点击完成后再写回配置。
+- WebUI：Agents 页将工具、Skills、上下文压缩、General SubAgent 和自定义 SubAgent 的启停控件统一为 Switch；自定义 SubAgent 可直接在列表启停，删除继承来的 SubAgent 不再变成关闭/恢复的循环。
+- WebUI：优化创作 Agent 面板标题栏布局，新建会话入口移到视图切换器右侧并简化为加号按钮，同时移除空闲状态和当前会话摘要文字。
+- WebUI：对话消息悬浮元信息改为截图式的消息下方操作行，只出现在用户消息气泡和根 Agent 正文下方，并新增仅图标的一键复制按钮；复制成功后按钮会短暂切换为勾号反馈，历史普通消息会补齐展示时间，SubAgent 小窗和工具卡片不再显示消息时间。
+- WebUI：创作 Agent 的 SubAgent 详情栏支持拖拽调整宽度，关闭后会恢复右侧面板原宽度。
+- WebUI：Agents 页的 SubAgent 列表按当前父 Agent 过滤，预置写作 SubAgent 只显示在写作 Agent 下。
+- WebUI：修复创作 Agent 右侧面板读取旧持久化布局时可能因面板顺序错配导致拖拽宽度方向异常的问题。
+- WebUI：创作 Agent、配置 Agent 和自动化运行对话的消息列表会随底部浮动输入区高度自动预留空间，长输入不再遮住最后一行消息。
+- WebUI：移除写作模式左侧目录顶部的作品名与字数统计摘要，并将“其他设定”折叠入口合并到“书籍设定”标题行，减少重复行占用。
+- WebUI：简化写作模式“章节组细纲”的空状态提示，不再显示内部目录路径。
+
+## [v0.1.14] - 2026-06-26
+
+### Added
+
+- 写作 Skill Preset：内置 `novel-lite`、`novel-standard`、`novel-heavy` 三种 IDE 写作 Skill，默认使用 `novel-standard`；创作 Agent 输入区可选择当前写作 Skill，也可选择用户/工作区自建的 IDE Skill，运行时按工作区覆盖 > 用户覆盖 > 内置预设解析并注入有效 SKILL.md。
+- 配置管理 Agent：新增 `list_agent_configs` / `write_agent_configs` 专用工具，可在 Agents 页通过对话管理 Agent 模型覆盖、Prompt、工具权限、Skills 可用性、上下文压缩、General SubAgent 和自定义 `sub_agents`；新增 `agent_config_read` / `agent_config_write` 工具权限，默认仅配置管理 Agent 启用。
+- Added SubAgent delegation support with configurable General SubAgent availability, custom `sub_agents`, real-time subagent stream metadata, and compact Agents page management UI.
+- WebUI / Agent：新增会话级 Plan Mode，写作 Agent / IDE Chat 支持 Chat / Plan 状态展示和 `Shift+Tab` 切换；Plan Mode 可一次接收结构化问题集、逐题向用户确认并在全部确认后统一提交答案，也可渲染拟定计划卡；计划卡展示和确认执行上下文都有长度上限，确认计划后再带有界批准计划切回执行模式。
+
+### Changed
+
+- Agent：运行时 system prompt 现在会按界面/请求语言引导模型使用对应语言输出 thinking 内容；该约束只影响思考过程，不覆盖输出协议、JSON 字段、文件内容或故事正文语言。
+- Agent：默认不再为所有 Agent 设置 `max_iteration` 轮数上限；只有用户显式配置正数时才限制迭代次数。
+- Agent：Review 自动化不再强制把 `max_iteration` 提升到 100，避免 task 委派继续被隐藏上限截断。
+- Agent：自定义 SubAgent 现在继承父 Agent 稳定 system prompt、workspace/mode/tool 边界，并要求父 Agent 委派 task 时传递目标、约束和路径/资源 ID；若旧 SubAgent prompt 试图覆盖父 Agent 工具权限或模式边界，会以父级契约为准。
+- Skills：内置预制 Skill 支持在界面中创建同名覆盖，默认写入用户级 `<nova_dir>/skills/<skill-name>/SKILL.md`，只有用户级目录不可写时才退回工作区覆盖；Skill 配置页现在支持修改 Skill 名称，并可在用户级与工作区级保存位置之间迁移。
+- WebUI：Agents 页面默认编辑用户配置，Skills 页面默认在用户级目录新建 Skill；需要工作区级覆盖时仍可手动切换到工作区配置。
+- WebUI：创作 Agent 面板移除独立 Review tab，Review 任务配置与运行过程统一回到自动化页；SubAgent 正文输出改为主会话高亮进度卡，点击后可在右侧打开独立子会话详情栏，避免混入父 Agent 正文。
+- WebUI：写作模式作品目录上方的灵感、大纲和状态文件入口合并为可折叠的“书籍设定”，并新增创作规则、写作进度和角色当前状态快捷入口。
+
+### Fixed
+
+- Agent：写作模式生成小说章节时，开启 `hide_novel_chapter_body_in_live_output` 后，SSE 推流前 middleware 会在 `write_file` 写入 `chapters/` 或 `drafts/` 时只向前端发送目标文件路径、隐藏提示和已生成字符数，不再输出大量章节正文或省略号占位；字符进度会按增量轻量节流，并在工具结束前用完整参数解码校准最终值，口径与 `wc -m` 保持一致，前端工具卡片会提示章节正文仅在实时输出中隐藏、文件仍会正常写入。
+- WebUI：允许 pnpm 在安装时执行 `msw` 的构建脚本，避免高版本 pnpm 首次安装后因 `ERR_PNPM_IGNORED_BUILDS` 导致前端启动失败。
+- WebUI：修复 Agent 对话、SubAgent 详情栏和工具流式预览在输出增长时不会稳定锁定到底部的问题；现在默认跟随到底部，用户主动上滑后停止自动滚动，重新滚到底部后再恢复跟随。
+- WebUI：修复创作 Agent 输入动作菜单里的写作 Skill 列表需要鼠标悬停后才开始加载、首次展开慢一拍的问题；现在创作 Agent 面板打开时就会预加载写作 Skill 列表和默认选择。
+- Agent：修复自定义 SubAgent 在互动故事父 Agent 下可能绕过写文件拦截的问题，并让配置管理 SubAgent 的专属读写工具遵守自身工具权限限制。
+- WebUI：修复浅色主题下 SubAgent 删除确认弹窗危险按钮对比度不足的问题，并将基础弹窗宽度改为随视口自适应，避免自定义 SubAgent 编辑等弹窗过窄。
+- Agent 模型：所有 Agent 请求不再主动设置 `max_tokens` 输出上限，避免长章节通过 `write_file` 写入时工具参数在正文中途被截断并报 JSON EOF。
+- WebUI：修复对话区思考过程和工具调用卡片 hover 时也显示消息时间、并导致列表高度变化的问题；现在仅用户消息和 Agent 正文消息显示悬浮时间，时间戳使用绝对定位不再撑开页面。
+- WebUI：修复 `execute` 等工具执行完成后，对话页工具调用卡片可能仍停留在 Loading 状态的问题；工具结果现在会按调用 ID 或工具名回填到原卡片，正常结束时也会收敛未完成卡片。
+- Agent 工具：Windows 运行时现在通过 PowerShell 支持 `execute` 命令执行工具，不再强制关闭 `shell_execute`，Agents 设置页也允许正常配置该开关。
+- Agent 运行：修复写作 Agent 连续调用多个工具后，如果模型或工具流长时间不再返回事件，后端任务会永久保持 running、前端一直显示回复中的问题；现在主循环、助手流和工具结果流都有可配置空闲超时，默认 180 秒，超时会结束任务并返回错误。
+- Agent 会话：修复 `write_file` 等工具流式参数每帧都重写 `.nova/sessions` 导致 Windows 文件写入容易出现 open 超时和重复错误日志的问题；工具参数展示改为内存实时累积、磁盘节流持久化，并对超长参数只保存有界预览。
+- WebUI 编辑区 Tab：修复点击标题文字之外的 Tab 区域不会切换文件、容易感觉需要点两次的问题；现在整个 Tab 条目都可点击，关闭按钮仍独立关闭。
+- Windows Release：修复设置页和文档将局域网访问地址误指向开发前端端口的问题；release 现在展示实际 Nova 入口端口，避免手机访问到未监听的 `5173`。
+- 修复应用内安装更新缺少下载进度且下载包只保存在临时目录的问题；安装现在使用 `grab` 下载 Release 安装包到本地 `.nova-updates/downloads/`，通过前端进度条展示下载阶段，完成后再解压并替换本地文件，同时修复 Windows 安装路径含空格时更新脚本可能无法启动的问题。
+- 后端：修复写作 Agent 启动日志仍引用已移除的 `style_references` 请求字段导致后端编译失败的问题，日志现在记录当前场景风格选择数量。
+
+## [v0.1.13] - 2026-06-24
+
+### Fixed
+
+- WebUI：修复所有 Agent 输入框长文本可能被右侧按钮遮挡的问题；输入区和按钮现在由 composer 组件分槽布局，内容换行后会保持多行输入，清空后恢复单行。
+- 修复手机宽度下版本管理、书籍管理、Agents、Skills、设置、自动化和故事记忆等页面的适配问题；共享滚动容器现在会按手机宽度收缩，配置卡片会换行，长 Skill 名称不再撑宽，书架手机端改为单列卡片。
+- WebUI：修复叙事编排场景风格内容编辑弹窗在长文本输入时内容区撑开导致无法滚动的问题，并将弹窗保存按钮调整为 Nova 主题色。
+- WebUI：删除超过 1 秒或接近 1 秒的前端长链测试文件和用例，避免 CI 因低效测试超时失败。
+- WebUI：修复互动故事“故事线”选择面板与“叙事”选择面板相同的首次打开只显示部分选项问题；现在故事线选择也改为打开即全量渲染，长列表由面板整体滚动。
+- WebUI：修复互动故事“叙事”选择面板首次打开只显示部分选项、滚动后才补齐的问题；现在改为打开即渲染全部叙事方案，长列表由面板整体滚动。
+- WebUI：修复互动故事底部输入区在多行输入或展开“可选择”行动建议时遮挡最新故事文字、且消息列表无法继续滚到最后一行的问题；现在故事消息区会按底部浮层实际高度预留滚动空间，行动建议列表也改为纵向可滚动。
+- WebUI：互动故事输入框输入 `/` 展开 Skills 选择浮层时，现在和写作 Agent 一样支持按 Tab 选中当前 Skill。
+- WebUI：修复写作 Agent 与互动故事对话输入框单行状态下文字垂直偏上的问题，输入内容和 placeholder 现在在紧凑 composer 内垂直居中。
+- WebUI：修复输入框输入 `/` 时 Skills/命令选择浮层会被组件库默认选中态颜色覆盖、与 Nova 灰黑主题不一致的问题，浮层背景、选中态和图标颜色统一使用中性主题变量。
+- 修复写作页章节列表点击“确认成章”时按钮保存中显示不可操作光标的问题；现在保存期间仅显示旋转 Loading，鼠标保持常规按钮反馈，空章节仍保持禁用态。
+- 修复互动快捷选择和互动记忆 Agent 在本地 LM（如 LM Studio）下生成失败且错误信息为空的问题：这两个 Agent 此前强制使用 `response_format=json_object`，部分本地 LM 服务器不支持该参数会返回空错误；现在先尝试 JSON mode，失败后自动降级为普通文本模式重试，与小说导入工具 Agent 的降级策略一致。
+- 修复本地 LM 返回空错误时日志只显示前缀（如"生成互动快捷选择失败: "）的问题：现在会记录错误类型并补充可读描述，便于诊断本地 LM 兼容性问题。
+
+### Added
+
+- 配置管理 Agent 新增复杂配置资源的自动 Skill 注入：自动化、故事记忆和叙事编排写入前会按模块加载对应内置配置 Skill，帮助 Agent 使用正确 JSON 结构、枚举和写入流程。
+- 新增 `CONTRIBUTING.md`，整理本地开发、代码风格、前端验证、测试、提交信息、文档和发布贡献约定。
+- 开发模式下新增完整 LLM 输入 JSONL 日志：通过 `bootstrap.sh` 启动时会向后端传入 `--dev-mode`，每次模型请求都会把未截断的 messages、工具 schema 和非密钥模型参数写入 `log/llm-inputs.jsonl`，最多保留最近 10 条记录，便于排查前缀缓存命中率；直接运行 binary 默认不写该文件。
+- 真实模型用量新增未命中缓存 Token 统计，按整次 Agent 请求和单次模型调用同时展示 `prompt - cached` 的输入 Token 数。
+- 检测到 Nova 新版本时，一级菜单会显示可关闭的小提示；关闭后同一版本不再重复提示。
+- 上下文压缩 Agent 改为流式输出摘要增量，IDE 与互动故事的对话区会以小窗卡片展示压缩阶段、token 进度和摘要预览，用户可直接看到自动压缩进展。
+- 写作 Agent 与互动故事输入菜单新增真实模型用量明细，按每次模型请求列表记录 prompt、cached prompt、completion、reasoning、total tokens、模型调用次数和缓存命中率。
+- 所有 Agent 对话输入框左侧选项菜单新增模型配置快速切换，可直接为写作、互动故事、配置管理和自动化 Agent 保存当前工作区的模型配置。
+- `bootstrap.sh fe` 新增 `--lan` 和 `--host <host>` 选项，可将 Vite 前端开发服务绑定到局域网可访问地址，并输出可在手机等设备打开的局域网地址。
+- 设置页新增局域网访问控制：用户可开启同一局域网设备访问 Nova，查看其他设备访问地址，并配置远程访问用户名和密码；非本机访问会通过 HTTP Basic Auth 校验，密码仅以哈希形式保存。
+- WebUI 内部页面新增移动端自适应面板：设置、Agents、Skills、自动化、故事记忆和互动设置等带左右侧栏的页面在手机宽度下改为左右滑出抽屉，主内容保持优先展示。
+- 局域网访问的登录入口改为前端页面：设置页展示 `5173` 前端访问地址，Vite 代理会转发真实客户端地址，后端会拒绝未登录的远端请求。
+
+### Changed
+
+- 写作 Agent 与互动故事的场景风格规则改为注入 system prompt，不再追加到本轮动态用户消息；上下文分析会把已选规则显示为 SystemPrompt 来源，保留 32k 字符上限。
+- 叙事编排的场景风格规则改为直接保存文字内容，不再保存或读取风格文件路径；`/api/styles` 与输入框 `#` 文件引用能力已移除，`#` 现在只用于选择当前叙事编排中的场景风格。旧 `style_rules.styles` 配置不再兼容，需要在叙事编排中重新上传或填写 `style_contents`。
+- WebUI：优化写作 Agent 与互动故事输入框 UI，改为悬浮在对话上的紧凑单行圆角矩形 composer；模型配置保留在输入动作菜单内，互动快捷选择移到右侧发送区，移动端互动输入也保留明确发送入口。消息项鼠标悬停时会在下方显示发送时间，当天仅显示 24 小时时间，历史消息显示完整日期时间。本次不新增 permission 配置或语音输入入口。
+- 简化多模型配置：设置页新增模型配置时不再要求单独填写配置 ID 和显示名称，用户只需填写 Base URL、API Key 和模型名；后端会用模型名作为默认内部配置 ID，旧配置的 `id` / `name` 字段仍可继续读取。
+- 写作 Agent 的模型可见作品上下文改为 stable/dynamic 两段：创作灵感、大纲和资料库作为 stable context 放在对话历史与压缩摘要之前，章节组细纲、章节目录概览、进度和角色状态作为 dynamic context 放在本轮用户请求之前，以提升前缀缓存稳定性。
+- 写作 Agent 的大纲、进度、角色状态、章节目录概览、资料库摘要和章节组细纲等作品状态不再注入 system prompt；会话历史仍只保存用户原始请求，运行时作品快照只在模型调用前临时组装。
+- 写作页面顶部文件 Tab 切换改为即时状态更新，移除无实际帮助的切换动画。
+- 写作模式章节状态从字数阈值自动判定改为作者手动确认：非空章节默认保持初稿，只有在章节列表中确认后才标记为成章。
+- Nova 后端默认改为只监听本机地址；开启局域网访问后才监听 `0.0.0.0`，关闭后远端请求会被拒绝。
+- 移动端互动剧情页改为阅读优先布局：故事舞台顶部操作、工作台状态提示与底部一级导航默认收起，按需展开，减少手机上对正文区域的占用。
+- 更新中英文 README 的能力介绍，补充自定义故事记忆、Memory Compact、缓存命中率优化和 token 成本说明，并同步欢迎交流、开发启动和赞助信息。
+- 移除压缩前的上下文回合窗口裁剪；未触发压缩时模型上下文保持当前有效对话链，压缩后保留的原文尾部回合数改由 `context_compaction` Agent 配置，默认 1 回合。
+
+### Fixed
+
+- 修复豆包等输入法/语音输入仍在组合或后处理文字时，Agent 和互动输入框按 Enter 会误发送未定稿文本的问题。
+- 修复配置管理 Agent 在自动化、资料库、故事记忆、叙事编排和 Skills 等不同配置入口之间共用同一段对话历史的问题；现在会按入口和目标资源隔离历史与 `/clear`。
+- 修复写作 Agent 上下文分析器会按作品状态 Markdown 小标题误拆来源的问题；现在作品状态按创作灵感、状态文件、章节目录、资料库和章节组细纲等真实来源展示。
+- 修复上下文压缩运行时同时出现压缩卡片和 activity 卡片的问题；现在 IDE 与互动故事只保留一个简洁压缩卡片，并用旋转 Loading 表示进行中状态。
+- 修复互动故事移除上下文压缩时写入的 `context_compaction_removed` 事件被故事 schema 误判为未知类型，导致移除压缩失败的问题。
+- 修复真实模型用量明细缺少数据来源说明、模型调用未按 Agent 请求分组、工具调用后的下一次模型请求缺少工具归属、单次调用时间不准确且窄屏必须横向滚动才能看到关键 token 信息的问题；互动模式的模型用量改为写入独立 usage 文件，不再混入 story 事件。
+- 修复真实模型用量与上下文分析弹窗打开时默认聚焦右上角关闭按钮，导致关闭按钮一开始就高亮的问题。
+- 修复应用内安装更新下载较慢时可能因请求超时失败的问题；安装现在使用 GitHub Release 直连下载地址，下载完成后解压替换本地文件，并在完成后提示重启生效。
+- 修复互动故事流式输出期间系统 prompt 组成日志可能按 chunk 高频重复打印的问题；现在每次 Agent 请求只记录一次 system composition/source 摘要。
+- 修复互动模式仍会持续轮询工作区目录、作品统计和风格参考的问题；后台自动刷新现在只在 IDE 写作页启用，互动页保留首次加载和显式刷新。
+- 修复互动模式刷新页面后可能回到其他故事线或主线的问题：前端会记住最近选择的故事线，并按故事恢复最近选择的分支。
+- 修复互动故事切换较早回合版本后会截断后续正本路径的问题；同一回合的多个版本现在只作为该回合候选，选中后后续对话继续沿当前正本保存与刷新。
+- 修复互动故事后台状态/记忆任务晚于下一轮完成时可能把分支头回退到旧回合的问题，避免刷新后最新回合从故事舞台消失。
+- 修复互动记忆和快捷选项未沿用互动叙事 Agent 压缩后模型可见历史的问题；现在三者都会使用同一份压缩摘要、保留尾部和压缩后新增回合。
+- 修复压缩后保留原文尾部回合数被固定为 8 且 Agents 设置项不可见的问题；现在可在 `context_compaction` Agent 中配置，默认保留最近 1 回合。
+
+## [v0.1.12] - 2026-06-20
+
+### Added
+
+- Agent 主流程新增基于 token Context Usage 的自动上下文压缩：模型配置可设置上下文上限（默认 400K，预设 200K / 1M，并支持自定义），Agents 页可配置自动压缩开关、触发阈值（默认 90%）和摘要目标比例。
+- 上下文分析器新增模型可见压缩摘要、估算 token 使用量、上下文窗口、使用率、压缩 epoch 和是否将触发压缩等信息，用户对话历史仍保持未压缩原文展示。
+- 新增独立 `context_compaction` Agent，可在 Agents 页单独配置模型、thinking、reasoning effort、压缩提示词和目标压缩比例范围（默认 5%-20%）；默认不启用工具和 Skills。
+- IDE 与互动故事新增 `/compact` 主动压缩命令，并新增上下文压缩 API；上下文分析器可查看 active 压缩摘要并软移除压缩，让模型上下文恢复原始消息链后可重新压缩。
+- Agents 配置页新增每个 Agent 独立的自动压缩阈值配置，并由运行时统一按 Agent kind 生效。
+- 网页搜索工具（`web_search`）由单一 DuckDuckGo 升级为 DuckDuckGo、Bing、百度、Google 四引擎并发聚合：四引擎多线程并行搜索，失败的引擎结果会被直接丢弃，仅合并成功引擎的结果。
+- 写作 Agent 和互动故事输入框新增上下文分析入口，可模拟当前输入发送并展示真实 SystemPrompt、上下文来源明细和实际消息列表，不调用 LLM、不写入会话或故事回合。
+
+### Fixed
+
+- 修复写作编辑器自动保存未使用用户配置且语义容易被理解为定时保存的问题；现在只会在用户修改内容后按配置延迟触发一次保存，外部文件同步不会触发自动保存。
+- 修复 Agent 修改当前文件后，前端旧自动保存请求可能覆盖 Agent 新内容的问题；工作区文件保存现在会基于读取时的文件 revision 做冲突保护。
+- 修复后端未启动或 Vite 代理返回 502/503/504 时前端点击无反馈的问题，现在本地 API 连接失败会用去重 Toast 提示“后端未启动”。
+- 修复互动模式中“版本管理”一级菜单与其他共享菜单行为不一致的问题：版本管理纳入互动菜单默认顺序，切换写作/互动模式时会退出版本页并保持单一一级菜单高亮。
+- 互动记忆 Agent 生成的故事记忆 patch 兼容数值和布尔值字段，并在生成、解析或写入失败后携带错误原因最多重试 3 次。
+- 互动记忆 Agent 生成故事记忆 patch 时强制按目标表输出完整字段，未变化字段沿用既有记忆，无法确认的字段也要写明待确认原因，避免表格字段缺失。
+- 故事记忆表格改为自适应列宽和展开详情网格，减少展开前后的横向滚动。
+- 互动右边栏故事记忆拆分为“记忆内容”和“整理过程”两个页签，整理日志不再挤占记忆列表空间。
+- 自动触发的故事记忆整理改为由右边栏消费 pending 回合并流式展示整理过程，避免后台整理无过程输出。
+- 自动触发故事记忆整理时不再自动切到“整理过程”页签，用户当前停留在“记忆内容”时保持不被打断；手动整理仍会打开整理过程。
+- 修复设置保存后一级菜单可能被排序拖拽状态标记为不可用的问题；设置页作为覆盖页打开时，其他一级菜单保持原样式并可直接点击切换。
+- 修复互动故事启用上下文压缩后只保留压缩之后新增回合、且压缩摘要同时出现在 `Nova Context Compaction` 和“较早剧情压缩记忆”里的问题；现在模型上下文只保留一个压缩摘要，并追加固定原文尾部。
+- 修复 `context_compaction` Agent 摘要策略配置不生效的问题；摘要目标比例现在统一读取独立上下文压缩 Agent 配置。
+
+### Changed
+
+- Agent 模型上下文不再只依赖固定回合数滑动窗口；启用上下文压缩且模型配置有上下文上限时，会先保留完整有效上下文直到达到阈值，再写入 append-only 压缩 epoch 并用“压缩摘要 + 保留尾部”继续后续回合，以提升前缀缓存稳定性并降低长上下文遗忘风险。
+- 上下文压缩源改为原始有效对话链：IDE 自动压缩排除当前最新用户消息、旧压缩摘要和 reasoning/thinking 展示内容；互动故事压缩使用当前分支 user+narrative 原始回合链，并额外注入有硬上限的 Story Memory reference，提示词强调优先保留剧情纪要、用户意图、重要事件、角色关系和状态变化。
+- 上下文分析器不再把 active 压缩摘要作为顶部独立卡片展示；压缩元信息和“移除压缩”按钮改为跟随最终模型消息里的 `Nova Context Compaction` 消息展示。
+- 上下文压缩 Agent 默认提示词改为“事件时间线记忆”结构，按事件时间线、长期影响账本、当前阶段快照和已合并/舍弃信息输出，强化互动小说长期状态、用户行动、角色关系、物品资源、线索伏笔和当前停顿点保留。
+- 叙事编排不再配置上下文回合数，互动故事、互动记忆、快捷选项、写作、配置管理和自动化等 Agent 改为读取各自的 Agents 上下文策略配置；旧叙事编排里的回合窗口字段运行时不再使用。
+- 叙事编排中的 `state_memory` 可见名称改为“记忆沉淀规则 / Memory Rules”，内置叙事编排版本刷新到新版命名；内部 target 仍保持 `state_memory` 以兼容已有自定义配置。
+- 互动故事 Agent 的动态上下文从消息列表开头移动到本轮用户消息末尾，历史消息保持在动态上下文前，减少故事状态、字数目标和故事记忆变动对 LLM 前缀缓存命中的影响。
+- 互动记忆 Agent 内置提示词改为按故事记忆表结构逐字段填表，明确使用历史回合上下文、资料库人物设定和既有故事记忆作为生成来源，并在 Agents 配置页展示新版 `story_memory_patches` 输出协议。
+- 新增统一 `config_manager` Agent，替代旧资料库 Agent 和叙事编排 Agent；资料库、叙事编排、Skills、自动化和故事记忆模块改为内嵌同一个配置管理 Agent，并通过各自 list/read/write 工具直接更新资源。
+- 移除旧 `lore_editor` / `teller_editor` Agent kind、专属前端聊天组件、专属会话入口和 `/api/lore/agent*`、`/api/interactive/tellers/agent*` API；Beta 阶段不做旧会话和旧接口兼容迁移。
+- 配置管理 Agent 不暴露设置修改工具；模型、提示词、Skills 和工具权限仍在 Agents 配置页针对 `config_manager` 自身配置。
+- 优化故事记忆表格展示，增加固定记录列、字段说明和长文本展开细节；记忆结构新增结构级和字段级生成要求配置，并注入互动记忆 Agent 的故事记忆结构上下文。
+- 故事记忆内置预设表替换为 6 张默认开启表：当前状态、主角信息、重要角色、世界上下文、进行中事项和剧情纪要；新增恋爱关系档案、恋爱日记和成人向关系档案 3 张默认关闭的可选表，结构和字段支持启用/关闭，关闭内容不会进入 Agent 上下文或自动整理写入。本次不兼容旧内置预设表结构，自定义结构保留。
+- 故事记忆记录的“隐藏/恢复”改为“归档/恢复”：API 字段改为 `archived`，操作路由改为 `/archive`，归档记录默认不进入右侧面板、Agent 召回、故事记忆上下文和自动整理依据；右侧面板改为浏览入口，编辑与归档统一到故事记忆管理页处理。
+
+## [v0.1.11] - 2026-06-18
+
+### Added
+
+- 互动剧情新增故事级开场白配置：创建故事或进入舞台后可选择 AI 自动生成、预设开场或自定义开局；空故事可一键生成开场，生成后的首轮继续支持刷新和版本切换。
+- 互动模式新增独立一级模块“故事记忆 / Story Memory”，支持按结构管理当前状态、主角信息、重要角色、任务事件和剧情纪要；用户可新增自定义结构和纯文本字段，按当前故事线和分支查看、编辑、隐藏或恢复记忆内容。
+- 故事记忆存储升级为 `interactive/memory/story-<storyID>.json` v2，新增 `settings`、`structures` 和 `records`；新分支会继承分叉点前的可见记忆，分叉后的编辑和隐藏会在当前分支 copy-on-write，不污染父分支。
+- 故事记忆新增自动整理配置，默认每 3 回合触发一次后台整理，也支持在故事记忆模块中手动触发整理。
+- 互动模式新增按故事和分支隔离的故事记忆召回工具，互动故事 Agent 可通过只读工具按当前分支主动召回相关记忆。
+- 互动故事新增兼容记忆 API 和右侧故事记忆预览面板，支持搜索、手动新增、编辑、软隐藏和恢复记忆。
+- 设置页新增应用更新检查与安装：后端通过 GitHub latest Release 匹配当前平台安装包，前端支持自动检查、手动检查、一键安装并提示重启生效。
+- WebUI 新增移动端工作台布局：窄屏下使用底部一级菜单、项目目录抽屉、创作 Agent 抽屉和互动场景记忆抽屉，避免桌面可拖拽面板在手机宽度下挤出主编辑/剧情区域。
+- WebUI 左侧一级菜单支持拖拽排序，写作模式与互动模式分别保存顺序，避免两种工作台入口互相影响。
+- 书籍管理页新增从书架移除和拖拽自定义排序；移除书籍只会从书架隐藏并保留磁盘目录，删除当前书籍后会自动切换到下一个可用书籍。
+- Agent loop 新增 `LoopPolicy`、`ContextLedger` 和 `.nova/runs` 运行账本，按轮记录上下文来源、大小上限、事件摘要和完成状态，为后续工具筛选、恢复和验证阶段提供稳定工程边界。
+- Agent loop 新增中心化 tool manifest 与模型可见工具结果筛选，统一标注工具来源、是否变更 workspace、输出上限、幂等键和 post-check 要求，并对 invokable/streamable 工具返回做有界回填。
+- 创作 Agent 新增写入后轻量验证阶段，会根据工具 mutation metadata 检查写入路径、章节目录约束、资料库 `brief_description` 和删除结果，并写入 `.nova/runs` trace。
+- WebUI 创作 Agent 面板新增 Agent Trace 视图，可查看最近运行的上下文账本、工具事件序列、验证结果和截断状态。
+- WebUI 接入 Motion for React，新增全局动效强度配置（跟随系统、完整、减少、关闭），并为工作台切换、一级菜单、Tab、面板和聊天消息提供更克制流畅的过渡。
+- 设置页新增浅色、深色和跟随系统主题切换；主题配置支持用户级和工作区级继承，并即时应用到主工作台。
+- 浅色/深色主题主文字分别使用纯黑/纯白，写作编辑器主题会跟随全局浅色/深色切换；默认界面字体改为 Apple 字体栈，界面字号改为 14px。
+- 默认主题改为深色模式，首次启动和未配置主题时会进入 dark theme。
+- 自动化新增自定义触发条件与 Trigger Inbox：支持定时触发器和由 LLM 基于有界章节上下文判断的语义触发器；触发后可按任务级行为配置为确认后执行、自动执行或仅通知，定时任务可选择静默执行或写入收件箱。
+- 自动化任务支持从现有多模型配置中选择任务级模型配置；未选择时继承 Automation Agent 默认模型。
+- 自动化新增写作模式章节批次触发器，可按每 N 个非空章节触发 review、续写或自定义任务，并在 Trigger evidence 中记录本批次章节路径、标题、字数和更新时间。
+- 工作区自动化会预置“续写章节”和“自动 Review”两个默认关闭任务，用户可直接启用并调整触发和写入配置。
+- 自动化运行会把触发 evidence 作为有界触发范围传给 Agent；默认“自动 Review”聚焦本次新增章节，并对照用户任务、`CREATOR.md`、大纲、角色和必要前文检查质量与一致性。
+- 预置自动化任务会把默认 Prompt 直接写入任务配置，用户可在自动化页自由修改；运行时不再根据内部 template 套用不同 Prompt。
+- 酒馆角色卡导入预览新增兼容性检查报告，展示已导入、降级导入和暂不兼容的 Tavern 字段，并提示 PNG 封面、开场预设和 `{{user}}` 玩家角色导入计划。
+- 资料库条目新增启用/停用状态；停用条目会保留在编辑页但不会进入资料库索引、读取工具或模型上下文。
+
+### Changed
+
+- 酒馆 PNG 角色卡导入会把 PNG 本体写入书籍目录 `assets/image/cover.png` 作为封面图；`first_mes` 和 `alternate_greetings` 不再写进资料库角色条目，而是同步到书籍级预设开场白。
+- 酒馆角色卡导入会同步世界书条目的 `enabled` 状态，并在检测到 `{{user}}` 占位符时允许用户自定义玩家角色资料名称。
+- 互动模式每回合默认目标字数从 1200 调整为 2000，并统一为前后端默认值常量。
+- 互动剧情每轮目标字数现在作为 story 级最高篇幅约束注入，覆盖 CREATOR.md 章节篇幅、导演规则和 Nova 内置提示中的其他篇幅倾向；后端兜底默认值同步为 2000。
+- 互动记忆 Agent 输出协议从 `state_ops + memory_entry` 调整为 `story_memory_patches`，旧 `memory_entry` 输出会兼容映射为 `plot_summary` 故事记忆；旧 `/api/interactive/stories/:id/memory` 接口继续保留，并映射到故事记忆记录。
+- 互动记忆 Agent 生成故事记忆时会注入有硬上限的资料库上下文，优先提供完整重要资料并为未展开条目保留索引，减少记忆记录与作品设定偏差。
+- 互动模式不再把“当前状态”作为独立用户管理入口，当前时间、地点和事件改由故事记忆的默认结构维护；右侧记忆面板改为故事记忆预览，不再展示原始状态 JSON。
+- 资料库不再维护独立版本和 `.nova/lore/versions` 自动备份，资料条目跟随工作区整体版本管理统一保存与恢复；对应 `/api/lore/versions` 专用接口和资料库 Agent 面板中的版本入口已移除。
+- WebUI 移除独立的“创作者”一级菜单，`CREATOR.md` 改为在资料库页面内作为固定条目统一管理，仍保留 workspace 根目录文件和 Agent 注入契约。
+- WebUI 将“版本管理”调整为写作模式和互动模式共享的一级入口，打开时覆盖当前工作区但不自动切换写作/互动模式。
+- WebUI 将用户可见的 “IDE 模式 / Novel IDE” 统一改名为“写作模式 / Writing Mode”，内部 `ide` 配置键和存储 key 保持兼容。
+- “状态记忆 Agent”用户可见命名合并为“互动记忆 Agent / Interactive Memory Agent”，继续兼容内部 `interactive_state` 配置键，同时负责状态快照和长期纪要生成。
+- 互动故事上下文不再由后端默认整段预注入资料库和长期记忆；互动 Agent 默认 system prompt 会引导 Agent 使用 `list_lore_items` / `read_lore_items` 与 `list_interactive_memories` / `read_interactive_memories` 主动召回，且 Agents 页会直接展示可编辑的默认 system prompt。
+- Agents 页的 System Prompt 改为按来源折叠展示：运行契约、输出格式、CREATOR.md、作品状态/资料库注入和叙事编排只读，流程规则与用户自定义规则可分别在用户配置或工作区配置中编辑。
+- 旧自动化定时任务会自动迁移为任务级 `auto_run` 与 `silent` schedule trigger，保留原有到点自动运行且不额外通知的行为；新建自动化默认触发后先进入确认流程。
+- 自动化触发器不再单独配置触发后动作，触发器只负责触发条件和通知方式；任务触发后的运行方式统一由“执行模式”决定。
+- 自动化写入配置拆分为统一的 `write_mode` 与 `write_scope`，前端展示为“执行模式”和“写入范围”：支持自动只读执行、自动出方案后确认写入、自动执行并写入；旧 `write_policy` 会按原语义迁移并继续作为兼容字段回填。
+- 自动化配置页不再暴露“模板”选择，任务以具体自动化目标和 Prompt 为中心配置。
+- 互动故事单轮目标字数改为故事级运行参数，并在互动剧情主舞台顶部直接配置；不再兼容叙事编排 JSON 中的 `reply_target_chars` 旧字段，旧规则包里的该字段不会继续生效，需要在具体互动故事里重新设置。
+- 精简互动剧情主舞台顶部和消息区抬头，移除“互动创作”、回合数以及“指令流 / 记录数”状态栏，降低控制区拥挤感。
+- 中英文 README 补充写作模式与互动模式的职责边界，明确互动模式是独立互动娱乐工作台，写作大纲、章节进展和 `progress.md` 不会自动进入互动模式。
+- 优化中英文 README 首屏定位与能力说明，补充写作模式作品管理、创作 Agent、互动故事、结构化资料库、版本管理、Skills/Agents、自动化和导入能力介绍。
+- 互动故事 Agent 上下文改为按叙事编排回合窗口配置保留原文回合尾部，并将更早剧情压缩为有界摘要，避免长线互动把完整历史无限注入模型。
+- Nova favicon 去掉右下角 `I` 标记，并改为三色清爽的 iOS 风格图标。
+- 重新设计 Nova 极简 SVG 品牌图标，并在中英文 README 首屏顶部展示品牌图标。
+- 新增与图标同风格的 Nova wordmark SVG，并重组中英文 README 首屏介绍，强化 AI-native fiction workspace 的高级创作工作室定位。
+
+### Fixed
+
+- 修复各处保存按钮在“保存中”状态下因文案变宽导致按钮抖动的问题；保存按钮现在保持“保存”文案不变，仅将前置图标切换为加载中转圈，宽度始终稳定。
+- 修复一级菜单栏被隐藏侧栏的可调整宽度命中区覆盖，导致鼠标显示为宽度调整形状且项目侧栏拖拽调整失效的问题。
+- 修复设置页新增或修改模型配置后，Agents 页模型配置下拉不会立即刷新、必须整页刷新才出现的问题。
+- 修复设置页每次打开都会自动请求 GitHub 更新检查的问题；自动检查现在会在浏览器本地记录时间，1 小时内不重复检查，手动检查不受影响。
+- 修复资料库 Agent 固定会话可能出现在创作 Agent 会话列表并被切换使用，导致创作对话和资料库 Agent 对话串在一起的问题；普通创作会话现在会过滤并拒绝操作固定 Agent 会话。
+- 修复设置页“重启服务”只让后端进程退出而没有重新启动的问题；后端现在会用当前可执行文件、启动参数和环境变量替换当前进程，并在无法安排重启时返回明确错误。
+- Agent 追踪不再把正文流、thinking 增量、工具参数增量和完成状态等 SSE 传输事件逐条写入 `.nova/runs`，只保留工具调用、工具结果和异常等语义事件，降低运行追踪噪音和空间占用。
+- 修复自动化章节批次触发器会因章节字数、更新时间变化或 `trigger_state` 丢失而重复触发同一批章节的问题；同一批次现在按章节路径和历史 Inbox evidence 去重。
+- 修复自动化 auto-run 触发启动失败时会把 Inbox 标记为已自动执行且无可重试入口的问题；失败通知现在会转为待确认并保留错误摘要。
+- 修复语义触发器使用滚动最近上下文导致适用范围不明确的问题；语义触发现在按每 N 个非空章节批次检查，并只把本批章节作为 LLM 判断范围。
+- 修复 Agent `edit_file` 在 `old_string` 仅因行尾空格或 Tab 与文件内容不一致时直接失败的问题；现在仅在归一化后仍能唯一定位片段时才会执行替换，避免模糊匹配误改。
+- 修复设置页多模型配置编辑配置 ID 时输入框随 ID 变化反复重建，导致只能逐字输入的问题。
+- 优化互动剧情页和工作台侧栏的数据加载稳定性：切换故事、分支或刷新目录时保留上一份有效内容并显示轻量刷新状态，减少后端响应较慢时的页面抖动。
+- 修复互动模式分支路线节点在紧凑字号下标题、摘要或 HEAD 标记挤出卡片的问题。
+- 修复浅色主题下创作 Agent 对话、互动剧情命令菜单、一级菜单、文件树、全局命令面板、Tooltip、版本差异弹窗和错误提示仍使用暗色硬编码导致文字或图标对比度不足的问题。
+- 调整浅色主题的工作台层级色，统一一级菜单、上下栏、侧栏、对话区和编辑器 IDE 背景，去掉浅色模式下割裂的纯白栏和内容区渐变。
+
+## [v0.1.10] - 2026-06-12
+
+### Fixed
+
+- 工作区文件删除不再依赖系统回收站，改为删除前保存 Nova 版本快照后直接删除，并同步更新中英文确认文案。
+
+## [v0.1.9] - 2026-06-12
+
+### Changed
+
+- Skills 新建体验改为主编辑区引导式流程：左侧专注浏览现有 Skills，新建时集中填写保存位置、名称、触发说明和可用 Agent，并在创建后直接打开生成的 `SKILL.md`。
+- Skills 支持按 Agent 分工：内置 Skills 新增默认可用 Agent 范围，互动叙事 Agent 默认启用 Skills；Agents 页可按 Agent 覆盖单个 Skill 的启用/禁用，Skills 创建表单可选择新 Skill 可用的 Agents。
+- 项目文件树改为始终显示真实文件/目录名，不再把 `ideas.md`、隐藏排序前缀章节等映射成展示名；作品目录新增 `ideas.md` 灵感入口用于快速打开创作灵感文件。
+- 自动化页面右侧改为“任务配置 / 运行过程”双页签布局；运行过程复用创作 Agent 消息流和输入框，支持在单次自动化运行会话中继续追问，新运行会清空并创建独立运行过程。
+- P1 复杂度治理：新增 Agent kind/tool capability registry，模型、工具、prompt 配置解析和后台 Agent 会话 ID 统一从 registry 获取；deep agent 构建参数收敛为运行时 spec，降低新增 Agent 时的分支同步成本。
+- 互动故事 JSONL 存储新增 typed event envelope 与 state op schema 校验，读取/写入/快照构建统一经过事件类型、schema version、ID、branch 和状态操作校验。
+- 前端 API client 拆分为 `api-client` 领域模块，`@/lib/api` 保留兼容 barrel；互动和设置 API 复用共享 JSON/SSE 客户端，避免重复 fetch/parser 逻辑。
+- WebUI i18n locale 按 key namespace 拆分为独立资源文件，新增 `npm --prefix web run check:i18n` 校验中英文 key 对齐、重复 key 和 namespace 前缀。
+- P0 工程治理：拆分 Agent 聊天主流程、互动故事存储/快照/状态逻辑，以及互动设置面板的 Agent 对话、目录/编辑器和叙事编排编辑器组件，降低核心文件体量和职责耦合。
+- Agent 运行和后台任务关键路径改用 `slog` 结构化日志，沿用现有日志输出目标，并为任务生命周期、事件广播、上下文组装和中断恢复输出稳定字段。
+- Agent 上下文审计新增结构化来源明细，记录每个注入片段的来源、标题、字节数、字符数、预览和备注，方便排查模型实际可见上下文。
+- README 新增微信交流图与“快速迭代中，欢迎交流”说明。
+- README 合并“为什么选择 Nova”、核心能力和推荐创作流程，简化 Nova 与普通 AI 小说工具的差异说明。
+
+### Added
+
+- 自动化任务新增运行流式过程视图：手动和定时触发都会生成独立运行会话，前端可像新聊天一样查看 thinking、工具调用、输出过程，并可从最近运行回看完整历史。
+- 新增 GitHub Actions CI，在 push/PR 上执行 whitespace 检查、`go test ./...`、前端测试、前端构建和完整 `./build.sh`。
+
+### Fixed
+
+- 修复支持 Skills 的输入框提示不明确的问题；在当前 Agent 有可用 Skills 时，输入 placeholder 会提示可输入 `/` 选择 Skills，互动剧情输入框也支持 `/` Skills 候选与键盘滚动跟随。
+- 修复支持 Skills 的 Agent 输入框没有统一展示 `/<skill-name>` 候选的问题；资料库 Agent 和自动化运行对话现在会按工具权限展示 Skills 候选，并修复 `/` 候选列表用上下箭头切换时高亮项不跟随滚动的问题。
+- 修复自动化任务流式输出把每个 thinking 片段拆成独立思考过程的问题；自动化运行复用创作 Agent 的共享 SSE 消费逻辑，统一 thinking、正文、工具调用和参数增量展示。
+- 修复作品目录和项目文件定时刷新时短暂进入 loading 状态导致侧栏内容抖动的问题；后台刷新失败时也会保留当前目录和作品进度。
+- 修复 Skills 管理中单独打开被工作区覆盖的用户级 `SKILL.md` 时仍显示为可用的问题；创建/保存后也会按完整搜索路径返回真实 Active 状态。
+- 修复首次启动 `.nova` 下没有书籍或未选工作区时，前端仍请求目录、统计、styles、chat session 和 active chat 等工作区 API 导致后端报错的问题；空书架会先引导用户创建或导入书籍。
+- 修复新建 Skill 默认 `SKILL.md` 在描述包含换行、冒号或列表符号时可能生成非法 YAML frontmatter 的问题。
+- 修复创作 Agent 输入框在 IDE Agent 关闭 Skills 工具后仍展示 `/<skill-name>` 命令的问题。
+- 修复 Agents 页 Automation Agent 工具权限前端兜底值与后端默认配置不一致的问题。
+- 修复内置叙事编排缺少 `screenwriter` 预设导致回归测试失败的问题，并让内置刷新测试跟随当前预设名称。
+
+## [v0.1.8] - 2026-06-11
+
+### Added
+
+- Agent 工具权限新增 `web_search`，使用 Eino Ext 预制 DuckDuckGo V2 搜索工具注册为模型可调用的网页搜索能力；Agents 页同步提供中英双语开关，IDE、资料库和自动化 Agent 默认开启，互动叙事 Agent 默认关闭但可手动启用。
+- 新增一级菜单 `Skills`，支持查看内置、用户级 `<nova_dir>/skills` 和工作区级 `<workspace>/.nova/skills` 的 `SKILL.md`，可在界面中新建/编辑用户自定义 Skill；内置 `skills-creator` Skill 可通过创作 Agent 辅助创建，支持在创作 Agent 及其他启用 Skills 的 Agent 中用 `/<skill-name>` 命令触发。
+
+## [v0.1.7] - 2026-06-10
+
+### Added
+
+- README 新增中英语言切换入口，并补充英文版 `README.en.md`。
+- 新增 `lore-init` 资料库初始化 Skill：资料库为空时引导作者先讨论题材、角色、核心冲突、世界规则、创作风格、禁忌和互动开局，用户确认后再写入资料库与 `CREATOR.md`。
+- IDE 写作主页面和互动剧情主页面在资料库为空时提供轻量引导；IDE 会打开创作 Agent 并预填新书构思 prompt，互动模式继续跳转资料库 Agent 并预填初始化指令。
+- Agents 页新增每个 Agent 的自定义 system prompt 配置，支持用户级/工作区级分层继承；运行时按「Nova 运行时契约（不可覆盖）→ 用户自定义提示 → Nova 内置提示」拼装，确保自定义提示能覆盖行为偏好但不能覆盖工具权限、输出协议、互动禁写、结构化 JSON 和后端校验边界。
+- 内置叙事编排新增 `直白情色` 和 `编剧风格` 两个预设，分别面向成人自愿情欲张力和编剧式场景节拍。
+- WebUI 新增 i18n 多语言基础设施，接入 `i18next` / `react-i18next`，首版提供简体中文与 English 资源，并为后续语言扩展预留统一 locale 目录。
+- 设置页新增“界面语言”配置，支持跟随浏览器、简体中文和 English；语言配置进入现有分层设置体系，保存后可热切换。
+- 后端 API 支持 `X-Nova-Locale` 请求头，workspace、books、settings、versions、session、chat、interactive、lore、style 和角色卡导入等短错误/成功提示会按中英文返回。
+- 设置页新增全局外观字号配置，支持分别设置界面字号与阅读字号；阅读字号统一作用于 IDE 主编辑器和互动模式故事阅读区。
+- 书籍管理新增 txt/md 现有小说导入：上传后自动解析章节、创建新书并写入 `chapters/`；导入后回到 IDE 主页，由已有空资料库引导跳转资料库 Agent 生成设定资料。
+- 小说导入升级为确认式智能分割流程：上传后工具 Agent 基于前 `20000` 字样本推断章节标题 Go regexp，用户可调整 `2000-100000` 字样本范围、编辑正则并重新预览，确认后再创建书籍和写入章节；工具 Agent 默认无工具且关闭 thinking，可在 Agents 页配置模型和 system prompt。
+- 小说导入预览新增流式进度：前端会展示文件读取、章节解析、工具 Agent 正则识别、回退和预览完成等阶段，避免长时间智能识别时界面无反馈。
+- 新增一级菜单“自动化 / Automations”，作为 Books、Agents 同级共享工作台页面；点击只打开自动化页面，不自动切换 IDE/互动模式，并保持一级菜单单 active。
+- 新增 Automations 后端服务与 REST API，支持用户级任务和当前工作区任务的 JSON 存储、CRUD、手动运行、最近运行记录、结构化定时规则、调度器加载和 panic recover。
+- 新增 Automation Agent kind，接入 `agent_models`、`agent_tools`、`agent_prompts` 分层配置，并在 Agents 页展示；默认允许文件/资料库读写和 Skills，命令执行默认关闭，写文件/写资料库仍必须同时满足任务写入权限和 Agent 工具权限。
+- 自动化任务支持记忆整合、Review、续写章节和自定义 Prompt 四类模板；不再要求用户配置上下文来源，Agent 会按任务目标自行使用允许的工具读取所需章节、设定、资料库和状态。
+
+### Changed
+
+- 书籍管理不再以“最近书籍”记录作为列表来源，改为展示当前 Nova 数据目录下实际存在的书籍目录，并将前端列表优化为书架式网格布局；旧最近打开记录仅保留用于启动恢复当前书籍。
+- 章节和分卷默认命名改为隐藏排序前缀模板：章节使用 `ch{order:05}-{chapter}-{title}.md`，分卷目录使用 `v{order:05}-{volume}`，作品目录隐藏前缀展示自然章节名；该变更只影响新章节和新导入内容，旧章节不会自动重命名。
+- 版本管理底层从原生文件快照切换为 go-git 驱动的 workspace 根目录 `.git` 本地仓库；Nova 会自动初始化并提交版本，像 Git 一样保存正文、设置和 `.nova/lore`、`.nova/sessions` 等本地创作状态，历史直接来自 Git commit，恢复通过移动 HEAD 生效，不再创建 `.nova/versions` 索引、内部版本目录或裁剪 Git 历史；旧原生快照不再读取或迁移。
+- 顶层定调文件改为 `ideas.md`（作品目录展示为「灵感」/ Ideas）；新建作品会创建该文件，旧工作区仅存在 `brainstorm.md` 时会在初始化时迁移为 `ideas.md`，并同步更新 Agent 提示词、技能、前端初始化文案和 README。
+- 整体优化中英文 README：重写项目首屏定位、核心价值、能力矩阵、推荐创作流程、快速开始、配置和开发说明，提升公开项目页的专业度与可读性。
+- 资料库 Agent 从单次结构化 JSON 编辑方案升级为工具型 Agent，支持 Skills、资料库读写和文件读写工具；初始化流程要求多轮确认，最终只写资料库和 `CREATOR.md`，不写 `ideas.md`、大纲、章节、progress、character-states，也不自动创建互动 story。
+- 资料库条目简介改为多行编辑，并统一要求 `brief_description` 使用“类型 名称 + 3-5 句触发说明 + 必须参考详情”的索引结构，提升 Agent 自动匹配并读取资料正文的准确性。
+- 指令类多行输入框改为随输入内容自动扩展，最多显示 10 行后进入内部滚动，覆盖创作 Agent、资料库 Agent、叙事编排 Agent、互动剧情输入和短表单简介。
+- 用户可见“讲述者 / Teller / 导演 / Director”统一改名为“叙事编排 / Narrative Direction”，IDE 和互动模式内的紧凑选择提示使用“叙事 / Narrative”；内部 `Teller`、`story_teller_id`、`story-tellers/` 和 API 路径保持兼容不迁移。
+- 强化内置叙事编排规则内容，旧版内置 JSON 会随 `tellerVersion` 自动刷新，规则会更明确影响剧情裁定、角色主动性、代价、节奏、伏笔和状态沉淀。
+- 设置页 General Appearance 调整到顶部，语言选项固定展示为 `Follow Browser`、`简体中文` 和 `English`，并支持设置页与 Agents 页修改后自动保存。
+- 创作 Agent 的新书构思前置流程现在会同时读取 `ideas.md` 和 `CREATOR.md`，并在初始化沟通中把阶段性结论、待确认点和取舍理由持续整理到 `ideas.md`；`ideas.md` 不再是一次性归档文件，而是后续生成大纲或重大方向调整时优先参考的有界指引文件。
+- IDE 作品目录中的章节组细纲默认只展示最新一组，历史章节组可折叠展开；章节组生成规则同步收紧为短小可维护，方便作者阅读、评论和后续更新。
+- 扩大 WebUI i18n 覆盖面，补齐会话管理、工具卡片、Agent 配置、互动故事舞台、分支路线、场景记忆、字体设置和编辑区浮层等模块内的硬编码界面文案。
+- WebUI 字号改为按层级从界面字号派生，默认保持 `text-xs`、`text-sm`、`text-[11px]` 和 `text-[10px]` 原有视觉大小，并覆盖创作 Agent 输出、用户消息、菜单、侧栏和子模块小字。
+- 资料库 Agent 和叙事编排 Agent 的消息展示复用创作 Agent 的通用消息列表与工具卡片样式，统一 thinking、工具调用和历史消息呈现。
+- 新建资料库条目的默认 ID 改为基于条目名的可读格式，如 `林川_ab12`；后端继续校验显式 ID 重复并阻止写入。
+- Agent 资料库读取工具从 `search_lore_items` 收敛为 `list_lore_items` + `read_lore_items`：先返回全量轻量索引，再按 ID 读取完整正文。
+
+### Fixed
+
+- 修复创作 Agent 和互动模式流式输出完成并刷新为持久化历史后，Markdown 段落、列表和行距重新排版导致会话区域抖动的问题。
+- 修复作品目录树和章节摘要对中文自然章节名排序不准确的问题，`序章`、`第一章`、`第十章`、`第十一章`、`第一百一十一章` 等会按实际章序排列。
+- 修复资料库 Agent 和叙事编排 Agent 复用通用消息列表后，长历史消息撑开整个页面滚动的问题；消息历史改为在 Agent 内部区域滚动。
+- 修复 GitHub Release 打包脚本在系统缺少 `zip` 命令时无法生成 Windows 压缩包的问题；现在会回退使用 `python3 -m zipfile`。
+- 小说导入智能章节识别失败时增加后端排查日志，记录工具 Agent 调用、模型输出摘要、正则命中数量和回退原因，方便定位为何回退内置规则。
+- 小说导入工具 Agent 正则识别超时时间从 25 秒提升到 90 秒，降低大样本或慢模型导致 `context deadline exceeded` 后直接回退内置规则的概率。
+- 小说导入工具 Agent 在 JSON mode 返回空内容或解析失败时，会自动降级为普通文本模式重试一次，兼容 OpenAI 协议平台对 `response_format=json_object` 支持不稳定的情况。
+- 小说导入章节分割优先使用本地规则识别常见标题，新增对 `序章`、`楔子`、`尾声`、`番外`、`卷一`、`一卷`、`上卷` 等序章/卷标题的内置支持，减少简单 txt 依赖工具 Agent 后回退的问题。
+- 小说导入预览新增“AI 识别”入口，可在本地规则已命中时强制跳过预置正则并重新调用工具 Agent 推断章节标题正则。
+- 小说导入工具 Agent 正则识别的输出上限提升到 `8192` tokens，并在解析失败时记录有界原始返回内容、reasoning 内容和提取后的 JSON 内容，便于排查输出截断或非 JSON 响应。
+- 小说导入支持识别分卷边界：`第一卷`、`卷一`、`Part I`、`Volume 1` 等标题会作为分卷目录，后续章节写入带隐藏排序前缀的 `chapters/v00001-<分卷名>/`，预览中同步展示章节所属分卷。
+- txt 小说导入写入 `.md` 章节时会把原文非空单行转换为 Markdown 段落，避免源文件没有空行时 Markdown 渲染把换行折叠成一行。
+- txt 小说导入会清理行首 ASCII 缩进并转义 `#`、`>`、列表符号和代码围栏等 Markdown 块语法，避免普通小说正文被渲染成代码块、标题、引用或列表。
+- 小说导入按阅读顺序生成 `ch00001-序章.md`、`ch00002-第一章-缘起.md` 等稳定文件名；新工作区会同步写入 `chapter_filename_format` 和 `volume_dir_format`，目录汇总兼容 `ch0001`、数字编号、中文章回和英文 Chapter 等旧格式。
+- 默认章节文件名模板改为隐藏排序前缀格式 `ch{order:05}-{chapter}-{title}.md`，Agent 提示词中的章节路径示例同步改为 `chapters/v00001-第一卷/ch00002-第一章-废材开局.md`。
+
+## [v0.1.6] - 2026-06-05
+
+### Changed
+
+- 后端 HTTP 层按职责拆分：将具体 handler 迁移到 `internal/api/handlers`，将任务 SSE 输出迁移到 `internal/api/sse`，`internal/api` 保留服务启动、路由注册和静态资源托管职责。
+- 后端应用运行时构建逻辑从 `internal/app/runtime_manager.go` 拆到 `internal/app/runtime_builder.go`，降低 workspace manager 文件职责密度。
+- 版本管理从本地 Git 仓库替换为 Nova 原生快照系统，版本库存放在每本书的 `.nova/versions/`，无需初始化 Git 即可创建版本、查看历史、对比和恢复。
+- 内部重构版本管理实现：后端快照逻辑拆分到 `internal/book/versions`，前端版本面板拆分为状态头、自动策略、变更列表、历史容器和工具函数，降低版本管理模块耦合。
+- WebUI 版本管理面板改为全中文快照工作流，第一屏展示保护状态、手动保存、定时保存和 Agent 自动保存状态，并在历史中标注手动、定时、Agent 与回滚前备份版本。
+- 版本管理手动保存支持由 LLM 根据当前文件变更自动推理中文版本说明，前端不再要求用户手动填写说明；模型失败时会降级为本地变更摘要。
+- 设置页 Agent 模型分配支持按 Agent 单独配置思考开关和 OpenAI `reasoning_effort`；快捷选项 Agent 和版本说明 Agent 默认关闭思考，其他 Agent 未配置时不向模型请求传递相关参数。
+- WebUI 报错提示调整为贴近 IDE 面板风格的紧凑卡片，统一版本管理和设置页错误展示。
+- 右下角 Toast 弹窗关闭 Sonner 默认高饱和错误色，改为使用 Nova IDE 面板变量和低干扰边框样式，并将关闭按钮改为右侧常显的小图标。
+- 设置页新增工作区级版本管理配置，支持定时自动保存、Agent 大量输出自动保存、Agent 字数阈值和自动版本保留数量。
+- 创作 Agent 新增用户可见的 `setting/character-states.md` 角色状态层，章节定稿后主要同步 `progress.md` 与角色当前状态；资料库改为只承载角色身份、人设、长期关系、能力体系和世界规则等稳定设定，避免每章状态抖动频繁写入资料库。
+- 创作 Agent 调整 `write_lore_items` 批量写资料库工具语义，用于在大纲定稿或长期设定变化时一次性创建/更新多个资料条目，并在 WebUI 自动刷新资料库索引；写入条目缺少简介时会按资料类型、名称、标签和正文自动生成 `brief_description`。
+- `scripts/npm-release.sh` 发布到 npm registry 时默认使用 `--auth-type web`，可通过浏览器完成 npm 2FA/认证流程；提供 `--auth-type` 参数并保留 `--otp` 覆盖方式。
+- 整理 `ideas.md` 规划记录，补充“续写下一章没自动分卷”待修复项并移除空的 NEED FIX 段落。
+
+### Fixed
+
+- 互动模式：修复状态变化解析白名单遗漏 `action_space`，导致包含可行动选项的状态更新整组被丢弃的问题。
+- 创作 Agent：修复“按细纲写下一章”未按大纲分卷的问题，系统提示会结合大纲卷章安排、章节组细纲、进度和最近章节路径选择 `chapters/<分卷名>/` 目标目录，并在快捷创作提示中同步强调分卷写入。
+- Windows Release：修复默认 8080 端口被占用时双击启动后服务监听失败并退出的问题；未显式指定端口时会自动顺延选择可用端口，并保留 `NOVA_BACKEND_PORT` / `--port` 的显式配置语义。
+
+## [v0.1.5] - 2026-06-02
+
+### Added
+
+- 新增 npm 分发包骨架，提供 `nova` CLI 入口和跨平台预编译二进制打包脚本，支持通过 npm/npx 一键安装运行。
+- 新增 `scripts/npm-release.sh`，串联 npm 发布目录构建、包内容预览、本地 tgz 生成和 registry 发布流程，并默认以 dry run 防止误发布。
+- 新增 GitHub Actions Release 流水线和 `scripts/build-github-release.sh`，推送 `v*` tag 后自动构建 macOS/Linux/Windows 下载包、生成 checksums 并上传 GitHub Release。
+- 后端/设置页支持多个 OpenAI 协议兼容模型配置，可为 IDE 创作、互动叙事、资料库编辑、讲述者编辑、互动状态和快捷选项等 Agent 分配不同模型与 Temperature；未配置 Temperature 时不再写死默认值，交由平台/模型默认策略处理。
+- 互动模式新增按需快捷行动建议生成接口，故事舞台可继续生成更多选择，并在设置页支持关闭“输入框快捷选择”。
+- 互动模式故事舞台支持像 IDE 模式一样通过 `#` 引用用户级 `<nova_dir>/styles/` 下的风格参考，本轮会随互动 Agent 请求注入。
+- 互动模式支持复用场景化风格规则；每个具体讲述者编辑页可分别维护场景风格规则和互动单轮目标字数。
+- 讲述者编辑支持自动保存，修改名称、规则、场景风格规则等内容后会防抖写入当前讲述者。
+- IDE 模式新增左侧全局搜索：可在当前书籍 workspace 内搜索 Markdown/TXT 等文本文件内容和路径，结果按文件分组展示，点击后打开文件并联动编辑器高亮关键词。
+- 互动模式故事舞台支持编辑历史输入并从该回合重新生成，也可直接对指定回合重新生成内容，当前分支会回退到被编辑回合前继续推进。
+- 互动模式分支路线支持直接切换故事线，每条故事线展示各自独立的分支路线。
+- 互动模式故事舞台支持展示并持久化 Agent 工具调用卡片，刷新后保留卡片状态但不保存工具输入输出参数。
+- 风格参考文件移动到用户级 `<nova_dir>/styles/`，不同书籍可复用同一批 `.md` / `.txt` 文风样本。
+- IDE 模式新增章节组细纲工作流：新建书籍会准备 `setting/chapter-groups/`，Agent 可生成下一组细纲，快捷创作增加“下一组细纲 / 按细纲写下一章 / 定稿并同步状态”入口。
+- IDE 模式作品目录支持以轻量导航列表展示大纲、细纲，并按章节目录自动分卷折叠；项目文件支持多选批量移动、复制、删除和拖拽整理。
+- 设置页新增章节创作配置，支持章节组建议规模范围，默认建议 3-8 章。
+
+### Changed
+
+- 生产态 Web 静态资源托管支持 `NOVA_WEB_DIR` 和可执行文件相对路径探测，npm 包安装后不再依赖启动时的当前工作目录；npm CLI 未显式配置 `NOVA_DIR` 时默认使用执行命令目录下的 `./.nova`，`NOVA_BACKEND_PORT` 也会作为后端默认端口生效。
+- Agent 资料库读取工具从单条 `read_lore_item` 升级为批量 `read_lore_items`，可一次按多个资料 ID 读取完整正文，减少连续工具调用。
+- 资料库支持渐进式加载：条目新增常驻、简介自动匹配和手动引用三种加载策略；IDE/互动 Agent 会常驻注入核心资料、展示含简介的非常驻资料索引，并可通过只读工具按需读取资料正文。
+- IDE 创作提示词改为以结构化资料库承载角色、世界观、地点、势力、规则和物品等长期设定，不再引导读写 `setting/characters.md` 或 `setting/world-building.md`；作品状态注入也停止回退读取这两个旧文件。
+- 后端 Agent 构建接入 `max_iteration` 与 `model_max_retries` 运行时设置，不再使用构建时硬编码值。
+- 互动故事 Agent 不再随正文输出内联快捷选择，也不再对缺失选择做兜底生成；快捷选择改为用户点击“选择”时由独立 LLM 调用按当前上下文生成。
+- 互动模式快捷行动建议生成后会按当前剧情节点持久化到故事 JSONL，刷新后优先复用已生成结果；状态 Agent 不再维护可选择入口。
+- 互动模式快捷行动建议不再自动展示，改为输入区显式按钮触发，面板可手动收起并保留生成结果。
+- 互动模式底部输入区改为更紧凑的高度和独立行高，减少对故事阅读空间的占用。
+- 设置页不再展示场景化风格规则和互动单轮目标字数，这两项集成到每个具体讲述者编辑页，并保存到对应讲述者 JSON。
+- 手动保存讲述者时不再重新跳回第一个讲述者，会保持当前讲述者和当前规则选中状态。
+- 章节文件名默认模板调整为 `ch{NNNN}-{title}.md`，创作 Agent 会读取配置中的章节文件名模板，文件树按章节数字排序以支持千章作品。
+- 更新 README，按当前书籍管理、小说 IDE、创作 Agent、互动工作台、资料库、角色卡导入和版本管理能力重写使用指南，并将新增界面截图改为可折叠展示。
+- 讲述者规则配置页优化交互：规则启用开关移到左侧规则列表，注入位置改为紧凑下拉选择，减少详情区占用并提升操作效率。
+- 创作 Agent 工具卡片统一为暗色面板风格，优化执行中、结果、详情和待办列表的边距、状态图标与展开区域质感。
+- Agent 写作工作流调整为“创作灵感 -> 大纲 -> 下一组细纲 -> 章节初稿/成章”，细纲只规划接下来一组章节，章节定稿后才同步 progress 与角色状态。
+- Agent 注入场景化风格规则前会把相对风格名解析为用户级 `<nova_dir>/styles/` 下的绝对路径，IDE 和互动模式都按当前讲述者选择规则。
+- IDE 模式适配结构化资料库和讲述者：写作工作台新增资料库/讲述者入口，创作 Agent 支持引用资料条目，并会按工作区默认讲述者注入写作规则。
+- IDE 模式下资料库和讲述者入口改为覆盖项目目录、编辑区和右侧面板的全工作区管理页。
+- WebUI 导航调整：IDE/互动模式切换移到顶部 Nova 标识旁的分段切换，左侧一级菜单按当前模式切换；设置页改为覆盖工作区页面，不再使用弹窗。
+- WebUI 细化工作台层级：书籍管理会返回打开前的 IDE/互动模式，版本管理改为全工作区页面，互动模式的场景记忆开关移入剧情页右侧按钮。
+- 讲述者 Agent 不再强制只能修改当前选中的讲述者，可根据用户本轮意图新建讲述者、自由选择已有讲述者，或通过输入框 `@` 引用讲述者来限定修改对象。
+- 互动故事舞台的下一步行动候选改为在底部输入框聚焦时柔和展开，减少浏览历史时的界面跳动。
+- 酒馆角色卡导入入口并入书籍管理，左侧活动栏不再保留独立上传图标。
+
+### Fixed
+
+- WebUI：修复 IDE 写作页打开 AI 右侧栏时，切到资料库/讲述者/版本管理等全工作区页面再返回写作会丢失右侧栏开合状态的问题。
+- 后端：互动快捷选择模型输出解析失败时会记录原始模型输出，便于定位 JSON 格式问题。
+- WebUI：修复互动故事消息切换到最早版本后因版本索引为 0 被省略，导致版本切换按钮消失、无法切回后续版本的问题。
+- 后端设置保存：修复首次没有本地配置文件时，在界面保存 API Key 后当前运行时仍使用旧空配置，导致新建配置无法立即连上模型的问题；保存用户/工作区配置后会同步刷新运行时模型配置。
+- WebUI：修复切换书籍后互动工作台资料库、资料库版本、资料库 Agent 历史和相邻设置面板状态仍显示旧书数据的问题，workspace 变化时会先清空旧状态再重新拉取当前书籍数据。
+- 角色卡导入：修复批量创建世界书资料时资料 ID 基于时间戳生成可能碰撞，导致导入失败并提示 `资料 ID 已存在: world-*` 的问题。
+
+## [v0.1.4] - 2026-05-29
+
+### Added
+
+- 互动故事工作台新增默认故事线、下一步行动候选、可中断生成、对白高亮和可配置的单轮字数/Token 上限，让互动写作从开局到推进更顺。
+- 互动模式新增场景记忆、可行动空间、物品资源、世界规则和未解决线索展示，并用剧情分支图呈现故事线继承关系。
+- 资料库升级为结构化 Lore Item 系统，支持角色、世界观、地点、势力、规则和物品等条目管理。
+- 新增资料库 Agent，可通过中文指令批量整理资料，支持流式过程、`@` 引用条目、会话持久化、手动版本和历史恢复。
+- 支持导入 SillyTavern 酒馆 v2 PNG/JSON 角色卡，可导入当前书籍或用角色卡创建新书。
+- 新增故事讲述者配置页和讲述者 Agent，可通过自然语言创建或修改讲述者规则。
+- 写作工作台新增作品统计接口和章节概览，显示章节数、全书字数、章节状态和更新时间。
+
+### Fixed
+
+- 文件删除支持 macOS、Linux 和 Windows 回收站，不再只依赖 macOS。
+- 书籍管理在纯 Web 形态下收敛为 Nova 数据目录内创建和切换书籍，避免浏览器尝试访问任意本机目录。
+- 互动故事的流式输出、分支切换、页面切换和刷新恢复更稳定，生成中的正文和思考过程不会轻易丢失。
+- 场景记忆同步、剧情分支图、节点创建和长篇 JSONL 读取更加可靠。
+- 全局快捷键不再抢占输入框、弹窗和富文本编辑器的原生文本操作。
+- 创作者指令和作品状态在每轮对话前重新读取，修改 `CREATOR.md` 后下一轮即可生效。
+- 作品统计接口对空章节列表做了兼容，避免编辑区 Tab 标题异常。
+
+### Changed
+
+- 工作台视觉和导航收敛为更紧凑的双层侧栏结构，写作、互动、书籍管理、角色卡导入和设置入口更清晰。
+- 互动模式将资料库、创作者指令、讲述者、剧情舞台、场景记忆和分支路线重新组织为更稳定的工作流。
+- 分支路线改为左侧导航中的主区视图，支持横向浏览、节点选中、剧情线切换和从节点创建新剧情线。
+- 互动故事生成改为正文生成与状态整理分阶段处理，正文先流式落盘，场景记忆随后同步。
+- 书籍管理和设置改为全局弹窗，IDE 与互动模式下都能打开。
+- 编辑器与互动故事舞台新增字体、字号和行高配置，长文阅读体验更可控。
+- 代码结构按领域拆分后端应用层和前端工作台主入口，降低后续维护成本。
+
+## [v0.1.3] - 2026-05-24
+
+### Fixed
+
+- WebUI 编辑区 Tab：修复 Tab 列表出现重复 React key 的报错（`Encountered two children with the same key, file:skills/test/SKILL.md`）——`handleRenameItem` / `handleMoveItem` 通过 `map` 把 `from → to` 时若 `to` 已在打开列表中会产生重复条目，`readTabsFor` 兼容旧版字符串与新版对象持久化时也可能出现同 key 多份；提取 `dedupeTabs` 工具函数并在 `enforceTabLimit`、`readTabsFor`、rename/move 三个出口统一去重
+- WebUI 目录树：修复在空目录（如初始 `skills/` 子目录）右键「新建文件 / 新建目录」时内联输入框不出现的问题——空目录被后端 JSON `omitempty` 序列化后 `children` 为 `undefined`，前端 `expanded && node.children &&` 短路掉了承载输入框的子层 `FileTreeList`，改为展开时始终渲染（缺省视为空数组）
+
+### Changed
+
+- 后端 `internal/prompts`：新增独立 prompts 包，集中管理后端所有写死的长段提示词（系统指令 / 计划模式 / 上下文边界 / 异常中断恢复 / 场景化风格规则 / 引用·选区文案 / 未知工具反馈 / `brainstorm.md` 与 `CREATOR.md` 模板）。`internal/agent` 与 `internal/book` 改为从 `internal/prompts` 读取，agent 仅保留 IO/上下文拼装薄壳；移除 `agent/prompt.go` 内联指令大字符串与 `book/state.go` `book/creator.go` 的模板常量，提示词文案变更不再需要改动业务包
+- 后端 `book` / `app`：重构自动 Commit 触发时机——由「写章节前在 `safeToolMiddleware` 中创建快照」改为「每次新对话 `App.StartTask` 入口自动 commit」；新增 `book.GitService.AutoCommit(ctx, threshold)`，仅当工作区脏且累计 add+del 行数（含 untracked 文件整文件行数）≥ 阈值时才执行 `add -A` + `commit`，默认阈值 `book.DefaultAutoCommitLineThreshold = 50`，未达阈值/工作区干净/仓库未初始化均跳过；自动 commit 失败不阻断对话，仅写日志
+- 后端 `agent`：移除 `safeToolMiddleware` 中的 `shouldSnapshotBeforeChapterWrite` / `autoCommitBeforeChapterWrite` 路径及对 `internal/book` 的耦合，中间件回归纯错误兜底；`prompt.go` 与 `skills/continue/SKILL.md` 中关于「写章节前自动 Git 快照」的说明同步删除
+
+### Added
+
+- 后端 `session` / `agent`：新增异常中断恢复标识持久化；Runner/流式读取异常或 Agent panic 时记录待恢复中断，用户后续明确输入“继续/继续刚才/从中断的地方继续”等请求时，会从上一轮异常中断上下文续跑，成功完成后标记该中断已恢复；前端/SSE 断线但后端任务仍运行时仍沿用现有 active task 重连，不写入异常标识
+- 后端 `interactive`：讲述者 JSON 新增 `reply_target_chars` 和 `style_rules`，场景化风格规则按当前讲述者独立生效。
+- 后端 `agent`：当用户本轮未通过 `#` 指定风格参考时，由 IDE 默认讲述者或互动故事当前讲述者注入 `ChatRequest.StyleRules`，`ChatService` 追加「场景化默认风格规则 + 触发规则」提示。
+- WebUI：具体讲述者编辑页新增「单轮目标字数」和「场景风格规则」编辑能力，支持新增/删除规则、选择用户级风格文件和手动添加 `.md` / `.txt` 路径。
+
+- 后端 `config`：新增 `Settings.MaxOpenTabs`（默认 5），通过用户/工作区分层覆盖；JSON/TOML 字段为 `max_open_tabs`
+- WebUI：编辑区 Tab 数量上限化，超过 `max_open_tabs` 时按 LRU（最久未激活优先）自动关闭旧 Tab，当前激活 Tab 永远受保护；workspace 切换恢复时也会按上限裁剪
+- WebUI：设置页「编辑器」分组新增「最大同时打开 Tab 数」配置项；设置保存后通过 `nova:settings-updated` 事件触发主界面立即重新拉取生效配置
+- 后端 `book`：工作区初始化 `InitWorkspace` 在缺失时自动写入 `brainstorm.md` 顶层定调模板（题材、核心卖点、目标读者、整体风格、金手指、故事尺度、剧情走向、参考作品等），引导作者在生成大纲前先完成顶层设定讨论；新增 `BrainstormFileName`、`BrainstormPath()` 与 `CreatorFileName`，CREATOR.md 模板生成时机一并迁移到 `InitWorkspace`
+- 后端 `agent`：在系统提示中加入 `brainstorm.md` 路径说明与「生成大纲时」前置工作流——先与作者讨论补全 `brainstorm.md` 顶层定调，作者确认定稿后才生成 setting/outline.md / characters.md / world-building.md / progress.md；空作品的状态文案改为引导作者优先填写 `brainstorm.md`
+- 后端 `agent`：在每轮 Agent 输入前注入「上下文边界」提示，明确「当前请求 = 这次做什么 / 已确认小说状态 = 背景是什么 / 历史对话只能辅助理解」，要求 Agent 在新请求与历史无关或冲突时只依据本轮请求、@ 引用、# 风格参考和编辑器选区行动，避免跨对话的上一轮工具意图被误执行；新增 `appendContextBoundaryInstruction` 纯函数及对应单测
+- 后端 `app`：当启动时既未指定 `--workspace` 又无最近书籍记录时，App 进入「无 workspace」状态，仅初始化 `chatService` / `bookRegistry` / `bookMetaStore`，等待用户在前端书籍管理页选择或新建书籍后再构建 runtime；新增 `App.HasWorkspace()` 与 `ErrNoWorkspace` 用于守卫
+- 后端 API：新增 `Server.requireWorkspace` 守卫；写操作（`/api/workspace/*` 写、`/api/chat`、`/api/git/*`、`/api/command` 中的 clear/status、`/api/sessions` 的 create/switch/rename/delete）在无 workspace 时返回 409 并提示「尚未选择书籍工作区」；只读拉取（`tree`、`styles`、`sessions`、`session messages`）在无 workspace 时返回空数组，避免前端启动报错
+- WebUI：`workspace` 为空时 `App.tsx` 默认打开「书籍管理」Tab 并激活，引导用户选书
+- 后端 `config`：引入 `Settings` + `LoadLayered`，合并语义为 默认 < 全局 (`config.toml`) < 用户 (`<nova_dir>/config.toml`) < 工作区 (`<workspace>/.nova/config.toml`) < 环境变量；指针类型字段（`*bool`/`*int`）用于区分「未设置」与「显式置零」
+- 后端 API：新增 `GET /api/settings`（返回三层快照 + effective）、`PUT /api/settings/user`、`PUT /api/settings/workspace`
+- WebUI：编辑区支持多 Tab，文件树打开文件时复用已存在的 Tab 或新建 Tab；Hover Tab 显示关闭按钮，关闭当前 Tab 自动切到相邻 Tab；Tab 列表与激活项按 workspace 分桶持久化到 localStorage，刷新后恢复
+- WebUI：Tab 不仅承载文件，也承载「书籍管理」（Home）页面；Activity Bar 主页按钮改为打开/聚焦 Home Tab，可与文件 Tab 自由切换
+- WebUI：Agentic Loop `write_todos` 工具卡片渲染为可读的待办列表，支持 pending/in_progress/completed 三态、显示进度（completed/total），并对流式不完整 JSON 容错
+
+### Changed
+
+- 设置配置：`nova_dir` 改为全局启动级参数，仅由全局 `config.toml` 或 `NOVA_DIR` 决定；用户级/工作区级配置会忽略并过滤该字段，设置页改为只读展示 Nova 数据目录、用户配置文件和工作区配置文件路径
+- WebUI：删除/重命名/移动文件时同步更新打开的 Tab 列表
+- WebUI：主区域统一由 Tab 栏驱动渲染，根据激活 Tab 切换显示编辑器或 Home 视图，移除原 `view` 单一视图状态
+
+### Removed
+
+- 后端 API/命令：移除 `/init` 命令（CREATOR.md 与 `brainstorm.md` 模板改由 `InitWorkspace` 在工作区创建时自动生成），`/help` 输出同步去除该项
+- WebUI：聊天输入区命令菜单移除 `/init`，`useChat` 命令分发列表同步删除
+- WebUI：移除顶部工作区栏的「切换」按钮（功能不实用），切换工作区改由「书籍」Popover 底部「添加/打开其他书籍目录...」入口完成
+- WebUI：移除编辑区 Tab 栏右侧未接线的左右翻页占位图标
+
+### Fixed
+
+- 后端 Agent：当 LLM 幻觉调用不存在的工具（如 `write_todo`）时，不再以 `NodeRunError` 中断任务；通过配置 `ToolsNodeConfig.UnknownToolsHandler` 把可读错误作为 ToolMessage 回喂给模型，引导 Agent 自我分析并改用正确工具名继续执行
+
+### Added
+
+- 后端测试：新增 `TestHandleUnknownTool`，覆盖未知工具调用时的回退提示生成
+
+## [v0.1.2] - 2026-05-18
+
+### Added
+
+- 后端 API：新增会话列表、创建、切换、重命名、删除接口，并支持按 `session_id` 读取会话历史
+- 后端测试：覆盖多会话隔离、clear 标记、有效上下文读取、旧会话文件兼容和 App 会话切换/删除
+- WebUI：创作Agent 面板新增会话列表、创建、切换、重命名和删除入口
+- 测试：新增后端会话 API CRUD/切换/消息读取测试，以及前端会话切换和 `/clear` 分界展示测试
+- WebUI：新增 React Query、Zustand、Resizable Panels、Monaco Diff、Sonner Toast 和工作台快捷键基础设施
+- WebUI：新增章节 Diff View、版本时间线、版本 Diff 弹窗和回滚确认弹窗 UI 骨架
+- 测试：新增 ChapterDiffView、RollbackDialog 和 Workspace Store 前端单测
+- 测试：新增命令面板、书籍 Popover、编辑器设置 Popover 的前端测试
+
+### Changed
+
+- WebUI：底部状态栏版本号改为读取前端包版本
+- 后端会话：支持 workspace 内多会话管理、最近激活会话恢复和 `/clear` 上下文清理标记
+- 后端 Agent：构建上下文时只读取当前激活会话最后一个 clear 标记之后的有效消息
+- WebUI：执行 `/clear` 后保留旧消息并展示“上下文已清理”分界，切换会话时同步刷新消息和活跃任务状态
+- WebUI：将会话切换控件移动到创作Agent 标题栏，避免占用对话内容区域
+- WebUI：会话切换控件改为下拉列表选择，替代横向滚动会话标签
+- WebUI：工作区布局改为 `react-resizable-panels` 管理，右侧/底部面板状态迁移到 Zustand
+- WebUI：版本管理面板改为 React Query 管理 Git 状态和历史查询，并用 shadcn AlertDialog 替代原生回滚确认
+- WebUI：命令面板改为 shadcn `CommandDialog`，书籍列表与编辑器设置浮层改为 Radix `Popover`
+- WebUI：图标按钮统一接入 Tooltip，部分滚动区域接入 `ScrollArea`
+
+### Fixed
+
+- WebUI：修复 Tooltip 提示背景对比不足导致按钮悬浮提示看不清的问题
+
+## [v0.1.1] - 2026-05-17
+
+### Added
+
+- WebUI：基于 React + Vite + TypeScript + Tailwind CSS + TipTap 构建小说 IDE 前端
+- 后端服务：基于 Hertz 提供 REST API 与 SSE 流式聊天接口
+- 工作区 API：支持目录树、文件读取、文件保存、当前 workspace 查询和 workspace 切换
+- 三栏写作界面：左侧项目结构、中间 TipTap 章节编辑器、右侧 AI 输出
+- 编辑器设置：支持字号、行间距、背景主题调整，并持久化到 localStorage
+- 自动保存：编辑停止后自动保存章节内容，同时保留 Ctrl/Cmd+S 手动保存
+- CREATOR.md：支持 workspace 根目录自定义最高优先级创作者指令
+- bootstrap.sh：开发环境一键启动前后端并输出前端 localhost 地址
+- WebUI 布局：项目结构、AI 输出、任务面板支持拖拽调整大小和显示/隐藏，并持久化用户偏好
+- 编辑区：基于 TipTap 官方 Markdown 扩展渲染和保存 Markdown 内容
+- 项目结构：支持目录树自动刷新和窗口聚焦刷新，及时展示 AI 写入的新文件
+- 风格参考：新增 `setting/styles/` 目录，支持在 AI 对话中通过 `#` 选择本轮风格参考
+- 项目结构：目录树同级节点按目录优先、文件其次排序展示
+- AI 对话区：Agent 输出改为无气泡正文流样式，仅用户输入保留右侧气泡
+- AI 对话区：实时思考内容默认自动下滑，用户上滑阅读时暂停跟随
+- 编辑区：基于 TipTap 字数统计扩展展示当前文件总字数和选中文字数
+- AI 对话区：支持中断正在执行的 Agent，并保留中断前已生成内容
+- 书籍管理：记录最近打开的 workspace，后端重启后自动恢复上次书籍，并支持基础书籍列表/移除记录
+- AI 对话区：打开面板时消息列表直接定位到底部，避免先显示顶部再跳转
+- 编辑区：支持 Cmd/Ctrl+F 在当前文章内搜索关键词，并高亮匹配结果
+- AI 对话区：Agent 写入或创建文件后自动刷新目录结构，并同步刷新当前打开文本
+- 版本管理：底部面板新增受限 Git 命令行，支持本地 init/status/add/commit/diff/history/reset --soft/--mixed
+- 版本管理：受限 Git 命令行支持使用分号串联白名单命令，例如 `git add -A; git commit -m "说明"`
+- 版本管理：新增按钮式初始化、创建版本、查看历史和整本书回滚能力
+- 版本管理：新增右侧 Source Control 风格面板，支持通过活动栏图标 toggle
+- 版本管理：新增暂存当前未提交内容和恢复最近暂存内容能力
+- 风格参考：支持在 `setting/styles/` 中维护 `.txt` 文风样本，并通过 `#` 引用注入 Agent
+- 后端 Agent：新增任务、SSE、Runner、工具调用和 panic recover 运行日志，便于排查输出中断与工具失败
+
+### Changed
+
+- 入口程序从 bubbletea TUI 改为启动 Hertz Web 服务
+- build.sh 增加前端构建流程，并复制 Web 产物到 output/web
+- 会话存储迁移到 workspace 内部 `.nova/sessions/`
+- 作品设定文件迁移到用户可编辑的 `setting/` 目录
+- 编辑器默认视觉调整为贴合 IDE 的深色阅读主题
+- 后端能力拆分为 `internal/agent`、`internal/book`、`internal/api`、`internal/app`，明确 AI Agent、书籍管理、HTTP API 和运行时装配边界
+- Chat 执行不再使用固定 ADK checkpoint，用户本轮引用的大段文件和风格参考只作为当轮上下文注入
+- Agent 创建章节文件时遵循 `chXX-章节名.md` 命名规范，便于目录整体浏览
+- bootstrap.sh 启动开发服务时不再自动打开浏览器
+- AI 对话区工具输出改为单张结构化卡片，聚合工具名、参数摘要、执行状态和结果展开查看
+- AI 对话区工具卡片改为单行状态展示，调用开始即显示，并按 tool id 更新乱序完成的结果
+- 版本管理：底部面板从命令行输入改为按钮式操作，减少误操作风险
+- 版本管理：从底部任务面板迁移到右侧面板，并优化变更列表、提交历史和操作结果展示
+- AI 对话区：流式输出阶段改为纯文本渲染，结束后按历史消息渲染 Markdown，降低长输出崩溃风险
+- AI 对话区：流式输出改为统一时间线展示思考内容、工具卡片和正文，并在流式阶段节流渲染 Markdown
+- AI 对话区：合并流式文本增量和自动滚动更新，提升长回复输出流畅度
+- AI 对话区：当前思考过程在流式阶段默认展开，思考结束后自动折叠
+- 后端 Agent：强化章节重写规则，重写时以创作者要求和前后章节衔接为准，避免被旧状态摘要约束
+- 后端 Agent：强化续写规则，续写需衔接前面至少两章且不改大纲，仅更新进度和角色状态
+- 后端 Agent：明确 outline、progress、characters 职责边界，写作推进主要更新进度和角色状态，避免状态文件职责混写
+- AI 对话区：流式 Markdown 改为轻量即时渲染，减少长回复输出卡顿
+- AI 对话区：将后端大段 chunk 拆成逐帧小片段输出，让文字呈现更接近常规 LLM 流式吐字
+- 前端运行时：记录 React 崩溃、全局 JS 异常、Promise 未处理异常和白屏原因，便于排查前端故障
+- 后端 Agent：补充 Chat 上下文拼装和流式工具调用合并单测，防止引用、风格参考和选中文本注入逻辑回归
+- 前端测试：引入 Vitest、React Testing Library 和 MSW，补充 API 与 Chat 消息组件测试
+- 后端 Agent：写入 `chapters/` 前自动提交原工作区 Git 快照，快照失败时阻止覆盖章节正文
+
+### Fixed
+
+- 修复创作 Agent 流式输出阶段退化为纯文本导致 Markdown 标题、表格等不渲染的问题
+- 修复打开版本管理面板时，后端返回空变更列表为 `null` 导致前端崩溃的问题
+- 版本管理：保存文件、Agent 写入、文件树操作、窗口聚焦和 workspace 切换后自动刷新 Git 状态
+- 修复 Agent 输出异常中断或前端断流时已生成内容可能被清空的问题
+- 修复流式 Recv 异常后仍可能继续发送 `done` 状态的问题
+- 修复流式 thinking、重复 tool_call 和重复正文片段被拆成多张卡片导致对话展示混乱的问题
+- 修复前端因初始化恢复对话 effect 依赖变化而反复请求 `/api/chat/active` 和 `/api/session/messages` 的问题
+- 切换 workspace 时同步重建 Agent Runner，避免 Agent 指令和作品状态继续指向旧 workspace
+- 修复右侧 AI 输出对 SSE `tool_result` / `error` 字段解析错误，并实时展示思考内容和工具执行状态
+- 修复编辑区自动保存会移除 Markdown 空行，导致段落换行渲染异常的问题
+- 修复编辑区 Markdown 单换行不展示的问题，兼容逐行小说文本和风格参考文件
+- 修复编辑区自动保存后重置 TipTap 内容导致光标跳动的问题
+
+### Removed
+
+- 移除 bubbletea TUI 相关实现与依赖

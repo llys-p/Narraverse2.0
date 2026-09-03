@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>叙界 Narraverse — AI 文字冒险平台</title>
+  <link rel="stylesheet" href="style.css?v=20260822">
+<link rel="stylesheet" href="redesign.css?v=20260830-denova-dark">
+<link rel="stylesheet" href="theme-neutral.css">
+<link rel="stylesheet" href="module4/module4.css">
+<script>
+  // Mobile layout follows the iframe viewport. mobile=1/0 remains an explicit override.
+  (function(){
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var override = params.get('mobile');
+      var query = window.matchMedia('(max-width: 768px)');
+      var apply = function () {
+        document.documentElement.classList.toggle('mobile-mode', override === '1' || (override !== '0' && query.matches));
+      };
+      apply();
+      if (query.addEventListener) query.addEventListener('change', apply);
+      else if (query.addListener) query.addListener(apply);
+    } catch(e) {}
+  })();
+</script>
+</head>
+<body>
+
+<!-- ==================== Denova 嵌入态数据迁移提示 ==================== -->
+<div id="embeddedMigrationModal" class="modal-overlay" style="display:none">
+  <div class="modal embedded-migration-modal">
+    <div class="modal-header">
+      <h2>检测到新的叙界运行环境 / New Narraverse environment</h2>
+      <button class="modal-close" onclick="dismissEmbeddedMigrationNotice()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p>旧地址中的本地存档不会自动迁移。请先在旧叙界中使用“导出全部数据”，再在这里导入备份。</p>
+      <p class="embedded-migration-en">Local saves from the previous address cannot migrate automatically. Export all data there, then import the backup here.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="dismissEmbeddedMigrationNotice()">暂不导入 / Not now</button>
+      <button class="btn btn-primary" onclick="importEmbeddedMigrationBackup()">导入旧叙界备份 / Import backup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Settings Modal ==================== -->
+<div id="settingsModal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>⚙️ API 设置</h2>
+      <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>API 端点 (Base URL)</label>
+        <input type="text" id="apiEndpoint" placeholder="https://api.deepseek.com">
+        <small>兼容 OpenAI / DeepSeek / Moonshot / Ollama 等。DeepSeek 填 https://api.deepseek.com</small>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="apiKey" placeholder="sk-...">
+      </div>
+      <div class="form-group">
+        <label>模型名称</label>
+        <input type="text" id="modelName" placeholder="deepseek-chat / gpt-4o / qwen-plus">
+      </div>
+      <div class="form-group">
+        <label>最大上下文 Token</label>
+        <input type="number" id="maxTokens" value="8000" min="2000" max="128000">
+        <small>超过此值的 80% 时自动摘要压缩旧对话</small>
+      </div>
+      <div class="form-group">
+        <label>单次回复最大 Token</label>
+        <input type="number" id="maxOutputTokens" value="4096" min="512" max="16384">
+        <small>AI 单次回复的最大长度，DeepSeek 建议设 4096-8192</small>
+      </div>
+      <div class="form-group">
+        <label>生成温度 (Temperature)</label>
+        <input type="number" id="temperature" value="0.85" min="0" max="2" step="0.05">
+        <small>0=保守确定性，1=均衡，2=狂野随机。叙事建议 0.7-0.95</small>
+      </div>
+      <div class="form-group">
+        <label>流式输出</label>
+        <label class="switch-row"><input type="checkbox" id="streamingToggle" checked> 逐字显示 AI 回复（更沉浸，兼容 OpenAI / DeepSeek / Ollama）</label>
+      </div>
+      <!-- 精简角色状态开关已移至「编辑冒险」页（按冒险存储，见 editAdventureModal） -->
+      <div class="form-group">
+        <label>设定集按需注入（World Info 化，借鉴 SillyTavern）</label>
+        <input type="number" id="loreScanDepth" value="14" min="1" max="60">
+        <small>扫描最近多少回合的剧情来匹配设定关键词（默认 14）</small>
+        <input type="number" id="loreBudgetPct" value="30" min="0" max="80" style="margin-top:8px">
+        <small>设定书（概览 + 命中条目）最多占用上下文的百分比（默认 30%）</small>
+      </div>
+      <div class="form-group">
+        <label>提示词宏变量（模板化，借鉴 SillyTavern）</label>
+        <label class="switch-row"><input type="checkbox" id="macroToggle" checked> 在「自定义规则 / 角色卡 system_prompt / 结尾指令 / 核心约束」中解析 <code>{{...}}</code> 变量，每轮随剧情刷新</label>
+        <small>可用宏：{{user}} 玩家名 · {{location}} 位置 · {{chapter}} 章节 · {{level}} 等级 · {{profession}} 职业 · {{theme}} 主题 · {{hp}} · {{mp}} · {{mood}} · {{date}} · {{time}} · {{random}}</small>
+      </div>
+      <div class="form-group">
+        <label>🔌 语音朗读（对话框内特性）</label>
+        <label class="switch-row"><input type="checkbox" id="ext_tts"> 开启朗读键（每条 AI 叙事旁显示「🔊 朗读 / ⏹ 停止」，可点停）</label>
+        <label class="switch-row" style="margin-top:6px">朗读引擎：
+          <select id="ttsEngine" onchange="document.getElementById('cosyvoiceConfig').style.display = (this.value==='cosyvoice')?'block':'none'">
+            <option value="native">浏览器原生（无需 Key）</option>
+            <option value="cosyvoice">CosyVoice（阿里云，需填 Key / 端点）</option>
+          </select>
+        </label>
+        <div id="cosyvoiceConfig" style="display:none; margin-top:8px; padding-left:12px; border-left:2px solid var(--border)">
+          <label>CosyVoice WebSocket 端点</label>
+          <input type="text" id="cosyvoiceEndpoint" placeholder="wss://llm-你的ID.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference">
+          <label>CosyVoice API Key</label>
+          <input type="text" id="cosyvoiceApiKey" placeholder="sk-... 或 sk-ws-...">
+          <label>本地中继（WebSocket 代理）地址</label>
+          <input type="text" id="cosyvoiceRelay" placeholder="ws://localhost:8787（直连 maas 必填）">
+          <label>音色 (voice)</label>
+          <input type="text" id="cosyvoiceVoice" placeholder="longanyang（默认）">
+          <small>
+            浏览器原生 WebSocket <b>无法设置 Authorization 握手头</b>，而 maas 必须在握手头里带 <code>Authorization: Bearer</code>，否则返回 401。
+            因此<b>直连 maas 必走本地中继</b>：先运行 <code>tools\cosyvoice_proxy.py</code>（已内置你的端点与 Key，会代注鉴权头），再把「本地中继」填为 <code>ws://localhost:8787</code>。
+            若你的 Key 属于支持 <code>?token=</code> 鉴权的封装服务，可留空中继、直接连端点。
+          </small>
+        </div>
+        <small>AI 生图已在每条 AI 叙事内提供「🖼 生成场景图」键（需填场景配图 API Key）。</small>
+      </div>
+      <div class="form-group">
+        <label>🖼 场景配图 API</label>
+        <input type="text" id="imageApiEndpoint" placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation">
+        <input type="password" id="imageApiKey" placeholder="sk-..." style="margin-top:8px">
+        <input type="text" id="imageModel" placeholder="qwen-image-3.0-pro" style="margin-top:8px">
+        <small>用于「生成场景图」按钮。默认阿里云 DashScope qwen-image-3.0-pro，单张约 60-90 秒</small>
+      </div>
+      <div class="form-group">
+        <label>自动存档</label>
+        <label class="switch-row"><input type="checkbox" id="autoSaveToggle" checked> 每 <input type="number" id="autoSaveEvery" value="5" min="1" max="50" style="width:60px;display:inline-block;margin:0 4px"> 回合自动保存</label>
+      </div>
+      <div class="form-group">
+        <label>数据备份</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary" onclick="exportAllData()">导出全部数据</button>
+          <button class="btn btn-secondary" onclick="importAllData()">导入全部数据</button>
+          <button class="btn btn-secondary" onclick="storageHealthCheck()">存储体检</button>
+          <input type="file" id="importFileInput" accept=".json" style="display:none">
+        </div>
+        <small>导出为 JSON 备份，可在其他浏览器或电脑上导入恢复</small>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('settingsModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== New Adventure Modal ==================== -->
+<div id="newAdventureModal" class="modal-overlay" style="display:none">
+  <div class="modal modal-wide adv-wizard-modal">
+    <div class="modal-header">
+      <h2>✨ 创建新冒险</h2>
+      <button class="modal-close" onclick="closeModal('newAdventureModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="adv-steps">
+        <div class="adv-step active cur" data-step="1"><i>1</i><span>选择素材</span></div>
+        <div class="adv-step-line"></div>
+        <div class="adv-step" data-step="2"><i>2</i><span>故事方案</span></div>
+        <div class="adv-step-line"></div>
+        <div class="adv-step" data-step="3"><i>3</i><span>确认开局</span></div>
+      </div>
+      <div id="advStep1">
+        <div class="adv-material-layout">
+          <section class="adv-player-card">
+            <div class="adv-section-heading">
+              <div><strong>玩家与方向</strong><small>先确定主角，再让 AI 结合素材设计故事</small></div>
+              <button class="btn btn-secondary" onclick="randomizeAdventureForm()">🎲 随机基础信息</button>
+            </div>
+            <div class="form-group">
+              <label>选择主题</label>
+              <div class="theme-grid" id="themeGrid"></div>
+              <div class="theme-toolbar">
+                <button class="btn btn-secondary" onclick="openThemeEditor()">➕ 新建主题</button>
+                <button class="btn btn-secondary" onclick="openThemeManager()">⚙ 管理主题</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>冒险模式</label>
+              <div class="mode-grid" id="modeGrid">
+                <button class="mode-card selected" data-mode="adventure">⚔️ 战斗冒险</button>
+                <button class="mode-card" data-mode="tavern">🍷 酒馆剧情</button>
+              </div>
+            </div>
+            <div class="adv-player-fields">
+              <div class="form-group">
+                <label>角色名称</label>
+                <input type="text" id="characterName" placeholder="输入你的角色名...">
+              </div>
+              <div class="form-group">
+                <label>自定义职业（可选） <span id="professionLockBadge" class="profession-lock-badge" style="display:none">🔒 已锁定</span></label>
+                <input type="text" id="customProfessionInput" placeholder="如：黑客、傀儡师、赏金猎人…" oninput="onCustomProfessionInput()">
+                <small>填写后，主题、默认职业和 AI 方案都不会覆盖它</small>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>未填写自定义职业时，可选择主题职业</label>
+              <div class="profession-grid" id="professionGrid"><small style="color:var(--text-muted)">选择主题后显示可用职业</small></div>
+            </div>
+            <div id="customThemeFields" class="custom-theme-fields" style="display:none">
+              <div class="form-group"><label>主题名称</label><input type="text" id="customThemeName" placeholder="如：克苏鲁、修仙、赛博朋克..."></div>
+              <div class="form-group"><label>初始地点</label><input type="text" id="customThemeLocation" placeholder="如：废弃灯塔下的小镇"></div>
+              <div class="form-group"><label>背景描述</label><textarea id="customThemeDesc" rows="2" placeholder="一句话描述这个世界"></textarea></div>
+              <div class="form-group"><label>初始物品（用逗号分隔）</label><input type="text" id="customThemeItems" placeholder="如：手电筒、旧日记、短刀"></div>
+              <input type="hidden" id="customProfessionName">
+            </div>
+          </section>
+
+          <section class="adv-material-browser">
+            <div class="adv-section-heading"><div><strong>角色卡与世界设定卡</strong><small>勾选的素材会参与故事方案生成</small></div></div>
+            <div id="selectedMaterialTray" class="selected-material-tray"></div>
+            <div class="load-section">
+          <div class="load-toolbar">
+            <input type="text" id="loadSearchInput" class="load-search" placeholder="搜索名称 / 标签 / 简介…" oninput="onLoadSearch()">
+            <button type="button" id="loadNsfwBtn" class="load-nsfw-btn" onclick="toggleNsfw()">NSFW：已隐藏</button>
+            <div class="load-view-toggle" id="loadViewToggle">
+              <button type="button" class="load-view-btn active" data-view="grid" onclick="setLoadView('grid')">卡片</button>
+              <button type="button" class="load-view-btn" data-view="list" onclick="setLoadView('list')">列表</button>
+            </div>
+            <span id="loadPendingCount" class="load-pending-count"></span>
+          </div>
+          <div class="load-tabs" id="loadTabs">
+            <button type="button" class="load-tab active" data-type="all" onclick="setLoadTab('all')">全部</button>
+            <button type="button" class="load-tab" data-type="book" onclick="setLoadTab('book')">设定书</button>
+            <button type="button" class="load-tab" data-type="card" onclick="setLoadTab('card')">角色卡</button>
+          </div>
+          <div class="load-cat-bar" id="loadCategoryBar"></div>
+          <div id="loadGrid" class="load-grid"></div>
+            </div>
+          </section>
+        </div>
+        <section class="story-preference-card">
+          <div class="adv-section-heading"><div><strong>我的故事偏好（选填）</strong><small>写节奏、关系、剧情重点，或希望避免的内容</small></div></div>
+          <textarea id="storyPreferenceInput" rows="3" placeholder="例如：慢热群像，重视角色关系；希望有悬疑调查和成长线；不要一开始就拯救世界。" oninput="syncAdventurePreference()"></textarea>
+        </section>
+        <textarea id="adventureSetting" hidden></textarea>
+        <div class="adv-step-inline-actions">
+          <button class="btn btn-secondary" onclick="skipStoryProposalGeneration()">跳过 AI，手动填写</button>
+          <button class="btn btn-primary" id="storyGenerateInlineBtn" onclick="generateStoryProposals()">✨ 生成 3 套故事方案</button>
+        </div>
+      </div>
+      <div id="advStep2" style="display:none">
+        <div id="storyProposalStatus" class="story-proposal-status"></div>
+        <div id="storyProposalGrid" class="story-proposal-grid"></div>
+        <div class="adv-step-inline-actions">
+          <button class="btn btn-secondary" onclick="goAdventureStep(1)">← 返回选择素材</button>
+          <button class="btn btn-secondary" onclick="generateStoryProposals()">↻ 重新生成 3 套</button>
+        </div>
+      </div>
+      <div id="advStep3" style="display:none">
+        <div id="advPreview"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('newAdventureModal')">取消</button>
+      <button class="btn btn-secondary" id="advPrevBtn" style="display:none" onclick="prevAdventureStep()">上一步</button>
+      <button class="btn btn-primary" id="advNextBtn" onclick="generateStoryProposals()">✨ 生成 3 套故事方案</button>
+      <button class="btn btn-primary" id="advStartBtn" style="display:none" onclick="startNewAdventure()">开始冒险</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Theme Editor Modal（主题增删改） ==================== -->
+<div id="themeEditorModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:600px">
+    <div class="modal-header">
+      <h2 id="themeEditorTitle">➕ 新建主题</h2>
+      <button class="modal-close" onclick="closeModal('themeEditorModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>主题名称</label>
+        <input type="text" id="themeEditorName" placeholder="如：克苏鲁、修仙、赛博朋克...">
+        <small>编辑内置主题时名称锁定（将覆盖原主题）</small>
+      </div>
+      <div class="form-group">
+        <label>初始地点</label>
+        <input type="text" id="themeEditorLocation" placeholder="如：废弃灯塔下的小镇">
+      </div>
+      <div class="form-group">
+        <label>背景描述</label>
+        <textarea id="themeEditorDesc" rows="2" placeholder="一句话描述这个世界"></textarea>
+      </div>
+      <div class="form-group">
+        <label>初始物品（用逗号分隔）</label>
+        <input type="text" id="themeEditorItems" placeholder="如：手电筒、旧日记、短刀">
+      </div>
+      <div class="form-group">
+        <label>职业列表（可选，每行一个：名称|力量,敏捷,智力,魅力,幸运|技能1;技能2）</label>
+        <textarea id="themeEditorProfessions" rows="4" placeholder="剑士|14,12,8,10,10|基础剑术&#10;法师|7,9,16,10,10|魔法飞弹"></textarea>
+        <small>属性缺省各 10；技能用分号分隔，可留空</small>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('themeEditorModal')">取消</button>
+        <button class="btn btn-primary" onclick="saveThemeFromEditor()">保存主题</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Theme Manager Modal（主题管理） ==================== -->
+<div id="themeManagerModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <h2>⚙ 管理主题</h2>
+      <button class="modal-close" onclick="closeModal('themeManagerModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.6">所有主题（内置 + 自定义）。可编辑或删除；删除内置主题只是隐藏，重新「新建」同名即可恢复。</p>
+      <div id="themeManagerList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+      <button class="btn btn-primary" onclick="openThemeEditor();closeModal('themeManagerModal')">➕ 新建主题</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Prompt Editor Modal ==================== -->
+<div id="promptEditorModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:680px">
+    <div class="modal-header">
+      <h2>📝 提示词编辑器</h2>
+      <button class="modal-close" onclick="closeModal('promptEditorModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.6">
+        下方是当前冒险的完整 System Prompt。你可以直接修改文本，保存后下一条消息起生效。<br>
+        角色实时状态（HP/MP/属性/技能等）会在每轮对话前自动追加到末尾，无需手动维护。<br>
+        角色卡和设定书的内容也会自动注入。
+      </p>
+      <div class="form-group">
+        <label>System Prompt（可编辑）</label>
+        <textarea id="promptEditorText" rows="20" style="font-family:monospace;font-size:12px;line-height:1.6" placeholder="正在加载..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="resetPrompt()">恢复默认</button>
+      <button class="btn btn-secondary" onclick="closeModal('promptEditorModal')">取消</button>
+      <button class="btn btn-primary" onclick="savePrompt()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Character Cards Modal ==================== -->
+<div id="characterCardsModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:620px">
+    <div class="modal-header">
+      <h2>👥 角色卡管理</h2>
+      <button class="modal-close" onclick="closeModal('characterCardsModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6">
+        添加 NPC 或重要角色的设定卡。这些角色信息会自动注入到 System Prompt 中，AI 叙事时会参考这些设定。
+      </p>
+      <div id="characterCardsList" style="margin-bottom:20px"></div>
+      <div style="border-top:1px solid var(--border-subtle);padding-top:16px">
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">➕ 添加新角色卡</h3>
+        <div class="form-group">
+          <label>角色名称</label>
+          <input type="text" id="newCardName" placeholder="如：艾莉娅、神秘旅人、铁匠老王...">
+        </div>
+        <div class="form-group">
+          <label>外貌描述</label>
+          <input type="text" id="newCardAppearance" placeholder="简要描述外貌特征">
+        </div>
+        <div class="form-group">
+          <label>性格特点</label>
+          <input type="text" id="newCardPersonality" placeholder="如：热情开朗 / 冷漠寡言 / 狡猾多疑">
+        </div>
+        <div class="form-group">
+          <label>与玩家关系</label>
+          <input type="text" id="newCardRelationship" placeholder="如：青梅竹马 / 未知陌生人 / 宿敌">
+        </div>
+        <div class="form-group">
+          <label>备注（可选）</label>
+          <textarea id="newCardNotes" rows="2" placeholder="其他重要设定：秘密、动机、背景故事等"></textarea>
+        </div>
+        <div class="form-group">
+          <label>场景（可选）</label>
+          <input type="text" id="newCardScenario" placeholder="如：酒馆角落 / 深夜的宅邸">
+        </div>
+        <div class="form-group">
+          <label>标签（可选，逗号分隔）</label>
+          <input type="text" id="newCardTags" placeholder="如：傲娇, 大小姐, 秘密">
+        </div>
+        <div class="form-group">
+          <label>话痨度 talkativeness（0-100，借鉴 SillyTavern 分组同场：值越高越主动插话，默认 50）</label>
+          <input type="number" id="newCardTalkativeness" value="50" min="0" max="100">
+          <small>配合「在场」开关可让多个 NPC 同处一场景群像互动</small>
+        </div>
+        <div class="form-group">
+          <label>开场白（可选，AI 以该角色开场时使用）</label>
+          <textarea id="newCardFirstMes" rows="2" placeholder="该角色第一次登场时说的话..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>多开局（可选，借鉴 SillyTavern alternate_greetings，每行一个备选开场，开局时由玩家选择）</label>
+          <textarea id="newCardAltGreetings" rows="2" placeholder="备选开场一&#10;备选开场二"></textarea>
+        </div>
+        <div class="form-group">
+          <label>核心约束 character_note（可选，始终生效的人设铁律；长对话可设下方「重注入深度」再次提醒）</label>
+          <textarea id="newCardCharacterNote" rows="2" placeholder="例如：此角色绝不会主动说谎；永远记得ta怕火"></textarea>
+        </div>
+        <div class="form-group">
+          <label>专属系统指令 system_prompt（可选，注入为该角色的额外系统规则）</label>
+          <textarea id="newCardSystemPrompt" rows="2" placeholder="例如：该角色说话带古风口吻，多用四字短语"></textarea>
+        </div>
+        <div class="form-group">
+          <label>结尾指令 post_history_instructions（可选，置于提示词最后的强制约束）</label>
+          <textarea id="newCardPostHist" rows="2" placeholder="例如：每次回复结尾都要用一句诗收尾"></textarea>
+        </div>
+        <div class="form-group">
+          <label>或从文件导入角色卡</label>
+          <button class="btn btn-secondary" onclick="document.getElementById('cardImportInput2').click()">📂 选择文件导入</button>
+          <input type="file" id="cardImportInput2" accept=".txt,.md,.json,.png" style="display:none">
+          <small>支持 .txt/.md/.json/.png 角色卡，直接导入到当前冒险（无需勾选条件）</small>
+        </div>
+        <button class="btn btn-primary" onclick="addCharacterCard()">添加角色卡</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Background Books Modal ==================== -->
+<div id="backgroundBooksModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:620px">
+    <div class="modal-header">
+      <h2>📚 设定书管理</h2>
+      <button class="modal-close" onclick="closeModal('backgroundBooksModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6">
+        添加世界观设定、背景故事、规则书等内容。这些文本会自动注入到 System Prompt 中，让 AI 更好地理解你的世界。<br>
+        可以手动输入，也可以上传 .txt 文件。
+      </p>
+      <div id="backgroundBooksList" style="margin-bottom:20px"></div>
+      <div style="border-top:1px solid var(--border-subtle);padding-top:16px">
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:12px">➕ 添加设定书</h3>
+        <div class="form-group">
+          <label>标题</label>
+          <input type="text" id="newBookTitle" placeholder="如：世界历史 / 魔法系统 / 暗影教派设定">
+        </div>
+        <div class="form-group">
+          <label>内容</label>
+          <textarea id="newBookContent" rows="6" placeholder="输入或粘贴设定内容..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>或上传文本文件</label>
+          <input type="file" id="bookFileInput" accept=".txt,.md" style="font-size:12px;color:var(--text-secondary)">
+          <small>支持 .txt / .md 文件，上传后文件名作为标题，内容填入上方文本框</small>
+        </div>
+        <button class="btn btn-primary" onclick="addBackgroundBook()">添加设定书</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Edit Adventure Modal ==================== -->
+<div id="editAdventureModal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>✏️ 编辑冒险</h2>
+      <button class="modal-close" onclick="closeModal('editAdventureModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>冒险名称</label>
+        <input type="text" id="editAdventureTitle" placeholder="给这场冒险起个名字（留空则显示 角色名 · 主题）">
+      </div>
+      <div class="form-group">
+        <label>角色名称</label>
+        <input type="text" id="editCharacterName" placeholder="角色名">
+      </div>
+      <div class="form-group">
+        <label>冒险设定（可选）</label>
+        <textarea id="editAdventureSetting" rows="3" placeholder="世界观、风格或特殊设定..."></textarea>
+        <small>修改会更新 AI 的世界认知，从下一条消息起生效</small>
+      </div>
+      <div class="form-group">
+        <label class="switch-row"><input type="checkbox" id="editCompactState"> 精简角色状态（系统提示词只发核心状态：HP/MP/位置/章节/属性/任务名，省去技能与物品详细描述，降低每轮 token）</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('editAdventureModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveEditAdventure()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Edit Message Modal ==================== -->
+<div id="editMessageModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:640px">
+    <div class="modal-header">
+      <h2>💬 编辑对话</h2>
+      <button class="modal-close" onclick="closeModal('editMessageModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label id="editMessageLabel">消息内容</label>
+        <textarea id="editMessageText" rows="10" style="font-size:13px;line-height:1.7"></textarea>
+        <small>保存后立即生效。AI 消息只编辑叙事正文，状态 / 选项 / 人物等结构化数据不受影响。</small>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('editMessageModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveMessageEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Save Points Modal ==================== -->
+<div id="snapshotsModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:560px">
+    <div class="modal-header">
+      <h2>🗂️ 存档点</h2>
+      <button class="modal-close" onclick="closeModal('snapshotsModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6">
+        手动保存当前进度，之后可以随时读档。角色死亡时也可以直接读档重来。<br>
+        存档保存在浏览器本地，最多保留 12 个。
+      </p>
+      <button class="btn btn-primary" onclick="saveSnapshotNow()">＋ 保存当前进度</button>
+      <button class="btn btn-secondary" onclick="snapshotDiff()" style="margin-left:8px">🔄 对比最近两次</button>
+      <div id="snapshotsList" style="margin-top:16px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Context Summary Editor ==================== -->
+<div id="contextSummaryModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:680px">
+    <div class="modal-header">
+      <h2>✏️ 前情摘要（压缩上下文）</h2>
+      <button class="modal-close" onclick="closeModal('contextSummaryModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.6">
+        这是上下文被压缩后保留的「前情摘要」。剧情跑偏时，往往是因为这里漏了关键设定或记错了关系。<br>
+        直接修改下面文本，点击「保存」后会立即同步进游戏上下文，下一轮对话起生效。
+      </p>
+      <div id="contextSummaryStatus" style="font-size:12px;margin-bottom:8px"></div>
+      <textarea id="contextSummaryInput" class="context-summary-textarea"
+        oninput="updateSummaryCounter()"
+        placeholder="尚无前情摘要。若想手动创建，可在此直接写入；保存后会作为系统提示插入对话开头。"></textarea>
+      <div class="context-summary-counter" id="contextSummaryCounter"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('contextSummaryModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveContextSummary()">保存并生效</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Main App ==================== -->
+<div class="app">
+
+  <!-- Left Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <span class="logo-icon">🧭</span>
+      <span class="logo-text">叙界 Narraverse</span>
+    </div>
+    <button class="mobile-sidebar-close" onclick="toggleSidebar()" aria-label="关闭冒险列表">×</button>
+    <button class="new-adventure-btn" onclick="showNewAdventureModal()">
+      <span>✨ 创建新冒险</span>
+    </button>
+    <div class="adventure-list-head">
+      <div>
+        <span class="adventure-list-label">我的冒险</span>
+        <span class="adventure-list-caption">故事档案</span>
+      </div>
+      <span class="adventure-count" id="adventureCount">0</span>
+    </div>
+    <div class="adventure-list" id="adventureList"></div>
+    <button class="settings-btn" onclick="showSettings()">⚙ API 设置</button>
+  </aside>
+
+  <!-- Center: Narrative + Annotation + Input -->
+  <main class="main">
+    <header class="main-header">
+      <button class="btn btn--icon btn--ghost sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="隐藏/显示侧边栏">☰</button>
+      <div class="header-info">
+        <h1 id="adventureTitle">尚未开始冒险</h1>
+        <span id="sceneTag" class="scene-tag"></span>
+      </div>
+      <div class="header-actions" id="headerActions" style="display:none">
+        <button class="btn btn--sm" onclick="showSnapshotsModal()">💾 存档</button>
+        <button class="btn btn--sm" onclick="exportToDenova()">🚀 导出Denova</button>
+        <button class="btn btn--sm" onclick="GameEngine.open()">🎮 离线游戏</button>
+        <div class="dropdown">
+          <button class="btn btn--sm" onclick="toggleCreateMenu(event)">✎ 创作 ▾</button>
+          <div class="dropdown-menu" id="createMenu">
+            <button onclick="showCharacterCards()">👥 角色卡</button>
+            <button onclick="showBackgroundBooks()">📚 设定书</button>
+            <button onclick="showPromptEditor()">✏ 提示词</button>
+            <button onclick="showNovelExportModal()">📖 小说</button>
+            <button onclick="openPixivSearch()">🖼 Pixiv</button>
+          </div>
+        </div>
+        <div class="icon-cluster" role="group" aria-label="视图工具">
+          <button class="btn btn--icon btn--ghost" data-tip="剧情线" onclick="toggleTimeline()">🗺</button>
+          <button class="btn btn--icon btn--ghost" data-tip="人物图鉴" onclick="toggleMandala()">🧩</button>
+          <button class="btn btn--icon btn--ghost" data-tip="地点" onclick="toggleLocations()">📍</button>
+          <button class="btn btn--icon btn--ghost" data-tip="任务" onclick="viewTool('quest', toggleQuestsPanel)">📋</button>
+          <button class="btn btn--icon btn--ghost" data-tip="背景" onclick="showChatBackgroundModal()">🎨</button>
+          <button class="btn btn--icon btn--ghost" data-tip="Agent 状态" onclick="toggleAgentState()">⚡</button>
+        </div>
+        <button class="cmd-trigger" onclick="openCommandPalette()" title="命令面板">🔍 <kbd>Ctrl K</kbd></button>
+      </div>
+    </header>
+
+    <div class="story-area" id="storyArea">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🗺️</div>
+        <p class="empty-title">叙界 Narraverse</p>
+        <p class="empty-desc">接入 LLM API，AI 实时生成叙事<br>属性变化在文字旁批注显示，上下文跨轮次不丢失</p>
+        <button class="btn btn-primary btn-lg" onclick="showNewAdventureModal()">创建第一个冒险</button>
+        <button class="btn btn-secondary btn-lg" onclick="GameEngine.open()" style="margin-top:10px">🎮 离线小说游戏（无需 API）</button>
+      </div>
+    </div>
+
+    <div class="input-area" id="inputArea" style="display:none">
+      <!-- Combat Action Bar (shown when combat is active) -->
+      <div class="combat-action-bar" id="combatActionBar" style="display:none">
+        <span class="combat-label">⚔ 战斗行动：</span>
+        <button class="combat-action-btn" onclick="combatAttack()">攻击</button>
+        <select class="combat-skill-select" id="combatSkillSelect" onchange="if(this.value) combatUseSkill(this.value)"></select>
+        <button class="combat-action-btn" onclick="combatFlee()">逃跑</button>
+      </div>
+      <div class="input-wrapper">
+        <input type="text" id="messageInput" placeholder="输入你的行动..." />
+        <button id="eventBtn" class="event-btn" onclick="triggerRandomEvent()" title="触发随机事件">⚡ 事件</button>
+        <button id="diceBtn" class="dice-btn" onclick="toggleDiceMenu()" title="掷骰（d4-d100 / 自定义 / 属性检定）">🎲</button>
+        <button id="nextBtn" class="next-btn" onclick="sendNextStep()">下一步 ▶</button>
+        <button id="sendBtn" class="send-btn" onclick="sendMessage()">发送</button>
+      </div>
+      <div id="diceMenu" class="dice-menu" style="display:none">
+        <div class="dice-menu-title">掷骰 · 可直接在输入框写 2d6+3 或 /roll 2d6</div>
+        <div class="dice-quick">
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d4')">d4</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d6')">d6</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d8')">d8</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d10')">d10</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d12')">d12</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d20')">d20</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('d100')">d100</button>
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult('2d6')">2d6</button>
+        </div>
+        <div class="dice-custom">
+          <input type="text" id="diceCustomInput" placeholder="自定义，如 2d6+3">
+          <button class="btn btn-secondary dice-opt" onclick="insertDiceResult(document.getElementById('diceCustomInput').value)">掷</button>
+        </div>
+        <div class="dice-attr">
+          <select id="diceAttrSelect">
+            <option value="力量">力量</option>
+            <option value="敏捷">敏捷</option>
+            <option value="智力">智力</option>
+            <option value="魅力">魅力</option>
+            <option value="幸运">幸运</option>
+          </select>
+          <button class="btn btn-secondary dice-opt" onclick="insertAttributeCheck()">属性检定</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+    <!-- Right Panel: 常驻速览 + Tab 切换 -->
+    <aside class="right-panel" id="rightPanel">
+      <!-- 常驻状态速览 -->
+      <div class="rp-status">
+        <div class="rp-status-head">
+          <span class="char-name" id="charName">—</span>
+          <span class="char-profession" id="charProfession"></span>
+        </div>
+        <div class="char-mood" id="charMoodWrap" style="display:none">
+          <span class="mood-label">情绪</span><span class="mood-value" id="charMood">—</span>
+        </div>
+        <div class="char-level-row" id="charLevelWrap" style="display:none">
+          <span class="level-badge" id="charLevel">Lv.1</span>
+          <div class="exp-bar-wrap">
+            <div class="bar-track"><div class="bar-fill exp-fill" id="expBar" style="width:0%"></div></div>
+            <span class="exp-text" id="expText">0/100</span>
+          </div>
+        </div>
+        <div class="stat-bar" id="hpWrap">
+          <span class="stat-label">HP</span>
+          <div class="bar-track"><div class="bar-fill hp-fill" id="hpBar" style="width:0%"></div></div>
+          <span class="stat-value" id="hpValue">0/0</span>
+        </div>
+        <div class="stat-bar" id="mpWrap">
+          <span class="stat-label">MP</span>
+          <div class="bar-track"><div class="bar-fill mp-fill" id="mpBar" style="width:0%"></div></div>
+          <span class="stat-value" id="mpValue">0/0</span>
+        </div>
+        <div class="char-meta">
+          <div class="meta-row"><span>位置</span><span id="charLocation">—</span></div>
+          <div class="meta-row"><span>章节</span><span id="charChapter">—</span></div>
+        </div>
+      </div>
+
+      <!-- 场景预设切换器（v4 §4.7） -->
+      <div class="rp-preset-bar">
+        <span class="preset-label">🎬</span>
+        <select id="presetSwitcher" onchange="switchPreset(this.value)" title="切换场景预设"></select>
+      </div>
+
+      <!-- Tab 栏 -->
+      <div class="rp-tabs" id="rpTabs">
+        <button class="rp-tab active" data-tab="status" onclick="switchRightTab('status')">状态</button>
+        <button class="rp-tab" data-tab="attr" onclick="switchRightTab('attr')">属性</button>
+        <button class="rp-tab" data-tab="skill" onclick="switchRightTab('skill')">技能</button>
+        <button class="rp-tab" data-tab="inv" onclick="switchRightTab('inv')">背包</button>
+        <button class="rp-tab" data-tab="rel" onclick="switchRightTab('rel')">关系</button>
+        <button class="rp-tab" data-tab="quest" onclick="switchRightTab('quest')">任务</button>
+      </div>
+
+      <!-- Tab 内容 -->
+      <div class="rp-body active" id="rp-status">
+        <div class="panel-section">
+          <h3>🧠 上下文管理</h3>
+          <div class="context-panel">
+            <div class="context-bar-wrap">
+              <div class="bar-track"><div class="bar-fill context-fill" id="contextBar" style="width:0%"></div></div>
+              <span class="context-text" id="contextText">0 tokens</span>
+            </div>
+            <div class="context-status" id="contextStatus">等待开始...</div>
+            <div class="context-meta" id="contextMeta"></div>
+            <button class="btn btn-secondary context-edit-btn" id="editSummaryBtn" onclick="showContextSummaryModal()">✏️ 查看 / 编辑前情摘要</button>
+          </div>
+        </div>
+        <div class="panel-section" id="combatSection" style="display:none">
+          <h3>⚔️ 战斗 <span class="combat-round" id="combatRound"></span></h3>
+          <div class="combat-panel" id="combatPanel"></div>
+        </div>
+      </div>
+
+      <div class="rp-body" id="rp-attr">
+        <div class="panel-section" id="attributesSection" style="display:none">
+          <h3>💪 属性 <span class="points-badge" id="attrPointsBadge">0</span></h3>
+          <div class="attributes-grid" id="attributesGrid"></div>
+        </div>
+      </div>
+
+      <div class="rp-body" id="rp-skill">
+        <div class="panel-section" id="skillsSection" style="display:none">
+          <h3>🔮 技能 <span class="points-badge" id="skillPointsBadge">0</span></h3>
+          <div class="skills-list" id="skillsList"></div>
+        </div>
+      </div>
+
+      <div class="rp-body" id="rp-inv">
+        <div class="panel-section" id="inventorySection">
+          <h3>🎒 背包</h3>
+          <div class="inventory" id="inventory">
+            <div class="empty-text">空空如也</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rp-body" id="rp-rel">
+        <div class="panel-section" id="tavernRelationsSection" style="display:none">
+          <h3>💞 人物关系</h3>
+          <div class="tavern-relations" id="tavernRelationsList"></div>
+        </div>
+      </div>
+
+      <div class="rp-body" id="rp-quest">
+        <div class="panel-section" id="questsSection" style="display:none">
+          <h3>📋 任务日志 <button class="section-hide-btn" onclick="toggleQuestsPanel()" title="隐藏任务栏">🙈</button></h3>
+          <div class="quests-list" id="questsList"></div>
+        </div>
+      </div>
+
+    </aside>
+
+</div>
+
+<!-- ==================== Command Palette (Ctrl/Cmd+K) ==================== -->
+<div class="cmd-overlay" id="cmdOverlay" onclick="if(event.target===this)closeCommandPalette()">
+  <div class="cmd-box">
+    <div style="display:flex;align-items:center;gap:8px;padding:4px 10px;border-bottom:1px solid var(--border-subtle)">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer">
+        <input type="checkbox" id="cmdShowAll" onchange="toggleCmdShowAll()"> 🔓 显示全部命令（忽略场景过滤）
+      </label>
+      <span id="cmdHiddenHint" style="font-size:11px;color:var(--text-muted);margin-left:auto"></span>
+    </div>
+    <input class="cmd-input" id="cmdInput" placeholder="🔍 输入命令或搜索…（↑↓ 选择，Enter 执行，Esc 关闭）" oninput="filterCommandPalette()" onkeydown="commandPaletteKey(event)">
+    <div class="cmd-list" id="cmdList"></div>
+  </div>
+</div>
+
+<!-- ==================== Denova Shell (iframe 宿主, v4 P0-4) ==================== -->
+<div class="denova-shell" id="denovaShell" style="display:none">
+  <div class="denova-shell-bar">
+    <button class="btn btn--ghost" onclick="closeDenovaShell()">← 返回平台</button>
+    <span class="denova-shell-title" id="denovaShellTitle">Denova · 写作台</span>
+    <span class="denova-shell-hint">iframe 内嵌 · 跨源通信走 postMessage</span>
+  </div>
+  <iframe class="denova-frame" id="denovaFrame" src="about:blank" title="Denova"></iframe>
+</div>
+
+<!-- ==================== Module 4 Workspace (Task 0 skeleton) ==================== -->
+<section class="module4-shell" id="module4Shell" hidden aria-hidden="true"></section>
+
+<!-- ==================== Agent State Drawer ==================== -->
+<div id="agentStateDrawer" class="drawer" style="display:none">
+  <div class="drawer-header">
+    <h2>Agent 内部状态</h2>
+    <button class="modal-close" onclick="toggleAgentState()">&times;</button>
+  </div>
+  <div class="drawer-body" id="agentStateBody">
+    <p style="color:rgba(255,255,255,0.4)">尚无数据</p>
+  </div>
+</div>
+
+<!-- ==================== Timeline Drawer ==================== -->
+<div id="timelineDrawer" class="drawer" style="display:none">
+  <div class="drawer-header">
+    <h2>剧情线 · 时间轴</h2>
+    <button class="modal-close" onclick="toggleTimeline()">&times;</button>
+  </div>
+  <div class="drawer-body" id="timelineBody">
+    <div class="timeline-view-toggle" style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn btn-secondary tl-view-btn active" data-view="graph" onclick="setTimelineView('graph')">🗺 分支图</button>
+      <button class="btn btn-secondary tl-view-btn" data-view="list" onclick="setTimelineView('list')">📋 列表</button>
+    </div>
+    <div id="branchGraphView"></div>
+    <div id="timelineListView"></div>
+  </div>
+</div>
+
+<!-- ==================== Mandala Drawer ==================== -->
+<div id="mandalaDrawer" class="drawer mandala-drawer" style="display:none">
+  <div class="drawer-header">
+    <h2>人物图鉴 · 曼陀罗</h2>
+    <div class="drawer-header-actions">
+      <button class="drawer-btn" onclick="refreshMandalaFromHistory()" title="重新扫描对话，重建人物图鉴">🔄 刷新</button>
+      <button class="modal-close" onclick="toggleMandala()">&times;</button>
+    </div>
+  </div>
+  <div class="drawer-hint" id="mandalaHint"></div>
+  <div class="drawer-body" id="mandalaBody">
+    <p style="color:rgba(255,255,255,0.4)">暂无数据</p>
+  </div>
+</div>
+
+<!-- ==================== Location Drawer ==================== -->
+<div id="locationDrawer" class="drawer location-drawer" style="display:none">
+  <div class="drawer-header">
+    <h2>地点图鉴</h2>
+    <div class="drawer-header-actions">
+      <button class="drawer-btn" onclick="refreshLocations()" title="重新扫描对话，重建地点列表">🔄 刷新</button>
+      <button class="modal-close" onclick="toggleLocations()">&times;</button>
+    </div>
+  </div>
+  <div class="drawer-hint" id="locationHint"></div>
+  <div class="drawer-body" id="locationBody">
+    <p style="color:rgba(255,255,255,0.4)">暂无数据</p>
+  </div>
+</div>
+
+<!-- ==================== 加载预览 Modal ==================== -->
+<div id="loadPreviewModal" class="modal-overlay" style="display:none">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2 id="loadPreviewTitle">👁 预览</h2>
+      <button class="modal-close" onclick="closeModal('loadPreviewModal')">&times;</button>
+    </div>
+    <div class="modal-body" id="loadPreviewBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="pixivSearchReference()">🖼 搜图参考</button>
+      <button class="btn btn-secondary" onclick="closeModal('loadPreviewModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 离线小说游戏 ==================== -->
+<div id="offlineGame" class="modal-overlay" style="display:none">
+  <div class="og-screen">
+    <div class="og-header">
+      <h2 id="ogTitle">离线小说游戏</h2>
+      <div class="og-tools">
+        <span id="ogAiStatus" class="og-ai-status"></span>
+        <button class="btn btn-secondary" id="ogAiBtn" onclick="GameEngine.toggleAI()">✨ AI 增强：关</button>
+        <button class="btn btn-secondary" onclick="GameEngine.restart()">🔄 重新开局</button>
+        <button class="btn btn-secondary" onclick="GameEngine.close()">✕ 退出</button>
+      </div>
+    </div>
+    <div class="og-body">
+      <div class="og-main">
+        <div class="og-stage-box"><canvas id="ogCanvas" width="700" height="140"></canvas></div>
+        <div id="ogStory" class="og-story"></div>
+        <div id="ogChoices" class="og-choices"></div>
+      </div>
+      <div class="og-side">
+        <div id="ogChar" class="og-panel"></div>
+        <div id="ogLog" class="og-panel og-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Opening Choice Modal（多开局 · 借鉴 SillyTavern alternate_greetings） ==================== -->
+<div id="openingChoiceModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:600px">
+    <div class="modal-header">
+      <h2>🎭 选择开局</h2>
+      <button class="modal-close" onclick="closeModal('openingChoiceModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.6">
+        该角色卡提供了多个开场（alternate_greetings）。选一个作为故事起点，或随机抽一个。
+      </p>
+      <div id="openingChoices" class="opening-choices"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('openingChoiceModal')">取消</button>
+      <button class="btn btn-primary" onclick="confirmOpeningChoice()">开始冒险</button>
+    </div>
+  </div>
+</div>
+
+<!-- 扩展工具弹窗已移除：TTS 朗读 / AI 生图 现直接内嵌于对话框每条 AI 叙事 -->
+
+<!-- ==================== 聊天背景 Modal ==================== -->
+<div id="chatBackgroundModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <h2>🎨 聊天背景</h2>
+      <button class="modal-close" onclick="closeModal('chatBackgroundModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.6">为当前冒险的聊天界面设置背景色或背景图（按冒险保存）。</p>
+      <div class="form-group">
+        <label>背景色</label>
+        <input type="color" id="bgColorInput" value="#0f1320">
+        <div class="bg-swatches" id="bgSwatches"></div>
+      </div>
+      <div class="form-group">
+        <label>或上传背景图</label>
+        <button class="btn btn-secondary" onclick="document.getElementById('bgImageInput').click()">🖼 选择图片</button>
+        <input type="file" id="bgImageInput" accept="image/*" style="display:none">
+        <small>图片将以平铺方式作为聊天区背景</small>
+      </div>
+      <div id="bgPreview" class="bg-preview"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="clearChatBackground()">清除背景</button>
+        <button class="btn btn-secondary" onclick="closeModal('chatBackgroundModal')">取消</button>
+        <button class="btn btn-primary" onclick="applyChatBackgroundFromModal()">应用</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Pixiv 搜图 Modal ==================== -->
+<div id="pixivModal" class="modal-overlay" style="display:none">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2>🖼 Pixiv 搜图</h2>
+      <button class="modal-close" onclick="closeModal('pixivModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="pixiv-tabs">
+        <button class="pixiv-tab active" data-pixiv-tab="search" onclick="pixivSwitchTab('search')">🔍 搜索</button>
+        <button class="pixiv-tab" data-pixiv-tab="rank" onclick="pixivSwitchTab('rank')">🏆 排行榜</button>
+      </div>
+      <div id="pixivPanelSearch" class="pixiv-panel">
+        <div class="form-group">
+          <label>搜索关键词（支持中文/日文标签）</label>
+          <div class="pixiv-search-row">
+            <input type="text" id="pixivKeyword" placeholder="如：日向雏田 / 日向ヒナタ" onkeydown="if(event.key==='Enter')pixivSearch()">
+            <button class="btn btn-primary" onclick="pixivSearch()">🔍 站内搜索</button>
+            <button class="btn btn-secondary" onclick="pixivRandom()">🎲 随机</button>
+            <button class="btn btn-secondary" onclick="jumpPixivSearch()">↗ 原站搜索</button>
+          </div>
+          <small>站内搜索显示真实结果：可看图、翻合集、下载原图；R18 受平台 NSFW 开关控制</small>
+        </div>
+        <div id="pixivResults" class="pixiv-grid"><div class="pixiv-tip">输入关键词开始搜索，或点「🎲 随机」</div></div>
+        <div class="pixiv-pager" id="pixivPager">
+          <button class="btn btn-secondary" onclick="pixivPage(-1)">← 上一页</button>
+          <span id="pixivPageInfo"></span>
+          <button class="btn btn-secondary" onclick="pixivPage(1)">下一页 →</button>
+        </div>
+      </div>
+      <div id="pixivPanelRank" class="pixiv-panel" style="display:none">
+        <div class="form-group">
+          <label>排行榜模式</label>
+          <div class="pixiv-search-row">
+            <select id="pixivRankMode" onchange="pixivRanking()">
+              <option value="day">日榜</option>
+              <option value="week">周榜</option>
+              <option value="month">月榜</option>
+              <option value="week_original">周榜·原创</option>
+              <option value="week_rookie">周榜·新人</option>
+              <option value="day_r18">日榜·R18</option>
+              <option value="week_r18">周榜·R18</option>
+              <option value="week_r18g">周榜·R18G</option>
+            </select>
+            <button class="btn btn-primary" onclick="pixivRanking()">🏆 加载排行</button>
+          </div>
+        </div>
+        <div id="pixivRankResults" class="pixiv-grid"><div class="pixiv-tip">选择模式后点「🏆 加载排行」</div></div>
+        <div class="pixiv-pager" id="pixivRankPager">
+          <button class="btn btn-secondary" onclick="pixivRankPage(-1)">← 上一页</button>
+          <span id="pixivRankPageInfo"></span>
+          <button class="btn btn-secondary" onclick="pixivRankPage(1)">下一页 →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="pixivViewModal" class="modal-overlay" style="display:none">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h2 id="pixivViewTitle">Pixiv 作品</h2>
+      <button class="modal-close" onclick="closeModal('pixivViewModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="pixivViewImgWrap" class="pixiv-view-imgwrap"><div class="pixiv-tip">加载中…</div></div>
+      <div id="pixivViewInfo" class="pixiv-view-info"></div>
+      <div class="pixiv-view-actions">
+        <button class="btn btn-secondary" onclick="pixivViewPrev()">← 上一张</button>
+        <span id="pixivViewPage" style="font-size:13px;color:var(--text-muted)"></span>
+        <button class="btn btn-secondary" onclick="pixivViewNext()">下一张 →</button>
+        <button class="btn btn-secondary" id="pixivUgoiraBtn" onclick="pixivToggleUgoira()" style="display:none">▶ 播放动图</button>
+        <button class="btn btn-secondary" id="pixivBookmarkBtn" onclick="pixivToggleBookmark()">🔖 收藏</button>
+        <button class="btn btn-secondary" onclick="pixivRandomFromView()">🎲 换一个</button>
+        <button class="btn btn-secondary" onclick="pixivSetSceneImage()">🖼 设为冒险场景图</button>
+        <button class="btn btn-primary" onclick="pixivDownloadCurrent()">💾 保存到 ai-images</button>
+        <button class="btn btn-secondary" onclick="pixivOpenOriginal()">↗ 原站打开</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="denovaExportModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <h2>🚀 导出到 Denova</h2>
+      <button class="modal-close" onclick="closeModal('denovaExportModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="denovaExportText" style="font-size:13px;color:var(--text-muted);margin-bottom:10px">准备中…</div>
+      <div style="height:14px;background:rgba(255,255,255,0.08);border-radius:999px;overflow:hidden;border:1px solid var(--border-strong)">
+        <div id="denovaExportBar" style="height:100%;width:0%;background:linear-gradient(90deg,#7c3aed,#4f46e5);border-radius:999px;transition:width .3s ease"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:var(--text-muted)">
+        <span id="denovaExportPct">0%</span>
+        <span id="denovaExportDetail"></span>
+      </div>
+      <pre id="denovaExportReport" style="display:none;margin:14px 0 0;padding:12px;max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--border-strong);border-radius:10px;background:rgba(0,0,0,.16);font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--text-secondary)"></pre>
+      <details style="margin-top:12px;font-size:12px;color:var(--text-muted)">
+        <summary style="cursor:pointer">本冒险翻译术语覆盖（可选）</summary>
+        <textarea id="denovaGlossaryOverride" rows="4" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg-input);color:var(--text-primary);font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" placeholder="character name = 角色名&#10;!DoNotTranslate"></textarea>
+        <div style="margin-top:4px">每行“英文 = 中文”；以 ! 开头表示禁止翻译。只影响当前冒险并参与缓存版本。</div>
+      </details>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="pauseDenovaExport()">暂停</button>
+      <button class="btn btn-secondary" onclick="resumeDenovaExport()">继续</button>
+      <button class="btn btn-secondary" onclick="cancelDenovaExport()">取消任务</button>
+      <button class="btn btn-primary" onclick="openDenovaShell();closeModal('denovaExportModal')">🔗 在 Denova 中打开</button>
+      <button class="btn btn-secondary" onclick="closeModal('denovaExportModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 一键生成小说 Modal ==================== -->
+<div id="novelExportModal" class="modal-overlay" style="display:none">
+  <div class="modal" style="width:760px">
+    <div class="modal-header">
+      <h2 id="novelTitle">小说生成</h2>
+      <button class="modal-close" onclick="closeModal('novelExportModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="novelInfo" style="font-size:12px;color:var(--text-muted);margin-bottom:10px"></p>
+      <div class="novel-plan-section" style="margin-bottom:10px;border:1px solid var(--border-strong);border-radius:10px;padding:8px;background:rgba(255,255,255,0.02)">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
+          <b>📖 大纲 / 细纲</b>
+          <button class="btn btn-secondary" id="novelOutlineBtn" onclick="generateNovelOutline()">✨ 生成大纲</button>
+          <button class="btn btn-secondary" onclick="saveNovelPlan()">💾 保存大纲</button>
+        </div>
+        <textarea id="novelOutlineInput" rows="3" placeholder="主线大纲：故事走向 / 核心冲突 / 结局方向（可手写或 AI 生成；保存后「一键生成全部章节」会按此写作）" style="width:100%;box-sizing:border-box"></textarea>
+        <div id="novelGroupsBox" style="margin-top:6px"></div>
+      </div>
+      <div id="novelChapters"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="generateAllNovel()">⚡ 一键生成全部章节</button>
+      <button class="btn btn-secondary" onclick="copyNovelAll()">📋 复制全部</button>
+      <button class="btn btn-secondary" onclick="downloadNovel()">⬇ 下载全部(.txt)</button>
+      <button class="btn btn-secondary" onclick="pixivSearchCover()">🎨 搜封面图</button>
+      <button class="btn btn-secondary" onclick="generateSettingsDoc()">📜 生成设定文档</button>
+      <button class="btn btn-secondary" onclick="downloadSettingsDoc()">⬇ 下载设定txt</button>
+      <button class="btn btn-secondary" onclick="closeModal('novelExportModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!--
+  Lucide icons (https://github.com/lucide-icons/lucide), ISC License.
+  The sprite is kept inline so standalone and Denova-embedded builds share one
+  local asset without adding a runtime dependency.
+-->
+<svg class="narraverse-icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="n-icon-settings" viewBox="0 0 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="n-icon-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/></symbol>
+  <symbol id="n-icon-sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol>
+  <symbol id="n-icon-gamepad" viewBox="0 0 24 24"><line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/></symbol>
+  <symbol id="n-icon-book" viewBox="0 0 24 24"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></symbol>
+  <symbol id="n-icon-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol>
+  <symbol id="n-icon-map" viewBox="0 0 24 24"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15M9 3.236v15"/></symbol>
+  <symbol id="n-icon-blocks" viewBox="0 0 24 24"><path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2"/><rect x="14" y="2" width="8" height="8" rx="1"/></symbol>
+  <symbol id="n-icon-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="n-icon-clipboard" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></symbol>
+  <symbol id="n-icon-palette" viewBox="0 0 24 24"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+  <symbol id="n-icon-zap" viewBox="0 0 24 24"><path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/></symbol>
+  <symbol id="n-icon-dices" viewBox="0 0 24 24"><rect width="12" height="12" x="2" y="10" rx="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6M6 18h.01M10 14h.01M15 6h.01M18 9h.01"/></symbol>
+  <symbol id="n-icon-brain" viewBox="0 0 24 24"><path d="M12 18V5M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5M17.997 5.125a4 4 0 0 1 2.526 5.77M18 18a4 4 0 0 0 2-7.464M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517M6 18a4 4 0 0 1-2-7.464M6.003 5.125a4 4 0 0 0-2.526 5.77"/></symbol>
+  <symbol id="n-icon-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="n-icon-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
+  <symbol id="n-icon-download" viewBox="0 0 24 24"><path d="M12 15V3M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5"/></symbol>
+  <symbol id="n-icon-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+  <symbol id="n-icon-volume" viewBox="0 0 24 24"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298zM16 9a5 5 0 0 1 0 6M19.364 18.364a9 9 0 0 0 0-12.728"/></symbol>
+  <symbol id="n-icon-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="n-icon-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="n-icon-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="n-icon-eye-off" viewBox="0 0 24 24"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49M14.084 14.158a3 3 0 0 1-4.242-4.242M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143M2 2l20 20"/></symbol>
+  <symbol id="n-icon-trophy" viewBox="0 0 24 24"><path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3M4 22h16M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1zM6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3"/></symbol>
+  <symbol id="n-icon-leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></symbol>
+  <symbol id="n-icon-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></symbol>
+  <symbol id="n-icon-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="n-icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="n-icon-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5"/></symbol>
+  <symbol id="n-icon-trash" viewBox="0 0 24 24"><path d="M10 11v6M14 11v6M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+  <symbol id="n-icon-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="n-icon-circle-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="n-icon-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></symbol>
+  <symbol id="n-icon-upload" viewBox="0 0 24 24"><path d="M12 3v12M17 8l-5-5-5 5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></symbol>
+  <symbol id="n-icon-swords" viewBox="0 0 24 24"><path d="m13 19 6-6M14.5 17.5 3.586 6.586A2 2 0 0 1 3 5.172V3h2.172a2 2 0 0 1 1.414.586L17.5 14.5M14.828 6.172l2.586-2.586A2 2 0 0 1 18.828 3H21v2.172a2 2 0 0 1-.586 1.414l-2.586 2.586M16 16l4 4M19 21l2-2M5 14l4 4M5 21l-2-2M7.5 16.5 4 20"/></symbol>
+  <symbol id="n-icon-wine" viewBox="0 0 24 24"><path d="M8 22h8M7 10h10M12 15v7M12 15a5 5 0 0 0 5-5c0-2-.5-4-2-8H9c-1.5 4-2 6-2 8a5 5 0 0 0 5 5Z"/></symbol>
+  <symbol id="n-icon-rocket" viewBox="0 0 24 24"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/></symbol>
+  <symbol id="n-icon-package" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73zM12 22V12M3.29 7 12 12l8.71-5M7.5 4.27l9 5.15"/></symbol>
+  <symbol id="n-icon-bot" viewBox="0 0 24 24"><path d="M12 8V4H8M2 14h2M20 14h2M15 13v2M9 13v2"/><rect width="16" height="12" x="4" y="8" rx="2"/></symbol>
+  <symbol id="n-icon-message" viewBox="0 0 24 24"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719"/></symbol>
+  <symbol id="n-icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="n-icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
+  <symbol id="n-icon-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></symbol>
+  <symbol id="n-icon-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/></symbol>
+  <symbol id="n-icon-file" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2zM14 2v5a1 1 0 0 0 1 1h5M10 9H8M16 13H8M16 17H8"/></symbol>
+  <symbol id="n-icon-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="n-icon-scroll" viewBox="0 0 24 24"><path d="M15 12h-5M15 8h-5M19 17V5a2 2 0 0 0-2-2H4M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></symbol>
+  <symbol id="n-icon-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></symbol>
+  <symbol id="n-icon-pause" viewBox="0 0 24 24"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></symbol>
+  <symbol id="n-icon-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol>
+  <symbol id="n-icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+  <symbol id="n-icon-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="n-icon-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="n-icon-circle-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 17h.01"/></symbol>
+  <symbol id="n-icon-bookmark" viewBox="0 0 24 24"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"/></symbol>
+  <symbol id="n-icon-drama" viewBox="0 0 24 24"><path d="M10 11h.01M14 6h.01M18 6h.01M6.5 13.1h.01M22 5c0 9-4 12-6 12s-6-3-6-12c0-2 2-3 6-3s6 1 6 3M17.4 9.9c-.8.8-2 .8-2.8 0M10.1 7.1C9 7.2 7.7 7.7 6 8.6c-3.5 2-4.7 3.9-3.7 5.6 4.5 7.8 9.5 8.4 11.2 7.4.9-.5 1.9-2.1 1.9-4.7M9.1 16.5c.3-1.1 1.4-1.7 2.4-1.4"/></symbol>
+</svg>
+<script>
+  (function () {
+    var emojiIcons = {
+      '⚙️':'settings','⚙':'settings','🔊':'volume','⏹️':'x','⏹':'x','🖼️':'image','🖼':'image',
+      '✨':'sparkles','🎲':'dices','➕':'plus','⚔️':'swords','⚔':'swords','🍷':'wine','🔒':'lock',
+      '📚':'book','📖':'book','📝':'file','✏️':'pencil','✎':'pencil','🗂️':'folder','🗂':'folder',
+      '🧭':'compass','💾':'save','🚀':'rocket','🎮':'gamepad','🗺️':'map','🗺':'map','🧩':'blocks',
+      '📍':'pin','📋':'clipboard','🎨':'palette','⚡':'zap','🔍':'search','🧠':'brain','🙈':'eye-off',
+      '👁️':'eye','👁':'eye','🏆':'trophy','🌿':'leaf','↩️':'undo','↩':'undo','📥':'download',
+      '📤':'upload','📦':'package','🤖':'bot','💭':'message','🎯':'target','🌍':'globe','💡':'lightbulb',
+      '⚠️':'alert','⚠':'alert','❌':'circle-x','✅':'circle-check','📜':'scroll','⬇️':'arrow-down',
+      '⬇':'arrow-down','⏸️':'pause','⏸':'pause','▶️':'play','▶':'play','🔗':'link','↗️':'external',
+      '↗':'external','✕':'x','❓':'circle-help','🏆':'trophy','🔌':'zap','👥':'blocks','📂':'folder',
+      '💬':'message','🔄':'refresh','✏':'pencil','🎬':'play','🎒':'package','💞':'message','🎭':'drama','🔖':'bookmark',
+      '💪':'target','🔮':'sparkles','🔓':'lock'
+    };
+    var emojiPattern = new RegExp(Object.keys(emojiIcons).sort(function (a, b) { return b.length - a.length; }).map(function (value) {
+      return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }).join('|'), 'g');
+    var skipClasses = ['message-content', 'story-text', 'narrative-text', 'og-text', 'narrative-body'];
+
+    function iconNode(name) {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'n-icon n-icon-' + name);
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('focusable', 'false');
+      svg.setAttribute('fill', 'none');
+      svg.setAttribute('stroke', 'currentColor');
+      svg.setAttribute('stroke-width', '2');
+      svg.setAttribute('stroke-linecap', 'round');
+      svg.setAttribute('stroke-linejoin', 'round');
+      var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', '#n-icon-' + name);
+      svg.appendChild(use);
+      return svg;
+    }
+
+    function shouldSkip(node) {
+      var el = node.parentElement;
+      while (el && el !== document.body) {
+        if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return true;
+        for (var i = 0; i < skipClasses.length; i += 1) if (el.classList.contains(skipClasses[i])) return true;
+        el = el.parentElement;
+      }
+      return false;
+    }
+
+    function normalize(root) {
+      if (!root) return;
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      var nodes = [], current;
+      while ((current = walker.nextNode())) nodes.push(current);
+      nodes.forEach(function (node) {
+        if (shouldSkip(node) || !emojiPattern.test(node.nodeValue)) { emojiPattern.lastIndex = 0; return; }
+        emojiPattern.lastIndex = 0;
+        var value = node.nodeValue, fragment = document.createDocumentFragment(), last = 0, match;
+        while ((match = emojiPattern.exec(value))) {
+          if (match.index > last) fragment.appendChild(document.createTextNode(value.slice(last, match.index)));
+          fragment.appendChild(iconNode(emojiIcons[match[0]]));
+          last = match.index + match[0].length;
+        }
+        if (last < value.length) fragment.appendChild(document.createTextNode(value.slice(last)));
+        if (node.parentNode) node.parentNode.replaceChild(fragment, node);
+        emojiPattern.lastIndex = 0;
+      });
+    }
+
+    function cleanIconAttributes() {
+      document.querySelectorAll('input, textarea, [title], [aria-label]').forEach(function (el) {
+        ['placeholder', 'title', 'aria-label'].forEach(function (attr) {
+          var value = el.getAttribute(attr);
+          if (value) el.setAttribute(attr, value.replace(emojiPattern, '').replace(/\s{2,}/g, ' ').trim());
+          emojiPattern.lastIndex = 0;
+        });
+      });
+    }
+
+    window.narraverseIcon = function (name) { return iconNode(name); };
+    normalize(document.body);
+    cleanIconAttributes();
+    new MutationObserver(function (records) {
+      records.forEach(function (record) {
+        record.addedNodes.forEach(function (node) {
+          if (node.nodeType === 1) normalize(node);
+          else if (node.nodeType === 3 && node.parentNode) normalize(node.parentNode);
+        });
+      });
+      cleanIconAttributes();
+    }).observe(document.body, { childList: true, subtree: true });
+  }());
+</script>
+
+<script src="stickman.js"></script>
+<script src="game_engine.js"></script>
+<script src="packs/limitless.js"></script>
+<script src="local_library.js"></script>
+<script src="app.js?v=20260830-denova-dark"></script>
+<script src="presets.js"></script>
+<script src="bridge.js"></script>
+<script src="module4/core/world.js"></script>
+<script src="module4/core/clock.js"></script>
+<script src="module4/core/schedule.js"></script>
+<script src="module4/core/location.js"></script>
+<script src="module4/core/encounter.js"></script>
+<script src="module4/core/facts.js"></script>
+<script src="module4/core/settlement.js"></script>
+<script src="module4/core/action.js"></script>
+<script src="module4/core/judgment.js"></script>
+<script src="module4/ai/prompts.js"></script>
+<script src="module4/ai/preview.js"></script>
+<script src="module4/ai/interaction.js"></script>
+<script src="module4/state/migrations.js"></script>
+<script src="module4/state/store.js"></script>
+<script src="module4/ui/components.js"></script>
+<script src="module4/ui/world-list.js"></script>
+<script src="module4/ui/world-create.js"></script>
+<script src="module4/ui/play-view.js"></script>
+<script src="module4/ui/shell.js"></script>
+<script src="module4/module4.js"></script>
+</body>
+</html>

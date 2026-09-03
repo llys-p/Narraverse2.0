@@ -1,0 +1,464 @@
+package interactive
+
+type CreateStoryRequest struct {
+	Title                     string                            `json:"title"`
+	Origin                    string                            `json:"origin"`
+	StoryTellerID             string                            `json:"story_teller_id"`
+	StoryDirectorID           string                            `json:"story_director_id,omitempty"`
+	DirectorRunPolicy         *StoryDirectorRunPolicy           `json:"director_run_policy,omitempty"`
+	ModuleRefs                *StoryDirectorModuleRefs          `json:"module_refs,omitempty"`
+	ReplyTargetChars          int                               `json:"reply_target_chars"`
+	ChoiceCount               int                               `json:"choice_count"`
+	Opening                   StoryOpeningConfig                `json:"opening,omitempty"`
+	ImageSettings             StoryImageSettings                `json:"image_settings,omitempty"`
+	InitialTraitRolls         []InitialActorTraitRoll           `json:"initial_trait_rolls,omitempty"`
+	StateSchemaPolicy         *StoryStateSchemaPolicy           `json:"state_schema_policy,omitempty"`
+	ActorState                *StoryDirectorActorStateSystem    `json:"-"`
+	TRPGSystem                *StoryDirectorTRPGSystem          `json:"-"`
+	ActorStateAdaptation      *ActorStateSchemaAdaptationRecord `json:"-"`
+	InitialStateOps           []StateOp                         `json:"-"`
+	DirectorPlanSeed          *DirectorPlanSeed                 `json:"-"`
+	StateSchemaInitialization *StateSchemaInitializationStatus  `json:"-"`
+}
+
+type AppendTurnRequest struct {
+	BranchID             string                `json:"branch_id"`
+	User                 string                `json:"user"`
+	Narrative            string                `json:"narrative"`
+	Thinking             string                `json:"thinking,omitempty"`
+	DisplayEvents        []DisplayEvent        `json:"display_events,omitempty"`
+	ModelContextMessages []ModelContextMessage `json:"model_context_messages,omitempty"`
+}
+
+type AppendTurnWithStateRequest struct {
+	BranchID             string                    `json:"branch_id"`
+	ExpectedParentID     *string                   `json:"expected_parent_id,omitempty"`
+	User                 string                    `json:"user"`
+	Narrative            string                    `json:"narrative"`
+	Thinking             string                    `json:"thinking,omitempty"`
+	RunID                string                    `json:"run_id,omitempty"`
+	AgentKind            string                    `json:"agent_kind,omitempty"`
+	DisplayEvents        []DisplayEvent            `json:"display_events,omitempty"`
+	ModelContextMessages []ModelContextMessage     `json:"model_context_messages,omitempty"`
+	Ops                  []StateOp                 `json:"ops,omitempty"`
+	ActorOps             []ActorStateOp            `json:"actor_ops,omitempty"`
+	RuleResolution       *RuleResolution           `json:"rule_resolution,omitempty"`
+	TurnResult           *TurnResult               `json:"turn_result,omitempty"`
+	TerminalOutcome      *TerminalOutcome          `json:"terminal_outcome,omitempty"`
+	StateSchemaProposal  *ActorStateSchemaProposal `json:"-"`
+}
+
+type RuleResolutionRerollRequest struct {
+	BranchID string `json:"branch_id,omitempty"`
+	TurnID   string `json:"turn_id,omitempty"`
+}
+
+type RewindTurnRequest struct {
+	BranchID string `json:"branch_id"`
+	TurnID   string `json:"turn_id"`
+}
+
+type SwitchTurnVersionRequest struct {
+	BranchID      string `json:"branch_id"`
+	TurnID        string `json:"turn_id"`
+	VersionTurnID string `json:"version_turn_id"`
+}
+
+// UpdateTurnNarrativeRequest updates only the creator-visible narrative of an
+// existing turn. ExpectedNarrative provides compare-and-swap protection for
+// editors opened from an older snapshot.
+type UpdateTurnNarrativeRequest struct {
+	BranchID          string  `json:"branch_id"`
+	TurnID            string  `json:"-"`
+	Narrative         string  `json:"narrative"`
+	ExpectedNarrative *string `json:"expected_narrative,omitempty"`
+}
+
+// UpdateTurnNarrativeResult reports the durable turn and whether a checkpoint
+// was invalidated so future model context is rebuilt from the edited prose.
+type UpdateTurnNarrativeResult struct {
+	Turn                         TurnEvent `json:"turn"`
+	ContextCompactionInvalidated bool      `json:"context_compaction_invalidated"`
+}
+
+type InteractiveImageGenerateRequest struct {
+	BranchID string `json:"branch_id,omitempty"`
+	TurnID   string `json:"turn_id"`
+	Source   string `json:"source,omitempty"`
+	Force    bool   `json:"force,omitempty"`
+}
+
+type AppendStateDeltaRequest struct {
+	ParentID string         `json:"parent_id"`
+	BranchID string         `json:"branch_id"`
+	Ops      []StateOp      `json:"ops"`
+	ActorOps []ActorStateOp `json:"actor_ops,omitempty"`
+}
+
+type MarkStateFailedRequest struct {
+	ParentID string `json:"parent_id"`
+	BranchID string `json:"branch_id"`
+	Error    string `json:"error"`
+}
+
+type UpdateStoryRequest struct {
+	Title                     string                           `json:"title"`
+	Origin                    *string                          `json:"origin,omitempty"`
+	StoryTellerID             string                           `json:"story_teller_id"`
+	StoryDirectorID           string                           `json:"story_director_id,omitempty"`
+	DirectorRunPolicy         *StoryDirectorRunPolicy          `json:"director_run_policy,omitempty"`
+	ModuleRefs                *StoryDirectorModuleRefs         `json:"module_refs,omitempty"`
+	ReplyTargetChars          *int                             `json:"reply_target_chars,omitempty"`
+	ChoiceCount               *int                             `json:"choice_count,omitempty"`
+	Opening                   *StoryOpeningConfig              `json:"opening,omitempty"`
+	ImageSettings             *StoryImageSettings              `json:"image_settings,omitempty"`
+	StateSchemaPolicy         *StoryStateSchemaPolicy          `json:"state_schema_policy,omitempty"`
+	ActorState                *StoryDirectorActorStateSystem   `json:"-"`
+	TRPGSystem                *StoryDirectorTRPGSystem         `json:"-"`
+	StateSchemaInitialization *StateSchemaInitializationStatus `json:"-"`
+}
+
+type CreateBranchRequest struct {
+	ParentEventID string `json:"parent_event_id"`
+	Title         string `json:"title"`
+}
+
+type Index struct {
+	CurrentStoryID string         `json:"current_story_id"`
+	Stories        []StorySummary `json:"stories"`
+}
+
+type StorySummary struct {
+	ID                string                   `json:"id"`
+	Title             string                   `json:"title"`
+	Origin            string                   `json:"origin"`
+	StoryTellerID     string                   `json:"story_teller_id"`
+	StoryDirectorID   string                   `json:"story_director_id"`
+	DirectorRunPolicy *StoryDirectorRunPolicy  `json:"director_run_policy,omitempty"`
+	ModuleRefs        *StoryDirectorModuleRefs `json:"module_refs,omitempty"`
+	ReplyTargetChars  int                      `json:"reply_target_chars"`
+	ChoiceCount       int                      `json:"choice_count"`
+	Opening           StoryOpeningConfig       `json:"opening"`
+	ImageSettings     StoryImageSettings       `json:"image_settings"`
+	StateSchemaPolicy *StoryStateSchemaPolicy  `json:"state_schema_policy,omitempty"`
+	CreatedAt         string                   `json:"created_at"`
+	UpdatedAt         string                   `json:"updated_at"`
+	Branches          int                      `json:"branches"`
+	Events            int                      `json:"events"`
+}
+
+type StoryOpeningConfig struct {
+	Mode       string `json:"mode"`
+	PresetID   string `json:"preset_id,omitempty"`
+	PresetText string `json:"preset_text,omitempty"`
+	CustomText string `json:"custom_text,omitempty"`
+}
+
+type StoryImageSettings struct {
+	Mode          string `json:"mode"`
+	IntervalTurns int    `json:"interval_turns,omitempty"`
+	PresetID      string `json:"preset_id,omitempty"`
+}
+
+type BranchMeta struct {
+	Head      string `json:"head"`
+	CreatedAt string `json:"created_at"`
+	From      string `json:"from,omitempty"`
+	FromEvent string `json:"from_event,omitempty"`
+	Title     string `json:"title,omitempty"`
+}
+
+type BranchSummary struct {
+	ID        string `json:"id"`
+	Head      string `json:"head"`
+	From      string `json:"from,omitempty"`
+	FromEvent string `json:"from_event,omitempty"`
+	Title     string `json:"title,omitempty"`
+	CreatedAt string `json:"created_at"`
+	Current   bool   `json:"current"`
+}
+
+type StoryMeta struct {
+	V                         int                              `json:"v"`
+	Type                      string                           `json:"type"`
+	StoryID                   string                           `json:"story_id"`
+	Title                     string                           `json:"title"`
+	Origin                    string                           `json:"origin"`
+	StoryTellerID             string                           `json:"story_teller_id"`
+	StoryDirectorID           string                           `json:"story_director_id,omitempty"`
+	DirectorRunPolicy         *StoryDirectorRunPolicy          `json:"director_run_policy,omitempty"`
+	ModuleRefs                *StoryDirectorModuleRefs         `json:"module_refs,omitempty"`
+	ReplyTargetChars          int                              `json:"reply_target_chars"`
+	ChoiceCount               int                              `json:"choice_count"`
+	Opening                   StoryOpeningConfig               `json:"opening"`
+	ImageSettings             StoryImageSettings               `json:"image_settings"`
+	StateSchemaPolicy         *StoryStateSchemaPolicy          `json:"state_schema_policy,omitempty"`
+	InitialTraitRolls         []InitialActorTraitRoll          `json:"initial_trait_rolls,omitempty"`
+	ActorStateSchema          *ActorStateSchemaSnapshot        `json:"actor_state_schema,omitempty"`
+	StateSchemaInitialization *StateSchemaInitializationStatus `json:"state_schema_initialization,omitempty"`
+	CurrentBranch             string                           `json:"current_branch"`
+	Branches                  map[string]BranchMeta            `json:"branches"`
+	CreatedAt                 string                           `json:"created_at"`
+	UpdatedAt                 string                           `json:"updated_at"`
+}
+
+type TurnEvent struct {
+	V                    int                   `json:"v"`
+	Type                 string                `json:"type"`
+	ID                   string                `json:"id"`
+	ParentID             any                   `json:"parent_id"`
+	BranchID             string                `json:"branch_id"`
+	Ts                   string                `json:"ts"`
+	User                 string                `json:"user"`
+	Narrative            string                `json:"narrative"`
+	Thinking             string                `json:"thinking,omitempty"`
+	RunID                string                `json:"run_id,omitempty"`
+	AgentKind            string                `json:"agent_kind,omitempty"`
+	DisplayEvents        []DisplayEvent        `json:"display_events,omitempty"`
+	ModelContextMessages []ModelContextMessage `json:"model_context_messages,omitempty"`
+	StateDelta           *StateDelta           `json:"state_delta,omitempty"`
+	HotState             *HotState             `json:"hot_state,omitempty"`
+	RuleResolution       *RuleResolution       `json:"rule_resolution,omitempty"`
+	TurnResult           *TurnResult           `json:"turn_result,omitempty"`
+	TerminalOutcome      *TerminalOutcome      `json:"terminal_outcome,omitempty"`
+	StateStatus          string                `json:"state_status,omitempty"`
+	StateError           string                `json:"state_error,omitempty"`
+	Alts                 []TurnAlt             `json:"alts,omitempty"`
+	AltIdx               int                   `json:"alt_idx,omitempty"`
+	Versions             []TurnVersion         `json:"versions,omitempty"`
+	VersionIdx           int                   `json:"version_idx,omitempty"`
+	Flags                map[string]bool       `json:"flags,omitempty"`
+}
+
+const TokenUsageEventType = "token_usage"
+
+// DisplayEventRoleNarrative marks the position where the turn narrative was
+// streamed relative to thinking/tool events. It carries no content; the UI
+// renders turn.narrative at this anchor so submission tool cards stay after
+// the prose instead of being folded into the thinking trace group.
+const DisplayEventRoleNarrative = "narrative"
+
+// DisplayEvent 表示互动回合中只用于前端展示的事件，例如思考过程和工具调用卡片。
+// 它不进入下一轮 Agent 上下文；Args/Result 仅用于追溯当时的工具调用过程。
+// Role 为 narrative 的事件是正文位置锚点：正文本身不进入 DisplayEvents，
+// 锚点只标记正文在事件流中的相对位置，供前端按真实顺序穿插渲染。
+type DisplayEvent struct {
+	ID                string   `json:"id,omitempty"`
+	Role              string   `json:"role"`
+	Content           string   `json:"content,omitempty"`
+	Name              string   `json:"name,omitempty"`
+	Args              string   `json:"args,omitempty"`
+	Status            string   `json:"status,omitempty"`
+	Result            string   `json:"result,omitempty"`
+	CreatedAt         string   `json:"created_at,omitempty"`
+	AgentKind         string   `json:"agent_kind,omitempty"`
+	AgentName         string   `json:"agent_name,omitempty"`
+	RootAgentName     string   `json:"root_agent_name,omitempty"`
+	RunPath           []string `json:"run_path,omitempty"`
+	SubAgent          bool     `json:"subagent,omitempty"`
+	RunID             string   `json:"run_id,omitempty"`
+	SubAgentSessionID string   `json:"subagent_session_id,omitempty"`
+	SubAgentType      string   `json:"subagent_type,omitempty"`
+	SSEHiddenFields   []string `json:"sse_hidden_fields,omitempty"`
+	SSEHiddenReason   string   `json:"sse_hidden_reason,omitempty"`
+	SSEDisplayNotice  string   `json:"sse_display_notice,omitempty"`
+	SSEGeneratedChars int      `json:"sse_generated_chars,omitempty"`
+}
+
+// ModelContextMessage is model-visible turn evidence hidden from the chat UI.
+// It stores only assistant tool calls and tool results, never raw thinking.
+type ModelContextMessage struct {
+	Role       string                 `json:"role"`
+	Content    string                 `json:"content,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	ToolCalls  []ModelContextToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string                 `json:"tool_call_id,omitempty"`
+	ToolName   string                 `json:"tool_name,omitempty"`
+}
+
+type ModelContextToolCall struct {
+	Index    *int                     `json:"index,omitempty"`
+	ID       string                   `json:"id"`
+	Type     string                   `json:"type"`
+	Function ModelContextFunctionCall `json:"function"`
+	Extra    map[string]any           `json:"extra,omitempty"`
+}
+
+type ModelContextFunctionCall struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+}
+
+type TokenUsageEvent struct {
+	V                    int              `json:"v"`
+	Type                 string           `json:"type"`
+	ID                   string           `json:"id"`
+	StoryID              string           `json:"story_id,omitempty"`
+	BranchID             string           `json:"branch_id"`
+	CreatedAt            string           `json:"created_at"`
+	RunID                string           `json:"run_id,omitempty"`
+	AgentKind            string           `json:"agent_kind,omitempty"`
+	PromptTokens         int              `json:"prompt_tokens,omitempty"`
+	CachedPromptTokens   int              `json:"cached_prompt_tokens,omitempty"`
+	UncachedPromptTokens int              `json:"uncached_prompt_tokens,omitempty"`
+	CacheHitRate         float64          `json:"cache_hit_rate,omitempty"`
+	CompletionTokens     int              `json:"completion_tokens,omitempty"`
+	ReasoningTokens      int              `json:"reasoning_tokens,omitempty"`
+	TotalTokens          int              `json:"total_tokens,omitempty"`
+	ModelCalls           int              `json:"model_calls,omitempty"`
+	GeneratedBytes       int              `json:"generated_bytes,omitempty"`
+	UsageCalls           []TokenUsageCall `json:"usage_calls,omitempty"`
+}
+
+type TokenUsageCall struct {
+	Index                int      `json:"index,omitempty"`
+	CreatedAt            string   `json:"created_at,omitempty"`
+	FinishReason         string   `json:"finish_reason,omitempty"`
+	RequestedTools       []string `json:"requested_tools,omitempty"`
+	AfterTools           []string `json:"after_tools,omitempty"`
+	PromptTokens         int      `json:"prompt_tokens,omitempty"`
+	CachedPromptTokens   int      `json:"cached_prompt_tokens,omitempty"`
+	UncachedPromptTokens int      `json:"uncached_prompt_tokens,omitempty"`
+	CacheHitRate         float64  `json:"cache_hit_rate,omitempty"`
+	CompletionTokens     int      `json:"completion_tokens,omitempty"`
+	ReasoningTokens      int      `json:"reasoning_tokens,omitempty"`
+	TotalTokens          int      `json:"total_tokens,omitempty"`
+}
+
+type TurnAlt struct {
+	Narrative string `json:"narrative"`
+	Ts        string `json:"ts"`
+}
+
+type TurnVersion struct {
+	TurnID  string `json:"turn_id"`
+	Ts      string `json:"ts"`
+	Current bool   `json:"current"`
+}
+
+type StateDelta struct {
+	SchemaVersion int            `json:"schema_version,omitempty"`
+	Ops           []StateOp      `json:"ops"`
+	ActorOps      []ActorStateOp `json:"actor_ops,omitempty"`
+}
+
+type HotState struct {
+	Choices []string `json:"choices"`
+}
+
+type HotChoicesEvent struct {
+	V        int      `json:"v"`
+	Type     string   `json:"type"`
+	ID       string   `json:"id"`
+	ParentID string   `json:"parent_id"`
+	BranchID string   `json:"branch_id"`
+	Ts       string   `json:"ts"`
+	Choices  []string `json:"choices"`
+}
+
+type StateDeltaEvent struct {
+	V             int            `json:"v"`
+	Type          string         `json:"type"`
+	ID            string         `json:"id"`
+	ParentID      string         `json:"parent_id"`
+	BranchID      string         `json:"branch_id"`
+	Ts            string         `json:"ts"`
+	SchemaVersion int            `json:"schema_version,omitempty"`
+	Ops           []StateOp      `json:"ops"`
+	ActorOps      []ActorStateOp `json:"actor_ops,omitempty"`
+}
+
+type ContextCompactionEvent struct {
+	V                   int     `json:"v"`
+	Type                string  `json:"type"`
+	ID                  string  `json:"id"`
+	ParentID            string  `json:"parent_id,omitempty"`
+	BranchID            string  `json:"branch_id"`
+	Ts                  string  `json:"ts"`
+	AgentKind           string  `json:"agent_kind,omitempty"`
+	Epoch               int     `json:"epoch"`
+	Summary             string  `json:"summary"`
+	SourceTurnCount     int     `json:"source_turn_count"`
+	RetainedTurns       int     `json:"retained_turns"`
+	TokensBefore        int     `json:"tokens_before"`
+	TokensAfter         int     `json:"tokens_after"`
+	TargetRatio         float64 `json:"target_ratio,omitempty"`
+	ContextWindowTokens int     `json:"context_window_tokens"`
+	Strategy            string  `json:"strategy,omitempty"`
+	Threshold           float64 `json:"threshold"`
+	Reason              string  `json:"reason,omitempty"`
+	Phase               string  `json:"phase,omitempty"`
+}
+
+type ContextCompactionRemovalEvent struct {
+	V               int    `json:"v"`
+	Type            string `json:"type"`
+	ID              string `json:"id"`
+	ParentID        string `json:"parent_id,omitempty"`
+	BranchID        string `json:"branch_id"`
+	Ts              string `json:"ts"`
+	AgentKind       string `json:"agent_kind,omitempty"`
+	CompactionID    string `json:"compaction_id,omitempty"`
+	SourceTurnCount int    `json:"source_turn_count"`
+	Reason          string `json:"reason,omitempty"`
+}
+
+type BranchEvent struct {
+	V        int    `json:"v"`
+	Type     string `json:"type"`
+	ID       string `json:"id"`
+	ParentID string `json:"parent_id"`
+	BranchID string `json:"branch_id"`
+	From     string `json:"from"`
+	Ts       string `json:"ts"`
+	Title    string `json:"title"`
+}
+
+type StateOp struct {
+	Op           string `json:"op"`
+	Path         string `json:"path"`
+	Value        any    `json:"value,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	SourceTurnID string `json:"source_turn_id,omitempty"`
+	SourceKind   string `json:"source_kind,omitempty"`
+	SourceID     string `json:"source_id,omitempty"`
+}
+
+type Snapshot struct {
+	StoryID                   string                           `json:"story_id"`
+	BranchID                  string                           `json:"branch_id"`
+	Turns                     []TurnEvent                      `json:"turns"`
+	CurrentTurn               *TurnEvent                       `json:"current_turn,omitempty"`
+	TokenUsageEvents          []TokenUsageEvent                `json:"token_usage_events,omitempty"`
+	ContextCompaction         *ContextCompactionEvent          `json:"context_compaction,omitempty"`
+	ContextCompactionRemoval  *ContextCompactionRemovalEvent   `json:"context_compaction_removal,omitempty"`
+	DirectorPlan              *DirectorPlan                    `json:"-"`
+	DirectorPlanStatus        *DirectorPlanStatus              `json:"director_plan_status,omitempty"`
+	State                     map[string]any                   `json:"state"`
+	ActorStateSchema          *ActorStateSchemaSnapshot        `json:"actor_state_schema,omitempty"`
+	StateSchemaInitialization *StateSchemaInitializationStatus `json:"state_schema_initialization,omitempty"`
+	Graph                     StoryGraph                       `json:"graph"`
+}
+
+type StoryGraph struct {
+	Nodes    []PlotNode      `json:"nodes"`
+	Branches []BranchSummary `json:"branches"`
+}
+
+type PlotNode struct {
+	ID           string `json:"id"`
+	ParentID     string `json:"parent_id,omitempty"`
+	BranchID     string `json:"branch_id"`
+	Title        string `json:"title"`
+	Summary      string `json:"summary"`
+	Ts           string `json:"ts"`
+	Current      bool   `json:"current"`
+	Head         bool   `json:"head"`
+	Terminal     bool   `json:"terminal,omitempty"`
+	TerminalType string `json:"terminal_type,omitempty"`
+}
+
+type StoryContext struct {
+	Meta     StoryMeta `json:"meta"`
+	Snapshot Snapshot  `json:"snapshot"`
+}

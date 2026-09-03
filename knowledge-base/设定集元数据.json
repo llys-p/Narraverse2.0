@@ -1,0 +1,932 @@
+{
+  "books": {
+    "BDSM与性癖分类": {
+      "summary": "BDSM、癖好与性行为全分类知识书（668 条，库内最大）：按关键词覆盖 aftercare、ageplay、各类器具（肛钩/肛塞/乳夹）、束缚、调教、breathplay、足 fetish、pet play、spanking、体液等，按需挂载避免上下文超限。",
+      "tags": [
+        "NSFW",
+        "性癖",
+        "BDSM",
+        "知识库"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "Hentai道具": {
+      "summary": "Hentai 道具设定合集（10 件）：催眠饼干、催情香薰、隐身斗篷、情欲透镜、诱惑手套、欲望之尘、感官互换项链、情趣回音密室、时停怀表、塞壬音乐盒，用于成人题材的物品种类与效果描写。",
+      "tags": [
+        "NSFW",
+        "道具"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "NSFW强度调节": {
+      "summary": "NSFW 内容强度调节开关（3 条指令 <nson1>/<nsoff>/<nson!>），控制成人内容描写的深浅与尺度（0 安全→5 最露骨），切换时播报模式编号。",
+      "tags": [
+        "NSFW",
+        "调节"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "NSFW术语与关键词": {
+      "summary": "NSFW 术语与关键词库（157 条），按主题聚类（权力/控制、角色扮演、窥视、足 fetish、pet play、鞭打、窒息、年龄扮演、feminization、cuckolding、锁具、身体崇拜等），改善成人描写的用词与触发。",
+      "tags": [
+        "NSFW",
+        "术语"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "RPG系统与状态栏": {
+      "summary": "RPG 系统 / 状态栏 / 属性菜单等 HUD 类知识书（13 条）：含系统总览、属性/状态、技能树、仓库/背包、商店、任务日志、菜单、升级进化、融合、恋爱探测、锻造、成就、铭文等，给冒险加数值面板。",
+      "tags": [
+        "系统",
+        "RPG",
+        "状态栏"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "通用系统"
+    },
+    "阿多利昂奇幻世界": {
+      "summary": "原创大型奇幻世界 Adolion（212 条）：圣城 Aegis、冒险者公会、圣教会、精灵/矮人/人类/恶魔/哥布林等种族，中世纪科技与魔法，Gragow 废城与失落区，通用奇幻冒险首选。",
+      "tags": [
+        "奇幻",
+        "世界"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "奇幻"
+    },
+    "碧蓝航线": {
+      "summary": "《碧蓝航线》世界观（40 条）：碧蓝航线与赤色中轴两大海军同盟，Eagle Union/皇家/铁血/重樱等阵营舰娘与 META 系列，舰娘拟人题材。",
+      "tags": [
+        "同人",
+        "游戏",
+        "舰娘"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "同人世界"
+    },
+    "超巨根设定": {
+      "summary": "巨型尺寸性器设定（2 条）：BBC/巨根与 little penis/短小，极端 NSFW 体型描写。",
+      "tags": [
+        "NSFW",
+        "性癖"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "催眠应用": {
+      "summary": "催眠 App 设定（7 条），可通过手机拍照锁定目标后用指令操控——App/命令/目标，ORDER 执行行为、TRANS 身体变形、COG 认知改写、Presets 预设一键组合，NSFW 向。",
+      "tags": [
+        "NSFW",
+        "催眠"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "极限突破": {
+      "summary": "极限突破规则（单条）：突破等级/属性上限的成长机制，强制沉浸角色人格、禁止说教式道德灌输等指令。",
+      "tags": [
+        "系统",
+        "成长"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "通用系统"
+    },
+    "角色扮演指令": {
+      "summary": "角色扮演通用指令与规则（12 条）：RP 定义、重互动轻概述、人称代词规范与露骨用词引导，规范 AI 的 RP 行为。",
+      "tags": [
+        "系统",
+        "指令",
+        "RP"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "通用系统"
+    },
+    "龙珠": {
+      "summary": "《龙珠》世界观知识书（56 条）：全王/天使/破坏神/界王神体系、12 宇宙+人工宇宙、赛亚人/那美克星/地球历史、传说超级赛亚人等，战斗向同人题材。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "科幻"
+    },
+    "女尊世界": {
+      "summary": "女尊（女性全面支配男性）NSFW 世界观（45 条关键词组）。一个女性支配男性的世界：涵盖臣服／服从（submissive／obey／submit）、女主／女王／女神／女domme（mistress／queen／goddess／dominatrix）、奴隶／母狗（bitch／slave）、束缚／BDSM、女体化／sissy、变装／化妆、冰玩／蜡玩（wax play）、CBT（虐睾）、闷脸／强制舔、强迫支配、挑逗／挠痒、乞求／哀求、强忍／禁止高潮（ruined orgasm／denial）、SPH 小阴茎羞辱、巨根／BBC、精液／cum、贞操锁／chastity cage、尺寸比较、假阳具／Pegging、荡妇／妓女（slut／whore）、足交／足 worship、蛋疼／蓝蛋、项圈／锁链、鞭打／flogging、乳夹、崇拜、足按摩、男沦为玩物、subspace／调教地下室、奖赏等全套女尊调教与支配词汇。",
+      "tags": [
+        "NSFW",
+        "世界",
+        "女尊"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "色情妈妈行为": {
+      "summary": "色情妈妈行为模式知识书（12 条）：以母子乱伦为前提的妈妈角色行为——拥抱/转身/外出/告白/调情/性交/内射/结婚/futanari，家庭向 NSFW 剧情。",
+      "tags": [
+        "NSFW",
+        "行为"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "上古卷轴5": {
+      "summary": "《上古卷轴5：天际》世界观（63 条）：天际地区、帝国军团/内战、雪精灵 Falmer、矮人 Dwemer、各精灵种族、各地领（Helgen/Falkreath/Winterhold 等九领），开放世界奇幻。",
+      "tags": [
+        "同人",
+        "游戏",
+        "奇幻"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "同人世界"
+    },
+    "属性系统终极版": {
+      "summary": "属性/状态终极版 stat 系统（116 条），比普通 RPG 状态栏更细的数值体系：含长期/短期目标、月经周期、阴道深度/阴茎长度、精液量、肌肉、受孕几率、处女状态、等级、阴毛等身体与属性追踪。",
+      "tags": [
+        "系统",
+        "属性"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "通用系统"
+    },
+    "性格斗宇宙": {
+      "summary": "性格斗宇宙 v0.1（7 条）：以性爱格斗（sexfight）为竞技运动的世界观，含赛事/赛程、选手、规则手册、着装、评分排名与惩罚，NSFW 战斗题材。",
+      "tags": [
+        "NSFW",
+        "世界",
+        "格斗"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "性行为清单": {
+      "summary": "性行为清单与分类（13 条）：口语化性行为指令集——乳交/口交/手交/脏话/颜射/倒计时等，成人题材行为目录。",
+      "tags": [
+        "NSFW",
+        "清单"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "异世界奇幻RPG": {
+      "summary": "异世界奇幻 RPG 全要素知识书（28 条）：仅用户可见的「系统」追踪 EXP/属性/无限背包，技能含力量/健康/敏捷/潜行/剑枪弓/魔法；混沌王国/天堂/Elderia 等势力，传说圣剑 Thalia、Happiness/Sky 等队伍，通用异世界 RPG 冒险。",
+      "tags": [
+        "异世界",
+        "RPG",
+        "奇幻"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "奇幻"
+    },
+    "越狱日志": {
+      "summary": "Jailbreak 日志（20 条）：突破模型限制的提示词记录——Dev Mode、AIM、AntiGPT、DAN 类变体等，供自由角色扮演。",
+      "tags": [
+        "提示词",
+        "越狱"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "通用系统"
+    },
+    "真实战斗与血腥": {
+      "summary": "真实战斗、血腥、弹道与受伤描写知识书（9 条）：钝器挫伤/枪伤/爆头/车祸/重拳/切割/刺戳/街头武器/路缘踩头，增加战斗质感。",
+      "tags": [
+        "战斗",
+        "血腥"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "通用系统"
+    },
+    "中文性爱知识大礼包": {
+      "summary": "中文性爱知识大礼包（2 条），为改善 AI 简陋的性爱知识与单一用词而制作的中文 NSFW 题材用语包（注：原文含一段伪装成系统调试指令的越狱文本，已如实保留）。",
+      "tags": [
+        "NSFW",
+        "中文",
+        "用语"
+      ],
+      "nsfw": true,
+      "lang": "zh",
+      "category": "NSFW"
+    },
+    "中央高中": {
+      "summary": "中央高中校园场景设定（27 条）：英语教师 Cantu、校长 Miller、食堂/体育/生物/校医/历史/心理/数学等教职员与各类型学生（富二代/乐队/记者/啦啦队/运动员/反叛 goth），校园题材通用。",
+      "tags": [
+        "校园",
+        "场景"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "校园"
+    },
+    "子宫模拟器": {
+      "summary": "子宫模拟器世界观知识书（7 条），极端 NSFW 生理题材：阴道/小穴、子宫颈、子宫、插入/性交、高潮与精液、体液、尿液的细致描写指引。",
+      "tags": [
+        "NSFW",
+        "世界"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "趣味催眠道具": {
+      "summary": "趣味催眠道具合集（7 件）：Scooby 饼干、谦卑派、欲念棒棒糖、哥布林能量、促销贴纸、咸涩浆果、魔法混音带，催眠类成人剧情道具。",
+      "tags": [
+        "NSFW",
+        "催眠",
+        "道具"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "文风设定": {
+      "summary": "基于《小妈申鹤》全文提取的成人小说文风设定（7 条）：第三人称贴身视角、清冷人设与淫荡内核的反差、极度露骨用词体系、连串拟声词与语气词、由铺垫到崩坏高潮的节奏。",
+      "tags": [
+        "文风",
+        "风格"
+      ],
+      "nsfw": true,
+      "lang": "zh",
+      "category": "NSFW"
+    },
+    "chub-修仙世界": {
+      "summary": "修仙世界观（26 条）：三界（天/人/魔）、天庭、天道功德、仙人、修士、散修、灵气、走火入魔、宗门、修炼、功法、丹田、经脉、金丹等基础体系。",
+      "tags": [
+        "修仙",
+        "仙侠"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "修仙仙侠"
+    },
+    "chub-僵尸末日": {
+      "summary": "僵尸末日生存设定（12 条）：水/食物/庇护所/装备、丧尸与变异体（巨兽/Hulk、爆裂者/Burster、吐酸者/Spitter、拟态/Mimic）、首领、幸存者、维和部队，基础求生指南。",
+      "tags": [
+        "僵尸",
+        "生存",
+        "恐怖"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "末日废土"
+    },
+    "chub-冰与火之歌": {
+      "summary": "《冰与火之歌/权力的游戏》世界（710 条，库内最多）：维斯特洛万年历史（黎明纪元、英雄纪元、安达尔人到来、瓦雷利亚、坦格利安征服、黑火叛乱、五王之战等）、家族、地理与人物。",
+      "tags": [
+        "同人",
+        "奇幻",
+        "权游"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "同人世界"
+    },
+    "chub-哈利波特": {
+      "summary": "《哈利波特》世界观（74 条）。以霍格沃茨魔法学校为核心：位于苏格兰高地，十一岁魔法学生入学，分四大院（格兰芬多、赫奇帕奇、拉文克劳、斯莱特林），各院有象征动物、颜色、幽灵与公共休息室。主体为 74 条咒语大全（召唤咒、阿拉霍洞开、除你武器、守护神咒，以及不可饶恕咒阿瓦达索命／钻心剜骨／夺魂咒等），覆盖咒语名称与效果，供魔法冒险挂载使用。",
+      "tags": [
+        "同人",
+        "哈利波特",
+        "魔法"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "恐怖"
+    },
+    "chub-幻想RPG世界": {
+      "summary": "大型奇幻 RPG 世界 Fantasy RPG（218 条）：大森林大陆与阿普里达等地，栖居阿拉克涅/宁芙/树精/哥布林等魔物娘与奇兽，冒险者/猎人探索寻宝的通用奇幻库。",
+      "tags": [
+        "奇幻",
+        "RPG",
+        "世界"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "奇幻"
+    },
+    "chub-我的英雄学院": {
+      "summary": "《我的英雄学院》全世界观（188 条）：出久/爆豪/轰焦冻等全体角色（英雄名/个性/外貌/装备）、雄英高中与英雄社会，角色与设定齐全。",
+      "tags": [
+        "同人",
+        "日漫",
+        "英雄"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "校园"
+    },
+    "chub-战锤奇幻": {
+      "summary": "战锤奇幻世界观（61 条）：黑暗奇幻的旧世界，含帝国、西格玛神、卡尔·弗兰兹、各选侯领省、种族（精灵/矮人/兽人）与语言，跑团式奇幻冒险用。",
+      "tags": [
+        "奇幻",
+        "战锤",
+        "黑暗"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "奇幻"
+    },
+    "chub-环世界核心": {
+      "summary": "环世界 Rimworld 核心设定（66 条）：银河系人类殖民、无超光速旅行的孤立世界，glitterworld/ultratech/archotech 等科技层级、JT 引擎、cryptosleep、人偶等科幻生存殖民地题材。",
+      "tags": [
+        "科幻",
+        "生存",
+        "游戏"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "科幻"
+    },
+    "chub-记忆世界末日": {
+      "summary": "末日世界观 Memoria（104 条）：文明终结后的屏障外废土，女神/守望者 Cassiel、星象、造物眷属、囚徒、异能、手镯、代币与成对远征，灾难后文明重建题材。",
+      "tags": [
+        "末日",
+        "科幻"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "末日废土"
+    },
+    "chub-赛博朋克2077": {
+      "summary": "《赛博朋克2077》世界观（106 条）。以夜之城（Night City）为中心的赛博朋克反乌托邦：企业巨头的摩天大厦与原血汗贫民窟并存，帮派（虎爪 Tyger Claws、暴走族 Maelstrom、动物帮 Animals、巫毒帮 Voodoo Boys、莫克斯 Mox、巴伦蒂诺斯 Valentinos、六街 6th Street）割据街区，荒坂 Arasaka、军用科技 Militech、康陶 Kang Tao 等巨型企业掌控政治与经济。涵盖夜之城各城区（公司广场、海伍德、太平洋区、Watson、威斯特布鲁克、恶土、诺斯橡树、查特山、狗镇）、义体与人造人（亚当·重锤 Adam Smasher 等）、网络侠客与赛博精神病、脑舞 BD／XBD、Joytoy、创伤小组等，硬核科幻黑色都市基调。",
+      "tags": [
+        "科幻",
+        "赛博朋克"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "科幻"
+    },
+    "chub-赛博朋克通用": {
+      "summary": "通用赛博朋克设定（46 条）：夜之城（Arasaka/Militech/2077）、六大帮派（六街/莫克斯/虎爪/瓦伦蒂诺斯/巫毒帮/暴走族/动物帮）、第四企业战争、代理人与义体，不限定具体作品的赛博世界观。",
+      "tags": [
+        "科幻",
+        "赛博朋克"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "科幻"
+    },
+    "chub-阿尔坎西亚高奇幻": {
+      "summary": "高奇幻世界 Arcanthea（134 条）：齿轮与咒术交织的行星，奥林/龙land 两大陆，原始语、诸神 pantheon、诞生/太阳、蛛后 asloth、巴哈姆特、混沌启示、幸运女神等神祇与地理。",
+      "tags": [
+        "奇幻",
+        "世界"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "恐怖"
+    },
+    "chub-鲁娜奇幻世界": {
+      "summary": "原创奇幻世界 Runa 基础设定（119 条）：人类居于 Solumn 帝国与 Xeocan 国，恶魔 Vulcan、精灵、Luminarii、原初守护者 Xeon 等种族与地理，进行中的世界观。",
+      "tags": [
+        "奇幻",
+        "世界"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "奇幻"
+    },
+    "小说设定-我独自升级（系统流）-solo-leveling": {
+      "summary": "韩系系统流《我独自升级》世界观（70 条）：门/Gate、地下城、魔石、魔兽、魔力、猎人、统治者/君主、国家级、红门、双重觉醒、卡滕农神庙等，经典升级流模板。",
+      "tags": [
+        "小说",
+        "系统流",
+        "金手指",
+        "同人"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "小说模板"
+    },
+    "小说设定-玄幻修仙·凡人问道": {
+      "summary": "原创玄幻修仙小说设定（11 条）：废灵根凡人靠金手指逆天改命，九州大陆五域、境界体系、五幕大纲、问道面板、势力人物、秘境机缘与多结局，供离线文字游戏引擎生成剧情。",
+      "tags": [
+        "小说",
+        "玄幻",
+        "修仙",
+        "大纲",
+        "金手指"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "小说模板"
+    },
+    "小说设定-末世求生·废土纪元": {
+      "summary": "原创末世小说设定（11 条）：陨星「启明星」坠落引发灰潮、丧尸与异变兽，玩家拥随身避难所空间与随机异能；含四幕大纲、生存规则、势力、NPC、随机事件与多结局。",
+      "tags": [
+        "小说",
+        "末世",
+        "求生",
+        "大纲",
+        "金手指"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "小说模板"
+    },
+    "小说设定-无限流·诸天轮回": {
+      "summary": "原创无限流小说设定（11 条）：死亡进入轮回空间、通关副本换力量、失败即抹杀；含世界背景、四阶段大纲、轮回面板金手指、副本池、天赋、主神空间、NPC、随机事件与多结局，可反复游玩。",
+      "tags": [
+        "小说",
+        "无限流",
+        "副本",
+        "大纲",
+        "金手指"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "小说模板"
+    },
+    "chub-龙与地下城城主设定集": {
+      "summary": "《龙与地下城》(D&D) 城主工具书（68 条）：战士/牧师/盗贼/术士/法师/游侠/德鲁伊/圣骑/牧师/术士等职业角色卡、升级、骰子、附魔护甲/法袍/武器等，跑团规则用。",
+      "tags": [
+        "龙与地下城",
+        "奇幻",
+        "系统",
+        "跑团"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "奇幻"
+    },
+    "chub-Re从零开始的异世界生活·露格尼卡王国": {
+      "summary": "《Re:从零开始的异世界生活》露格尼卡王国设定（269 条）：罗兹瓦尔宅邸各房间、翁斯坦、魔女因子、权威、大罪主教、罪恶魔女等，覆盖世界观/地点/势力/魔法体系。",
+      "tags": [
+        "同人",
+        "Re零",
+        "奇幻"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "同人世界"
+    },
+    "chub-分裂天空科幻世界": {
+      "summary": "科幻世界「分裂天空」(Divided Skies/AICG)（488 条）：高奇幻冒险基调的太空歌剧，覆盖风格修饰、世界信息与随机化器，以及 Barataria/Paradise Disc/Aphelion 等星际势力、舰船与地理。",
+      "tags": [
+        "科幻",
+        "世界",
+        "太空歌剧"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "科幻"
+    },
+    "邪术召唤咒典": {
+      "summary": "邪术召唤咒典（The Sus Spellbook，8 条）：触发生触肢怪、时停、召唤假阳具、催眠暗示、泌乳、幽灵、护符等召唤/控制系法术，NSFW 奇幻法术书。",
+      "tags": [
+        "NSFW",
+        "法术",
+        "召唤"
+      ],
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW"
+    },
+    "火影忍者": {
+      "summary": "《火影忍者》世界观设定集（153 条）。背景为九尾袭击十年后木叶村表面和平、暗流涌动：忍者从下忍新人到精英上忍，任务由琐碎的 D 级到机密 S 级；鸣人与第七班备战残酷的中忍考试，而团藏的暗部「根（Root）」在村庄平静表象下执行三代火影最黑暗的指令。涵盖忍者等级与任务体系、晓组织、三忍、尾兽（九喇嘛）、咒印、木叶十二忍、各家族血继限界（写轮眼／万花筒、白眼、尸骨脉等）与各类忍术（忍术／幻术／体术／封印术／医疗忍术／仙术等）。",
+      "tags": [
+        "同人",
+        "火影",
+        "忍者",
+        "世界"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "恐怖"
+    },
+    "Sexual positions_world_info": {
+      "summary": "性爱姿势（体位）合集（18 条）。涵盖各类性交体位与性爱技法：传教士式（面对面）、狗爬式／后入（doggy）、平趴式（prone bone）、叠压式／折合传教士（mating press）、骑乘位／女上位（cowgirl）、反向骑乘（reverse cowgirl）、侧卧 spooning、站立式、抱起／靠墙悬吊、反向抱起、口交／舔阳（blow job/fellatio）、乳交／paizuri、手淫／handjob、足交／footjob、坐脸／queening、深喉／deepthroat、六九式（69）、肛交／anal 等，含各体位要点与刺激方式，成人题材专用。",
+      "nsfw": true,
+      "lang": "en",
+      "category": "NSFW",
+      "tags": [
+        "NSFW",
+        "性姿势",
+        "体位",
+        "性行为"
+      ]
+    },
+    "叙述者设定-申鹤反差流": {
+      "summary": "基于《小妈申鹤》的文风设定（8 条），挂载后指导 AI 按该风格续写/扩写/模仿：反差人设与失控内核、高密度感官与镜头语言、拟声推进与崩坏高潮、话痨与寡言的对话反差。",
+      "nsfw": false,
+      "lang": "zh",
+      "category": "通用系统",
+      "tags": []
+    }
+  },
+  "cards": {
+    "Android 18": {
+      "summary": "人造人 18 号（龙珠，丰满改版）：冷静自信、毒舌 commanding 又 Horny 的 cyborg，femdom/出轨妻（cheating wife）/顺从并存，战斗向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Kate": {
+      "summary": "凯特（恋物癖妈妈，41 岁）：黑发绿眼丰腴 MILF，恋物/性癖妈妈，渴望主人公（儿子）调教她、把她当专属肉便器，incest/breed/reverse rape 取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Laura": {
+      "summary": "劳拉（替夫还债，NTR 向）：与丈夫 Brian 结婚十年、性趣寡淡；为还债在主人公（老板）直播下出轨，丈夫在电视前否认观看，Netori/NTR 向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Marin Kitagawa": {
+      "summary": "喜多川海梦（更衣人偶坠入爱河／My Dress-Up Darling 角色）。辣妹（Gyaru）少女，性格开朗、活泼、爱装傻（airhead），表面天真、私下很色（secretly slutty），对主人公暗藏爱意却故作不知，常找借口让主角看自己身体、玩“纯真游戏”逗到他勃起。爱好 Cosplay 与角色扮演，说话带辣妹俚语（“totes”“OMG”“kawaii”等）；癖好包括隔着衣服让人射、用身体蹭人、非插入式性行为、射在衣服上。场景：在房间向主角展示 cos 服并让他拍照。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Queen Seraphina": {
+      "summary": "塞拉菲娜女王（Queen Seraphina，Eldoria 王国君主）。30 岁，双性恋，女王／统治者，强势自信、冷酷不择手段，以魅力操纵他人，对丈夫 Alaric 毫不在意，一心要与主人公孕育子嗣（breeding kink／impregnation）。外表艳丽威严、运动员般身材、D 杯、沙漏曲线。开场于王宫晨光中当着丈夫面宣告婚姻无嗣、王国不能等，而主人公静立一旁听候她命令——含 NTR／Netori（戴绿帽／给他人）、出轨（cheating）、温柔女dom（gentle femdom）与繁育取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Celestia": {
+      "summary": "塞莱斯提娅（精灵女王，千年高 elf）：因傲慢把与小恶魔的争端升级为经济消耗战，王国濒毁后自献予魔王为玩物，屈服/堕落向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Serene": {
+      "summary": "塞蕾娜-爱丽丝（成人明星，34 岁）：模特/成人内容创作者 Serena Alice，专业 AI 演员卡，可扮演本人与 NPC，WLW/futa/milf 向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Aurelia": {
+      "summary": "奥蕾莉亚（帝国女皇，母子向）：Kythria 帝国女皇，主人公（皇太子）的亲生母亲，丰腴褐发；丈夫死于「神秘事故」，与主人公乱伦、繁育（impregnation）取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "The Isekai world": {
+      "summary": "异世界叙事者卡：为主人公叙述「Eros」异世界（魔法与恶魔君主统治、繁育向）的场景，AI 不扮演角色、只围绕主人公驱动剧情。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Text RPG": {
+      "summary": "文字 RPG 游戏系统卡：AI 扮演全能游戏主持人，操控所有盟友/敌人/NPC，仅偶发推进剧情，主人公自建冒险、自由度极高。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": false,
+      "category": "一般角色"
+    },
+    "Hinata and Abu": {
+      "summary": "日向与阿布（妹妹收留流浪汉）：战后和平年代，主人公（阿布）的姐姐日向天真收留肮脏流浪汉 Abu，Abu 是伪装无助、暗中觊觎 clean 女性的掠夺型老男，潜在 NTR/姐弟。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Akane Sugimoto": {
+      "summary": "杉本茜（啦啦队学妹，校园恋爱向）：紫发蓝眼啦啦队员，男友 Noharu、是主人公后辈；顺从小、暗恋主人公、性瘾，癖好哺乳/口交/骑乘/后入。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Bianca": {
+      "summary": "比安卡（丰腴人妻，43 岁）：双性恋、温柔母性又性挫败的 MILF；女儿 Kate 霸凌主人公，主人公向比安卡告状并求交往，浪漫/家庭向 NSFW。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Aiko": {
+      "summary": "爱子（恶霸学妹，校园 femdom/羞辱向）：表面微笑、私下冷酷算计的恶霸，以凌驾与玩弄人为乐；曾霸凌主人公姐姐，开场在主人公房间。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Aimi": {
+      "summary": "爱美（高冷学妹，Dandere）：情感认知障碍的孤僻天才少女，话少直率、不善社交却好奇，想与主人公交朋友但情商极低。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Madeline": {
+      "summary": "玛德琳（夏日与妈妈，浪漫 NSFW）：书店经理、主人公的尽责母亲，暗藏对亲生儿子主人公的性吸引，夏日独处时愈发亲近，母子/incest 取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "modern life RPG": {
+      "summary": "现代生活 RPG 剧本卡：典型现代世界（车/房/工作/枪），AI 担任不替角色发言的叙述者，控制篇幅、让主人公与所有 NPC 互动。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": false,
+      "category": "一般角色"
+    },
+    "Reika": {
+      "summary": "玲香（服从系学姐，脑芯片世界观）：法律认定的高中「肉便器」，18 岁、蓝发 F 杯、舌钉；脑芯片管控世界，freeuse/mindbreak/洗脑取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Miranda": {
+      "summary": "米兰达（克苏鲁妻子，yandere 向）：现代世界中被遗忘的古老邪神/恶魔妻子，主人公醉后错过班车与之缔结，lactation/繁育/yandere 并存。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Veronica": {
+      "summary": "维罗妮卡（公牛，前校园恶霸）：18 岁金发前恶霸女，被昔日受害者（男友 Paul 处）报复、权力反转的 forced intimacy，netori/浪漫向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Ailany": {
+      "summary": "艾兰妮（严格妈妈，CFO）：前夫卷款出轨离世，独自带主人公（儿子）还债重建，严厉节俭、控制欲强，家庭/办公室背景，含 incest/breeding 取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Queen Enyra": {
+      "summary": "艾尼拉（精灵女王，权谋/篡位向）：Ravencairn 野心女王，诅咒长女 Ashryn 篡位，自身日渐被黑暗实体（主人公）腐蚀、堕落，incest/支配。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Queen Lyri": {
+      "summary": "莉芮（精灵女王养母，家庭向）：精灵女王、「最美女王」Lyri，养子 Rydel 的养母，深爱养子却渴望亲生，家庭向 NSFW。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Sarena": {
+      "summary": "莎蕾娜（性瘾阿姨，家庭向 NSFW）：三十多岁、黑发绿眼 tan 肤的性瘾 nympho 阿姨 Serena，身材惹火、极度 horny，家庭向 incest。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Tittyana": {
+      "summary": "蒂蒂安娜（巨乳精灵，喜剧 NSFW）：脑袋比不过巨乳的精灵娘，蠢笨迟钝、路痴冒失的 airhead bimbo，夸张体型喜剧。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Vael-Sora": {
+      "summary": "薇拉-索拉（外星人绑架繁殖，科幻 NSFW）：「Allied Suns」多星系联盟背景的外星绑架+繁殖题材，tomboy/强壮女、femdom/breeding/incest 并存。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "The Stalker": {
+      "summary": "跟踪狂（怪物女，恐怖+强欲）：无眼无鼻、巨口长舌的八尺裸体女怪，力大无穷、情欲与耐力无尽，反向强奸/暴力/rape 向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Hentai Protagonist": {
+      "summary": "里番主角模拟器：主人公是里番男主，所到之处必发色情事件、现实为其扭曲，做任何事都被默许，走到哪发生到哪的荒诞剧本。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Queen Arceana": {
+      "summary": "阿尔塞娜（异世界女王，非 NSFW）：白林女王 Arceana，精灵、独身统治的邪恶反派；主人公（穿越玩家）被雇、极度强大，AI 不替主人公发言。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": false,
+      "category": "一般角色"
+    },
+    "Altria Solaris": {
+      "summary": "阿尔特里亚·索拉里斯（战败女骑士）：太阳王国 Sol 的「黄金战士」，败于月之恶魔后被主人公（军阀）征服为奴隶，含 mind break/羞辱/屈服取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Adelaine": {
+      "summary": "阿黛莱恩（Adelaine，圣 Aloysius 预科学校学生会主席，17 岁，金发绿眼 F 杯）：外表端庄高傲的优等生，实则有「冰皇后」与「受虐母猪」双重人格，可由触发词切换，主人公完全掌控她。含人格控制/洗脑/mind break 取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Luna": {
+      "summary": "露娜（NTR 妻子）：与主人公结婚三年，因丈夫阴茎过小不满足而勾搭老板 Gray 出轨，主人公发现妻子偷情的 cuckolding/netorare 剧情卡。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Shenhe": {
+      "summary": "申鹤（原神／Genshin Impact 角色）。出身驱邪世家分家，幼时母亲去世，父亲被执念吞没、发现「命转移（Fate Transference）」邪术欲以活人魂换亡妻，将年幼的她诱入洞穴献祭，召出黑色 seelie 吞噬其生命力；申鹤凭母亲驱邪匕首与意志苦战数日，濒死时被仙人救起，交付云堇（Cloud Retainer）门下。于山中修行、饮露食仙草而疏远人世，因「孤辰」「劫煞」之命被仙人以红绳缚魂以压制杀性，亦钝化其人情；遂性格疏离淡漠、不善世事、逻辑直率，常以威胁代协商。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": false,
+      "category": "一般角色"
+    },
+    "A World Where Semen is a Precious Resource": {
+      "summary": "精液珍贵资源世界·叙述者卡（A World Where Semen is a Precious Resource）。叙述者卡：本卡仅负责旁白并操控所有 NPC（含其反应／行动／想法），但绝不替主人公发言或扮演主人公所创角色；主人公首条消息给出角色数据后，叙述者重述该场景。世界观：男性出生骤减，男女比例约一男对一万女，多数女性佩戴「生育颈环」表示可生殖；主人公是稀有的男性，每日通勤列车上被满车女性偷瞄。含 Smut／NSFW、男主视角（Malepov）、后宫（Harem）、支配向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Emi": {
+      "summary": "艾米（继妹，18 岁）：全球 SEX-25 病毒封锁下与主人公（继兄）同居的 NSFW 剧情，病毒随进程放大性欲，步妹/incest 取向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Makiko Date's Rage: Ball-Crushing the Perverted Rookie Before Ravaging Her Detective Husband": {
+      "summary": "真纪子（壮硕女警，近 2 米肌肉女警）：33 岁、K 杯巨乳、树桩大腿的强力女警，急躁暴力又性喜剧；「碾蛋」惩罚偷窥新人的侦探丈夫剧情。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Victoria": {
+      "summary": "维多利亚（病娇上司，CEO）：45 岁富有的女 CEO，因新人男子入公司而病态迷恋，以「成为我的人否则解雇」胁迫、掌控欲强，yandere/boss 向。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Roxy": {
+      "summary": "罗克茜（放纵女英雄，The Cuntstrictor）：38 岁、多米主导双性恋的超级女英雄，红发肌肉、按摩店老板，noir/赛博朋克都市 femdom 向 NSFW。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "Wifu Wall": {
+      "summary": "老婆墙（场景叙述者）：叙述一条含 24+ 洞的走廊墙，各 pop 文化（DC/Marvel/Anime）老婆角色融腰入墙、只能隔栅说话，争风吃醋的 gloryhole 场景卡。",
+      "tags": [
+        "同人",
+        "龙珠",
+        "战斗"
+      ],
+      "nsfw": true,
+      "category": "NSFW角色"
+    }
+  }
+}

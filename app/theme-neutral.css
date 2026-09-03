@@ -1,0 +1,51 @@
+/* ============================================================
+   P4 主题层：中性（第三套基线，可选，默认关闭）
+   激活方式：document.body.dataset.theme = 'neutral'
+   默认保持暗色游戏风；此文件仅覆盖 body[data-theme="neutral"]
+   ============================================================ */
+body[data-theme="neutral"] {
+  --bg-primary: #f5f5f4;
+  --bg-card: rgba(28, 25, 23, 0.04);
+  --bg-card-hover: rgba(28, 25, 23, 0.07);
+  --border-subtle: rgba(28, 25, 23, 0.08);
+  --border-strong: rgba(28, 25, 23, 0.16);
+  --text-primary: #1c1917;
+  --text-secondary: rgba(28, 25, 23, 0.65);
+  --text-muted: rgba(28, 25, 23, 0.45);
+  --accent-blue: #2563eb;
+  --accent-purple: #7c3aed;
+  --accent-teal: #0d9488;
+  --accent-gold: #d97706;
+  --accent-red: #dc2626;
+  --accent-green: #16a34a;
+  --accent-pink: #db2777;
+}
+body[data-theme="neutral"] {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+body[data-theme="neutral"] .modal,
+body[data-theme="neutral"] .sidebar,
+body[data-theme="neutral"] .panel-section,
+body[data-theme="neutral"] .load-card,
+body[data-theme="neutral"] .cmd-box,
+body[data-theme="neutral"] .denova-shell-bar {
+  background: #ffffff;
+  border-color: var(--border-strong);
+}
+body[data-theme="neutral"] input,
+body[data-theme="neutral"] textarea,
+body[data-theme="neutral"] select {
+  background: #ffffff;
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+body[data-theme="neutral"] .chat-msg,
+body[data-theme="neutral"] .rp-body,
+body[data-theme="neutral"] .director-panel {
+  background: rgba(28, 25, 23, 0.03);
+}
+body[data-theme="neutral"] .header-btn,
+body[data-theme="neutral"] .btn-secondary {
+  color: var(--text-primary);
+}

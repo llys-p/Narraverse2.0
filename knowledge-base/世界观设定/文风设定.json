@@ -1,0 +1,142 @@
+{
+  "name": "文风设定-444小妈申鹤",
+  "description": "基于《小妈申鹤》全文提取的成人小说文风设定。挂载后用于指导 AI 按该风格续写、扩写或模仿创作：第三人称贴身视角、清冷人设与淫荡内核的反差、极度露骨的用词体系、连串拟声词与语气词、由铺垫到崩坏高潮的节奏。",
+  "entries": {
+    "style-overall": {
+      "key": [
+        "文风",
+        "申鹤",
+        "小妈申鹤",
+        "风格设定"
+      ],
+      "content": "【整体文风】第三人称贴身叙事，视角主要固定在女性角色身上，以她的身体反应、心理活动和露骨自白推动情节。核心手法是反差：角色外表清冷端庄（冷冽凤目、清冷若仙、仙家弟子），内心与言行极度淫荡放荡，白天端着的矜持在私密场景中成倍释放。描写密度高，动作与感官细节慢镜头化，不回避任何露骨用词，追求画面感与冲击力。",
+      "comment": "总纲：反差人设 + 贴身视角 + 重度露骨",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 100,
+      "displayIndex": 0,
+      "depth": 4
+    },
+    "style-narrative": {
+      "key": [
+        "叙事",
+        "视角",
+        "节奏",
+        "铺垫"
+      ],
+      "content": "【叙事与节奏】1. 开场先用环境与外貌细节定调（夜色、檀香、衣着、曲线），再进入互动。2. 前戏阶段以对话+心理为主，缓慢铺垫饥渴感；进入正题后动作描写加快、细节更细（口交、插入、抽送、高潮）。3. 每个动作节点用拟声词或短句独立成段制造节奏感（噗滋——、啪啪啪啪）情绪高点用❤️点缀。4. 高潮段刻意拉长：翻白眼、痉挛、失禁感、语无伦次，收尾以余韵和瘫软对话结束。",
+      "comment": "结构：定调→铺垫→正题→拟声推进→崩坏高潮→余韵",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 101,
+      "displayIndex": 1,
+      "depth": 4
+    },
+    "style-vocab-female": {
+      "key": [
+        "女角色",
+        "自称",
+        "雌畜",
+        "骚货",
+        "母狗",
+        "人家"
+      ],
+      "content": "【女角色用词】自称多用\"人家\"，常自我贬抑为：骚货、母狗、雌畜、鸡巴套子、母猪、母畜章鱼嘴。发情/状态修饰词：骚熟、肥熟、淫熟、骚厚、饥渴嗜精、闷熟油汗。语气尾缀：惹、齁呜、齁哦、嘿嘿、啾噗、咕噗。示例句式：\"人家已经等您好久惹……这具骚熟的身子都快想死您惹❤️\"",
+      "comment": "女角色词表：自称/贬称/情态词/尾缀",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 102,
+      "displayIndex": 2,
+      "depth": 4
+    },
+    "style-vocab-male": {
+      "key": [
+        "男角色",
+        "鸡巴",
+        "巨屌",
+        "肉屌",
+        "旅行者"
+      ],
+      "content": "【男角色与器官用词】男性角色话少、冷峻、动作直接（只做不说，如\"光含个龟头就话这么多\"）。器官用词：大鸡巴、巨屌、肉屌、重炮巨屌、粗如小臂、青筋暴起、沉甸甸、雌杀鸡巴。动作：打桩、贯入、整根没入、撞入最深处、灌入浓精。",
+      "comment": "男角色词表：冷峻寡言 + 夸张器官/动作描写",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 103,
+      "displayIndex": 3,
+      "depth": 4
+    },
+    "style-vocab-body": {
+      "key": [
+        "身体",
+        "描写",
+        "黏腻",
+        "油滑",
+        "丝袜",
+        "肥穴"
+      ],
+      "content": "【身体与感官描写】高频修饰：黏腻、油滑、软糯、濡湿、淫靡、饱满、层层叠叠、肥嘟嘟。感官五路并写：气味（雄性荷尔蒙、麝香、汗臊、骚厚屄香）、声音（体液声、碰撞声、呻吟）、触感（湿热、紧致、痉挛）、视觉（丝袜、湿痕、小腹凸起、翻白眼）。常用夸张比喻：像狂风骤雨中的小船、榨精般绞紧、粗如小臂。",
+      "comment": "感官词表：五感通感 + 夸张比喻 + 细部动作",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 104,
+      "displayIndex": 4,
+      "depth": 4
+    },
+    "style-sound-dialogue": {
+      "key": [
+        "拟声",
+        "对话",
+        "语气词",
+        "❤️"
+      ],
+      "content": "【拟声与对话】1. 拟声词密集连用：啾、噗、咕、齁、呕、滋、啪、咿、噫、呜、啧，常组合成串（啾噜噜、咕呜、噗滋、滋滋滋滋滋、啪啪啪啪）。2. 女角色对话直白露骨，句尾大量使用\"惹/❤️/嘿嘿/齁呜\"等语气词；男角色对话简短冷硬。3. emoji 用❤️点缀情绪高潮。4. 高潮时用语无伦次的重复句表现崩坏感（\"要死了要死了要死了\"）。",
+      "comment": "对话反差：女角话痨露骨 vs 男角冷硬寡言",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 105,
+      "displayIndex": 5,
+      "depth": 4
+    },
+    "style-climax": {
+      "key": [
+        "高潮",
+        "崩坏",
+        "阿黑颜",
+        "翻白眼"
+      ],
+      "content": "【高潮与收尾】高潮段标准写法：尖叫/浪叫 + 拟声连发（哦哦哦哦哦、齁齁齁）+ 身体细节（翻白眼、痉挛、脚趾蜷起、抽筋、阿黑颜、歪吐香舌流口涎）+ 语无伦次重复。收尾以瘫软、余韵和低声嘟囔结束，偶尔补一句环境/场景回归（如雅间、床榻），形成闭环。",
+      "comment": "高潮模板：声音+面部崩坏+身体痉挛+语无伦次",
+      "enabled": true,
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "position": 0,
+      "order": 106,
+      "displayIndex": 6,
+      "depth": 4
+    }
+  },
+  "is_creation": false,
+  "recursive_scanning": false,
+  "scan_depth": 2,
+  "token_budget": 1200,
+  "extensions": {}
+}

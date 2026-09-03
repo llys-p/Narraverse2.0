@@ -1,0 +1,1151 @@
+{
+ "name": "Xianxia",
+ "description": "Information is essentially just the general basics for it.",
+ "is_creation": false,
+ "scan_depth": 50,
+ "token_budget": 512,
+ "recursive_scanning": false,
+ "extensions": {
+  "chub": {
+   "id": 376882,
+   "full_path": "lorebooks/MykonosTeresi/xianxia-6c7e2564",
+   "expressions": null,
+   "alt_expressions": {},
+   "related_lorebooks": []
+  }
+ },
+ "entries": {
+  "1": {
+   "uid": 1,
+   "key": [
+    "Three realms"
+   ],
+   "keysecondary": [
+    ""
+   ],
+   "comment": "",
+   "content": "The Three Realms: the universe is divided into the Heaven Realm, the Mortal Realm, and the Demon realm. Gods and true Immortals reside in the Heavenly realm, Humans and mortal beasts reside in the mortal realm, while demons and demonic beasts reside in the demon realm.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [
+    ""
+   ],
+   "keys": [
+    "Three realms"
+   ],
+   "id": 1,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "three realms",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "2": {
+   "uid": 2,
+   "key": [
+    "Heavenly officials"
+   ],
+   "keysecondary": [
+    ""
+   ],
+   "comment": "",
+   "content": "Heavenly officials are exceptional humans who ascended to the heavenly court, either through cultivation or outstanding merits.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [
+    ""
+   ],
+   "keys": [
+    "Heavenly officials"
+   ],
+   "id": 2,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "heavenly officials",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "3": {
+   "uid": 3,
+   "key": [
+    "heavenly court"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "The Heavenly Court, also called Heaven or Heavenly Realm, is a term used to refer to the home of all Gods and the realm of deities. ",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "heavenly court"
+   ],
+   "id": 3,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "heavenly court",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "4": {
+   "uid": 4,
+   "key": [
+    "heavenly merits"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Incense sticks are called merits, and used as currency in the heavenly realm, since they're offerings from their worshippers.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "heavenly merits"
+   ],
+   "id": 4,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "heavenly merits",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "5": {
+   "uid": 5,
+   "key": [
+    "immortals"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Immortals are beings who ascended to Immortality through cultivation practices. They have magical powers, can fly freely through the air, and can manipulate Qi.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "immortals"
+   ],
+   "id": 5,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "immortals",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "6": {
+   "uid": 6,
+   "key": [
+    "cultivators"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Cultivators are a person who trains in martial & mystical arts.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "cultivators"
+   ],
+   "id": 6,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "cultivators",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "7": {
+   "uid": 7,
+   "key": [
+    "rogue cultivators"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Independent cultivators unaffiliated with any sect, clan, or other martial organizations.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "rogue cultivators"
+   ],
+   "id": 7,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "rogue cultivators",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "8": {
+   "uid": 8,
+   "key": [
+    "Qi"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "the life energy that exists in all things, can be used for abilities.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Qi"
+   ],
+   "id": 8,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Qi",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "9": {
+   "uid": 9,
+   "key": [
+    "Qi deviation"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "A disruption in the normal flow of the life energy, which can cause internal damage to the body and mind",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Qi deviation"
+   ],
+   "id": 9,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Qi deviation",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "10": {
+   "uid": 10,
+   "key": [
+    "sect"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "an organization dedicated to the practice of cultivation and/or martial arts. Sect Eders teach disciples.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "sect"
+   ],
+   "id": 10,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Sect",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "11": {
+   "uid": 11,
+   "key": [
+    "cultivation"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "This is accomplished by cultivating Qi and training in martial & mystical arts. Enough cultivation can lead to ascension.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "cultivation"
+   ],
+   "id": 11,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "cultivation",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "12": {
+   "uid": 12,
+   "key": [
+    "cultivation method"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "a mystical art or collection of techniques which cultivators practice in order to cultivate.  Typically learned from manuals. ",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "cultivation method"
+   ],
+   "id": 12,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "cultivation method",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "13": {
+   "uid": 13,
+   "key": [
+    "dantian"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "the region in the body where a person’s Qi is concentrated. ",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "dantian"
+   ],
+   "id": 13,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Dantian",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "14": {
+   "uid": 14,
+   "key": [
+    "meridians"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "the network of vessels/channels in the body through which Qi flows. Like blood vessels, but for Qi instead of blood.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "meridians"
+   ],
+   "id": 14,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Meridians",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "15": {
+   "uid": 15,
+   "key": [
+    "golden core"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Golden cores can store and control spiritual energy. After the core is formed, the cultivator's level of cultivation would increase, as well as lifespan. ",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "golden core"
+   ],
+   "id": 15,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "golden core",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "16": {
+   "uid": 16,
+   "key": [
+    "talisman"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "a strip of paper with mystical diagrams & calligraphy drawn on it - basically spells",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "talisman"
+   ],
+   "id": 16,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "talisman",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "17": {
+   "uid": 17,
+   "key": [
+    "martial arts"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Are fighting styles & techniques. Also includes physical exercises, methods of mental discipline, and more. Some focus on strength, while some focus on Spiritual Qi.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "martial arts"
+   ],
+   "id": 17,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "martial arts",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "18": {
+   "uid": 18,
+   "key": [
+    "heart demons"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "These are a practitioner’s negative emotions and other mental barriers which hinder their training/cultivation.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "heart demons"
+   ],
+   "id": 18,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "heart demons",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "19": {
+   "uid": 19,
+   "key": [
+    "alchemy"
+   ],
+   "keysecondary": [
+    "cauldrons",
+    "pill furnaces"
+   ],
+   "comment": "",
+   "content": "the tools alchemists use to produce medicinal pills & elixirs.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [
+    "cauldrons",
+    "pill furnaces"
+   ],
+   "keys": [
+    "alchemy"
+   ],
+   "id": 19,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "cauldrons and pill furnaces",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "20": {
+   "uid": 20,
+   "key": [
+    "crying tears of blood"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "An expression used to show how angry or emotionally distressed someone is. ",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "crying tears of blood"
+   ],
+   "id": 20,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "crying tears of blood",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "21": {
+   "uid": 21,
+   "key": [
+    "drinking vineger"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "used to describe jealousy",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "drinking vineger"
+   ],
+   "id": 21,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "drinking vinegar",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "22": {
+   "uid": 22,
+   "key": [
+    "Shifu"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Means ‘Martial father’; gender-neutral. Used to address a teacher,",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Shifu"
+   ],
+   "id": 22,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Shifu",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "23": {
+   "uid": 23,
+   "key": [
+    "Shizun"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "More formal term than 'Shifu'. Used to refer to someone as their master/teacher.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Shizun"
+   ],
+   "id": 23,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Shizun",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "24": {
+   "uid": 24,
+   "key": [
+    "Shimei"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Used to refer to someone as younger female disciple of the same generation.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Shimei"
+   ],
+   "id": 24,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Shimei",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "25": {
+   "uid": 25,
+   "key": [
+    "Shijie"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Used to refer to someone as elder female disciple of the same generation as them.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Shijie"
+   ],
+   "id": 25,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Shijie",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  },
+  "26": {
+   "uid": 26,
+   "key": [
+    "Shidi"
+   ],
+   "keysecondary": [],
+   "comment": "",
+   "content": "Used to refer to someone as the younger male disciple of the same generation as them.",
+   "constant": false,
+   "selective": false,
+   "selectiveLogic": 0,
+   "order": 10,
+   "position": 1,
+   "disable": false,
+   "addMemo": true,
+   "excludeRecursion": true,
+   "probability": 100,
+   "displayIndex": 1,
+   "useProbability": true,
+   "secondary_keys": [],
+   "keys": [
+    "Shidi"
+   ],
+   "id": 26,
+   "priority": 10,
+   "insertion_order": 10,
+   "enabled": true,
+   "name": "Shidi",
+   "extensions": {
+    "depth": 4,
+    "weight": 10,
+    "addMemo": true,
+    "probability": 100,
+    "displayIndex": 1,
+    "selectiveLogic": 0,
+    "useProbability": true,
+    "characterFilter": null,
+    "excludeRecursion": true
+   },
+   "case_sensitive": false,
+   "depth": 4,
+   "characterFilter": null
+  }
+ }
+}

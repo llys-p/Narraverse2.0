@@ -1,0 +1,494 @@
+import { useState } from 'react'
+import { AlertCircle, Loader2, ScrollText, Trash2 } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { ContextAnalysis, ContextAnalysisCompaction, ContextAnalysisPart } from '@/lib/api'
+import { focusDialogContentOnOpen } from './dialog-focus'
+import { ContextAnalysisDisclosure } from './ContextAnalysisDisclosure'
+import { ContextCopyButton } from './ContextCopyButton'
+
+export const CONTEXT_ANALYSIS_SIMULATED_MESSAGE = '[Denova context analysis probe]'
+
+export function ContextAnalysisDialog({ open, loading, error, analysis, onOpenChange, onRemoveCompaction, title, description }: {
+  open: boolean
+  loading: boolean
+  error: string | null
+  analysis: ContextAnalysis | null
+  onOpenChange: (open: boolean) => void
+  onRemoveCompaction?: () => void | Promise<void>
+  title?: string
+  description?: string
+}) {
+  const { t } = useTranslation()
+  const [removingCompaction, setRemovingCompaction] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+  const finalMessageGroups = analysis ? buildFinalMessageGroups(analysis.context_messages, t) : []
+  const fullContextCopy = analysis ? formatFullContextForCopy(analysis) : ''
+  const handleRemoveCompaction = async () => {
+    if (!onRemoveCompaction || removingCompaction) return
+    setRemovingCompaction(true)
+    setRemoveError(null)
+    try {
+      await onRemoveCompaction()
+    } catch (e) {
+      setRemoveError(t('chat.contextAnalysis.removeCompactionFailed', { error: (e as Error).message }))
+    } finally {
+      setRemovingCompaction(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        tabIndex={-1}
+        onOpenAutoFocus={focusDialogContentOnOpen}
+        className="flex max-h-[86vh] max-w-5xl flex-col gap-0 overflow-hidden border-[var(--nova-border)] bg-[var(--nova-bg)] p-0 text-[var(--nova-text)]"
+      >
+        <DialogHeader className="border-b border-[var(--nova-border)] px-4 py-3 pr-10">
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle className="flex min-w-0 items-center gap-2 text-sm">
+              <ScrollText className="h-4 w-4 shrink-0 text-[var(--nova-text-muted)]" />
+              <span className="truncate">{title || t('chat.contextAnalysis.title')}</span>
+            </DialogTitle>
+            {analysis && !loading && !error ? (
+              <ContextCopyButton
+                content={fullContextCopy}
+                label={t('chat.contextAnalysis.copyAll')}
+                copiedLabel={t('chat.contextAnalysis.copied')}
+                failedLabel={t('chat.contextAnalysis.copyFailed')}
+                showLabel
+              />
+            ) : null}
+          </div>
+          <DialogDescription className="text-xs text-[var(--nova-text-faint)]">
+            {description || t('chat.contextAnalysis.description')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          {loading ? (
+            <div className="flex min-h-44 items-center justify-center gap-2 text-xs text-[var(--nova-text-muted)]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('chat.contextAnalysis.loading')}
+            </div>
+          ) : error ? (
+            <div className="flex min-h-32 items-center gap-2 rounded-[var(--nova-radius)] border border-[var(--nova-danger-border)] bg-[var(--nova-danger-bg)] px-3 py-2 text-xs text-[var(--nova-danger)]">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          ) : analysis ? (
+            <div className="flex flex-col gap-4">
+              <ContextUsageSummary analysis={analysis} />
+              <ContextAnalysisSection title={t('chat.contextAnalysis.systemPrompt')} parts={analysis.system_prompt_parts} copyContent={analysis.system_prompt} />
+              <ContextAnalysisMessageGroups
+                title={t('chat.contextAnalysis.finalMessages')}
+                groups={finalMessageGroups}
+                compaction={analysis.compaction}
+                removingCompaction={removingCompaction}
+                removeCompactionError={removeError}
+                onRemoveCompaction={analysis.compaction?.removable ? handleRemoveCompaction : undefined}
+              />
+            </div>
+          ) : (
+            <div className="min-h-32 text-xs text-[var(--nova-text-faint)]">{t('chat.contextAnalysis.empty')}</div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ContextUsageSummary({ analysis }: { analysis: ContextAnalysis }) {
+  const { t } = useTranslation()
+  const usage = analysis.context_usage_ratio ? Math.round(analysis.context_usage_ratio * 100) : 0
+  const items = [
+		{
+			label: t('chat.contextAnalysis.tokenEstimate'),
+			value: formatNumber(analysis.projected_token_estimate ?? analysis.token_estimate ?? 0),
+			title: t('chat.contextAnalysis.projectedTokenHint', {
+				prompt: formatNumber(analysis.token_estimate ?? 0),
+				completion: formatNumber(analysis.reserved_completion_tokens ?? 0),
+				tools: formatNumber(analysis.reserved_tool_result_tokens ?? 0),
+			}),
+		},
+    { label: t('chat.contextAnalysis.contextWindow'), value: analysis.context_window_tokens ? formatNumber(analysis.context_window_tokens) : t('common.notSet') },
+    { label: t('chat.contextAnalysis.contextUsage'), value: analysis.context_window_tokens ? `${usage}%` : t('common.notSet') },
+    { label: t('chat.contextAnalysis.compaction'), value: analysis.compaction_active ? t('chat.contextAnalysis.compactionActive', { epoch: analysis.compaction_epoch ?? 0 }) : t('chat.contextAnalysis.compactionInactive') },
+    { label: t('chat.contextAnalysis.wouldCompact'), value: analysis.would_compact ? t('common.yes') : t('common.no') },
+  ]
+  return (
+    <div className="grid gap-2 rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-2 text-[11px] sm:grid-cols-5">
+      {items.map((item) => (
+			<div key={item.label} className="min-w-0" title={'title' in item ? item.title : undefined}>
+          <div className="truncate text-[var(--nova-text-faint)]">{item.label}</div>
+          <div className="mt-0.5 truncate font-medium text-[var(--nova-text)]">{item.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat().format(value)
+}
+
+function formatFullContextForCopy(analysis: ContextAnalysis) {
+  const blocks: string[] = []
+  if (analysis.system_prompt.trim()) blocks.push(`[system]\n${analysis.system_prompt}`)
+  analysis.context_messages.forEach((part) => blocks.push(formatContextMessageForCopy(part)))
+  return blocks.join('\n\n')
+}
+
+function formatContextMessageForCopy(part: ContextAnalysisPart) {
+  const role = part.role || part.kind || 'message'
+  const label = part.tool_name ? `${role}:${part.tool_name}` : role
+  return `[${label}]\n${part.content}`
+}
+
+interface ContextAnalysisMessageGroup {
+  id: string
+  title: string
+  source: string
+  parts: ContextAnalysisPart[]
+  messages: ContextAnalysisPart[]
+  bytes: number
+  chars: number
+}
+
+function buildFinalMessageGroups(messages: ContextAnalysisPart[], t: ReturnType<typeof useTranslation>['t']): ContextAnalysisMessageGroup[] {
+  const groups: ContextAnalysisMessageGroup[] = []
+  let current: ContextAnalysisMessageGroup | null = null
+  let turnIndex = 0
+  let looseIndex = 0
+  messages.forEach((part, index) => {
+    const normalized = {
+      ...part,
+      title: `#${index + 1} ${part.title || part.source}`,
+    }
+    const displayParts = normalized.parts?.length
+      ? normalized.parts.map((child) => ({ ...child, title: child.title || child.source }))
+      : [normalized]
+    const startsTurn = isTurnStartPart(normalized)
+    const standalone = isStandaloneContextPart(normalized)
+    if (startsTurn) {
+      turnIndex += 1
+      current = {
+        id: `turn-${turnIndex}-${normalized.id || index}`,
+        title: turnGroupTitle(normalized, turnIndex, t),
+        source: normalized.source,
+        parts: [],
+        messages: [],
+        bytes: 0,
+        chars: 0,
+      }
+      groups.push(current)
+    } else if (!current || standalone) {
+      looseIndex += 1
+      current = {
+        id: `group-${looseIndex}-${normalized.id || index}`,
+        title: standalone ? (normalized.title || normalized.source) : t('chat.contextAnalysis.messageGroup', { index: looseIndex }),
+        source: normalized.source,
+        parts: [],
+        messages: [],
+        bytes: 0,
+        chars: 0,
+      }
+      groups.push(current)
+    }
+    current.parts.push(...displayParts)
+    current.messages.push(normalized)
+    current.bytes += normalized.bytes || 0
+    current.chars += normalized.chars || 0
+    if (standalone) current = null
+  })
+  return groups
+}
+
+function contextAnalysisMessageGroupCopyContent(group: ContextAnalysisMessageGroup) {
+  if (group.messages.length === 1) return group.messages[0].content
+  return group.messages.map(formatContextMessageForCopy).join('\n\n')
+}
+
+function isTurnStartPart(part: ContextAnalysisPart) {
+  return part.role === 'user' && !isStandaloneContextPart(part)
+}
+
+function isStandaloneContextPart(part: ContextAnalysisPart) {
+  return isCompactionPart(part) || part.source === '稳定作品上下文' || part.source === '稳定上下文' || isDirectorInstructionPart(part)
+}
+
+function isDirectorInstructionPart(part: ContextAnalysisPart) {
+  return Boolean(part.id?.startsWith('director_instruction_part_'))
+}
+
+function turnGroupTitle(part: ContextAnalysisPart, index: number, t: ReturnType<typeof useTranslation>['t']) {
+  if (part.source === '本轮上下文' || part.source === '本轮互动指令' || part.source === '本轮导演指令') {
+    return t('chat.contextAnalysis.currentTurnGroup')
+  }
+  return t('chat.contextAnalysis.turnGroup', { index })
+}
+
+function ContextAnalysisSection({ title, parts, copyContent, showRole = false, compaction, removingCompaction = false, removeCompactionError, onRemoveCompaction }: {
+  title: string
+  parts: ContextAnalysisPart[]
+  copyContent?: string
+  showRole?: boolean
+  compaction?: ContextAnalysisCompaction
+  removingCompaction?: boolean
+  removeCompactionError?: string | null
+  onRemoveCompaction?: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-medium text-[var(--nova-text)]">{title}</h3>
+        <div className="flex items-center gap-1">
+          {copyContent ? (
+            <ContextCopyButton
+              content={copyContent}
+              label={t('chat.contextAnalysis.copySection')}
+              copiedLabel={t('chat.contextAnalysis.copied')}
+              failedLabel={t('chat.contextAnalysis.copyFailed')}
+            />
+          ) : null}
+          <span className="text-[11px] text-[var(--nova-text-faint)]">{t('chat.contextAnalysis.partCount', { count: parts.length })}</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        {parts.length > 0 ? parts.map((part, index) => (
+          <ContextAnalysisPartBlock
+            key={`${part.id || part.title}:${index}`}
+            part={part}
+            showRole={showRole}
+            compaction={isCompactionPart(part) ? compaction : undefined}
+            removingCompaction={removingCompaction}
+            removeCompactionError={isCompactionPart(part) ? removeCompactionError : undefined}
+            onRemoveCompaction={isCompactionPart(part) ? onRemoveCompaction : undefined}
+          />
+        )) : (
+          <div className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-xs text-[var(--nova-text-faint)]">
+            {t('chat.contextAnalysis.noParts')}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function ContextAnalysisMessageGroups({ title, groups, compaction, removingCompaction = false, removeCompactionError, onRemoveCompaction }: {
+  title: string
+  groups: ContextAnalysisMessageGroup[]
+  compaction?: ContextAnalysisCompaction
+  removingCompaction?: boolean
+  removeCompactionError?: string | null
+  onRemoveCompaction?: () => void
+}) {
+  const { t } = useTranslation()
+  const partCount = groups.reduce((sum, group) => sum + group.parts.length, 0)
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-xs font-medium text-[var(--nova-text)]">{title}</h3>
+        <span className="text-[11px] text-[var(--nova-text-faint)]">{t('chat.contextAnalysis.groupCount', { count: groups.length, parts: partCount })}</span>
+      </div>
+      <div className="flex flex-col gap-2">
+        {groups.length > 0 ? groups.map((group) => (
+          shouldFlattenMessageGroup(group) ? (
+            <ContextAnalysisPartBlock
+              key={group.id}
+              part={group.parts[0]}
+              showRole
+              showKind
+              copyContent={contextAnalysisMessageGroupCopyContent(group)}
+              copyLabel={t('chat.contextAnalysis.copyGroup')}
+              compaction={group.parts.some(isCompactionPart) ? compaction : undefined}
+              removingCompaction={removingCompaction}
+              removeCompactionError={group.parts.some(isCompactionPart) ? removeCompactionError : undefined}
+              onRemoveCompaction={group.parts.some(isCompactionPart) ? onRemoveCompaction : undefined}
+            />
+          ) : (
+            <ContextAnalysisMessageGroupBlock
+              key={group.id}
+              group={group}
+              compaction={group.parts.some(isCompactionPart) ? compaction : undefined}
+              removingCompaction={removingCompaction}
+              removeCompactionError={group.parts.some(isCompactionPart) ? removeCompactionError : undefined}
+              onRemoveCompaction={group.parts.some(isCompactionPart) ? onRemoveCompaction : undefined}
+            />
+          )
+        )) : (
+          <div className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-xs text-[var(--nova-text-faint)]">
+            {t('chat.contextAnalysis.noParts')}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function shouldFlattenMessageGroup(group: ContextAnalysisMessageGroup) {
+  return group.parts.length === 1 && !group.messages.some((message) => message.parts?.length)
+}
+
+function ContextAnalysisMessageGroupBlock({ group, compaction, removingCompaction = false, removeCompactionError, onRemoveCompaction }: {
+  group: ContextAnalysisMessageGroup
+  compaction?: ContextAnalysisCompaction
+  removingCompaction?: boolean
+  removeCompactionError?: string | null
+  onRemoveCompaction?: () => void
+}) {
+  const { t } = useTranslation()
+  const compactionMeta = compaction ? buildCompactionMeta(t, compaction) : ''
+  return (
+    <ContextAnalysisDisclosure
+      title={group.title}
+      meta={<>{group.source} · {t('chat.contextAnalysis.groupPartCount', { count: group.parts.length })}{compactionMeta ? ` · ${compactionMeta}` : ''}</>}
+      size={<span className="shrink-0 text-[10px] text-muted-foreground">{t('chat.contextAnalysis.partSize', { chars: group.chars, bytes: group.bytes })}</span>}
+      action={(
+        <div className="flex shrink-0 items-center gap-1">
+          <ContextCopyButton
+            content={contextAnalysisMessageGroupCopyContent(group)}
+            label={t('chat.contextAnalysis.copyGroup')}
+            copiedLabel={t('chat.contextAnalysis.copied')}
+            failedLabel={t('chat.contextAnalysis.copyFailed')}
+          />
+          {onRemoveCompaction ? <CompactionRemoveButton removing={removingCompaction} onClick={onRemoveCompaction} /> : null}
+        </div>
+      )}
+      error={removeCompactionError}
+      contentClassName="px-3 py-2"
+    >
+      <div className="flex flex-col gap-2 border-l border-border pl-3">
+        {group.parts.map((part, index) => (
+          <ContextAnalysisInlinePart key={`${part.id || part.title}:${index}`} part={part} />
+        ))}
+      </div>
+    </ContextAnalysisDisclosure>
+  )
+}
+
+function ContextAnalysisInlinePart({ part }: { part: ContextAnalysisPart }) {
+  const { t } = useTranslation()
+  const kind = contextAnalysisKindLabel(part, t)
+  return (
+    <ContextAnalysisDisclosure
+      variant="inline"
+      defaultOpen
+      title={part.title || part.source}
+      meta={<>{part.source ? `${part.source} · ` : ''}{kind}{part.tool_name ? ` · ${part.tool_name}` : ''}{part.role ? ` · ${part.role}` : ''}{part.note ? ` · ${part.note}` : ''}</>}
+      size={<span className="shrink-0 text-[10px] text-muted-foreground">{t('chat.contextAnalysis.partSize', { chars: part.chars, bytes: part.bytes })}</span>}
+      action={(
+        <ContextCopyButton
+          content={part.content}
+          label={t('chat.contextAnalysis.copyPart')}
+          copiedLabel={t('chat.contextAnalysis.copied')}
+          failedLabel={t('chat.contextAnalysis.copyFailed')}
+        />
+      )}
+      contentClassName="px-2 pb-2"
+    >
+      {part.content.trim() ? (
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words pl-5 text-[11px] leading-5 text-muted-foreground">{part.content}</pre>
+      ) : (
+        <div className="pl-5 text-[11px] text-muted-foreground">{t('chat.contextAnalysis.emptyPart')}</div>
+      )}
+    </ContextAnalysisDisclosure>
+  )
+}
+
+function contextAnalysisKindLabel(part: ContextAnalysisPart, t: ReturnType<typeof useTranslation>['t']) {
+  const kind = part.kind || fallbackContextAnalysisKind(part)
+  switch (kind) {
+    case 'tool_call':
+      return t('chat.contextAnalysis.kind.toolCall')
+    case 'tool_result':
+      return t('chat.contextAnalysis.kind.toolResult')
+    case 'body':
+      if (part.role === 'user') return t('chat.contextAnalysis.kind.userBody')
+      if (part.role === 'assistant') return t('chat.contextAnalysis.kind.assistantBody')
+      return t('chat.contextAnalysis.kind.body')
+    default:
+      return kind || part.role || t('chat.contextAnalysis.kind.message')
+  }
+}
+
+function fallbackContextAnalysisKind(part: ContextAnalysisPart) {
+  if (part.role === 'tool') return 'tool_result'
+  if (part.role === 'user' || part.role === 'assistant') return 'body'
+  return ''
+}
+
+function ContextAnalysisPartBlock({ part, showRole, showKind = false, copyContent, copyLabel, compaction, removingCompaction = false, removeCompactionError, onRemoveCompaction }: {
+  part: ContextAnalysisPart
+  showRole: boolean
+  showKind?: boolean
+  copyContent?: string
+  copyLabel?: string
+  compaction?: ContextAnalysisCompaction
+  removingCompaction?: boolean
+  removeCompactionError?: string | null
+  onRemoveCompaction?: () => void
+}) {
+  const { t } = useTranslation()
+  const compactionMeta = compaction ? buildCompactionMeta(t, compaction) : ''
+  const kind = showKind ? contextAnalysisKindLabel(part, t) : ''
+  return (
+    <ContextAnalysisDisclosure
+      title={part.title || part.source}
+      meta={<>{part.source}{kind ? ` · ${kind}` : ''}{part.tool_name ? ` · ${part.tool_name}` : ''}{showRole && part.role ? ` · ${part.role}` : ''}{part.note ? ` · ${part.note}` : ''}{compactionMeta ? ` · ${compactionMeta}` : ''}</>}
+      size={<span className="shrink-0 text-[10px] text-muted-foreground">{t('chat.contextAnalysis.partSize', { chars: part.chars, bytes: part.bytes })}</span>}
+      action={(
+        <div className="flex shrink-0 items-center gap-1">
+          <ContextCopyButton
+            content={copyContent ?? part.content}
+            label={copyLabel || t('chat.contextAnalysis.copyPart')}
+            copiedLabel={t('chat.contextAnalysis.copied')}
+            failedLabel={t('chat.contextAnalysis.copyFailed')}
+          />
+          {onRemoveCompaction ? <CompactionRemoveButton removing={removingCompaction} onClick={onRemoveCompaction} /> : null}
+        </div>
+      )}
+      error={removeCompactionError}
+      contentClassName="p-3"
+    >
+      {part.content.trim() ? (
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-muted-foreground">{part.content}</pre>
+      ) : (
+        <div className="text-[11px] text-muted-foreground">{t('chat.contextAnalysis.emptyPart')}</div>
+      )}
+    </ContextAnalysisDisclosure>
+  )
+}
+
+function CompactionRemoveButton({ removing, onClick }: { removing: boolean; onClick: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <button
+      type="button"
+      disabled={removing}
+      aria-label={t('chat.contextAnalysis.removeCompaction')}
+      onClick={onClick}
+      className="nova-nav-item inline-flex h-7 shrink-0 items-center gap-1 rounded border border-border bg-background px-2 text-[11px] text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {removing ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+      {removing ? t('chat.contextAnalysis.removingCompaction') : t('chat.contextAnalysis.removeCompaction')}
+    </button>
+  )
+}
+
+function isCompactionPart(part: ContextAnalysisPart) {
+  return part.source === '上下文压缩' || part.content.includes('[Denova Context Compaction]') || part.content.includes('[Nova Context Compaction]')
+}
+
+function buildCompactionMeta(t: ReturnType<typeof useTranslation>['t'], compaction: ContextAnalysisCompaction) {
+  const source = compaction.source_turn_count
+    ? t('chat.contextAnalysis.sourceTurns', { count: compaction.source_turn_count })
+    : t('chat.contextAnalysis.sourceMessages', { count: compaction.source_message_count ?? 0 })
+  const ratio = compaction.target_ratio ? Math.round(compaction.target_ratio * 100) : 0
+  return t('chat.contextAnalysis.compactionMeta', {
+    source,
+    before: formatNumber(compaction.tokens_before ?? 0),
+    after: formatNumber(compaction.tokens_after ?? 0),
+    ratio,
+  })
+}

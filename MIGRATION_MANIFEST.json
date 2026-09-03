@@ -1,0 +1,15 @@
+{
+  "migrated_at": "2026-08-15 14:39:04",
+  "old_root": "<legacy-project-root>",
+  "new_root": "<project-root>",
+  "old_runtime": "<legacy-denova-root>",
+  "new_runtime": "<project-root>/denova-src/output",
+  "old_source": "<external-denova-source>",
+  "new_source": "<project-root>/denova-src",
+  "source_file_counts": {
+    "<legacy-project-root>": 360,
+    "<external-denova-source>": 30443,
+    "<legacy-denova-root>": 1278
+  },
+  "retained_content_filenames": true
+}

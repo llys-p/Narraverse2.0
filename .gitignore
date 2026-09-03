@@ -1,0 +1,36 @@
+# Local runtime state and generated output
+.tmp-*/
+.workbuddy/
+backup/
+/denova/
+ai-images/
+design-previews/
+*.log
+__pycache__/
+*.pyc
+
+# Local application data
+app/*.db
+app/*local*
+
+# Local secrets and machine-specific configuration
+tools/cosyvoice_proxy.json
+tools/pixiv_config.json
+denova-src/config.toml
+.env
+.env.*
+!.env.example
+
+# Build dependencies and generated web assets
+denova-src/node_modules/
+denova-src/web/node_modules/
+denova-src/web/dist/
+denova-src/web/public/narraverse/
+denova-src/output/
+denova-src/.denova/
+
+# Archived/private content snapshots
+knowledge-base/归档/
+
+# Windows shell artifacts
+*.lnk

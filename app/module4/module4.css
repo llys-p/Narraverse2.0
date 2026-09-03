@@ -1,0 +1,858 @@
+/* Module 4 Task 0: shell-only styles. The workspace reuses Narraverse theme tokens. */
+
+.module4-shell[hidden] {
+  display: none;
+}
+
+.module4-shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--bg-primary, #111318);
+  color: var(--text-primary, #f4f4f5);
+}
+
+.module4-shell__bar {
+  min-height: 58px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  background: var(--bg-elevated, var(--bg-primary, #111318));
+}
+
+.module4-shell__title {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: .02em;
+}
+
+.module4-shell__label {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 12px;
+}
+
+.module4-shell__body {
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+}
+
+.module4-empty {
+  width: min(620px, 100%);
+  box-sizing: border-box;
+  padding: 32px;
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, .16));
+  border-radius: var(--radius-card, 12px);
+  background: var(--bg-card, rgba(255, 255, 255, .04));
+  text-align: center;
+}
+
+.module4-empty h1 {
+  margin: 0 0 8px;
+  font-size: clamp(24px, 4vw, 34px);
+}
+
+.module4-empty p {
+  margin: 0;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  line-height: 1.7;
+}
+
+.module4-empty__note {
+  margin-top: 16px !important;
+  color: var(--text-muted, rgba(255, 255, 255, .52)) !important;
+  font-size: 12px;
+}
+
+.module4-launch-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: transparent;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.module4-launch-btn:hover,
+.module4-launch-btn:focus-visible {
+  border-color: var(--accent, var(--accent-gold, #b6c7ff));
+  color: var(--text-primary, #f4f4f5);
+  outline: none;
+}
+
+.module4-launch-btn small {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+body.module4-active .app {
+  display: none;
+}
+
+body.module4-active {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.module4-active .module4-shell {
+  min-height: 100vh;
+}
+
+body[data-host="denova"] .module4-shell {
+  min-height: 100%;
+}
+
+@media (max-width: 768px) {
+  .module4-shell__bar {
+    padding: 10px 14px;
+  }
+
+  .module4-shell__body {
+    padding: 20px 14px;
+  }
+
+  .module4-empty {
+    padding: 24px 18px;
+  }
+}
+
+/* Task 1 world management layout. */
+.module4-shell__body {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 20px;
+  padding: 20px;
+}
+
+.module4-sidebar,
+.module4-world-detail {
+  box-sizing: border-box;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-card, 12px);
+  background: var(--bg-card, rgba(255, 255, 255, .04));
+}
+
+.module4-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.module4-main {
+  min-width: 0;
+}
+
+.module4-section-heading,
+.module4-world-detail__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.module4-section-heading h2,
+.module4-world-detail h1 {
+  margin: 2px 0 0;
+}
+
+.module4-section-heading h2 {
+  font-size: 16px;
+}
+
+.module4-kicker {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.module4-count,
+.module4-saved-state {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 12px;
+}
+
+.module4-world-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.module4-world-item {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-button, 8px);
+}
+
+.module4-world-item.is-active {
+  border-color: var(--border-strong, rgba(255, 255, 255, .16));
+  background: var(--bg-card-hover, rgba(255, 255, 255, .07));
+}
+
+.module4-world-item__open,
+.module4-world-item__delete {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.module4-world-item__open {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.module4-world-item__open strong,
+.module4-world-item__open span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module4-world-item__open strong {
+  color: var(--text-primary, #f4f4f5);
+  font-size: 13px;
+}
+
+.module4-world-item__open span {
+  margin-top: 3px;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-world-item__delete {
+  align-self: center;
+  padding: 6px 8px;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-world-item__delete:hover,
+.module4-world-item__delete:focus-visible {
+  color: var(--accent-red, #db8f93);
+}
+
+.module4-list-empty,
+.module4-detail-note {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.module4-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-create-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 12px;
+}
+
+.module4-create-form input,
+.module4-create-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+  color: var(--text-primary, #f4f4f5);
+  font: inherit;
+  resize: vertical;
+}
+
+.module4-create-form input:focus,
+.module4-create-form textarea:focus {
+  border-color: var(--accent, var(--accent-gold, #b6c7ff));
+  outline: none;
+}
+
+.module4-create-form__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.module4-create-form__footer [data-module4-create-status] {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-world-detail {
+  min-height: 100%;
+  padding: clamp(20px, 4vw, 42px);
+}
+
+.module4-world-detail h1 {
+  font-size: clamp(24px, 4vw, 38px);
+}
+
+.module4-world-detail__description {
+  max-width: 720px;
+  margin: 28px 0 0;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 15px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.module4-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 32px 0 0;
+}
+
+.module4-meta-grid div {
+  padding: 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+}
+
+.module4-meta-grid dt {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-meta-grid dd {
+  margin: 5px 0 0;
+  color: var(--text-primary, #f4f4f5);
+  font-size: 13px;
+}
+
+/* Task 5 locations: exploration stays compact until the player enters it. */
+.module4-location-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-location-panel h2 {
+  font-size: 16px;
+}
+
+.module4-location-move-form,
+.module4-location-seek-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.module4-location-move-form label,
+.module4-location-seek-form label {
+  display: grid;
+  gap: 5px;
+  min-width: min(280px, 100%);
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-location-move-form select,
+.module4-location-seek-form select {
+  padding: 8px 9px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+  color: var(--text-primary, #f4f4f5);
+  font: inherit;
+}
+
+.module4-location-seek-form {
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-detail-note {
+  margin-top: 32px;
+}
+
+.module4-empty--inner {
+  width: auto;
+  margin: 0;
+}
+
+/* Task 3 NPC Runtime: compact state display; source cards remain external. */
+.module4-npc-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-npc-panel h2 {
+  font-size: 16px;
+}
+
+.module4-npc-panel__note {
+  margin: 8px 0 14px;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.module4-npc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.module4-npc-card {
+  padding: 13px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+}
+
+.module4-npc-card__heading,
+.module4-npc-card__state,
+.module4-npc-source-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.module4-npc-card__heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.module4-npc-card__heading span,
+.module4-npc-card__state {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-npc-card__state {
+  justify-content: flex-start;
+  margin-top: 9px;
+}
+
+.module4-npc-card__schedule {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module4-npc-card__schedule li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 11px;
+}
+
+.module4-npc-card__schedule li span {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+}
+
+.module4-npc-card__schedule li strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module4-npc-source-form {
+  justify-content: flex-start;
+  margin-top: 14px;
+}
+
+.module4-npc-source-form label {
+  display: grid;
+  gap: 5px;
+  min-width: min(280px, 100%);
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-npc-source-form select {
+  padding: 8px 9px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+  color: var(--text-primary, #f4f4f5);
+  font: inherit;
+}
+
+/* Task 4 Daily Preview: keep the generated skeleton readable and compact. */
+.module4-preview-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-preview-panel h2 {
+  font-size: 16px;
+}
+
+.module4-preview-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.module4-preview-card {
+  padding: 13px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+}
+
+.module4-preview-card__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.module4-preview-card__heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.module4-preview-card__heading span {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-preview-card .module4-schedule-missing,
+.module4-debug-schedules .module4-schedule-missing {
+  color: var(--accent-red, #db8f93);
+}
+
+.module4-preview-card p,
+.module4-preview-form p {
+  margin: 9px 0 0;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.module4-preview-form {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.module4-preview-form p {
+  margin: 0;
+}
+
+/* Task 9 Facts and Daily Log: short traceability without a permanent dashboard. */
+.module4-history-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-history-panel h2 {
+  font-size: 16px;
+}
+
+.module4-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.module4-history-grid > div {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+}
+
+.module4-history-grid h3 {
+  margin: 0;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 12px;
+}
+
+.module4-history-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module4-history-list li {
+  display: grid;
+  gap: 3px;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.module4-history-list span {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-history-list strong {
+  font-weight: 500;
+}
+
+.module4-debug-panel {
+  margin-top: 28px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  padding-top: 18px;
+}
+
+.module4-debug-panel summary {
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.module4-debug-panel__body {
+  margin-top: 14px;
+}
+
+.module4-debug-panel__note {
+  margin: 0;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.module4-debug-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin-top: 12px;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-debug-state strong {
+  color: var(--text-primary, #f4f4f5);
+  font-weight: 600;
+}
+
+.module4-debug-schedules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.module4-debug-schedules article {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+}
+
+.module4-debug-schedules h3,
+.module4-debug-panel__subheading {
+  margin: 0;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 12px;
+}
+
+.module4-debug-schedules ul,
+.module4-debug-actions {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module4-debug-schedules li,
+.module4-debug-actions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.module4-debug-schedules li span,
+.module4-debug-actions li span {
+  flex: 0 0 auto;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+}
+
+.module4-debug-schedules li strong,
+.module4-debug-actions li strong {
+  min-width: 0;
+  font-weight: 500;
+  text-align: right;
+}
+
+.module4-debug-panel__subheading {
+  margin-top: 16px;
+}
+
+/* Task 6 actions: recommendations and free input share one execution path. */
+.module4-main-action {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-main-action h2 {
+  font-size: 16px;
+}
+
+.module4-recommended-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.module4-recommended-action {
+  display: grid;
+  gap: 6px;
+  min-height: 64px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+  color: var(--text-primary, #f4f4f5);
+  text-align: left;
+  cursor: pointer;
+}
+
+.module4-recommended-action:hover,
+.module4-recommended-action:focus-visible {
+  border-color: var(--accent, var(--accent-gold, #b6c7ff));
+}
+
+.module4-recommended-action strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.module4-recommended-action span {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-free-input-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.module4-free-input-form label {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 11px;
+}
+
+.module4-free-input-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+  border-radius: var(--radius-button, 8px);
+  background: var(--bg-primary, #111318);
+  color: var(--text-primary, #f4f4f5);
+  font: inherit;
+}
+
+@media (max-width: 768px) {
+  .module4-shell__body {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .module4-world-list {
+    max-height: none;
+  }
+
+  .module4-create-form {
+    margin-top: 0;
+  }
+
+  .module4-world-detail {
+    min-height: 360px;
+  }
+
+  .module4-npc-source-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .module4-preview-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .module4-history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .module4-location-move-form,
+  .module4-location-seek-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .module4-free-input-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .module4-debug-schedules li,
+  .module4-debug-actions li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .module4-debug-schedules li strong,
+  .module4-debug-actions li strong {
+    text-align: left;
+  }
+}

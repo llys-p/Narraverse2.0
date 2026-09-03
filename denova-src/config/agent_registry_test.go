@@ -1,0 +1,122 @@
+package config
+
+import "testing"
+
+func TestAgentKindRegistryDefinesUniqueKindsAndConfigAccessors(t *testing.T) {
+	definitions := AgentKindDefinitions()
+	if len(definitions) == 0 {
+		t.Fatal("agent registry should not be empty")
+	}
+	seen := map[string]bool{}
+	for _, definition := range definitions {
+		if definition.Kind == "" {
+			t.Fatal("agent registry contains empty kind")
+		}
+		if seen[definition.Kind] {
+			t.Fatalf("duplicate agent kind registered: %s", definition.Kind)
+		}
+		seen[definition.Kind] = true
+		if definition.ModelOverride == nil || definition.ToolOverride == nil || definition.PromptOverride == nil || definition.ContextOverride == nil {
+			t.Fatalf("agent %s should declare model/tool/prompt/context accessors", definition.Kind)
+		}
+	}
+
+	models := AgentModelSettings{
+		IDE:                 AgentModelOverride{ProfileID: AgentKindIDE},
+		InteractiveStory:    AgentModelOverride{ProfileID: AgentKindInteractiveStory},
+		Image:               AgentModelOverride{ProfileID: AgentKindImage},
+		ConfigManager:       AgentModelOverride{ProfileID: AgentKindConfigManager},
+		InteractiveDirector: AgentModelOverride{ProfileID: AgentKindInteractiveDirector},
+		VersionSummary:      AgentModelOverride{ProfileID: AgentKindVersionSummary},
+		ToolAgent:           AgentModelOverride{ProfileID: AgentKindToolAgent},
+		Automation:          AgentModelOverride{ProfileID: AgentKindAutomation},
+		ContextCompaction:   AgentModelOverride{ProfileID: AgentKindContextCompaction},
+	}
+	prompts := AgentPromptSettings{
+		IDE:                 AgentPromptOverride{SystemPrompt: AgentKindIDE},
+		InteractiveStory:    AgentPromptOverride{SystemPrompt: AgentKindInteractiveStory},
+		Image:               AgentPromptOverride{SystemPrompt: AgentKindImage},
+		ConfigManager:       AgentPromptOverride{SystemPrompt: AgentKindConfigManager},
+		InteractiveDirector: AgentPromptOverride{SystemPrompt: AgentKindInteractiveDirector},
+		VersionSummary:      AgentPromptOverride{SystemPrompt: AgentKindVersionSummary},
+		ToolAgent:           AgentPromptOverride{SystemPrompt: AgentKindToolAgent},
+		Automation:          AgentPromptOverride{SystemPrompt: AgentKindAutomation},
+		ContextCompaction:   AgentPromptOverride{SystemPrompt: AgentKindContextCompaction},
+	}
+	on := true
+	tools := AgentToolSettings{
+		IDE:                 AgentToolOverride{FileRead: &on},
+		InteractiveStory:    AgentToolOverride{FileWrite: &on},
+		Image:               AgentToolOverride{ImageGeneration: &on},
+		ConfigManager:       AgentToolOverride{ShellExecute: &on},
+		InteractiveDirector: AgentToolOverride{LoreWrite: &on},
+		VersionSummary:      AgentToolOverride{Todo: &on},
+		ToolAgent:           AgentToolOverride{WebSearch: &on},
+		Automation:          AgentToolOverride{FileRead: &on, WebSearch: &on},
+		ContextCompaction:   AgentToolOverride{Skills: &on},
+	}
+	thresholds := map[string]*float64{}
+	for _, definition := range definitions {
+		value := 0.50 + float64(len(thresholds))*0.01
+		thresholds[definition.Kind] = &value
+	}
+	contexts := AgentContextSettings{
+		IDE:                 AgentContextOverride{CompactionThreshold: thresholds[AgentKindIDE]},
+		InteractiveStory:    AgentContextOverride{CompactionThreshold: thresholds[AgentKindInteractiveStory]},
+		Image:               AgentContextOverride{CompactionThreshold: thresholds[AgentKindImage]},
+		ConfigManager:       AgentContextOverride{CompactionThreshold: thresholds[AgentKindConfigManager]},
+		InteractiveDirector: AgentContextOverride{CompactionThreshold: thresholds[AgentKindInteractiveDirector]},
+		VersionSummary:      AgentContextOverride{CompactionThreshold: thresholds[AgentKindVersionSummary]},
+		ToolAgent:           AgentContextOverride{CompactionThreshold: thresholds[AgentKindToolAgent]},
+		Automation:          AgentContextOverride{CompactionThreshold: thresholds[AgentKindAutomation]},
+		ContextCompaction:   AgentContextOverride{CompactionThreshold: thresholds[AgentKindContextCompaction]},
+	}
+
+	for _, definition := range definitions {
+		if got := definition.ModelOverride(models).ProfileID; got != definition.Kind {
+			t.Fatalf("model accessor for %s returned %q", definition.Kind, got)
+		}
+		if got := definition.PromptOverride(prompts).SystemPrompt; got != definition.Kind {
+			t.Fatalf("prompt accessor for %s returned %q", definition.Kind, got)
+		}
+		if got := definition.ToolOverride(tools); got == (AgentToolOverride{}) {
+			t.Fatalf("tool accessor for %s returned zero override", definition.Kind)
+		}
+		if got := definition.ContextOverride(contexts).CompactionThreshold; got == nil || *got != *thresholds[definition.Kind] {
+			t.Fatalf("context accessor for %s returned %#v", definition.Kind, got)
+		}
+	}
+}
+
+func TestResolveAgentToolManifestUsesCapabilityRegistryOrder(t *testing.T) {
+	settings := ResolvedAgentToolSettings{
+		FileRead:        true,
+		LoreRead:        true,
+		WebSearch:       true,
+		AgentConfigRead: true,
+	}
+	manifest := ResolveAgentToolManifest(settings)
+	capabilities := AgentToolCapabilities()
+	if len(manifest) != len(capabilities) {
+		t.Fatalf("manifest length = %d, want %d", len(manifest), len(capabilities))
+	}
+	for i, capability := range capabilities {
+		if manifest[i].Source != capability.Source {
+			t.Fatalf("manifest[%d].source = %q, want %q", i, manifest[i].Source, capability.Source)
+		}
+	}
+	allowed := map[string]bool{}
+	for _, item := range manifest {
+		allowed[item.Source] = item.Allowed
+	}
+	for _, source := range []string{AgentToolFileRead, AgentToolLoreRead, AgentToolWebSearch, AgentToolAgentConfigRead} {
+		if !allowed[source] {
+			t.Fatalf("expected %s to be allowed: %#v", source, manifest)
+		}
+	}
+	for _, source := range []string{AgentToolFileWrite, AgentToolShellExecute, AgentToolSkills, AgentToolLoreWrite, AgentToolTodo, AgentToolImageGeneration, AgentToolAgentConfigWrite} {
+		if allowed[source] {
+			t.Fatalf("unexpected allowed capability %s: %#v", source, manifest)
+		}
+	}
+}

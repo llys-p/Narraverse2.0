@@ -1,0 +1,2516 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+/* Preset Studio: a container-driven workbench nested inside either product mode. */
+.preset-workspace {
+  --preset-canvas: #0e131d;
+  --preset-surface: #151922;
+  --preset-raised: #1b2230;
+  --preset-line: #303b50;
+  --preset-ink: #edf2ff;
+  --preset-signal: #b6c7ff;
+  --preset-signal-soft: rgba(182, 199, 255, 0.08);
+  --preset-success: #81c8a3;
+  --preset-warning: #c8aa72;
+  --preset-danger: #db8f93;
+  --preset-primary-bg: #b6c7ff;
+  --preset-primary-ink: #111827;
+  --preset-display-font: "Inter Variable", "SF Pro Display", "PingFang SC", sans-serif;
+  --preset-code-font: "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
+  --nova-bg: var(--preset-canvas);
+  --nova-surface: var(--preset-surface);
+  --nova-surface-2: var(--preset-raised);
+  --nova-surface-3: #232c3d;
+  --nova-hover: #202b3e;
+  --nova-active: #26344a;
+  --nova-border: var(--preset-line);
+  --nova-border-soft: #242e3f;
+  --nova-text: var(--preset-ink);
+  --nova-text-muted: #aeb8ca;
+  --nova-text-faint: #8290a6;
+  --nova-accent: var(--preset-signal);
+  --nova-accent-blue: #9aaaf6;
+  --nova-accent-green: var(--preset-success);
+  --nova-switch-checked: #365b50;
+  --nova-switch-checked-border: #4d806d;
+  --nova-danger: #d37a73;
+  --nova-danger-bg: rgba(168, 88, 82, 0.13);
+  --nova-danger-border: rgba(190, 101, 94, 0.38);
+  --nova-warning: #c49a58;
+  --nova-warning-bg: rgba(161, 123, 67, 0.14);
+  --nova-success: #81c8a3;
+  --nova-success-muted: #6fa88a;
+  --nova-success-bg: rgba(129, 200, 163, 0.14);
+  --nova-field-focus-border: color-mix(in srgb, var(--preset-signal) 68%, var(--preset-line));
+  --nova-style-chip-bg: rgba(255, 255, 250, 0.07);
+  --nova-style-chip-hover-bg: rgba(255, 255, 250, 0.1);
+  --nova-style-chip-text: #d8d8d2;
+  container-name: preset-workspace;
+  container-type: inline-size;
+  background: var(--preset-canvas);
+}
+
+[data-theme="light"] .preset-workspace {
+  --preset-canvas: #ffffff;
+  --preset-surface: #ffffff;
+  --preset-raised: #f6f6f3;
+  --preset-line: #d9d9d4;
+  --preset-ink: #181816;
+  --preset-signal: #242421;
+  --preset-signal-soft: rgba(24, 24, 22, 0.055);
+  --preset-success: #396a4b;
+  --preset-warning: #8a611f;
+  --preset-danger: #963f39;
+  --preset-primary-bg: #1d1d1b;
+  --preset-primary-ink: #ffffff;
+  --nova-surface-3: #ecece8;
+  --nova-hover: #f0f0ec;
+  --nova-active: #e8e8e3;
+  --nova-border-soft: #e6e6e1;
+  --nova-text-muted: #595954;
+  --nova-text-faint: #777770;
+  --nova-accent-blue: #595954;
+  --nova-accent-green: var(--preset-success);
+  --nova-switch-checked: #3f684c;
+  --nova-switch-checked-border: #3f684c;
+  --nova-danger: #963f39;
+  --nova-danger-bg: rgba(150, 63, 57, 0.09);
+  --nova-danger-border: rgba(150, 63, 57, 0.28);
+  --nova-warning: #8a611f;
+  --nova-warning-bg: rgba(138, 97, 31, 0.1);
+  --nova-success: #2f6944;
+  --nova-success-muted: #487858;
+  --nova-success-bg: rgba(57, 106, 75, 0.1);
+  --nova-style-chip-bg: rgba(24, 24, 22, 0.055);
+  --nova-style-chip-hover-bg: rgba(24, 24, 22, 0.085);
+  --nova-style-chip-text: #3c3c38;
+}
+
+.preset-workspace .nova-nav-item {
+  border-radius: 10px;
+  transition-duration: var(--nova-motion-fast);
+}
+
+.preset-workspace .nova-field {
+  border-color: var(--preset-line);
+  border-radius: 10px;
+  background: var(--preset-raised);
+}
+
+.preset-workspace .nova-field:focus,
+.preset-workspace .nova-field:focus-visible,
+.preset-workspace .nova-field:focus-within {
+  border-color: var(--nova-field-focus-border);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--preset-signal) 20%, transparent);
+}
+
+.nova-library-page > .nova-topbar {
+  min-height: 44px;
+  background: var(--nova-surface);
+  border-bottom-color: var(--nova-border-soft);
+}
+
+.nova-library-page .nova-library-toolbar {
+  padding: 14px 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--nova-surface-2) 64%, var(--nova-surface)), var(--nova-surface));
+  border-bottom-color: var(--nova-border-soft);
+}
+
+.nova-library-page .nova-library-results {
+  padding: 18px 20px 24px;
+  background: var(--nova-bg);
+}
+
+.nova-library-page .nova-library-card-grid {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(100%, 980px);
+  margin: 0 auto;
+}
+
+.nova-library-page .nova-library-card {
+  min-height: 148px;
+  border-color: var(--nova-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--nova-surface) 92%, var(--nova-bg));
+  box-shadow: 0 10px 28px rgb(0 0 0 / 10%);
+  transition: transform var(--nova-motion-fast) var(--nova-ease), background-color var(--nova-motion-fast) var(--nova-ease), border-color var(--nova-motion-fast) var(--nova-ease), box-shadow var(--nova-motion-fast) var(--nova-ease);
+}
+
+.nova-library-page .nova-library-card:hover {
+  border-color: color-mix(in srgb, var(--nova-accent-blue) 48%, var(--nova-border));
+  background: var(--nova-surface-2);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 16%);
+  transform: translateY(-1px);
+}
+
+.nova-library-page .nova-library-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--nova-accent-blue) 76%, transparent);
+  outline-offset: 2px;
+}
+
+.nova-library-page .nova-library-pagination {
+  padding: 10px 20px;
+  background: var(--nova-surface);
+  border-top-color: var(--nova-border-soft);
+}
+
+.preset-workspace .font-mono {
+  font-family: var(--preset-code-font);
+}
+
+.preset-workspace-main {
+  container-name: preset-main;
+  container-type: inline-size;
+  background: var(--preset-canvas);
+}
+
+.preset-workspace-toolbar {
+  min-height: 58px;
+  border-color: var(--preset-line);
+  background: var(--preset-surface);
+  box-shadow: inset 0 -1px 0 var(--preset-line);
+}
+
+.preset-workspace-title {
+  font-family: var(--preset-display-font);
+  letter-spacing: -0.012em;
+}
+
+.preset-title-icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--preset-line);
+  border-radius: 10px;
+  background: var(--preset-raised);
+  color: var(--preset-ink);
+}
+
+.preset-primary-action {
+  border-color: var(--preset-primary-bg);
+  background: var(--preset-primary-bg);
+  color: var(--preset-primary-ink);
+  box-shadow: none;
+}
+
+.preset-primary-action:hover {
+  border-color: var(--preset-primary-bg);
+  background: color-mix(in srgb, var(--preset-primary-bg) 88%, var(--preset-surface));
+  color: var(--preset-primary-ink);
+}
+
+@container preset-main (max-width: 560px) {
+  .preset-workspace-toolbar {
+    min-height: 52px;
+    gap: 0.5rem;
+    padding-inline: 0.625rem;
+  }
+
+  .preset-title-subtitle,
+  .preset-action-label {
+    display: none;
+  }
+
+  .preset-title-icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+}
+
+.preset-directory {
+  background: var(--preset-surface);
+}
+
+.preset-metadata-shell {
+  container-name: preset-metadata;
+  container-type: inline-size;
+  border-bottom: 1px solid var(--preset-line);
+  background: var(--preset-surface);
+  padding: 8px 12px;
+}
+
+.preset-metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 152px), 1fr));
+  align-items: end;
+  gap: 8px;
+}
+
+.preset-field-label {
+  overflow: hidden;
+  color: var(--nova-text-muted);
+  font-size: var(--nova-ui-micro-font-size);
+  line-height: var(--nova-ui-micro-line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-status-badge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--preset-line);
+  border-radius: 10px;
+  background: var(--preset-raised);
+  padding: 0 11px;
+  color: var(--nova-text-muted);
+  font-size: var(--nova-ui-micro-font-size);
+}
+
+.preset-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 999px;
+  background: var(--preset-success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--preset-success) 14%, transparent);
+}
+
+.preset-metadata-hint {
+  margin-top: 6px;
+  border-left: 2px solid var(--preset-warning);
+  padding: 1px 0 1px 8px;
+  color: var(--nova-text-muted);
+  font-size: var(--nova-ui-micro-font-size);
+  line-height: 1.4;
+}
+
+@container preset-metadata (min-width: 440px) {
+  .preset-metadata-grid {
+    grid-template-columns: minmax(120px, 0.8fr) minmax(160px, 1.3fr) max-content;
+  }
+
+  .preset-metadata-grid:has(.preset-metadata-extra) {
+    grid-template-columns: minmax(92px, 0.75fr) minmax(120px, 1.2fr) minmax(72px, 0.55fr) max-content;
+  }
+}
+
+/* Every list/detail editor responds to the space left inside the workbench. */
+.preset-config-visual-container {
+  container-name: preset-config-editor;
+  container-type: inline-size;
+}
+
+.preset-visual-editor-shell {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 320px;
+}
+
+@container preset-config-editor (min-width: 620px) {
+  .preset-visual-editor-shell {
+    grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  }
+}
+
+@container preset-config-editor (max-width: 540px) {
+  .trpg-workflow-tab-description {
+    display: none;
+  }
+}
+
+:is(.image-preset-editor, .teller-editor) {
+  container-name: preset-rule-editor;
+  container-type: inline-size;
+}
+
+:is(.image-preset-layout, .teller-injection-layout),
+:is(.image-preset-rule-grid, .teller-rule-grid) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container preset-rule-editor (min-width: 720px) {
+  :is(.image-preset-layout, .teller-injection-layout) {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  }
+
+  :is(.image-preset-rules, .teller-injection-rules) {
+    max-height: none;
+    border-right-width: 1px;
+    border-bottom-width: 0;
+  }
+
+  :is(.image-preset-rule-grid, .teller-rule-grid) {
+    grid-template-columns: minmax(180px, 1fr) minmax(220px, 300px) 36px;
+  }
+
+  :is(.image-preset-rule-summary, .teller-rule-summary) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Radix uses an inline display:table wrapper. Horizontal growth is invalid here. */
+:is(.actor-state-tree-scroll) [data-slot="scroll-area-viewport"] > div {
+  display: block !important;
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+}
+
+.actor-state-explorer {
+  container-name: actor-state-editor;
+  container-type: inline-size;
+  position: relative;
+}
+
+.state-tree-branch {
+  margin-left: 0.75rem;
+  padding-left: 0.25rem;
+  border-left: 1px solid var(--nova-border-soft);
+}
+
+.actor-state-explorer-layout {
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.actor-state-navigation {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(88%, 360px);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transform: translateX(-104%);
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform var(--nova-motion-normal) var(--nova-ease);
+  box-shadow: var(--nova-shadow);
+  z-index: 2;
+}
+
+.actor-state-navigation[data-open="true"] {
+  transform: translateX(0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.actor-state-navigation-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--nova-bg-deep) 54%, transparent);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--nova-motion-normal) var(--nova-ease);
+  z-index: 1;
+}
+
+.actor-state-navigation-backdrop[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+@container actor-state-editor (min-width: 720px) {
+  .actor-state-explorer-layout {
+    grid-template-columns: minmax(230px, 30%) minmax(0, 1fr);
+  }
+
+  .actor-state-navigation {
+    position: static;
+    width: auto;
+    transform: none;
+    visibility: visible;
+    pointer-events: auto;
+    box-shadow: none;
+    z-index: auto;
+  }
+
+  .actor-state-navigation-backdrop,
+  .actor-state-navigation-trigger,
+  .actor-state-navigation-close {
+    display: none;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .actor-state-explorer .group :is([class*="group-hover:opacity-100"], [class*="group-focus-within:opacity-100"]) {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actor-state-navigation,
+  .actor-state-navigation-backdrop {
+    transition: none;
+  }
+}
+
+:root {
+  --nova-bg: #0e131d;
+  --nova-bg-deep: #0a0e15;
+  --nova-surface: #151922;
+  --nova-surface-2: #1b2230;
+  --nova-surface-3: #232c3d;
+  --nova-hover: #202b3e;
+  --nova-active: #26344a;
+  --nova-border: #303b50;
+  --nova-border-soft: #242e3f;
+  --nova-text: #edf2ff;
+  --nova-text-muted: #aeb8ca;
+  --nova-text-faint: #8290a6;
+  --nova-accent: #b6c7ff;
+  --nova-accent-blue: #9aaaf6;
+  --nova-accent-green: #81c8a3;
+  --nova-switch-checked: #365b50;
+  --nova-switch-checked-border: #4d806d;
+  --nova-switch-thumb: #effff6;
+  --nova-danger: #db8f93;
+  --nova-danger-foreground: #111827;
+  --nova-danger-bg: rgba(219, 143, 147, 0.13);
+  --nova-danger-border: rgba(219, 143, 147, 0.38);
+  --nova-warning: #c8aa72;
+  --nova-warning-bg: rgba(200, 170, 114, 0.15);
+  --nova-success: #81c8a3;
+  --nova-success-muted: #6fa88a;
+  --nova-success-bg: rgba(129, 200, 163, 0.14);
+  --nova-field-focus-border: #7389c9;
+  --nova-app-shell-glow: rgba(92, 115, 190, 0.08);
+  --nova-topbar-shadow: rgba(182, 199, 255, 0.06);
+  --nova-control-shadow: rgba(120, 145, 205, 0.06);
+  --nova-user-message-border: #40516f;
+  --nova-user-message-bg-from: #2b3953;
+  --nova-user-message-bg-to: #222d43;
+  --nova-user-message-text: #edf2ff;
+  --nova-assistant-message-border: #303b50;
+  --nova-assistant-message-bg: #101722;
+  --nova-chat-heading: #e4ebff;
+  --nova-menu-bg: rgba(15, 21, 32, 0.98);
+  --nova-menu-item-hover-bg: rgba(182, 199, 255, 0.09);
+  --nova-selection-bg: rgba(182, 199, 255, 0.1);
+  --nova-drop-bg: #27344a;
+  --nova-tree-text: #c2cde0;
+  --nova-tree-icon: #8e9db5;
+  --nova-tree-folder: #b0bfd6;
+  --nova-tree-chevron: #8190a8;
+  --nova-chip-bg: rgba(182, 199, 255, 0.08);
+  --nova-chip-hover-bg: rgba(182, 199, 255, 0.13);
+  --nova-style-chip-bg: rgba(182, 199, 255, 0.08);
+  --nova-style-chip-hover-bg: rgba(182, 199, 255, 0.13);
+  --nova-style-chip-text: #c5d0e8;
+  --nova-lore-chip-bg: rgba(129, 200, 163, 0.13);
+  --nova-lore-chip-hover-bg: rgba(129, 200, 163, 0.19);
+  --nova-lore-chip-text: #a9d8bb;
+  --nova-code-bg: #202a3a;
+  --nova-code-text: #dce6fb;
+  --nova-code-block-bg: #0d131e;
+  --nova-table-header-bg: #1d2635;
+  --nova-markdown-border: #34425a;
+  --nova-dialogue-highlight: #ffd166;
+  --nova-scrollbar-track: #0b1018;
+  --nova-scrollbar-thumb: #33415a;
+  --nova-scrollbar-thumb-hover: #4c5e7e;
+  --nova-editor-ide-bg: #101722;
+  --nova-editor-ide-color: #edf2ff;
+  --nova-editor-ide-accent: #27344a;
+  --nova-radius: 9px;
+  --nova-ease: cubic-bezier(0.25, 1.1, 0.4, 1);
+  --nova-motion-fast: 140ms;
+  --nova-motion-normal: 220ms;
+  --nova-motion-slow: 280ms;
+  --nova-shadow: 0 18px 50px rgba(0, 0, 0, 0.36);
+  --nova-ui-font-size: 14px;
+  --nova-ui-line-height: 20px;
+  --nova-ui-sm-font-size: 16px;
+  --nova-ui-sm-line-height: 22px;
+  --nova-ui-caption-size: 13px;
+  --nova-ui-compact-font-size: 13px;
+  --nova-ui-compact-line-height: 18px;
+  --nova-ui-micro-font-size: 12px;
+  --nova-ui-micro-line-height: 16px;
+  --nova-reading-font-size: 18px;
+  --nova-ui-font-family: "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, sans-serif;
+  --nova-reading-font-family: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", "SimSun", serif;
+  color-scheme: dark;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+[data-theme="light"] {
+  --nova-bg: #ffffff;
+  --nova-bg-deep: #ffffff;
+  --nova-surface: #ffffff;
+  --nova-surface-2: #f7f7f4;
+  --nova-surface-3: #efefeb;
+  --nova-hover: #f0f0ec;
+  --nova-active: #e7e7e2;
+  --nova-border: #d7d7d2;
+  --nova-border-soft: #e5e5e0;
+  --nova-text: #171715;
+  --nova-text-muted: #565651;
+  --nova-text-faint: #74746e;
+  --nova-accent: #343431;
+  --nova-accent-blue: #8a611f;
+  --nova-accent-green: #396a4b;
+  --nova-switch-checked: #3c5d48;
+  --nova-switch-checked-border: #3c5d48;
+  --nova-switch-thumb: #ffffff;
+  --nova-danger: #b42318;
+  --nova-danger-foreground: #ffffff;
+  --nova-danger-bg: rgba(180, 35, 24, 0.1);
+  --nova-danger-border: rgba(180, 35, 24, 0.32);
+  --nova-warning: #7a5200;
+  --nova-warning-bg: rgba(180, 122, 16, 0.18);
+  --nova-success: #156f3f;
+  --nova-success-muted: #2f6f46;
+  --nova-success-bg: rgba(21, 111, 63, 0.12);
+  --nova-field-focus-border: #8f8f88;
+  --nova-app-shell-glow: transparent;
+  --nova-topbar-shadow: rgba(24, 24, 22, 0.08);
+  --nova-control-shadow: rgba(24, 24, 22, 0.055);
+  --nova-shadow: 0 18px 44px rgba(24, 24, 22, 0.14);
+  --nova-user-message-border: #cecec8;
+  --nova-user-message-bg-from: #ecece8;
+  --nova-user-message-bg-to: #e5e5e0;
+  --nova-user-message-text: #171715;
+  --nova-assistant-message-border: #ddddda;
+  --nova-assistant-message-bg: #ffffff;
+  --nova-chat-heading: #242421;
+  --nova-menu-bg: rgba(255, 255, 255, 0.98);
+  --nova-menu-item-hover-bg: rgba(24, 24, 22, 0.07);
+  --nova-selection-bg: rgba(24, 24, 22, 0.08);
+  --nova-drop-bg: #ecece8;
+  --nova-tree-text: #242421;
+  --nova-tree-icon: #666660;
+  --nova-tree-folder: #4a4a46;
+  --nova-tree-chevron: #777770;
+  --nova-chip-bg: rgba(24, 24, 22, 0.06);
+  --nova-chip-hover-bg: rgba(24, 24, 22, 0.09);
+  --nova-style-chip-bg: rgba(24, 24, 22, 0.055);
+  --nova-style-chip-hover-bg: rgba(24, 24, 22, 0.085);
+  --nova-style-chip-text: #3c3c38;
+  --nova-lore-chip-bg: rgba(57, 106, 75, 0.09);
+  --nova-lore-chip-hover-bg: rgba(57, 106, 75, 0.14);
+  --nova-lore-chip-text: #315f40;
+  --nova-code-bg: #efefeb;
+  --nova-code-text: #242421;
+  --nova-code-block-bg: #f4f4f1;
+  --nova-table-header-bg: #eeeeea;
+  --nova-markdown-border: #d9d9d4;
+  --nova-dialogue-highlight: #A04A1A;
+  --nova-scrollbar-track: #f4f4f1;
+  --nova-scrollbar-thumb: #c7c7c1;
+  --nova-scrollbar-thumb-hover: #a5a59e;
+  --nova-editor-ide-bg: #ffffff;
+  --nova-editor-ide-color: #171715;
+  --nova-editor-ide-accent: #e1e1dc;
+  color-scheme: light;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+[data-theme="light"] [data-nova-app-shell="true"] {
+  background: var(--nova-bg);
+}
+
+[data-theme="light"] .nova-topbar,
+[data-theme="light"] .nova-chat-input-area,
+[data-theme="light"] .nova-editor-toolbar,
+[data-theme="light"] .nova-editor-statusbar {
+  background: var(--nova-surface);
+}
+
+[data-theme="light"] .nova-chat-canvas {
+  background: var(--nova-surface-2);
+}
+
+[data-theme="light"] .nova-chat-composer,
+[data-theme="light"] .nova-agent-composer {
+  box-shadow:
+    inset 0 1px 0 var(--nova-control-shadow),
+    0 8px 20px rgba(35, 48, 66, 0.08);
+}
+
+[data-theme="light"] .nova-chat-input-area-floating,
+[data-theme="light"] .nova-story-input-float {
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--nova-surface-2) 76%, transparent) 34%, color-mix(in srgb, var(--nova-surface-2) 92%, transparent));
+}
+
+[data-theme="light"] .nova-command-menu,
+[data-theme="light"] .nova-editor-settings-panel {
+  box-shadow:
+    0 16px 40px rgba(35, 48, 66, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--nova-bg);
+  color: var(--nova-text);
+  font-family: var(--nova-ui-font-family);
+  font-feature-settings: "kern";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  transition-property: color, background-color, border-color, opacity, transform, box-shadow;
+  transition-duration: var(--nova-motion-normal);
+  transition-timing-function: var(--nova-ease);
+}
+
+html[data-nova-motion="reduced"] {
+  --nova-motion-fast: 80ms;
+  --nova-motion-normal: 120ms;
+  --nova-motion-slow: 140ms;
+}
+
+html[data-nova-motion="off"] {
+  --nova-motion-fast: 1ms;
+  --nova-motion-normal: 1ms;
+  --nova-motion-slow: 1ms;
+}
+
+html[data-nova-motion="off"] *,
+html[data-nova-motion="off"] *::before,
+html[data-nova-motion="off"] *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 1ms !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+[data-nova-app-shell="true"] {
+  background: var(--nova-bg);
+  color: var(--nova-text);
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+}
+
+[data-nova-mobile-shell="true"] {
+  height: 100dvh;
+}
+
+/* Scroll containment is opt-in via `overscroll-contain`. Nested editors must
+   otherwise be able to hand wheel and touch gestures to their parent scroller. */
+
+.nova-mobile-nav {
+  padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+}
+
+.nova-mobile-nav-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.nova-mobile-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.nova-mobile-drawer-backdrop {
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-nova-mobile-shell="true"] :where(.overflow-y-auto, [data-slot="scroll-area-viewport"]) {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+[data-nova-mobile-shell="true"] :where(.overflow-auto) {
+  -webkit-overflow-scrolling: touch;
+}
+
+@supports not (height: 100dvh) {
+  [data-nova-mobile-shell="true"] {
+    height: 100vh;
+  }
+}
+
+[data-nova-app-shell="true"] .text-xs {
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+}
+
+[data-nova-app-shell="true"] .text-sm {
+  font-size: var(--nova-ui-sm-font-size);
+  line-height: var(--nova-ui-sm-line-height);
+}
+
+[data-nova-app-shell="true"] [class*="text-[11px]"] {
+  font-size: var(--nova-ui-compact-font-size);
+  line-height: var(--nova-ui-compact-line-height);
+}
+
+:where([data-nova-app-shell="true"], [data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="command"], .nova-command-menu, .nova-panel) [class*="text-[10px]"] {
+  font-size: var(--nova-ui-micro-font-size);
+  line-height: var(--nova-ui-micro-line-height);
+}
+
+:where([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="command"], .nova-command-menu, .nova-panel) .text-xs {
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+}
+
+@media (max-width: 767px) {
+  [data-nova-mobile-shell="true"] .nova-story-stage-header {
+    min-height: auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-story-stage-title {
+    width: auto;
+    flex: 1 1 0;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-story-stage-controls {
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 0.125rem;
+    scrollbar-width: none;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-story-stage-controls::-webkit-scrollbar {
+    display: none;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-story-stage-controls > * {
+    flex-shrink: 0;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-agent-composer {
+    border-radius: 12px;
+    padding: 0.5rem;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-agent-composer-toolbar {
+    align-items: flex-end;
+    gap: 0.5rem;
+  }
+
+  [data-nova-mobile-shell="true"] .nova-command-menu {
+    width: min(calc(100vw - 1.5rem), 384px) !important;
+  }
+
+  /* Constrain radix ScrollArea viewport child. Radix sets inline
+     display:table + min-width:100% which makes the child ignore max-width
+     and grow to content width. Override to display:block so max-width
+     constrains it, preventing horizontal overflow on narrow screens. */
+  [data-nova-mobile-shell="true"] [data-slot="scroll-area-viewport"] > div {
+    display: block !important;
+    max-width: 100% !important;
+    overflow-x: hidden;
+  }
+
+  /* Touch has no hover: reveal message meta + assistant actions that are
+     otherwise opacity-gated behind :hover/:focus-within. */
+  [data-nova-mobile-shell="true"] .nova-message-meta {
+    opacity: 1;
+  }
+}
+
+:where([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="command"], .nova-command-menu, .nova-panel) .text-sm {
+  font-size: var(--nova-ui-sm-font-size);
+  line-height: var(--nova-ui-sm-line-height);
+}
+
+:where([data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="popover-content"], [data-slot="command"], .nova-command-menu, .nova-panel) [class*="text-[11px]"] {
+  font-size: var(--nova-ui-compact-font-size);
+  line-height: var(--nova-ui-compact-line-height);
+}
+
+.nova-topbar {
+  border-color: var(--nova-border);
+  background: var(--nova-bg-deep);
+  color: var(--nova-text-muted);
+  box-shadow: inset 0 -1px 0 var(--nova-topbar-shadow);
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+}
+
+.nova-activity-bar {
+  border-color: var(--nova-border);
+  background: var(--nova-bg-deep);
+  color: var(--nova-text-muted);
+  transition-duration: var(--nova-motion-slow) !important;
+}
+
+.nova-activity-bar-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: -4px;
+  top: 0;
+  z-index: 10;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.nova-activity-bar-resize-handle::after {
+  position: absolute;
+  bottom: 12px;
+  right: 3px;
+  top: 12px;
+  width: 1px;
+  border-radius: 999px;
+  background: transparent;
+  content: '';
+  transition: background-color var(--nova-motion-normal) var(--nova-ease);
+}
+
+.nova-activity-bar-resize-handle:hover::after,
+.nova-activity-bar-resize-handle:focus-visible::after {
+  background: var(--nova-active);
+}
+
+.nova-sidebar {
+  border-color: var(--nova-border);
+  background: var(--nova-surface);
+}
+
+.nova-panel {
+  border-color: var(--nova-border);
+  background: var(--nova-surface-2);
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+}
+
+.nova-subpanel {
+  border-color: var(--nova-border);
+  background: var(--nova-surface);
+}
+
+.nova-icon-button {
+  height: 40px;
+  width: 40px;
+  min-width: 40px;
+  border-radius: var(--nova-radius);
+  color: var(--nova-text-muted);
+}
+
+.nova-activity-bar.is-expanded .nova-icon-button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.nova-statusbar {
+  font-size: var(--nova-ui-compact-font-size);
+  line-height: var(--nova-ui-compact-line-height);
+}
+
+.nova-icon-button:hover {
+  background: var(--nova-surface);
+  color: var(--nova-text-muted);
+}
+
+.nova-icon-button.is-active,
+.nova-nav-item.is-active {
+  background: var(--nova-active);
+  color: var(--nova-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.nova-nav-item {
+  border-radius: var(--nova-radius);
+  color: var(--nova-text-muted);
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+  transition: color var(--nova-motion-normal) var(--nova-ease), background-color var(--nova-motion-normal) var(--nova-ease), border-color var(--nova-motion-normal) var(--nova-ease), transform var(--nova-motion-normal) var(--nova-ease);
+}
+
+.nova-nav-item:hover {
+  background: var(--nova-hover);
+  color: var(--nova-text);
+}
+
+.nova-field {
+  border-color: var(--nova-border);
+  background: var(--nova-surface-2);
+  color: var(--nova-text);
+  font-size: var(--nova-ui-font-size);
+  line-height: var(--nova-ui-line-height);
+}
+
+.nova-ui-compact {
+  font-size: var(--nova-ui-compact-font-size);
+  line-height: var(--nova-ui-compact-line-height);
+}
+
+.nova-field:hover,
+.nova-field:focus-within {
+  border-color: var(--nova-field-focus-border);
+  background: var(--nova-surface-3);
+}
+
+.nova-chat-canvas {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nova-surface-2) 88%, var(--nova-surface-3) 12%), var(--nova-surface-2) 220px),
+    var(--nova-surface-2);
+}
+
+.nova-story-stage-content {
+  container-name: nova-story-stage;
+  container-type: inline-size;
+}
+
+.nova-turn-navigator {
+  display: none;
+}
+
+@container nova-story-stage (min-width: 900px) {
+  .nova-turn-navigator {
+    position: relative;
+    z-index: 12;
+    display: flex;
+    width: 34px;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+    background: transparent;
+  }
+}
+
+.nova-turn-navigator-track {
+  display: flex;
+  max-height: min(56vh, 420px);
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow: visible;
+  padding-block: 12px;
+  opacity: 0;
+  transition: opacity var(--nova-motion-fast) var(--nova-ease);
+}
+
+.nova-turn-navigator:hover .nova-turn-navigator-track,
+.nova-turn-navigator:focus-within .nova-turn-navigator-track {
+  opacity: 1;
+}
+
+.nova-turn-nav-slot {
+  position: relative;
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.nova-turn-nav-button {
+  position: relative;
+  display: flex;
+  min-height: 8px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--nova-text-faint);
+  cursor: pointer;
+}
+
+.nova-turn-nav-button:focus-visible {
+  outline: none;
+}
+
+.nova-turn-nav-mark {
+  display: block;
+  height: 3px;
+  width: 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--nova-text-faint) 42%, transparent);
+  opacity: 0.78;
+  transition:
+    width var(--nova-motion-fast) var(--nova-ease),
+    background-color var(--nova-motion-fast) var(--nova-ease),
+    opacity var(--nova-motion-fast) var(--nova-ease);
+}
+
+.nova-turn-nav-button:hover .nova-turn-nav-mark,
+.nova-turn-nav-button:focus-visible .nova-turn-nav-mark {
+  width: 18px;
+  background: color-mix(in srgb, var(--nova-text-muted) 78%, transparent);
+  opacity: 1;
+}
+
+.nova-turn-nav-button[data-active="true"] .nova-turn-nav-mark {
+  width: 15px;
+  background: var(--nova-text);
+  opacity: 0.88;
+}
+
+.nova-turn-nav-button[data-pending="true"] .nova-turn-nav-mark {
+  opacity: 0.72;
+}
+
+.nova-turn-nav-preview {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  z-index: 40;
+  display: grid;
+  width: min(20em, calc(100vw - 120px));
+  width: min(20ic, calc(100vw - 120px));
+  min-height: 102px;
+  align-content: start;
+  transform: translateY(-50%) translateX(-4px);
+  gap: 6px;
+  visibility: hidden;
+  overflow: hidden;
+  border: 1px solid var(--nova-border);
+  border-radius: var(--nova-radius);
+  background: color-mix(in srgb, var(--nova-surface) 90%, transparent);
+  padding: 12px 14px;
+  font-size: 12px;
+  text-align: left;
+  opacity: 0;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(20px);
+  transition:
+    opacity var(--nova-motion-fast) var(--nova-ease),
+    transform var(--nova-motion-fast) var(--nova-ease),
+    visibility var(--nova-motion-fast) var(--nova-ease);
+  pointer-events: none;
+}
+
+.nova-turn-nav-button:hover .nova-turn-nav-preview,
+.nova-turn-nav-button:focus-visible .nova-turn-nav-preview {
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
+}
+
+.nova-turn-nav-preview-user,
+.nova-turn-nav-preview-agent {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nova-turn-nav-preview-user {
+  color: var(--nova-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.nova-turn-nav-preview-agent {
+  display: -webkit-box;
+  max-height: 54px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--nova-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: normal;
+}
+
+.nova-chat-input-area {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nova-surface) 78%, transparent), var(--nova-surface) 42%),
+    var(--nova-surface);
+  box-shadow: inset 0 1px 0 var(--nova-topbar-shadow);
+}
+
+.nova-chat-input-area-floating {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 0.75rem;
+  pointer-events: none;
+  border-top: 0;
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--nova-surface-2) 72%, transparent) 34%, color-mix(in srgb, var(--nova-surface-2) 90%, transparent));
+  box-shadow: none;
+}
+
+.nova-chat-input-area-floating .nova-agent-composer {
+  pointer-events: auto;
+}
+
+.nova-story-input-float {
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--nova-surface-2) 72%, transparent) 34%, color-mix(in srgb, var(--nova-surface-2) 90%, transparent));
+}
+
+.nova-chat-composer {
+  box-shadow:
+    inset 0 1px 0 var(--nova-control-shadow),
+    0 10px 28px rgba(0, 0, 0, 0.18);
+  transition: border-color var(--nova-motion-normal) var(--nova-ease), background-color var(--nova-motion-normal) var(--nova-ease), box-shadow var(--nova-motion-normal) var(--nova-ease);
+}
+
+.nova-chat-composer:focus-within {
+  border-color: var(--nova-field-focus-border);
+  background: color-mix(in srgb, var(--nova-surface-2) 72%, var(--nova-surface-3) 28%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(163, 163, 163, 0.08),
+    0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.nova-agent-composer {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  overflow: hidden;
+  border: 1px solid var(--nova-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nova-surface-2) 88%, transparent), color-mix(in srgb, var(--nova-surface) 78%, transparent)),
+    color-mix(in srgb, var(--nova-surface-2) 88%, transparent);
+  padding: 0.5rem;
+  box-shadow:
+    inset 0 1px 0 var(--nova-control-shadow),
+    0 14px 36px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(18px);
+  transition: border-color var(--nova-motion-normal) var(--nova-ease), background-color var(--nova-motion-normal) var(--nova-ease), box-shadow var(--nova-motion-normal) var(--nova-ease);
+}
+
+.nova-agent-composer:focus-within {
+  border-color: var(--nova-field-focus-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nova-surface-2) 76%, var(--nova-surface-3) 24%), color-mix(in srgb, var(--nova-surface) 72%, var(--nova-surface-3) 28%));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 0 1px rgba(163, 163, 163, 0.08),
+    0 18px 40px rgba(0, 0, 0, 0.24);
+}
+
+.nova-agent-composer-references > :last-child {
+  margin-bottom: 0;
+}
+
+.nova-agent-composer-body {
+  grid-area: body;
+  min-width: 0;
+}
+
+.nova-agent-composer-textarea {
+  width: 100%;
+}
+
+.nova-agent-composer-textarea.nova-agent-token-input {
+  position: relative;
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+.nova-agent-composer-textarea.nova-agent-token-input[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.nova-agent-token-input .ProseMirror {
+  min-height: 100%;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.nova-agent-token-input .ProseMirror p {
+  margin: 0;
+}
+
+.nova-agent-token-input[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  pointer-events: none;
+  position: absolute;
+  left: 0.25rem;
+  top: 0.5625rem;
+  color: var(--nova-text-faint);
+}
+
+.nova-composer-token {
+  color: var(--nova-accent-blue);
+  font-weight: 700;
+}
+
+.nova-composer-token.ProseMirror-selectednode {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--nova-accent-blue) 18%, transparent);
+  outline: none;
+}
+
+.nova-agent-composer-toolbar {
+  display: grid;
+  width: 100%;
+  min-height: 2.5rem;
+  min-width: 0;
+  grid-template-areas: "start body end";
+  grid-template-columns: auto minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nova-agent-composer-toolbar-start,
+.nova-agent-composer-toolbar-end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nova-agent-composer-toolbar-start {
+  grid-area: start;
+  max-width: 100%;
+}
+
+.nova-agent-composer-toolbar-end {
+  grid-area: end;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.nova-agent-composer-icon,
+.nova-agent-composer-pill,
+.nova-agent-composer-submit {
+  transition: color var(--nova-motion-fast) var(--nova-ease), background-color var(--nova-motion-fast) var(--nova-ease), border-color var(--nova-motion-fast) var(--nova-ease), transform var(--nova-motion-fast) var(--nova-ease);
+}
+
+.nova-agent-composer-submit:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+.nova-agent-composer:has(.nova-agent-composer-textarea[data-nova-multiline="true"]) {
+  gap: 0.5rem;
+}
+
+.nova-agent-composer:has(.nova-agent-composer-textarea[data-nova-multiline="true"]) .nova-agent-composer-toolbar {
+  grid-template-areas:
+    "body body body"
+    "start spacer end";
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
+  align-items: stretch;
+  row-gap: 0.375rem;
+}
+
+.nova-agent-composer:has(.nova-agent-composer-textarea[data-nova-multiline="true"]) .nova-agent-composer-body {
+  width: 100%;
+}
+
+.nova-agent-composer:has(.nova-agent-composer-textarea[data-nova-multiline="true"]) .nova-agent-composer-toolbar-end {
+  justify-self: end;
+}
+
+@media (max-width: 640px) {
+  .nova-agent-composer {
+    border-radius: 12px;
+    padding: 0.5rem;
+  }
+
+  .nova-agent-composer-toolbar {
+    gap: 0.5rem;
+  }
+
+  .nova-agent-composer-pill {
+    max-width: 7.5rem;
+  }
+}
+
+.nova-message-body-with-meta {
+  min-width: 0;
+}
+
+.nova-message-body-with-meta-user {
+  width: fit-content;
+}
+
+.nova-message-body-with-meta-assistant {
+  width: 100%;
+}
+
+.nova-message-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 13px;
+  line-height: 1.25rem;
+  color: var(--nova-text-faint);
+  opacity: 0;
+  transition: opacity var(--nova-motion-fast) var(--nova-ease);
+}
+
+.nova-message-meta:empty {
+  display: none;
+}
+
+.nova-message-meta-spacer {
+  min-height: 1.25rem;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.nova-message-body-with-meta:hover .nova-message-meta,
+.nova-message-body-with-meta:focus-within .nova-message-meta {
+  opacity: 1;
+}
+
+.nova-message-meta-left {
+  padding-left: 0.25rem;
+  text-align: left;
+}
+
+.nova-message-meta-right {
+  justify-content: flex-end;
+  padding-right: 0.25rem;
+  text-align: right;
+  width: 100%;
+}
+
+.nova-message-time {
+  white-space: nowrap;
+}
+
+.nova-command-menu {
+  border-color: var(--nova-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nova-surface-3) 72%, var(--nova-bg-deep) 28%), color-mix(in srgb, var(--nova-surface) 88%, var(--nova-bg-deep) 12%)),
+    color-mix(in srgb, var(--nova-surface) 92%, var(--nova-bg-deep) 8%);
+  color: var(--nova-text);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(18px);
+}
+
+.nova-command-menu [data-slot="command"] {
+  background: transparent;
+  color: var(--nova-text);
+}
+
+.nova-command-menu [data-slot="command-list"] {
+  scrollbar-color: var(--nova-scrollbar-thumb) transparent;
+}
+
+.nova-command-menu [data-slot="command-item"] {
+  color: var(--nova-text-muted);
+}
+
+.nova-command-menu [data-slot="command-item"][data-selected="true"] {
+  background: color-mix(in srgb, var(--nova-active) 84%, var(--nova-bg-deep) 16%);
+  color: var(--nova-text);
+}
+
+.nova-command-menu [data-slot="command-item"][data-selected="true"] svg {
+  color: var(--nova-text);
+}
+
+.nova-command-menu [cmdk-group-heading] {
+  color: var(--nova-text-faint);
+}
+
+.nova-user-message {
+  border: 1px solid var(--nova-user-message-border);
+  background:
+    linear-gradient(180deg, var(--nova-user-message-bg-from), var(--nova-user-message-bg-to));
+  font-size: var(--nova-ui-sm-font-size);
+  line-height: 1.72;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 26px rgba(0, 0, 0, 0.16);
+}
+
+.nova-assistant-message {
+  border: 1px solid var(--nova-assistant-message-border);
+  border-radius: var(--nova-radius);
+  background:
+    linear-gradient(180deg, var(--nova-assistant-message-bg), var(--nova-surface) 68%);
+  padding: 12px 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.028),
+    0 12px 30px rgba(0, 0, 0, 0.14);
+}
+
+.nova-editor-toolbar,
+.nova-editor-statusbar {
+  border-color: var(--nova-border);
+  background: color-mix(in srgb, var(--nova-surface) 92%, var(--nova-surface-3) 8%);
+  box-shadow: inset 0 1px 0 var(--nova-topbar-shadow);
+}
+
+.nova-editor-settings-panel {
+  background:
+    linear-gradient(180deg, var(--nova-surface-3), var(--nova-surface) 72%),
+    var(--nova-surface);
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.nova-editor-control {
+  box-shadow: inset 0 1px 0 var(--nova-control-shadow);
+}
+
+.nova-editor-range {
+  height: 18px;
+  accent-color: var(--nova-accent);
+}
+
+.nova-editor-range:focus-visible {
+  outline: 1px solid rgba(168, 173, 183, 0.45);
+  outline-offset: 3px;
+}
+
+.nova-editor-theme-option {
+  transition: border-color var(--nova-motion-normal) var(--nova-ease), background-color var(--nova-motion-normal) var(--nova-ease), color var(--nova-motion-normal) var(--nova-ease), box-shadow var(--nova-motion-normal) var(--nova-ease);
+}
+
+.nova-editor-theme-option.is-active {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 8px 22px rgba(0, 0, 0, 0.16);
+}
+
+.nova-muted {
+  color: var(--nova-text-muted);
+}
+
+.nova-faint {
+  color: var(--nova-text-faint);
+}
+
+.nova-resize-handle:hover,
+.nova-resize-handle[data-resize-handle-active] {
+  background: color-mix(in srgb, var(--nova-active) 78%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--nova-scrollbar-thumb) var(--nova-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--nova-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid var(--nova-scrollbar-track);
+  border-radius: 999px;
+  background: var(--nova-scrollbar-thumb);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--nova-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--nova-scrollbar-track);
+}
+
+/* TipTap 编辑器内容样式 */
+.editor-content .tiptap {
+  outline: none;
+  min-height: 100%;
+  color: var(--nova-editor-color, #d7dbe2);
+  font-family: var(--nova-reading-font-family);
+  font-size: var(--nova-editor-font-size, var(--nova-reading-font-size, 18px));
+  letter-spacing: 0;
+  line-height: var(--nova-editor-line-height, 1.9);
+  max-width: 760px;
+  margin: 0 auto;
+  padding-bottom: 40vh;
+}
+
+.editor-content .tiptap p {
+  margin: 0;
+  line-height: var(--nova-editor-line-height, 1.9);
+  text-indent: 2em;
+}
+
+.editor-content .tiptap .nova-document-review-highlight {
+  cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in srgb, var(--nova-warning) 72%, transparent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.18em;
+  text-decoration-skip-ink: auto;
+}
+
+.editor-content .tiptap .nova-document-review-highlight:hover {
+  text-decoration-color: var(--nova-warning);
+  text-decoration-thickness: 2px;
+}
+
+.editor-content .tiptap .nova-document-review-highlight:focus-visible {
+  border-radius: 0.2rem;
+  outline: 2px solid var(--nova-warning);
+  outline-offset: 2px;
+}
+
+.editor-content .tiptap .nova-document-review-widget {
+  display: block;
+  width: 100%;
+  margin: 0.45rem 0 0.8rem;
+  text-indent: 0;
+}
+
+.editor-content .tiptap .nova-document-review-thread-anchor {
+  width: min(32rem, calc(100% - var(--nova-document-review-anchor-offset, 0px)));
+  margin-left: var(--nova-document-review-anchor-offset, 0px);
+}
+
+.editor-content .tiptap .nova-document-review-widget.is-outdated {
+  opacity: 0.78;
+}
+
+.editor-content .tiptap .nova-document-review-widget .nova-review-comment-thread {
+  margin-inline: 0;
+  font-family: var(--nova-font-sans, Inter, sans-serif);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* hardBreak 缩进：让 br 换行后的行也有 2em 缩进 */
+.editor-content .tiptap .nova-hard-break::after {
+  content: '';
+  display: inline-block;
+  width: 2em;
+}
+
+/* 文本自带缩进时，关闭 CSS 缩进避免双重缩进 */
+.editor-content.native-indent .tiptap p {
+  text-indent: 0;
+}
+.editor-content.native-indent .tiptap .nova-hard-break::after {
+  width: 0;
+}
+
+.editor-content .tiptap h1 {
+  font-size: 1.45em;
+  font-weight: 700;
+  margin: 0 0 0.65em;
+  line-height: 1.3;
+}
+
+.editor-content .tiptap h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0.4em 0 0.3em;
+  line-height: 1.3;
+}
+
+.editor-content .tiptap h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.35em 0 0.2em;
+  line-height: 1.4;
+}
+
+.editor-content .tiptap ul,
+.editor-content .tiptap ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.editor-content .tiptap ul {
+  list-style-type: disc;
+}
+
+.editor-content .tiptap ol {
+  list-style-type: decimal;
+}
+
+.editor-content .tiptap li {
+  margin: 0.2em 0;
+}
+
+.editor-content .tiptap li p {
+  margin: 0;
+  text-indent: 0;
+}
+
+.editor-content .tiptap blockquote {
+  border-left: 3px solid var(--nova-editor-accent, #303238);
+  padding-left: 1em;
+  margin: 0;
+  color: var(--nova-editor-color, #d7dbe2);
+  opacity: 0.78;
+}
+
+.editor-content .tiptap blockquote p {
+  text-indent: 0;
+}
+
+.editor-content .tiptap code {
+  background: color-mix(in srgb, var(--nova-editor-accent, #303238) 75%, transparent);
+  border-radius: 3px;
+  padding: 0.15em 0.3em;
+  font-size: 0.9em;
+}
+
+.editor-content .tiptap pre {
+  background: var(--nova-code-block-bg);
+  color: var(--nova-code-text);
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+
+.editor-content .tiptap pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.editor-content .tiptap hr {
+  border: none;
+  border-top: 1px solid var(--nova-editor-accent, #303238);
+  margin: 0.6em 0;
+}
+
+.editor-content .tiptap table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  table-layout: fixed;
+  text-indent: 0;
+}
+
+.editor-content .tiptap th,
+.editor-content .tiptap td {
+  border: 1px solid color-mix(in srgb, var(--nova-editor-accent, #303238) 76%, transparent);
+  padding: 0.4em 0.55em;
+  vertical-align: top;
+}
+
+.editor-content .tiptap th {
+  background: color-mix(in srgb, var(--nova-editor-accent, #303238) 64%, transparent);
+  font-weight: 700;
+}
+
+.editor-content .tiptap th p,
+.editor-content .tiptap td p {
+  margin: 0;
+  text-indent: 0;
+}
+
+.editor-content .tiptap strong {
+  font-weight: 700;
+}
+
+.editor-content .tiptap em {
+  font-style: italic;
+}
+
+.editor-content .tiptap a {
+  color: var(--nova-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.editor-content .tiptap img {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  width: auto;
+  height: auto;
+  margin: 1em auto;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--nova-editor-accent, #303238) 70%, transparent);
+  object-fit: contain;
+}
+
+.editor-content .tiptap img.ProseMirror-selectednode {
+  outline: 2px solid var(--nova-accent);
+  outline-offset: 2px;
+}
+
+.editor-content .tiptap .nova-search-match,
+.nova-rich-markdown .tiptap .nova-search-match {
+  border-radius: 3px;
+  background: rgba(250, 204, 21, 0.32);
+  scroll-margin-top: 48px;
+}
+
+.editor-content .tiptap .nova-search-current,
+.nova-rich-markdown .tiptap .nova-search-current {
+  background: rgba(251, 146, 60, 0.55);
+  outline: 1px solid rgba(251, 191, 36, 0.75);
+}
+
+/* Placeholder 样式 */
+.editor-content .tiptap p.is-editor-empty:first-child::before {
+  color: color-mix(in srgb, var(--nova-editor-color, #d7dbe2) 45%, transparent);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* 设置面板内嵌的富文本 Markdown 编辑器（MarkdownRichEditor）。
+   排版复用 .chat-agent-message，这里只补编辑器本体行为样式。 */
+.nova-rich-markdown .tiptap {
+  outline: none;
+  min-height: 320px;
+}
+
+.nova-rich-markdown .tiptap > :first-child {
+  margin-top: 0;
+}
+
+.nova-rich-markdown .tiptap > :last-child {
+  margin-bottom: 0;
+}
+
+.nova-rich-markdown .tiptap img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.nova-rich-markdown .tiptap img.ProseMirror-selectednode {
+  outline: 2px solid var(--nova-accent);
+  outline-offset: 2px;
+}
+
+/* AI 对话区 Markdown 输出样式 */
+.chat-agent-message {
+  font-size: var(--nova-ui-sm-font-size);
+  line-height: 1.72;
+}
+
+.chat-agent-message .leading-6,
+.chat-agent-message .leading-7,
+.chat-agent-message .leading-relaxed {
+  line-height: 1.72;
+}
+
+.chat-agent-message p {
+  margin: 0.45em 0;
+}
+
+.chat-agent-message > :first-child {
+  margin-top: 0;
+}
+
+.chat-agent-message > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-agent-message h1,
+.chat-agent-message h2,
+.chat-agent-message h3 {
+  color: var(--nova-chat-heading);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.chat-agent-message h1 {
+  font-size: 1.25em;
+  margin: 1em 0 0.45em;
+}
+
+.chat-agent-message h2 {
+  font-size: 1.12em;
+  margin: 0.9em 0 0.4em;
+}
+
+.chat-agent-message h3 {
+  font-size: 1em;
+  margin: 0.75em 0 0.35em;
+}
+
+.chat-agent-message ul,
+.chat-agent-message ol {
+  margin: 0.65em 0;
+  padding-left: 1.35em;
+}
+
+.chat-agent-message ul {
+  list-style: disc;
+}
+
+.chat-agent-message ol {
+  list-style: decimal;
+}
+
+.chat-agent-message li {
+  margin: 0.28em 0;
+}
+
+.chat-agent-message hr {
+  border: none;
+  border-top: 1px solid var(--nova-markdown-border);
+  margin: 1em 0;
+}
+
+.chat-agent-message code {
+  border-radius: 4px;
+  background: var(--nova-code-bg);
+  padding: 0.12em 0.35em;
+  color: var(--nova-code-text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.chat-agent-message pre {
+  overflow-x: auto;
+  border: 1px solid var(--nova-markdown-border);
+  border-radius: 8px;
+  background: var(--nova-code-block-bg);
+  padding: 0.75em 1em;
+}
+
+.chat-agent-message pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.chat-agent-message .nova-chat-image-button {
+  display: block;
+  max-width: 100%;
+  margin: 0.7em 0;
+  overflow: hidden;
+  border: 1px solid var(--nova-markdown-border);
+  border-radius: 8px;
+  background: var(--nova-surface-2);
+  padding: 0;
+  transition: border-color 140ms ease, filter 140ms ease;
+}
+
+.chat-agent-message .nova-chat-image-button:hover,
+.chat-agent-message .nova-chat-image-button:focus-visible {
+  border-color: var(--nova-accent);
+  filter: brightness(1.04);
+  outline: none;
+}
+
+.chat-agent-message .nova-chat-image-button img {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+
+.chat-agent-message table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.92em;
+}
+
+.chat-agent-message th,
+.chat-agent-message td {
+  border: 1px solid var(--nova-markdown-border);
+  padding: 0.45em 0.65em;
+  text-align: left;
+}
+
+.chat-agent-message th {
+  background: var(--nova-table-header-bg);
+  color: var(--nova-chat-heading);
+}
+
+.nova-dialogue-highlight {
+  color: var(--nova-dialogue-highlight);
+}
+
+.nova-editor-dialogue-highlight {
+  color: var(--nova-editor-dialogue-highlight, var(--nova-dialogue-highlight));
+}
+
+[data-sonner-toast][data-styled='true'] {
+  padding-right: 2.35rem;
+}
+
+[data-sonner-toast][data-styled='true'] [data-close-button] {
+  top: 50% !important;
+  right: 0.65rem !important;
+  left: auto !important;
+  width: 1.35rem !important;
+  height: 1.35rem !important;
+  transform: translateY(-50%) !important;
+  border-radius: var(--nova-radius) !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--nova-text-faint) !important;
+  opacity: 1 !important;
+}
+
+[data-sonner-toast][data-styled='true'] [data-close-button] svg {
+  opacity: 1 !important;
+}
+
+[data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  border-color: var(--nova-border) !important;
+  background: var(--nova-hover) !important;
+  color: var(--nova-text) !important;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Inter Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+[data-theme="dark"] {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Story state ledger: current committed state placed after the latest prose. */
+.story-state-ledger {
+  --story-state-canvas: var(--nova-surface);
+  --story-state-positive: var(--nova-success);
+  --story-state-positive-soft: var(--nova-success-bg);
+  --story-state-negative: var(--nova-danger);
+  --story-state-negative-soft: var(--nova-danger-bg);
+  --story-state-pending: var(--nova-warning);
+  --story-state-pending-soft: var(--nova-warning-bg);
+  --story-state-meter: var(--nova-text-muted);
+  --story-state-tabs-bg: oklch(0.2 0 0);
+  container-name: story-state-ledger;
+  container-type: inline-size;
+  background: var(--story-state-canvas);
+  font-family: var(--nova-ui-font-family);
+}
+
+.story-state-ledger__tabs-scroll {
+  scrollbar-width: none;
+}
+
+.story-state-ledger__tabs-list {
+  background: var(--story-state-tabs-bg);
+}
+
+[data-theme="light"] .story-state-ledger {
+  --story-state-tabs-bg: var(--nova-surface-2);
+}
+
+.story-state-ledger__tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.story-state-ledger__director-label {
+  display: none;
+}
+
+/* Turn-change digest: one compact row under the header. */
+.story-state-ledger__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border-top: 1px solid var(--nova-border-soft);
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.story-state-ledger__summary-title {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: var(--nova-text-muted);
+}
+
+/* One-page group sections: distinct bordered blocks with titled headers. */
+.story-state-ledger__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 10px;
+}
+
+.story-state-ledger__section[data-decorated] {
+  padding: 8px 10px 10px;
+  border: 1px solid var(--nova-border-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--nova-surface-2) 30%, transparent);
+}
+
+.story-state-ledger__section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.story-state-ledger__section-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--nova-text-faint);
+}
+
+.story-state-ledger__section-title {
+  overflow: hidden;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--nova-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-state-ledger__section-count {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--nova-text-faint);
+}
+
+.story-state-ledger__mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px dashed var(--nova-border);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--nova-text-faint);
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.story-state-ledger__mode-toggle:hover {
+  border-color: var(--nova-text-faint);
+  color: var(--nova-text);
+}
+
+/* Dense auto-fill field grid; column basis adapts per group kind. */
+.story-state-ledger__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 10px 20px;
+}
+
+.story-state-ledger__grid[data-group='overview'] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+}
+
+.story-state-ledger__grid[data-group='details'] {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.story-state-ledger__field {
+  position: relative;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.story-state-ledger__field-label {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--nova-text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.story-state-ledger__block-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--nova-text);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.story-state-ledger__block-text--clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+}
+
+.story-state-ledger__item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.story-state-ledger__item-row {
+  position: relative;
+  padding-left: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--nova-text);
+  overflow-wrap: anywhere;
+}
+
+.story-state-ledger__item-row::before {
+  position: absolute;
+  left: 0;
+  color: var(--nova-text-faint);
+  content: '·';
+}
+
+.story-state-ledger__nested-object-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.story-state-ledger__nested-object-list--nested {
+  margin-top: 1px;
+  padding-left: 10px;
+}
+
+.story-state-ledger__nested-object-item {
+  min-width: 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.story-state-ledger__nested-object-key {
+  display: inline;
+  margin-right: 0.45em;
+  font-size: 11px;
+  color: var(--nova-text-faint);
+}
+
+.story-state-ledger__nested-object-value {
+  display: inline;
+  min-width: 0;
+  color: var(--nova-text);
+}
+
+.story-state-ledger__nested-object-item--branch > .story-state-ledger__nested-object-key {
+  display: block;
+  margin-right: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--nova-text-muted);
+}
+
+.story-state-ledger__nested-object-item--branch > .story-state-ledger__nested-object-value {
+  display: block;
+}
+
+.story-state-ledger__object-value-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.story-state-ledger__object-value-item {
+  position: relative;
+  min-width: 0;
+  padding-left: 10px;
+  overflow-wrap: anywhere;
+}
+
+.story-state-ledger__object-value-item::before {
+  position: absolute;
+  left: 0;
+  color: var(--nova-text-faint);
+  content: '·';
+}
+
+.story-state-ledger__change-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.story-state-ledger__change-chip--positive {
+  color: var(--story-state-positive);
+}
+
+.story-state-ledger__change-chip--negative {
+  color: var(--story-state-negative);
+}
+
+.story-state-ledger__change-chip--neutral {
+  color: var(--nova-text-faint);
+}
+
+.story-state-ledger__metric-progress [data-slot='progress-indicator'] {
+  background: var(--story-state-meter);
+}
+
+@container story-state-ledger (min-width: 560px) {
+  .story-state-ledger__director-label {
+    display: inline;
+  }
+}
+
+
+/* Director Console: a story continuity desk, scoped to the resizable game sidebar. */
+.director-console {
+  --director-canvas: #070707;
+  --director-panel: #11110f;
+  --director-brass: #c39a58;
+  --director-live: #85aa90;
+  --director-ember: #b45f58;
+  container-name: director-console;
+  container-type: inline-size;
+  background: var(--director-canvas);
+  font-family: var(--nova-ui-font-family);
+}
+
+[data-theme="light"] .director-console {
+  --director-canvas: #ffffff;
+  --director-panel: #fafaf7;
+  --director-brass: #8a611f;
+  --director-live: #3f6f4d;
+  --director-ember: #963f39;
+}
+
+.director-console__display {
+  font-family: var(--nova-reading-font-family);
+  letter-spacing: -0.018em;
+}
+
+.director-console__scroll {
+  scrollbar-gutter: stable;
+}
+
+.actor-cue-strip {
+  scrollbar-color: var(--nova-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.director-plan-sheet {
+  scrollbar-color: var(--nova-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.director-plan-action-label {
+  display: none;
+}
+
+@container director-console (min-width: 400px) {
+  .director-state-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .director-run-metrics,
+  .director-process-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .director-plan-action-label {
+    display: inline;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-state-ledger *,
+  .story-state-ledger *::before,
+  .story-state-ledger *::after,
+  .director-console *,
+  .director-console *::before,
+  .director-console *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

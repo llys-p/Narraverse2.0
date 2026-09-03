@@ -1,0 +1,609 @@
+# 叙界 Narraverse · 代码指南（AI 协作共享版）
+
+> 用途：让接手本项目的 AI **改代码前先想到本文**，按需用 Grep/Read 跳到具体函数；**非代码类任务可不读**，避免每次重读全部源码。
+> 维护：代码出现结构性变化时，由改动者同步更新本文件（位置：`<project-root>\代码指南.md`）。
+> 配套规范：**`项目协作日志.md`**（铁律 + 功能/踩坑记录，每条改动都必须追加）；本指南不重复记录「做了什么」，只讲「代码长什么样、在哪改」。
+
+---
+
+## 0. 一句话架构
+
+叙界前端是无构建步骤的静态 SPA，整页逻辑集中在 **`app/app.js`**，由 `index.html` 加载、`style.css` 着色；启动器另启本机 `tools/denova_bridge.py`，负责 Denova 轻量同步和手动全量迁移。前端既可 standalone 运行，也可作为 Denova 的第三顶层模式从 `/narraverse/index.html?embedded=denova` 同源嵌入。两条玩法线共用同一套状态与渲染：
+
+- **在线冒险线**：`app.js` 调 LLM API（`callLLM`，SSE 流式），解析固定协议 `[NARRATIVE][STATE]…[PLOT]`，驱动叙事/角色/世界。
+- **离线小说线**：`app/game_engine.js` + `app/packs/limitless.js`，`GameEngine.open()` 入口。**默认完全离线、可选 AI 增强**：界面「✨ AI 增强」开关（默认关）开启且 `state.apiConfig` 已配 endpoint/key/model 时，复用全局 `callLLM` 扩写事件叙事/选项结果/战斗结局/副本序章，并解析回复末尾 `<action:xxx>` 驱动火柴人（`idle/walk/run/attack/cast/hit/jump/dodge/fall/win/search/talk`）；数值、检定、战斗、结局逻辑始终走离线，AI 失败自动回退；事件级 AI 文本按 `pack.id+事件id` 缓存到 `localStorage` 避免重复调用；`headless` 测试路径不触发 AI。
+
+---
+
+## 1. 文件地图（改之前先看这段）
+
+| 文件 | 角色 | 改它意味着 |
+|---|---|---|
+| `app/index.html` | 全部 DOM 骨架：顶栏、左主栏、各 Modal、Lucide SVG sprite、脚本加载顺序 | 加按钮/弹窗/输入控件的**结构**；UI 图标优先复用底部内联 `n-icon-*` sprite，注意脚本加载顺序（见下） |
+| `app/style.css` | 全部样式（含主题变量 `--accent-blue` 等） | 加 UI 样式、折叠/拖拽/背景等视觉效果 |
+| `app/app.js` | **核心逻辑**（状态、提示词构建、渲染、交互、文件解析） | 90% 的功能改动都在这里 |
+| `app/local_library.js` | **自动生成，禁止手改**。知识库/设定书的源数据（`books`，每条用 `【关键词】描述` 分段，含 `summary`/`entries`） | 只由数据生成脚本产出；World Info 化直接解析它的 `content`，**不改数据格式** |
+| `app/game_engine.js` | 离线小说引擎（事件图 + 检定 + 战斗 + 结局），含可选 AI 增强层（见上） | 离线线专用 |
+| `app/packs/limitless.js` | 离线线内容包 | 离线线专用 |
+| `app/stickman.js` | 右侧「火柴人」可视化 | 人物面板专用 |
+| `app/module4/` | 模块四独立世界沙盒：World / Store / Clock / Facts / Settlement / Schedule / Location / Encounter / Action / Judgment / Preview / UI | 玩家真实行动必须从 `Action.execute()` 进入；不得把模块四规则塞回 `app.js`、Adventure 或旧 `game_engine.js` |
+| `app/bridge.js` | Denova 宿主协议 v1；处理 `ready / switch-mode / theme-changed / locale-changed`，standalone 旧套壳仅作兼容 | 改顶层模式切换、主题/语言同步或宿主握手时先看这里 |
+| `app/redesign.css` | 重设计样式与 `body[data-host="denova"]` 嵌入态去重 | 改 Denova 内嵌布局、迁移弹窗、去双滚动条时改这里 |
+| `tools/start_narraverse.ps1` | 按项目根相对定位 `denova/denova.exe`，探测/启动 Denova 后打开 `?mode=narraverse` | 发布端口需覆盖 Denova 自动回退的 `8080..8090`，不得写死单端口 |
+| `tools/denova_bridge.py` | 8097 桥接路由；旧 `/api/denova/sync` 与全量任务控制入口 | 轻量同步载荷须保持兼容；全量逻辑不要重新塞回此文件 |
+| `tools/denova_full_export.py` | `export-bundle v4` 与持久本地翻译队列：分块迁移、回源、HY-MT 串行任务、缓存和冲突保护 | 手动全量迁移与翻译任务后端；Master 任务携带来源/版本/条目身份，单块上限 8 MiB |
+| `denova-src/internal/book/master_library.go` | 叙界总资料库持久层：不可变原件、规范条目、字段级译文版本、导入事务和冒险实例索引 | 普通素材必须先在此落库；不得从前端直接把译文写进当前冒险 |
+| `denova-src/internal/book/master_agent.go` | Master 专用 Proposal/Patch 与字段级 CAS 适配层 | 只处理单个 `master_item_id + field_path`；候选/确认均追加 Translation Version；不经过 Workspace Change |
+| `denova-src/internal/book/master_runtime.go` | Master + 8097 Runtime Queue 只读聚合器 | 仅查询并合并运行状态，不把 8097 状态写回 Master；后端 API 为 `/api/library/assets/:id/runtime` |
+| `denova-src/internal/agent/master_agent_tools.go` | Denova Master Agent 的 8 个受限工具 | 资产/字段/流水线/翻译/问题只读；Proposal 创建、验证、应用受 CAS 和权限边界保护 |
+| `denova-src/internal/app/master_agent.go` | Master Agent 任务生命周期 | 复用既有 Agent Runner、Task、SSE；任务作用域固定为单资产单字段 |
+| `denova-src/internal/app/master_recovery.go` | Master 翻译失败 Recovery Orchestrator | 独立后台轮询 8097 最终失败状态；不由 GET 查询触发；按持久化 recovery claim 去重并复核 Pipeline |
+| `tools/translation_glossary.json` | HY-MT 全局术语表与禁止翻译项 | 改术语会改变翻译缓存键；允许明确 NSFW 术语 |
+| `tools/gen_local_library_v2.py` | 从知识库生成 `app/local_library.js`，预览附 `source_ref v1` | 预览可截短，导出必须按引用回源完整 JSON |
+| `Launch-Narraverse.cmd` | 用户可双击入口，调用 PowerShell 启动器 | 只做入口转发，不在 cmd 内复制探测逻辑 |
+| `denova/LOCAL_README.md` | 统一目录下 Denova 本地运行说明 | 维护启动入口、端口回退和数据目录说明 |
+| `backup/2026-08-08-pre-sillytavern/` | 大改前的整盘快照 | 回滚用，勿动 |
+
+### 1.8 Master Agent 安全适配层（第四阶段）
+
+- Master 的可变写入入口是 `MasterLibraryStore.ApplyMasterProposal()`，不是前端直接调用 `ApplyTranslation()`。任何 Agent 或 UI 采用动作都必须经过 Proposal → Validate → CAS → Apply。
+- CAS 基线至少包含 `master_item_id`、`field_path`、`source_sha256`、`input_revision`、`base_translation_version`。冲突返回 `MasterCASConflictError`，不覆盖当前字段。
+- `polish` 的未确认结果以 `candidate_ready` 记录和非活动 Translation Version 保存；只有确认采用才创建/激活新的版本。旧版本不覆盖、不删除。
+
+### 1.9 Master 条目直接编辑
+
+- `denova-src/web/src/features/library/LibraryView.tsx` 的 Lorebook 阅读器提供标题、正文、关键词、副关键词编辑表单。
+- 编辑保存不新增绕过安全边界的写接口；由 `LibraryDetail.saveEntry()` 逐字段调用现有 Master Proposal、Validate、Apply，并在每个字段完成后重新以最新 Master revision 建立下一个字段的 CAS 基线。
+- 编辑范围目前是 Lorebook 顶层资产内部的嵌套 Entry；不直接编辑原始 Source，不直接写 Adventure。条目为空字段暂不支持清空保存。
+- 同一文件中的 `CharacterReader` 提供角色卡常用字段编辑；`character.system_prompt` 与 `character.post_history_instructions` 保持只读，不进入直接编辑表单。
+- 角色卡编辑同样逐字段复用 Master Proposal → Validate → CAS → Apply，字段路径使用现有 `character.*` 路径，保存后刷新详情以读取新版本。
+- `GetAssetRuntime()` 是只读聚合：从 Master 读取当前版本，再查询 8097 `/api/denova/translator/jobs`，按资产与字段关联；队列不可用时仅返回 `runtime_available=false` 与诊断信息。
+- Master Agent 只复用现有 `tool_agent` Runner，但替换为 8 个受限工具，关闭通用文件、Shell、Lore、Skill、Todo、联网和 Agent 配置能力。原件、冒险实例和 Workspace Change 均不在其写权限范围内。
+
+### 1.9 Master 自动恢复调度器（第五阶段）
+
+- `App.StartMasterRecoveryOrchestrator()` 在 App 生命周期中启动独立 watcher，`Close()` 负责取消；它只读取 Master Runtime，不改变任何 GET API 的语义。
+- 8097 当前只提供 `status/attempts/updated_at`，没有 `final_failure/max_retries`。`masterFinalFailure()` 因此采用最小判断：状态为 `failed`、至少实际尝试一次、队列未暂停、失败记录稳定超过 5 秒。
+- Recovery 身份由 `MasterRecoveryKey(master_item_id, field_path, input_revision, source_sha256)` 生成，claim 存放在 `.narraverse/master-agent/recovery-claims/`。此为幂等/升级状态，不是 Pipeline 真相源；输入 revision 或源 SHA 变化才产生新 key。
+- 调度顺序是：最终失败 → claim → 单次受限 Recovery Agent → 唯一 Proposal → Validate/CAS → 低风险 Apply → Pipeline 复核；高风险、歧义、冲突、无 Proposal 或复核失败均为 `needs_user`。
+- 复核标准必须包含活动 Translation Version、版本不是旧基线、无失败翻译字段且 translation 节点不是 `failed/stale`。不扩展 parse/normalize/check Agent，也不做批量修复。
+
+### 1.10 第六阶段验证约定
+
+- Go 核心验证使用官方临时工具链即可；本地自用优先关注 `gofmt`、Master 相关定向测试和 `go build ./...`。无关 Windows 文件系统边缘测试失败只记录，不为其扩大业务防御代码。
+- 8097 当前协议仍只有 `status/attempts/updated_at`，`failed + attempts >= 1 + 稳定超过 5 秒` 只是兼容性最终失败判断；没有可靠的 `terminal_failure/max_retries/next_retry`，不要把它当长期队列协议。
+- Recovery E2E 诊断要记录真实队列任务、claim、Agent task 和最终用户态；普通界面只显示“处理中/已完成/需要确认”，技术 reason 留在 Runtime、claim 和日志。
+- 第六阶段生成的旁路验证二进制/日志不代表已部署到 `denova/denova.exe`；生产部署需另行确认，不由验证过程隐式覆盖。
+
+### 1.11 配置管理 Agent 的总资料库能力
+
+- 总资料库不另建第二套 Agent。`web/src/features/library/LibraryView.tsx` 复用全局 `ConfigManagerChat`，通过 `origin="master-library" + resourceId=master_item_id` 把会话固定到当前资产，并用 `AdaptiveSurface` 提供可调整宽度的右侧面板。
+- Config Manager 的 Master 工具定义在 `denova-src/internal/agent/config_manager_master_tools.go`：可列出资产、读取规范化资产、读取精确字段，并通过 `MasterLibraryStore.LoadSourceRevision()` 只读访问不可变原文件。原文件不得通过 Agent 或普通文件工具改写。
+- Master 内容修改只允许 `read_master_field → create_master_proposal → validate_master_patch`。Config Manager 不暴露 `apply_master_patch`，也不能用 `write_lore_items` 修改 Master；前端展示修改前/修改后，由用户点击“应用修改”，高风险字段再做一次明确确认，最终仍走既有 Proposal/CAS/字段范围与风险校验。
+- 内置 Skill 位于 `denova-src/skills/master-library/SKILL.md`，由 `config_manager_resource_skills.go` 在 `origin=master-library` 或指令提及总资料库/Master 时自动加载。Skill 规定读取顺序、嵌套 Entry 稳定路径和 Proposal 安全边界；发布时须同步到 `denova/skills/master-library/SKILL.md`。
+- `tool_result_policy.go` 将 Master 只读工具识别为受控读取，将 Master Proposal/CAS 工具保留在专用安全类别；不得通过放开通用 `file_write` 来换取 Master 修改能力。
+
+### 1.12 总资料库阅读型前端（P0 + 核心 P1）
+
+- `MasterAssetSummary` 的 `description` 与 `nested_entry_count` 是现有 Master Item 的只读列表投影，不是新的持久字段。`buildAssetSummaryUnlocked()` 在原有线性扫描中直接生成它们；不要让前端为每张列表卡额外请求详情。
+- `web/src/features/library/LibraryView.tsx` 的列表以整张角色卡/整本设定书为卡片，展示中文名称、类型、一句话简介、内部条目数量、三态用户状态和 Adventure 使用数；revision/SHA 不再进入列表主视图。
+- 资产详情固定采用 `内容 / 处理进度 / 版本 / 已加入冒险 / 技术信息` 五个页签，默认打开“内容”。Asset ID、SHA、归档路径、内部 revision 和原始 JSON 只在“技术信息”页签出现。
+- 角色卡内容由 `CharacterReader` 按角色概览、性格与背景、场景与开场、示例对白、内部设定和高级指令分组；空字段不渲染。Lorebook 由 `LorebookReader` 使用稳定 `entry_id` 构建目录，搜索标题/关键词/正文，右侧一次只阅读一个条目；通用标题 `comment/评论/entry/条目` 回退到首个关键词。
+- `ProcessingSummary` 只展示用户能理解的节点摘要；完整 `PipelineOverview` 放在默认关闭的 `<details>` 中。配置管理 Agent 仍复用同一右侧 `ConfigManagerChat`，处理进度中的入口只负责打开该面板。
+- 用户主状态只有“可以使用 / 正在处理 / 需要你处理”。`usable` 即使有 optional nested pending 也显示“可以使用”，并补充“辅助内容仍在后台完善，不影响使用”；底层 Pipeline/Runtime 技术状态仍完整保留。
+- 版本页继续复用同一批翻译查询数据，但面向用户显示“机器初译 / 润色候选 / 当前译文 / 历史版本”和内容位置、更新时间；版本 ID 与模型名只保留在技术信息页。Lorebook 桌面端保持左侧目录，窄屏通过“打开目录”抽屉查看，选择条目后自动关闭抽屉。
+- P2 第一小步继续只复用 Master Proposal API：角色卡和 Lorebook 内容页提供常用字段编辑，先在前端显示修改前/修改后，再逐字段走 `createMasterProposal → validateMasterProposal → applyMasterProposal`；不直接改原文件，也不直接写 Adventure。右侧 `ConfigManagerChat` 通过现有 `context` 接收 `master_item_id`、`field_path` 和用户可读字段名，让 Agent 聚焦当前字段；Agent 的普通/高风险安全边界仍由后端控制。
+- Lorebook 阅读器的条目标题、关键词和正文都通过 `nestedPrefix(recordKind) + entry_id + field` 优先读取活动翻译；翻译未生成时回退原文。搜索额外保留原始关键词作为召回兜底，避免翻译后的关键词替换后搜不到旧触发词。
+- Proposal 区域提供低风险批量应用：前端仅提交用户勾选的 Proposal ID，后端 `ApplyMasterProposals()` 逐条复用现有 `ApplyMasterProposal()`；因前一条修改导致父 revision 变化时，仅在目标字段本身未变化的情况下更新该 Proposal 的父 revision，目标字段冲突仍单独失败。高风险 Proposal 不进入批量入口。
+
+> 脚本加载顺序（index.html 末尾）：`stickman.js → game_engine.js → packs/limitless.js → local_library.js → app.js → presets.js → bridge.js → module4/core/world.js → clock.js → schedule.js → location.js → encounter.js → facts.js → settlement.js → action.js → judgment.js → module4/ai/* → module4/state/* → module4/ui/* → module4/module4.js`。`bridge.js` 必须位于 `app.js` 后，以复用 `UI_COMMANDS`、Profile 与主题函数；模块四内部依赖该顺序加载。
+
+### 1.0 模块四开放沙盒（Task 9）
+
+- `app/module4/` 使用独立 `narraverse:module4:state` 存储与独立 World schema；角色资料快照、NPC Runtime、原始日程、`scheduleRewrites` 和玩家位置均只属于当前模块四世界，不得读写旧 Adventure 存档或角色卡原件。
+- `core/action.js` 是玩家真实行为的唯一规则入口：推荐按钮、自由输入、移动和主动寻找统一经 `parseFreeText()` / `normalize()` / `Action.execute()`。UI 不得绕过它直接调用 Clock、Location 或 Encounter。
+- `core/judgment.js` 在 Executor 内对有不确定性或风险的行动建立上下文并做可复现的规则评分，固定输出 `success`、`costly_success`、`failure`、`critical_failure`；不使用骰子 UI 或隐式随机数。
+- Judgment 只允许写当前世界 NPC Runtime 的 `relation`、`mood`、`temporaryState`（无目标的风险行动可写玩家临时状态）；它本身不改写日程。`Action.execute()` 仅在明确改期的 `invite` / `persuade` 获得 `success` 后调用 `Schedule.applyRewrite()`；`costly_success`、`failure`、`critical_failure` 不改写。
+- `Schedule.getEffectiveSlot()` 是 Encounter 与 Judgment 读取当前有效日程的唯一入口：它先保留 Daily Preview / Runtime 原 slot，再对当前 world/day/NPC/时段使用最新 `scheduleRewrites` 的 `replacementSlot`。每条 rewrite 必须保存原/新 slot、原因、来源 Action、outcome 和时间；不得覆盖原始 Preview。
+- `core/facts.js` 只保存可供后续预演使用的关键结构化事实：实际生效的 Judgment 后果、成功日程改写和重要 world event；查看状态等免费信息操作不得制造 Facts。`dailyLogs` 是面向玩家的短日结摘要，不能替代 Facts 或完整对话历史。
+- `core/settlement.js` 是唯一跨日入口。Clock 晚间主要行动仅返回 `requiresSettlement`；统一 Action 管线立即完成日结算，清理 player/NPC `temporaryState`、保留关系/心情/来源快照/重写历史与 Facts，然后进入次日早晨并恢复精力。日结算不得调用模型；次日仍由 `Preview.startDay()` 按需生成。
+
+### 1.1 Denova 宿主模式
+
+- `app.js` 启动即解析 `embedded=denova`，写入 `body.dataset.host`；该标记只控制外壳与宿主通信，不改变 Adventure 数据模型。
+- `bridge.js` 只接受 `event.source === window.parent` 且 `event.origin === location.origin` 的 v1 信封；叙界向父级发 `ready`、`switch-mode`，Denova 向叙界发 `theme-changed`、`locale-changed`。
+- Denova 亮色映射为叙界 `neutral`，暗色映射为 `dark`；embedded 模式移除“打开 Denova”旧命令并强制隐藏 `denovaShell`。
+- 旧 `localhost:8099` IndexedDB 无法跨来源自动读取。新同源数据库为空时由 `maybeShowEmbeddedMigrationNotice()` 提示用户调用现有 `importAllData()`；不要宣称自动迁移。
+- Denova 发布快照位于 `<project-root>\denova-src\web\public\narraverse\`，源文件仍以本项目 `app/` 为准；修改叙界后运行 Denova 的 `scripts/sync-narraverse-assets.mjs`，禁止只改快照。
+
+### 1.2 英文统一目录
+
+- 唯一活动根目录是 `<project-root>`：叙界源码在 `app/`，Denova 运行版在 `denova/`，Denova 源码在 `denova-src/`，知识库在 `knowledge-base/`。
+- 用户入口为 `Launch-Narraverse.cmd`；核心维护文档为 `项目协作日志.md`、`代码指南.md`、`AI协作指南.md`。
+- 启动器必须以 `$PSScriptRoot` 反推项目根，工具脚本应直接指向统一根；不要重新引入 `<external-text-adventure-project>` 或 `<external-denova-installation>*` 活动路径。
+- `denova/.denova/books.json` 的 `current / books[].path / order / hidden` 都是绝对路径，移动运行目录后必须同步更新并通过 `/api/books` 验证。
+- `denova-src/web/node_modules/.bin` 含安装时绝对路径，移动源码目录后运行 `pnpm install --force --frozen-lockfile` 重建命令链接。
+
+### 1.3 手动全量导出与永久对话档案（2026-08-26）
+
+- `conversation-archive v1` 独立存于现有 IndexedDB `kv`：meta 键为 `conversationArchive:v1:<adventureId>:meta`，事件按 100 条写入 `...:chunk:<index>`。`conversationHistory` 仍是当前上下文窗口，压缩/回溯不能删除永久档案。
+- 新消息由 `ensureMessageIdentity()` 获得稳定 `id/createdAt`；发送、编辑、回溯、快照读取、分支切换通过 `queueConversationArchiveEvent()` 串行追加。旧冒险由 `recoverExistingConversation()` 合并压缩快照和当前历史，并标明恢复等级。
+- 手动 `exportToDenova()` 只读 `loadConversationArchiveBundle()`、挂载素材和四段设定；不调用 `callLLM()`，也不依赖 `contextSummary`、`settingDoc` 或 `novelChapters`。浏览器用 `record_fragments` 把大记录拆进小于 8 MiB 的上传块。
+- 后端 API：`POST /api/denova/export/jobs`；`PUT .../parts/{kind}/{index}`；`POST .../preflight|start|pause|resume|cancel`；`GET .../{id}`。任务状态与分块存于 `denova/.denova/narraverse-export-jobs/`。
+- Denova 工程的真源落在 `.narraverse/source/`，清单为 `.narraverse/import-manifest.json`。英文原件与对话先原子提交，翻译失败不影响原件；`managed_lore` 哈希用于识别 Denova 手改，冲突候选写入 `.narraverse/conflicts/`，不得静默覆盖。
+
+### 1.4 Denova 后台翻译、资料加载与叙界总资料库（2026-08-28）
+
+- 8097 的 `/api/denova/translator/jobs` 提供持久串行队列；任务存于 `denova/.denova/narraverse-translation-jobs/`。旧 Lore 任务只允许 `name/brief_description/content`，Master 任务可使用受限的 dotted/indexed field path（如 `character.openings[1]`），以及整卡结构专用的 `character_book.entries/<entry_id>/(comment|content|keys|secondary_keys)`、`lorebook.entries/<entry_id>/(comment|content|keys|secondary_keys)` 稳定路径；其他 slash path、路径穿越和运行脚本字段必须拒绝。Master 任务必须携带 `import_id/source_id/source_revision/master_item_id/source_sha256`。`master_auto` 自动提交安全字段，`master_review` 进入人工确认；任务 ID 的幂等键包含这组身份，审计文件保留。
+- `TranslationQueueControl` 安装在 Denova 全局外壳。进入 `interactive` 游戏模式发送 `pause(reason=game)`，当前字段结束后停取新任务；离开游戏只解除 game 原因，不能覆盖用户的 manual 暂停。
+- 资料库的“加载资料”统一处理叙界知识库与多文件上传。普通导入默认 `master_managed`：`/api/workspace/import-material` 先解析完整原件、归档到相邻 `narraverse-master-library` 工程，再按字段返回翻译目标；只有所有必需安全字段 active 才创建当前冒险 Lore 实例。高级复选框才会发送 `unmanaged_direct`，保留旧行为用于临时测试。
+- Master 的 `.narraverse/master-library-manifest.json` 只存索引；原件位于 `.narraverse/source/originals/<source>/<sha>/`，规范条目/译文版本/导入事务分文件保存。来源锚点可稳定更新；无锚点素材仅按 SHA 去重，绝不能按文件名合并。世界书原生 `id=0` 有效，无 ID 条目按内容指纹定位；`master_item_id` 使用 `source_id + source_entry_identity + record_kind`，不把可变 `semantic_type` 放入身份。
+- 完成的 Master 任务由 `TranslationQueueControl` 调用 `/api/workspace/import-material/master/translation`。Go 端复核 `import/item/path/source_sha256`，保存独立 `translation_version_id`，必要字段就绪后执行幂等 finalize；总库后续新 active 版本不静默覆盖已创建的冒险实例。任务抽屉只渲染最近 100 条可操作任务；截断、冲突、缺失和待确认不能显示为全绿成功。
+- 总库工程本身也是 Denova 书架工作区：`MasterLibraryStore.initializeUnlocked()` 会创建根目录 `book.json`，固定标题为“叙界总资料库”。在 Denova 首页/顶部书籍切换器选择该标题即可进入工程；其 `.narraverse/` 是总库的权威对象存储，普通 Lore 列表不等同于总库条目清单。
+
+### 1.5 总资料库查询与 Pipeline Status（2026-08-29）
+
+- `internal/book/master_library_query.go` 是 Master 的只读投影层：`ListAssets` 从现有 manifest/item/source/instance 数据构建资产列表，`GetAsset` 聚合单个资产、来源、译文版本和 usages，`GetAssetPipeline` 返回节点状态与推导问题。它不写入 Master，也不创建新的 Staging 实体。
+- 查询状态中的 `availability` 只有 `staging/usable`：必需翻译未完成、来源 revision 过期、原件缺失等阻断问题会保持 staging；warning/review 不自动等同于阻断。来源 revision 不一致时解析、规范化、翻译和检查节点标为 `stale`，Issue 中带 `source_revision_changed` 原因。
+- 第一阶段节点状态部分是“基于现有数据推导”，因为当前导入流程尚未保存独立 parse/normalize/check 快照 revision；API 通过 `inferred` 与 `reason` 明示这一点。翻译桥接的 queued/running 运行态仍由 8097 API 提供，Master 查询只聚合已有 translation target/version，不能将两者误当成同一状态。
+- Go API 位于 `/api/library/assets`、`/api/library/assets/:id`、`/pipeline`、`/translations`、`/usages`；前端只通过 `web/src/lib/api-client/master-library.ts` 访问，不直接扫描 `.narraverse`。
+
+### 1.6 总资料库与节点工作台只读页面（2026-08-29）
+
+- `denova-src/web/src/features/library/LibraryView.tsx` 是第二阶段资料库页面：同一独立工作区模式内提供资产列表和资产详情，不承载导入、翻译、修复或写回操作。
+- `WorkbenchShell` 的共享活动栏通过 `library` 模式打开页面；`ModeRouter` 负责懒加载并保持现有 `FeaturePageShell` 页面壳与模式返回目标。资料库不是叙界 iframe 内的一本书，也不是普通 Adventure Lore 列表。
+- 列表只调用 `/api/library/assets`；详情分别调用 `/api/library/assets/:id`、`/pipeline`、`/translations`、`/usages`，四类数据仍来自第一阶段 Go 查询层。第 7 节点只显示 usages/instances，不把实例数量当作单值生命周期。
+- UI 状态图标映射：`completed=✓`、`running=旋转`、`failed=×`、`warning/review_required/stale=!`、`waiting=○`、`skipped=—`。节点的 `inferred/reason` 与 Pipeline issues 原样作为只读说明展示。
+
+### 1.7 节点工作台字段级翻译聚合（2026-08-29）
+
+- `denova-src/web/src/lib/api-client/master-library-runtime.ts` 是只读聚合层：从 Master 详情中的 `item.fields`/Translation Version 和 8097 `getTranslationQueue()` 建立字段级视图，不持久化 Runtime Queue。
+- 关联键为 `master_item_id + field_path`；聚合对象保留 `task_status`、`content_version_status`、`translation_version`、`failure_reason`、`review_required`、`input_revision`、`source_sha256`、`task_id` 和 `model`，供后续自动恢复、Agent、调试使用。
+- 8097 `pending_review` 归一化为 `task_status=completed + review_required=true`，内容版本仍单独使用 `original/hy_mt_active/polish_candidate/polished_active`；失败、冲突、取消归一化为可重试的 `failed`。
+- `LibraryView` 默认只显示产品化状态，字段诊断折叠；失败操作直接复用 `retryTranslationJob()`，成功后重新查询，不修改导入流程或 HY-MT 核心协议。实时队列不可用时保留 `runtime_error`，UI 只显示“实时状态暂不可用”。
+
+### 1.8 Master 整卡粒度、导入隔离与运行时展开（2026-08-29）
+
+- 用户可见粒度固定为“一份角色卡/独立 Lorebook = 一个顶层 Master Asset”。内嵌 entries 保存在父资产 `nested_entries`，使用不依赖数组位置的 `entry-<hash>` 稳定 ID；Translation、Recovery、Proposal、CAS 继续只用 `master_item_id + field_path`，不得恢复为每个 Entry 一个 `master_item_id`。
+- `character.name` / `lorebook.name` 是 required `name_zh` 字段；未有活动中文译名时资产保持 `staging`。嵌套 comment/content/keys 默认 optional，局部失败只产生 warning，不阻塞整张资产 `usable`。
+- `MasterLibraryStore.TransactionTargetsAdventure()` 区分总库摄取事务与 Adventure 投影：Master workspace 自身作为 transaction target 时，只完成 ingestion/translation ready；只有显式 `/api/library/assets/:id/instances` 才调用 Adventure 实例化。不要再按 `FinalizeMasterImport` 函数名猜职责。
+- 运行时可以把一个整卡 Master 展开为多个 Lore；`MasterInstanceRef.nested_entry_lore_ids` 保存 entry 到 Adventure Lore 的映射，同一 `Master Asset + Adventure` 保持幂等。可选 Entry comment 为空时，Lore 名称按 comment → keys → secondary keys → 稳定 entry ID 回退，不能让可选显示名阻塞整本实例化。
+- 总库普通 UI 使用中文产品词：`staging/usable` 显示为“待处理/可用”，资产与内容类型、节点状态、`hy_mt_active/translation_active/polish_candidate/polished_active` 均通过 `library.*` i18n 映射；技术 ID、SHA 和 field path 保持原样供诊断。
+
+---
+
+## 2. 全局状态 `state`（`app.js:7`）
+
+单例对象，顶层字段（改状态结构时同步此处）：
+
+```js
+const state = {
+  adventures: [],            // 所有冒险（数组顺序=左栏展示顺序，可拖拽重排）
+  currentId: null,           // 当前打开的冒险 id
+  apiConfig: { endpoint, apiKey, model, maxTokens:8000, maxOutputTokens:4096,
+               temperature:0.85, streaming:true, autoSave:true, autoSaveEvery:5,
+               loreScanDepth:14,   // World Info：扫描最近多少回合匹配关键词
+               loreBudgetPct:30,   // World Info：设定书占用上下文上限百分比
+               macroEnabled:true,  // 提示词宏开关
+               ttsEngine:'native', // 朗读引擎：'native' 浏览器原生 | 'cosyvoice' 阿里云
+               cosyvoiceEndpoint, cosyvoiceApiKey, cosyvoiceRelay:'', cosyvoiceVoice:'longanyang',
+               imageApiEndpoint, imageApiKey, imageModel },  // 生图（DashScope Qwen-Image）
+  // 注意：精简角色状态开关已移出全局 apiConfig，改为按冒险存储：adv.compactState（见「编辑冒险」页）
+  customThemes: [],          // 用户新增/覆盖的主题
+  deletedThemes: [],         // 被隐藏的内置主题名（同名重建即恢复）
+  uploadedLoadCards: [],     // 导入到「选择角色卡」库的角色卡
+  isGenerating: false,
+  selectedTheme: '奇幻',     // 新建冒险弹窗当前选中的主题
+  selectedProfession: null,
+  selectedMode: 'adventure', // 'adventure' | 'tavern'
+  ui: { sidebarCollapsed:false },  // 左侧边栏是否隐藏（持久化）
+};
+```
+
+- 持久化：`saveState()` / `loadState()`，整块 JSON 进 `IndexedDB`（数据库 `adventureAI_db`），localStorage 仅做小数据镜像（>4MB 不写）。详见 §12.1。
+- 取当前冒险：`getCurrentAdventure()`（返回 `adventures.find(a=>a.id===currentId)`）。
+
+---
+
+## 3. 数据模型（写新功能前先对齐字段）
+
+### 3.1 Adventure 对象（`createAdventure` @ `app.js:321` 构造）
+关键字段（其余见源码）：
+
+- `id, title, theme, setting, customTheme, mode('adventure'|'tavern')`
+- `character`：玩家角色卡 `{ name, profession, hp, maxHp, mp, maxMp, items[], location, chapter, mood, level, exp, maxExp, attributes{力量,敏捷,智力,魅力,幸运}, attributePoints, skills[], skillPoints }`
+- `initialCharacter`：开局快照（用于重置/对比）
+- `conversationHistory`：`[{role:'system', content: buildSystemPrompt(this)}]` —— **系统提示词恒在 [0]，且每次回合由 `updateSystemPrompt` 重建**
+- `contextSummary / contextCompressed`：上下文压缩状态
+- `plotNodes[] / eventNodes[]`：横向时间轴节点
+- `plotLines[] / currentLineId`：剧情分支线
+- `customPrompt`：玩家自定义规则（注入系统提示词的「## 玩家自定义规则」段）
+- `characterCards[]`：**分组 NPC 角色卡**（见 3.2）
+- `backgroundBooks[]`：挂载的设定书（来自 `local_library.js` 的 `books`）
+- `mandalaCards[]`：曼陀罗人物（信息随剧情揭示）
+- `quests[] / combat{} / branches[] / snapshots[] / stats{}`
+
+### 3.2 CharacterCard（NPC 角色卡，V3 字段 @ `normalizeCardObject` `app.js:4223`）
+normalize 后的标准字段（PNG/TXT/MD/JSON 导入都归一化到这里）：
+
+```js
+{
+  name, appearance, personality, relationship, notes, scenario, tags[],
+  first_mes,                       // 默认开场白
+  alternate_greetings: [],         // 多开局备选（SillyTavern 借鉴）
+  character_note,  note_depth,     // 固定深度注入的核心约束（@depth 长对话重注入）
+  system_prompt,                   // 角色专属系统指令（中置注入）
+  post_history_instructions,       // 结尾强制指令（置尾）
+  talkativeness: 0..100,           // 话痨度（群像互动权重）
+  present: true/false,             // 是否「在场」（群像场景过滤）
+}
+```
+
+- 手动表单添加：`addCharacterCard()`；编辑/删除：`removeCharacterCard(i)`。
+- 文件导入：`parseFileToCards(file)`（PNG 走 `extractCharaFromPNG` → `parseCharaPayload`；文本走 `parseCharacterCardsFromFile`），导入到当前冒险用 `importCardToAdventure()`。
+
+### 3.3 Theme（主题 @ `themeData` 全局，`renderThemeGrid` `app.js:5402`）
+- 内置主题名：`奇幻/科幻/恐怖/末日/武侠/悬疑`（定义在 `app.js` 顶部全局 `themeData`/`professionData`）。
+- **冒险类型（题材×玩法模式，内置不可编辑）**：`ADVENTURE_TYPE_DEFS`（26 条 `[名称,题材,模式,起始地点,描述,推荐知识库分类[]]`）→ `ADVENTURE_TYPES`（生成对象 `name/genre/mode/location/desc/items/professions/recommend`），查询用 `getAdventureType(name)`。题材职业池 `GENRE_PROFESSIONS`、初始物品 `GENRE_ITEMS`、玩法风味 `MODE_FLAVOR` 三者按题材注入。`getAllThemes()` 末尾把冒险类型打标 `isAdventureType:true` 并入主题网格（无✎/✕编辑工具，`renderThemeGrid` 跳过）。
+- 自定义：`{ name, location, desc, items[], professions?[] }`，存 `state.customThemes`。
+- 职业解析：`parseProfessionsText(text)`（`名称|属性|技能` 一行一条）→ 接入职业网格；`getThemeProfessions(name)` 对冒险类型优先返回其题材职业池，否则自定义主题/内置主题。
+- CRUD：`renderThemeGrid`（动态渲染+悬停✎/✕）、`themeEditorModal`、`themeManagerModal`、`state.deletedThemes`（删内置=隐藏，同名重建恢复）。
+- **冒险类型推荐知识库（不再自动挂载）**：`getAdventureType(name).recommend` 仍含推荐分类，但 2026-08-10 19:16 起**移除自动勾选**——选冒险类型不再自动挂载设定书，由用户在第 1 步手动勾选。`collectRecommendBooks(recommendCategories)` 保留为纯筛选函数（按 `b.category ∈ recommend` 去重筛选 `window.LOCAL_LIBRARY.books`），可单测备用。
+- **随机冒险**含冒险类型：`randomizeAdventureForm` 的 `themePool` 已并入 `ADVENTURE_TYPES` 名称，随机选中冒险类型后用 `getThemeProfessions` 取职业。
+
+---
+
+## 4. 提示词构建管线（**最重要的扩展点**）
+
+每个回合 `sendMessage` → `updateSystemPrompt(adventure)` → 重建 `conversationHistory[0].content`。
+两套构建器：
+
+- `buildSystemPrompt(adventure)`（`app.js:962`）：在线冒险线。
+- `buildTavernSystemPrompt(adventure, c, td)`（`app.js:850`）：酒馆线（无战斗/骰子）。
+
+### 4.1 `buildSystemPrompt` 注入顺序（照此顺序拼接，最后统一解析宏）
+
+```
+世界设定（主题/背景/玩家设定）
+→ buildCharacterCardsBlock         app.js:502   （NPC 设定列出）
+→ buildActiveSceneBlock            app.js:526   （在场角色+话痨度+群像群聊指令）
+→ buildCardSystemDirectives        app.js:599   （V3 角色专属 system_prompt 中置）
+→ buildLorebookBlock               app.js:795   （World Info 按需注入，见 4.3）
+→ 玩家自定义规则（adventure.customPrompt）
+→ 曼陀罗人物（已知部分）
+→ 玩家角色状态（属性/技能/背包/任务/战斗）
+→ 回复格式（[NARRATIVE]…[PLOT] 区块契约，解析器强依赖，勿改结构）
+→ 规则（22 条）
+→ buildPostHistoryTail             app.js:611   （V3 post_history_instructions 置尾 + character_note @depth 重注入）
+→ resolvePromptMacros(整段, adv)   app.js:657   （宏替换，见 4.2）
+```
+
+> **契约警告**：`[NARRATIVE][STATE][CHANGES][CHOICES][QUESTS][COMBAT][CHARACTERS][PLOT]` 是 LLM 输出协议，`parseGameResponse`（`app.js:1265`）按正则解析 → `applyParsedResult`（`app.js:1419`）落库。**不要把这段回复格式改成「用户全量可编辑模板」**，否则解析器崩。
+
+### 4.2 提示词宏（`resolvePromptMacros` `app.js:657`）
+支持 `{{user}} {{location}} {{chapter}} {{level}} {{profession}} {{theme}} {{hp}} {{mp}} {{mood}} {{date}} {{time}} {{random}}`。
+- 未知宏**原样保留**（避免误删用户内容）。
+- 开关：`apiConfig.macroEnabled`（默认开）；关闭时整段不解析。
+- 在 `buildSystemPrompt`/`buildTavernSystemPrompt` 末尾对**整段**提示词做宏替换；`syncSystemPrompt`（`app.js:1175`）的 `customPrompt` 覆盖路径先解析用户宏再拼接自动区块。
+
+### 4.3 World Info 化（`buildLorebookBlock` `app.js:795`）
+- 输入：`adventure.backgroundBooks`（挂在冒险上的设定书，结构来自 `local_library.js`）。
+- 解析：`parseBookEntries(book)` 按 `【关键词】描述` 切块，每块含 `keys[]/content/order`；`book.summary` 为概览。
+- 注入规则：**概览常驻**（受预算约束）；条目仅在近期剧情命中其关键词时才注入。
+- 预算/深度：`apiConfig.loreBudgetPct`（占 `maxTokens` 百分比）、`apiConfig.loreScanDepth`（扫描最近 N 回合）。
+- **关键坑**：扫描窗口必须排除 `conversationHistory[0]`（系统提示词本身）。曾因把系统提示词当剧情扫描，导致奇幻主题里的「巨龙/精灵」被误判为命中而常驻注入——已修复为只扫非 system 消息。
+
+### 4.4 扩展生态（对话框内特性，`EXTENSIONS` `app.js:673`）
+- 注册表 `EXTENSIONS = {}`，每项 `{ enabled, run }`；`setExtensionEnabled(name, on)` 同步 `apiConfig.extensions` 与注册表。
+- 特性**直接内嵌于对话框每条 AI 叙事**，无独立弹窗：
+  - 🔊 **TTS 朗读（可点停）**：设置「🔌 语音朗读」开启后，每条 AI 叙事气泡内显示「🔊 朗读」键，点击调用 `readNarrativeAloud(i)`（`app.js:716`）；**再次点击同一条即停止**（按钮变「⏹ 停止」）。
+    - 引擎可选（`apiConfig.ttsEngine`）：`native`=浏览器原生 `speechSynthesis`（无需 Key）；`cosyvoice`=阿里云 CosyVoice WebSocket（`startCosyVoiceTts`，`app.js:756`）。
+    - **CosyVoice 关键约束（已验证可用）**：浏览器原生 WebSocket **无法设置握手头**，而 maas 必须在 WS 握手头带 `Authorization: Bearer`，否则 401。因此**直连 maas 必走本地中继** `tools/cosyvoice_proxy.py`（代理代注 Authorization 头，浏览器连 `ws://localhost:8787`）。也支持「留空中继 + 端点支持 `?token=` 鉴权」直连模式。走 `run-task→continue-task→finish-task` 协议，binary 音频帧在 `onclose` 时合并为 Blob 用 `<audio>` 播放；未配置/出错**自动回退**原生 TTS。
+    - **默认端点已预填**：`wss://llm-23ju9mf3n4t0k5dx.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference`（WorkspaceId=llm-23ju9mf3n4t0k5dx，用户给的）。实测：用户 `sk-ws-` 开头 Key 作为 Bearer 被 maas 接受（经代理代注头后握手成功，返回 `task-started` 并收到音频帧，见协作日志 23:xx）。默认 `cosyvoiceRelay` 为空，使用前应运行代理并填 `ws://localhost:8787`。
+  - 🖼 **AI 生图**：每条 AI 叙事内「🖼 生成场景图」键（`generateSceneImage(i)`，`app.js:2846`），需填场景配图 API Key，图渲染进气泡（`msg.sceneImage`）。
+- **已删除「翻译 / 联网检索」**：纯占位、无实现无配置、无特性，徒增误解。
+- 新增对话框内特性：在 `EXTENSION_DEFAULTS` 加条目 + 在 `renderStory` 的气泡 `actionBtns` 里加对应控件即可。
+
+---
+
+## 5. 冒险生命周期（改流程看这里）
+
+| 函数 | 行 | 作用 |
+|---|---|---|
+| `createAdventure(theme,name,setting,prof,opts)` | 321 | 构造 Adventure 对象 + 生成系统提示词 + `unshift` 进 `state.adventures` |
+| `showNewAdventureModal()` | 见源码 | 打开三步创建向导并重置主题、模式、素材、偏好、方案、标题草稿与职业锁状态 |
+| `goAdventureStep(n)` / `nextAdventureStep` / `prevAdventureStep` | 见源码 | 三步切换：①选择素材与偏好 ②选择 AI 故事方案 ③确认开局；同步控制步骤条和 footer 按钮 |
+| `generateStoryProposals()` / `buildStoryProposalMessages()` / `parseStoryProposals()` | 见源码 | 将角色卡、世界设定卡、主题、模式、选填偏好和职业硬约束发给 LLM，解析严格 JSON 的 3 套差异化故事方案 |
+| `selectStoryProposal()` / `applyStoryProposal()` / `renderAdventureEditor()` | 见源码 | 选择方案后自动写入标题、世界背景、玩家身份、地点、目标、开场钩子；第 3 步允许继续编辑并展示素材摘要 |
+| `startNewAdventure()` | 见源码 | 从确认页创建冒险；保存 AI/手动标题；自定义职业在主题与 AI 之后最终覆盖；存在方案开场钩子时直接用作 `beginAdventureOpening` seed |
+| `getAdventureType(name)` / `collectRecommendBooks(recommendCategories)` | 225 / 228 | 冒险类型查询 / 按推荐分类筛选本地库设定书（保留函数但已不再自动挂载，由用户手动勾选） |
+| `getAllThemes()` / `getThemeProfessions(name)` / `renderThemeGrid()` / `randomizeAdventureForm()` | 5375 / 5394 / 5402 / 5254 | 主题全集（含冒险类型打标）/ 职业解析（冒险类型优先）/ 主题渲染 / 随机冒险（含冒险类型池） |
+| `collectAdventureOpenings` / `showOpeningChoiceModal` / `confirmOpeningChoice` / `beginAdventureOpening` | 见源码 | V3 多开局：跨卡收集 first_mes+备选→弹窗选择（含随机）→ seed 注入 initMsg |
+| `sendMessage(text)` | 3910 | 主回合：流式调 `callLLM` → `parseGameResponse` → `applyParsedResult` → `renderAll` |
+| `parseGameResponse(text)` | 1265 | 解析 LLM 区块协议 |
+| `applyParsedResult(adv, parsed)` | 1419 | 把解析结果写回 adventure（状态/物品/任务/战斗/角色/剧情节点） |
+| `updateSystemPrompt(adv)` | 1144 | 每回合重建系统提示词（动态注入入口） |
+| `syncSystemPrompt(adv)` | 1175 | 带 `customPrompt` 覆盖的构建（宏解析+自动区块拼接） |
+| `reorderAdventures(fromId,toId)` | 1850 | 左栏拖拽重排 `state.adventures` 并保存 |
+| `loadAdventure(id)` | 见源码 | 切换当前冒险 |
+
+---
+
+## 6. 渲染管线（`renderAll` `app.js:2464`）
+
+单一入口，调用各子渲染器（各自 `try/catch` 容错，一个挂不影响其他）：
+
+```js
+renderAll():
+  renderCharacterPanel()   // 右侧玩家/角色数值
+  renderStory()            // 聊天区消息流
+  renderContextBar()       // 上下文/压缩信息条
+  renderAdventureList()    // 左侧冒险列表（draggable=true，可拖拽排序）
+  renderCombatActionBar()  // 战斗操作条
+  applyChatBackground()    // 应用聊天背景（见 6.1）
+  // 酒馆模式额外隐藏骰子/战斗 UI
+```
+
+- 列表项渲染：`renderAdventureList` 内构造 `adventure-item`（含 `data-id`、拖拽事件）。
+- 角色卡列表：`renderCharacterCardsList`（角色卡弹窗内，含在场开关/话痨度滑块）。
+
+### 6.1 聊天背景（`applyChatBackground` `app.js:1679`）
+- 数据：`adv.chatBackground = { type:'color'|'image', value }`，按冒险存储。
+- 设置：`applyChatBackgroundFromModal`（`app.js:1738`）+ 顶栏「🎨 背景」弹窗（选颜色/传图片/清除）。
+- 应用：在 `renderAll` 中调用，写 `storyArea` 的内联样式。
+
+---
+
+## 7. UI / 交互速查（找按钮/弹窗在这）
+
+- **手机模式**：`index.html` 头部按当前文档/iframe 自身 `matchMedia('(max-width: 768px)')` 自动维护 `html.mobile-mode`，`?mobile=1` 强制开启、`?mobile=0` 强制关闭；不要依赖父页面屏宽。`.mobile-mode` 下右侧状态栏隐藏，左侧栏不是删除而是 `.app.mobile-sidebar-open` 控制的抽屉；`toggleSidebar()` 在手机端只切抽屉 class，不写桌面的 `state.ui.sidebarCollapsed`。嵌入态会隐藏 `.logo`，手机关闭键必须放在 `.sidebar` 直属层。手机消息气泡必须保留 `min-width: 0` 与中文断行规则；静态样式变更时同步更新 `index.html` 样式版本和 `NARRAVERSE_IFRAME_SRC` 页面版本，避免 iframe 缓存新旧混用。
+- **顶栏**：`☰` 折叠侧栏（`toggleSidebar`，`state.ui.sidebarCollapsed`）、🧩人物（`toggleMandala`）、🔌扩展（`extensionToolsModal`）、🎨背景（`chatBackgroundModal`）。
+- **新建冒险弹窗**：三步向导（素材与偏好→3 套故事方案→确认开局）；主题/职业/素材库仍复用原渲染器，新结构使用 `.adv-material-layout`、`.story-proposal-grid`、`.adv-confirm-*`，样式集中在 `redesign.css` 第 14 节。
+- **角色卡管理弹窗**：手动表单（`addCharacterCard`）+ 「选择文件导入」（`parseFileToCards`/`importCardToAdventure`）。
+- **主题管理弹窗**：`themeManagerModal`（列出所有主题，可编辑/删除）。
+- **主题编辑弹窗**：`themeEditorModal`（名称/位置/描述/物品/职业表）。
+- **扩展生态已内嵌对话框**：TTS 朗读键 / 生成场景图键直接位于每条 AI 叙事气泡内，不再有独立「扩展工具」弹窗。
+- **多开局选择弹窗**：`openingChoiceModal`（开局 seed 选择）。
+
+> 加新控件：结构写 `index.html`，样式写 `style.css`，行为写 `app.js`（记得在 `renderAll` 或对应渲染器里刷新）。
+
+---
+
+## 8. 校验与回归（改完必须跑）
+
+1. **语法**：`node --check app/app.js`（Node 用托管版：`C:/Users/11/.workbuddy/binaries/node/versions/22.22.2/node.exe`）。
+2. **无头回归**：测试台 `.workbuddy/tmp/adv_harness.js`（Node `vm` 沙箱加载真实 `app.js` + DOM/IndexedDB/localStorage 桩 + 确定性模拟 `callLLM`）。
+   - 运行：`C:/Users/11/.workbuddy/binaries/node/versions/22.22.2/node.exe .workbuddy/tmp/adv_harness.js`
+   - 已覆盖：核心流程、World Info、角色卡 V3、宏、NPC 群像/扩展、主题 CRUD、列表重排、聊天背景（约 13 节）。
+   - **冒险类型专项回归**：`.workbuddy/tmp/test_adventure_types.js`（Node `vm` 加载真实 `app.js` + `local_library.js`，验证 26 类数据完整性、`getAllThemes` 打标、`getThemeProfessions`/`getAdventureType` 取值、`collectRecommendBooks` 推荐挂载、题材职业池）——28/28 通过。运行：`node .workbuddy/tmp/test_adventure_types.js`。
+   - 交互回归：`.workbuddy/tmp/test_new_features.js`（15/15 通过）。新增功能请**追加对应测试节**。
+3. **本地预览**（交互/拖拽/上传需在真实浏览器验证）：`cd <project-root>\app; python -m http.server 8099` → http://localhost:8099/
+
+---
+
+## 9. 协作铁律（摘要，完整见 `项目协作日志.md`）
+
+1. 开工前先读 `项目协作日志.md`；有「进行中」任务优先接续。
+2. 每完成一件事**立刻**追加日志（功能/踩坑记录），不要收工才写。
+3. 踩坑必记；只写自己确认过的内容，不确定标「待确认」。
+4. 记录格式：`YYYY-MM-DD HH:MM`，功能/踩坑记录**按时间倒序**（最新在最上），带 AI 编号与完整文件路径。
+5. **代码经验沉淀（铁律 6）**：结构性代码改动（新增/重命名函数、改 LLM 协议或数据模型、改全局状态、修隐藏 bug）后，**立刻同步更新本指南**对应章节（文件地图/数据模型/提示词管线/渲染管线/速查表）；纯文案改动可不更新。
+6. **各 AI 行为潜质登记（铁律 7）**：在 `项目协作日志.md` 的「各 AI 行为潜质登记」区登记自己总执行的行为/潜质；Skill 不再登记，统一走项目技能文件夹 `<project-root>\.workbuddy\skills\`。
+7. **先用先贡献（铁律 8）**：调用项目共享技能文件夹 `<project-root>\.workbuddy\skills\` 里的 skill 前，必须先把自己可复用的 skill 贡献进该文件夹（贡献先于使用）；skill 内容须含「何时调用 / 关键函数锚点 / 避坑」。完整见协作日志铁律 8。
+
+---
+
+## 10. 高频改动「从哪下手」速查
+
+| 想做 | 改哪里 |
+|---|---|
+| 加系统提示词内容 | `buildSystemPrompt` / `buildTavernSystemPrompt`（按 4.1 顺序插入区块） |
+| 让 NPC/设定随剧情动态出现 | `buildLorebookBlock`（World Info）/ `buildActiveSceneBlock`（群像） |
+| 新增角色卡字段 | `normalizeCardObject` + `buildCharacterCardsBlock` + 表单/列表 |
+| 加提示词宏 | `resolvePromptMacros` 的 `macros` 映射 |
+| 加可配置开关 | `apiConfig` 默认值 + `showSettings`/`saveSettings` + index.html 控件 |
+| 加 UI 面板/弹窗 | index.html（结构）+ style.css（样式）+ app.js（行为/渲染） |
+| 加主题 | `themeData`/`professionData`（内置）或 `customThemes`（用户），经 `renderThemeGrid` |
+| 改冒险列表交互 | `renderAdventureList` + `reorderAdventures` |
+| 加扩展能力 | `EXTENSIONS` 注册 + `runExtension` 调用点 |
+| 离线小游戏接 AI | `game_engine.js` 的 `aiActive()/aiNarrate()/aiNarrateResult()` + `toggleAI()`；开关默认关，复用全局 `callLLM`，数值逻辑不变 |
+| 持久化新字段 | 同步 `saveState`/`loadState` 的字段拷贝 |
+| 改离线小说引擎（事件/检定/战斗/结局） | `app/game_engine.js`，结构见 §11 |
+| 离线小游戏接 AI / 加火柴人动作 | `game_engine.js` 的 `aiActive()/aiNarrate()/aiNarrateResult()` + `toggleAI()`；动作映射在 `ACTION_RULES`，关键帧在 `stickman.js` 的 `ACTIONS` |
+| 改存储层 / 存档膨胀 | `app.js` 的 IndexedDB 存取，策略见 §12.1 |
+| 改知识库（设定书/角色卡） | 改 `ai知识库/世界观设定/` 或 `角色卡/` 后**必须重跑** `tools/rebuild_meta_categories.py` 再 `tools/gen_local_library_v2.py`，见 §12.2 |
+| 前情摘要只摘要片段 | `manageContext`（app.js ~1660）的 `summaryInput` 用 `oldMsgs` 完整内容（勿截断） |
+| 聊天里加「第 N 回合」分隔 | `renderStory`（app.js ~2032）的 `roundNo` 计数 + 回合分隔行 |
+| 加「撤回」已发消息 | `withdrawMessage(i)`（移除该玩家消息 + 紧跟 AI 回复），按钮在 `renderStory` 玩家气泡 |
+| 人物图鉴加刷新 | `refreshMandalaFromHistory()`（重扫对话 `[CHARACTERS]` 重建曼陀罗） |
+| 加「地点」面板 | `toggleLocations`/`collectLocations`/`renderLocations`（当前位置标 📍），抽屉键在 `index.html` 头部 `📍 地点` |
+| 任务可删除/隐藏 | `deleteQuest(name)` / `toggleQuestsPanel()`（`adv.hideQuests` 控制整栏显隐） |
+
+---
+| Pixiv 搜图/看图器（App API 本地桥接，2026-08-11 重构） | 前端 `app.js`：`pixivSearch`/`pixivRanking`/`pixivOpenDetail`/`pixivViewPrev|Next`/`pixivDownloadCurrent`/`pixivRandom`/`pixivFilterItems`（状态 `pixivState`）；桥接 `tools/pixiv_bridge.py`（端口 8098，pixivpy3，refresh_token 在 `tools/pixiv_config.json`） |
+| 加载设定/角色卡 列表模式 | `app.js`：`loadView`（grid/list，localStorage 记忆）/`setLoadView`/`renderLoadRow`（类说明文档行：名称+中文简介+元信息+预览） |
+| 自定义职业 | `app.js`：`getLockedProfession` + `onCustomProfessionInput`；填写后清空网格选择并显示锁定徽章；方案归一化和 `startNewAdventure` 均强制保留该职业，防止回落到默认剑士 |
+| IF 线 / 分支进出 | `saveLineResume` 内联保存 history/character/contextSummary（防快照池裁剪失联）；`applyLineResume` 优先内联→快照→旧版；`switchToBranch`/`rewindTo` 分支记录 `lineId` 并恢复线路 + `trimPlotNodesPastIndex` 对齐时间轴 |
+
+## 11. 离线小说引擎（`app/game_engine.js` + `app/packs/limitless.js`）
+
+通用引擎 + 内容包，入口 `GameEngine.open()`（全屏界面），**默认完全离线、可选 AI 增强**。
+
+### 11.1 事件图结构
+每个事件节点：
+```js
+{ id, title, text,
+  show: [{ actor, action, line }],        // 火柴人演出（action→ACTIONS）
+  choices: [{ text, next, effects, check }],
+  check: { attr:'力量', dc:12 },           // 检定（离线）
+  combat: {...},                           // 战斗（离线）
+  randomEvents: [...] }                    // 随机分支
+```
+
+### 11.2 主流程函数（改之前定位）
+| 函数 | 作用 |
+|---|---|
+| `showEvent(ev, evId)` | 展示主事件（evId 用于事件级 AI 缓存键） |
+| `showRandomEvent(ev)` | 展示随机事件（cacheId=ev.id） |
+| `onChoice(i)` | 处理选项 → 拆出 `presentResult(baseText, narr, notes, next, fallbackAction)` |
+| `onContinue()` | **结果/升级/战斗结算页的「继续 ▶」必须走这里** |
+| `combatEnd(win, enemy, notes, next)` | 战斗结算 → `renderCombatResultText` |
+| `renderStageIntro(S)` | 副本序章（AI 增强走 `aiNarrate(st.intro,...)`） |
+| `GameEngine.open()/toggleAI()/syncAiButton()` | 入口 / AI 开关 / 按钮高亮 |
+
+### 11.3 铁律级避坑（历史踩坑提炼）
+- **「继续 ▶」卡死**：结果页继续按钮若走 `onChoice` 会反复显示"你选择了：继续"并卡死 → 必须走 `onContinue()`。改引擎后用 `simulate(...,{uiMode:true})` 做全点击路径测试（AI 2 修）。
+- **事件级 AI 缓存未写入**：主事件**没有 `id` 字段**（id 是 map 的 key 不是字段），`aiNarrate(ev.text, ev.title, ev.id)` 拿到 `undefined` → 缓存键 `og_ai_limitless_undefined` 永不命中。修复：调用处第三参改用 `evId` 入参（AI 1 修）。
+- **`renderEvent`/`renderRandomEvent`/`renderCombatResult`** 已拆为 `*Text(text, ev)` 以便 AI 增强层替换文本。
+- **`headless` 测试路径不触发 AI**：AI 增强块在 `aiActive()` 为假时整体跳过。
+
+### 11.4 AI 增强层（可选，默认关）
+- 开关：`aiEnabled=false`；界面按钮 `GameEngine.toggleAI()`；开启且 `state.apiConfig` 已配 endpoint/key/model 才激活。
+- 函数：`aiActive()/aiNarrate(baseText,kind,cacheId)/aiNarrateResult(baseText)/aiCacheKey()/aiCached()/aiCachePut()/aiActionOut()/aiCall()/aiPresentBusy()` + `AI_ACTIONS` 映射。
+- 行为：复用全局 `callLLM` 仅**扩写文本层**（事件叙事/选项结果/战斗结局/副本序章）；解析回复末尾 `<action:xxx>` 驱动火柴人；数值/检定/战斗/结局始终离线；AI 失败 `.catch` 自动回退；事件级文本按 `pack.id+事件id` 缓存到 `localStorage` 避免重复调用。
+- 火柴人动作库：`idle/walk/run/attack/cast/hit/jump/dodge/fall/win/search/talk`（`stickman.js` 的 `ACTIONS` 关键帧 + `frameAt`/`lerpPose` 插值 + `drawFigure`）。**严格模式坑**：`drawFigure` 里漏 `var` 声明会抛 ReferenceError 致舞台空白（AI 2 修）。
+
+---
+
+## 12. 存储层 / 知识库 / 离线线 经验（历史提炼，来自协作日志）
+
+### 12.1 存储层（IndexedDB）
+- 存档主存 `adventureAI_db`（IndexedDB），localStorage 仅做小数据镜像。
+- 迁移原因：localStorage 约 5MB，存档+快照+分支膨胀报「存储空间不足，进度可能未保存」。
+- 写入策略：<1MB 写主键+备份键；1~4MB 只写主键；>4MB 不写 localStorage。
+- 「存储体检」按钮显示真实用量与浏览器配额。
+- 不要在 localStorage 里放大数据。
+
+### 12.2 知识库生成管线（`local_library.js` 禁止手改）
+- 知识库根：`<project-root>\knowledge-base\`（2026-08-10 从 `<user-profile>\Videos\黑袍\ai知识库` 迁移到项目内）。`世界观设定/` 与 `角色卡/` 只放生成脚本读取的 `.json`；备份/小说/下载等非库文件统一丢 `归档/`。
+- 生成脚本（项目内）：`tools/gen_local_library_v2.py`（`KB` 常量已指向新位置）→ 直接 `python tools/gen_local_library_v2.py` 重生成 `app/local_library.js`（含 summary/tags/nsfw/lang/entries/avatar/**category**）。
+- 分类脚本：`tools/rebuild_meta_categories.py`——给 `设定集元数据.json` 每条补 `category` 字段（书：NSFW/修仙仙侠/末日废土/科幻/同人世界/奇幻/校园/恐怖/小说模板/通用系统/其他；卡：讲述者/NSFW角色/一般角色），并自动补录缺失条目、清理已删条目。**改结构或新增文件后先跑它再跑生成脚本**。
+- 平台加载界面按 `LOCAL_LIBRARY` 里每条的 `category` 分组（`LOAD_GROUP_ORDER` 控制顺序，NSFW 默认隐藏由 `adventureAI_showNsfw` 控制）；`gatherLoadItems` 优先用库内 `category`，缺省回退 `bookCategory`/`cardCategory` 正则启发式。
+- **改知识库后必须重跑两个脚本**才被平台收录；新 PNG 卡先提取同名 JSON 并生成头像（`app/avatars/*.jpg`）。
+- **中文简介补全 + 三处同步 + 平台注入**：新增卡/书后，由 `kb-summary-sync` skill（运行时 `<project-root>\.workbuddy\skills\kb-summary-sync\`，权威副本 `<shared-skill-library>\kb-summary-sync\`）驱动——AI 读原文自写中文简介，用 `tools/kb_sync.py` 的 `discover`/`apply`/`regen`/`verify` 同步进「`设定集元数据.json` + `说明文档.md` + Obsidian 素材库 `## 简介`」，再 `regen` 使新卡出现在平台「添加设定卡」网格。撰写约定（保留风格/露骨词、`{{char}}`→主人公、`{{user}}`→主角、叙述者类用 叙述者/AI）见该 skill。
+- 坏 JSON 坑：①首行混入非 JSON 文本（如 `### 标题 - 副本`）整体非法被跳过；②两个 JSON 拼接（尾部多出残缺对象，报 `Extra data`）——提取首个完整对象保留；修复后务必先跑 `rebuild_meta_categories.py`。
+- 角色卡数据藏在 PNG `tEXt` 块（key=`chara`，base64 JSON）：必须用 PIL 读 `img.info` 提取，不能当文本读；旧卡曾有双 `chara` 块问题。
+
+### 12.3 chub.ai 接口（知识库扩展）
+- 搜索：`api.chub.ai/search?search=关键词&namespace=lorebooks`（设定书）/ `namespace=characters`（角色卡）；不支持中文关键词；需完整浏览器 UA。
+- 下载：设定书 `.../raw%252Fsillytavern_raw.json/raw`；角色卡 `.../raw%252Ftavern_raw.json/raw`。
+- 落盘：`main_*_spec_v2` 形式落根目录，按 `说明文档.md` 归 `角色卡\` 起中文名。
+- 讲述者靠 tags 中「讲述者」标签；NSFW 默认隐藏，开关存 localStorage `adventureAI_showNsfw`。
+
+### 12.4 离线线补充
+- 离线引擎「继续 ▶」必须走 `onContinue()`（§11.3）；事件级缓存用 `evId` 入参（主事件无 `id` 字段）。
+- 离线线不依赖任何 API，离线可玩；AI 增强为可选叠加（§11.4）。
+- 火柴人调参经验：肩关节点位、脚踩实地、肢体横向错位防重叠、近/远侧都画、画布边界测试防「看不见」（AI 2 视觉评审从「不像人」提到 8/10）。
+
+### 12.5 在线线历史踩坑（协议/提示词/状态，完整表见共享 skill `text-adventure-prompt-protocol`）
+- 成长系统失效：`EXP + \| 数值` 与解析正则对不上 → 正则加 `\|?` 容错 + 提示词对齐（§该 skill 6）。
+- 同名剧情节点堆积：`applyPlotUpdates` 的 `NODE_NEW` 同名都新建 → 先查同名再更新（app.js ~2920）。
+- 结构标签泄漏：`stripSectionTags`（遇首个非 NARRATIVE 标签即截断）+ `sanitizeNarrative` 兜底。
+- `max_tokens` 写死 2000 → 改 `apiConfig.maxOutputTokens`（默认 4096）。
+- 首轮选项不显示：`isGenerating` 置 false 时机 → 提到 `renderAll` 之前。
+- 右栏数值更新慢：`renderAll` 先 `renderCharacterPanel` 后 `renderStory`。
+- 曼陀罗重复建档：按名字归一化（去空格/大小写+去括号）合并。
+- **发送静默失败（旧存档缺字段）**：`buildSystemPrompt`（app.js ~1038）强读 `character.attributes['力量']` 等；`sendMessage` 在 try 块外的 `updateSystemPrompt(adv)` 调用它。旧存档冒险若缺 `character.attributes/skills/items` 会抛 `Cannot read properties of undefined`（~1112 行）。开局发送是 fire-and-forget，异常变未捕获 rejection，且 `state.isGenerating` 已置 true → 永久卡死，之后所有发送被 `if (state.isGenerating) return` 静默拦截；首屏 `renderStory` 不调 `buildSystemPrompt` 故页面正常。**修复**：①`buildSystemPrompt` 对 `c.attributes/skills/items` 兜底；②把 `updateSystemPrompt/renderStory/showTypingIndicator` 移入 try 块（任何构造期异常显示错误并复位 `isGenerating`）。旧存档会在下次成功发送后被持久化修复。复现台：`.workbuddy/tmp/repro_old_schema.js`。
+- **设定书缓存 RegExp 退化**：`parseBookEntries`（app.js ~836）把解析结果缓存进 `book._loreParsed`，matchers 含 RegExp 对象 `re`；冒险经 JSON 存储（localStorage/IndexedDB）再读回时 RegExp 退化为空对象 `{}`，`buildLorebookBlock`（~871）内 `mt.re.test(recent)` 抛 `mt.re.test is not a function`。**修复**：①读 `_loreParsed` 缓存时，对所有 `mt.latin && mt.re` 但 `typeof mt.re.test !== 'function'` 的 matcher 从 `mt.low`（原始拉丁词）重建正则 `new RegExp('\\b'+low.escape+'\\b','i')`；②调用点加类型守卫 `(mt.re && typeof mt.re.test === 'function') ? ... : recentLower.indexOf(mt.low)`，坏值回退 `indexOf` 不再崩溃。根本原则：会被持久化的对象不要缓存 RegExp/函数/Date 等不可 JSON 序列化值，或读取时用类型守卫重建。复现台：`.workbuddy/tmp/repro_lore.js`。
+- **前情摘要须覆盖全部上文（非片段）**：`manageContext` 压缩时 `summaryInput` 曾把 `oldMsgs` 每条截断为 350/800 字 → 摘要成「片段」。改为保留 `oldMsgs` 完整内容（仅单条 >4000 字做上限保护），压缩后真正覆盖全部上文。
+- **交互速查（2026-08-09 新增）**：①回合分隔——`renderStory` 每个玩家消息前插 `⏺ 第 N 回合`（`roundNo` 计数）；②撤回——玩家气泡 `↩ 撤回` 调 `withdrawMessage(i)`，移除该消息及紧跟的 AI 回复；③人物图鉴刷新——`refreshMandalaFromHistory()` 重扫对话 `[CHARACTERS]` 重建；④地点面板——`toggleLocations`/`collectLocations`/`renderLocations`（当前位置标 📍，含刷新）；⑤任务删除/隐藏——`deleteQuest(name)` / `toggleQuestsPanel()`（`adv.hideQuests`）。这些均不污染 `conversationHistory`，仅影响展示层与 `adv.quests/mandalaCards`。回归：`.workbuddy/tmp/test_new_features.js` 15/15。
+- **冒险类型（题材×玩法模式，2026-08-10 新增）**：`getAllThemes()` 末尾并入 26 个冒险类型并打标 `isAdventureType:true`（主题网格内无编辑/删除工具）；`getThemeProfessions(name)` 对冒险类型优先返回其题材职业池；`randomizeAdventureForm` 已把冒险类型纳入随机池。`startNewAdventure` 选中冒险类型时注入 `opts.themeData`(名称/起始地点/描述/初始物品)+`opts.professionData`+`opts.recommendCategories`，创建后由 `collectRecommendBooks(recommendCategories)` 按 `b.category` 自动挂载对应设定书（如「克苏鲁恐怖·调查求生」→`恐怖` 类）。回归：`.workbuddy/tmp/test_adventure_types.js` 28/28。
+- **创建新冒险三步 AI 向导（2026-08-14 重构）**：①玩家、主题、职业、角色卡/世界设定卡与选填故事偏好；②AI 基于全部素材生成 3 套差异化故事方案；③自动回填并确认标题、世界背景、玩家身份、地点、目标、开场钩子与其他说明。素材区使用可移除托盘；角色卡/设定卡在确认页只显示紧凑摘要，不再堆叠完整编辑器。允许跳过 AI 手动填写。自定义职业由 `getLockedProfession()` 作为硬约束贯穿提示词、方案归一化和最终创建，修复自定义职业回落默认剑士。
+
+## 11. 创建冒险 · 三步数据流转（明确关系）
+- **第 1 步（选择素材）**：主题/模式/角色名/职业写入现有 state；角色卡与世界设定卡写入 `pendingLoadCards/pendingLoadBooks`；选填偏好写入 `adventureStoryPreference`。`selectedMaterialTray` 与加载库勾选实时同步。
+- **第 2 步（故事方案）**：`buildStoryProposalMessages` 对素材限长后调用 `callLLM`；`parseStoryProposals` 解析并归一化 JSON；`renderStoryProposalChoices` 展示三套标题、卖点、标签、身份、目标、地点和角色定位。
+- **第 3 步（确认开局）**：`applyStoryProposal` 写入 `adventureTitleDraft`、`adventureOpeningHook`、`settingParts`、地点和未锁定职业；`renderAdventureEditor` 提供最终编辑，输入实时回写。
+- **开始冒险**：`startNewAdventure` 用 `composeSettingText()` 组装设定，保存自动标题；开场钩子优先于角色卡多开局；`getLockedProfession()` 最后覆盖职业，保证用户自定义职业不被默认值替换。
+- 关键函数：`resetAdventureCreationSession`、`generateStoryProposals`、`selectStoryProposal`、`skipStoryProposalGeneration`、`renderAdventureMaterialSummary`、`syncSettingTextToInput`。
+
+## 12. AI 自动补充（保文风提取）
+- 当前创建向导统一走 `generateStoryProposals()` 生成完整故事方案；旧 `aiFillSetting()` / `aiFillCard()` 与旧两步编辑器保留为兼容代码，当前向导 UI 不再调用。
+- `autoFillCardFields` 仍在角色卡加入 pending 列表时负责本地字段拆分，随后角色卡摘要与原文一起进入故事方案提示词。
+- 统一系统提示词 `AI_EXTRACT_SYSTEM`：**严格基于原文摘取、保留原文风格/语气/用词（含敏感词汇），不改编、不删改**——与小说生成的文风保留策略一致。
+- 上传角色卡：**第 1 步勾选区已移除上传/预览按钮**（只留勾选），编辑统一在第 2 步；第 2 步「⬆ 上传角色卡」`uploadCardToPending()`（支持 JSON/TXT/PNG chara，导入即 `autoFillCardFields`）。
+
+### Pixiv 搜图（App API 本地桥接 · 2026-08-11 AI 2 重构）
+- **架构**：纯静态前端无法直连 pixiv（无 CORS + i.pximg.net 需要 Referer）→ 本地桥接服务 `<project-root>\tools\pixiv_bridge.py`（Python + pixivpy3，监听 127.0.0.1:8098，CORS 放开），前端 `fetch http://127.0.0.1:8098/api/pixiv/*`。
+- **配置**：`tools/pixiv_config.json`：refresh_token / proxy(http://127.0.0.1:7897) / ai_images_dir / port / min_interval(0.8s 节流)。**token 属敏感信息，禁止写进日志与文档**。
+- **桥接接口**：`/status`（登录态）｜ `/search?q=&page=`（含 R18，req_auth）｜ `/ranking?mode=&page=`（day/week/month/week_original/week_rookie/day_r18/week_r18/week_r18g）｜ `/illust?id=`（含 meta_pages 多图原图）｜ `/user?id=` ｜ `/img?url=`（图片代理，自动带 Referer）｜ `/download?url=&name=`（保存到 `ai-images/pixiv/`）。
+- **前端数据流**：`pixivState`（tab/word/page/rankMode/rankPage/view/viewPage）→ `pixivFetch`（封装 fetch+错误抛出）→ 网格 `pixivRenderGrid` → 详情 `pixivOpenDetail`（meta_pages/meta_single_page → `ill._pages` 原图数组）→ `pixivViewRender` 经 `/img` 代理显示 → 翻页/下载/原站打开。
+- **NSFW**：作品 `x_restrict===1 || sanity_level>=6` 视为 R18；`pixivFilterItems` 按 `adventureAI_showNsfw`（localStorage '1'）过滤，卡片带 R18 角标。
+- **避坑**：①pixivpy3 `search_illust` 无 `nsfw` 参数，R18 靠 `req_auth=True`；②i.pximg.net 必须走 `/img` 代理加 Referer；③`pixivOpenDetail` 内 `let pages` 不可用 `const`（曾报 Assignment to constant variable，被无头测试抓到）；④`pixiv_config.json` 用 `utf-8-sig` 读取防 BOM；⑤桥接重启：**不要用 `taskkill /IM python.exe /F`**（会连带杀掉平台 8099 http.server）；按端口找 PID：`Get-NetTCPConnection -LocalPort 8098` → Stop-Process 该 PID → `python tools/pixiv_bridge.py`，若平台 8099 也没了，`cd app; python -m http.server 8099` 一并拉起。
+- **P2/P3 扩展（2026-08-11）**：桥接新增 `/ugoira?id=`（拉 zip 解帧到 `tools/.ugoira_cache/<id>/`，返回帧序列+delay）、`/ugoiraframe?id=&n=`（缓存帧直出）、`/bookmark?id=&restrict=`（illust_bookmark_add）、`/unbookmark?id=`（delete）、`/dataurl?url=`（base64 dataUrl，≤10MB）；详情接口返回 `is_bookmarked`（bookmark_user_public/private）。前端：看图器按钮 播放动图/收藏/换一个/设为冒险场景图（`pixivToggleUgoira`/`pixivToggleBookmark`/`pixivRandomFromView`/`pixivSetSceneImage`——取当前冒险最后一条 assistant 消息注入 `msg.sceneImage` 后 `saveState()+renderStory()`）；加载预览「🖼 搜图参考」（`pixivState.previewKeyword`，在 `showLoadPreview` 记录卡片名/书名）；小说弹窗「🎨 搜封面图」（取 `novelTitle` 文本去前缀）。`app.js` 已统一为 LF 行尾。
+- **测试**：`node <project-root>\.workbuddy\tmp\test_pixiv.js`（无头冒烟 P1+P2+P3：R18 过滤/网格/详情多图/翻页/收藏双向/动图启停/换一个/场景图注入/搜图参考/封面，17 项全过）。
+
+
+### Denova 互通（素材导出 · 2026-08-12 AI 2）
+- **定位**：平台 ↔ Denova 素材互通，Denova 装于 `<project-root>\denova`（`.denova\` 数据目录）。
+- **转换脚本** `tools/denova_lore_sync.js`：`export <设定书>`（平台 世界观设定/*.json → Denova 工程 `projects/<名>/.denova/lore/items.json`，格式 `{version:2, items:[{id,enabled,type,name,importance,tags,brief_description,keywords,load_mode,content,...}]}`，entry→item 映射：key 数组→keywords、content 原文保留、type 按关键词启发式推断 character/location/faction/rule/item/world）；`import <工程> [输出名]` 反向（写入 世界观设定/denova-*.json）；`list` 列已注册工程。脚本自动注册 `books.json`。
+- **桥接兼容边界**：旧 POST `/api/denova/export` 仅为历史/自动轻量路径保留；手动按钮不得再调用它。新手动全量任务见 §1.3，由 `tools/denova_full_export.py` 执行；旧 `/api/denova/sync` 载荷和上限继续保持，避免每次保存变成全量迁移。
+- **前端手动导出**：顶栏「🚀 导出Denova」→ `exportToDenova()`：读取 `conversation-archive v1` 与完整挂载原件，按记录分片上传，依次显示清点/回源/恢复/翻译/原子写入/验收。该路径禁止调用 `callLLM()`，不读取摘要或小说作为真源；未恢复素材必须选择原件、明确跳过或接受不完整副本，后两者会在报告中保持警告。
+- **本地翻译**：`TranslationModelInstaller` 仅经用户确认下载腾讯官方 `HY-MT1.5-1.8B-Q4_K_M.gguf`，读取官方元数据并校验 SHA-256 后用 `ollama create` 注册独立模型；不调用/卸载/删除现有 Qwen 或 Llama。`LocalTranslator` 逐字段翻译并保护模板、URL、HTML、Markdown/代码与正则，失败字段保留英文。全局术语表在 `tools/translation_glossary.json`，冒险覆盖表存 `adv.denovaTranslationGlossary`。
+- **本地管家模型（2026-08-27）**：Denova 已有 `model_profiles` 与 `agent_models.<kind>.profile_id` 机制；当前用户级配置新增 `qwen25-local`，通过 Ollama OpenAI 兼容端点 `http://127.0.0.1:11434/v1` 使用 `qwen2.5:7b`（Q4_K_M），互动故事显式绑定该 profile。云端默认 profile 保留；不要再绑定不存在的 `qianwen-fast/qianwen-auto`，否则会回退到默认云端模型。
+- **Denova 资料库单条翻译（2026-08-26）**：在 Denova 资料库条目编辑器正文上方新增「译为中文」按钮，调用本地 Ollama HY-MT 模型串行翻译 name/brief_description/content。后端 `ExportJobManager.translate_lore_fields()` 复用现有 `LocalTranslator`（缓存/术语表/占位符保护/校验），独立 `_translation_lock` 串行化，任一字段失败整体失败。桥接路由 `POST /api/denova/translator/translate`（仅回环地址，2 MiB 上限，错误码 invalid_request/empty_fields/payload_too_large/translator_offline/model_missing/translation_failed/translation_validation_failed）。前端 `denova-src/web/src/lib/api-client/local-translation.ts` 封装（支持 AbortSignal），`LoreTranslationDialog.tsx` 实现字段选择→翻译→原文/译文双栏预览→采用译文流程。预览阶段零写入，点击「采用译文」才修改 draft 并进入现有 `useLoreItemAutosave` 自动保存；翻译期间条目切换或内容变化则禁止采用旧译文。不翻译标签/关键词/ID/类型/加载策略/来源信息，不调用付费 API，不增加 Denova Agent 工具。测试：Python `test_denova_full_export.py` 的 `LoreTranslationTests`（15 项），前端 `local-translation.test.ts`（5 项）+ `LoreTranslationDialog.test.tsx`（8 项）。
+- **可选小说化**：`showNovelExportModal()` 先读永久档案，`buildNovelChapters(adv, sourceMessages)` 按消息边界和约 12000 字目标分卷；每章保存 `source_message_ids/source_turn_start/source_turn_end` 检查点。`generateNovelChapter()` 不再做固定 8000 字截断，失败不会修改 Denova 原始实录。
+- **避坑**：Denova 重启用按端口找 PID（勿 `taskkill /IM python.exe /F`）；books.json 用 JSON.parse 改（转义）；角色卡 Denova 原生支持酒馆卡导入，平台只做快捷 lore 通道。
+- **P1 加载库接入 Denova 工程（2026-08-12 AI 2）**：桥接新增 GET `/api/denova/projects`（工程列表+lore 数）与 `/api/denova/lore?book=`（items）；前端 `loadDenovaBooks(force)` 拉取转设定书条目（title=Denova·工程名、content=【keyword】内容拼接、summary 含类型统计、category=Denova工程）缓存到 `state.denovaBooks`；`gatherLoadItems` 合并（加载库可直接勾选挂载进 backgroundBooks）；`renderLoadLibrary` 首次打开自动拉取；导出完成后 `postToDenova('sync-state',{type:'export-done'})` 通知 + 弹窗新增「🔗 在 Denova 中打开」按钮（openDenovaShell）。
+- **测试**：`node <project-root>\.workbuddy\tmp\test_denova_export.js`（v4 前端任务/永久档案/模板变量/小说无截断/导演退役）；`python <project-root>\.workbuddy\tmp\test_denova_full_export.py`（>500 条、长 V3 卡、冲突、缓存、回滚、低磁盘等）。
+- **新冒险自动同步（2026-08-15 A1/Codex）**：`createAdventure()` 只为新对象创建 `syncMeta`；旧存档没有该字段，因此 `scheduleAdventureSync()` / `pushAdventureSync()` / `pullAdventureSync()` 会直接返回，不做隐式迁移。`saveState(skipDenovaSync)` 在普通保存后 1.2 秒防抖推送，状态回写必须使用 `saveState(true)`，否则会形成同步循环。
+- **同步载荷**：`buildAdventureSyncPayload(adv)` 有界提取标题、四段设定、摘要、非 Denova 回流设定书、角色卡和已生成章节；POST/GET 均走 `http://127.0.0.1:8097/api/denova/sync`。桥接以 `syncMeta.id` 固定 Denova 工程，不随标题改名；管理文件覆盖前备份到工程 `.narraverse/backups/`。
+- **回拉边界**：Denova 宿主 `NarraverseWorkspace` 在叙界重新可见时发送 `visibility-changed`，`bridge.js` 调 `pullCurrentAdventureSync()`；只回写标题、四段设定、摘要、章节和聚合 lore 设定书。不要用同步载荷中的精简 cards/books 覆盖叙界原始对象，否则会丢失 `alternate_greetings`、外貌、关系等平台字段。
+- **一键入口**：用户只运行 `<project-root>\Launch-Narraverse.cmd`。`tools/start_narraverse.ps1` 先探测/启动 8097，存在 Pixiv 配置时再启动 8098，随后探测/启动 `denova\denova.exe` 并进入 `/?mode=narraverse`；桥接日志位于 `tools/logs/`。该 `.ps1` 必须保持纯 ASCII，避免无 BOM UTF-8 在 Windows PowerShell 5.1 下被按 ANSI 解码；验证必须使用入口同款 `powershell.exe`，不能只测 `pwsh`。
+- **同步回归**：`python <project-root>\.workbuddy\tmp\test_denova_future_sync.py`、`node <project-root>\.workbuddy\tmp\test_narraverse_future_sync.js`；宿主协议测试为 `denova-src/web/src/features/narraverse/NarraverseWorkspace.test.tsx`。
+
+## 13. UI 重设计层（redesign.css · 2026-08-12 UI Designer）
+- **策略**：新增 `app/redesign.css`，在 `style.css` **之后**加载，仅覆盖视觉令牌与关键表面，**不改动原 2000 行 `style.css`**，降低回归风险。`local_library.js` 仍自动生成禁止手改。
+- **设计系统**：暗色游戏风 + 玻璃拟态 + 双色辉光；令牌化（`--accent`/`--sem-*`/`--grad-*`/`--shadow-*`/`--sp-*`/`--radius-*`/`--t-*`）；字体模仿 **Denova = Inter**（`index.html` 经 Google Fonts 引入，回退 `system-ui`/`PingFang SC`/`Microsoft YaHei`，离线不崩）；修正 `--text-muted` 0.52 以满足 **WCAG AA 4.5:1**；全局 `:focus-visible` 辉光环；`prefers-reduced-motion` 关闭动效。
+- **顶栏收口**（`index.html` `.main-header`）：原 14 个平铺按钮 → 3 常驻（💾存档 / 🚀导出Denova / 🎮离线游戏）+「✎ 创作 ▾」下拉（角色卡/设定书/提示词/小说/Pixiv）+「视图」图标簇（🗺剧情线🧩人物📍地点📋任务🎨背景⚡Agent，带 tooltip）+ 🔍 命令面板触发。**所有原按钮的 onclick 函数全部保留**，仅 DOM 重组。
+- **命令面板**：`app.js` 新增 `openCommandPalette()/closeCommandPalette()/filterCommandPalette()/commandPaletteKey()` + `UI_COMMANDS` 列表；全局 `Ctrl/Cmd+K` 唤起，↑↓ 选择、Enter 执行、Esc 关闭、点遮罩关闭。
+- **右栏 Tab 化**（`index.html` `.right-panel`）：原 8 段长滚 → 常驻状态速览（HP/MP/EXP/位置/章节）+ Tab（状态/属性/技能/背包/关系/任务）。`renderCharacterPanel` 等渲染器按原 ID 写 DOM，包裹进 `.rp-body` 后由 `switchRightTab()` 控制显隐，**渲染逻辑未改**。酒馆模式关系段在「关系」Tab 内。
+- **对话思考过程**（`app.js`）：`readStream` 现捕获 `delta.reasoning_content` / `delta.thinking` 作为思考过程，流式经 `updateThinkingBubble()` 实时显示，完成时存入 `msg.thinking`；`renderStory()` 对含 `thinking` 的 assistant 消息渲染为可折叠 `<details class="thinking-block">`。注意：思考过程**仅在流式模式**捕获（非流式路径不返回 reasoning）。**语义边界**：此处「思考过程」指 **AI 写手（叙事模型）自己的推理 token**，即模型返回的 reasoning 字段；**不是剧情人物在正文里的内心独白**——角色独白/旁白走正文 `content`，不会进思考块。UI 标签已明确写为「💭 AI 写手思考过程」以避免与角色独白
+- **新增文件**：`app/redesign.css`、`app-redesign-preview.html`（纯静态高保真原型，可独立打开）。
+
+## 14. 统一外壳层（presets.js / bridge.js · 2026-08-12 v4 P0）
+> 对应 `docs/平台整合规划说明书.md` v4（决策锁定版）§3.1 三通道架构 + §4.7 场景预设。**纯增量**，不改现有函数；`state` 加两顶层字段 `userProfile`/`currentPresetId`。
+
+- **state 新字段**（`app.js:7`）：`userProfile: null`（本地 Profile，无云端）、`currentPresetId: null`（当前场景预设 id）。`loadState()` 末尾调 `ensureProfile()` 兜底默认值。
+- **本地 Profile**（`app.js`，P0-3）：`DEFAULT_PROFILE` {nickname,theme:'中性',nsfw:false,defaultPresetId:'explore'}；`ensureProfile()`/`getUserProfile()`/`setUserProfile(patch)`/`exportProfile()`(JSON 字符串)/`importProfile(jsonStr)`。命令面板入口「导出/导入本地 Profile」由 `bridge.js` 注册。
+- **场景预设引擎** `app/presets.js`（P0-1）：`SCENE_PRESETS`（5 内置：explore/longform/game/quickplay/worldbuild）+ `RIGHT_TABS`（6: status/attr/skill/inv/rel/quest）；`getCurrentPreset()`/`listPresets()`/`switchPreset(id)`/`applyPreset(p)`/`renderPresetSwitcher()`/`getActiveCmdFilter()`。`applyPreset` 按 `preset.rightTabs` 显隐 `.rp-tab[data-tab]`/`#rp-<tab>`，设 `body[data-density]`；`switchPreset` 写 `state.currentPresetId` + `saveState()` + 通知 Denova（`postToDenova`）。DOMContentLoaded 自启 `initPresets`（setTimeout 0 等 state 载入）。
+- **导演退役边界（2026-08-26）**：叙界右栏导演 Tab、预设拉取、提示词注入、`EVENTS/CHECK` 解析和状态写回均已删除；新冒险不再创建 `director`。旧存档 JSON 中已有 `director` 字段照常随整块 Adventure 保存，但任何活动生成路径都不读取它。
+- **命令面板场景过滤**（`app.js`，P0-5）：`UI_COMMANDS` 每条加 `groups:[]`（dialogue/writing/game/setting/version/check）；`filterCommandPalette()` 先按 `getActiveCmdFilter()` 过滤 groups（交集非空才显示；空过滤或含 '*' 显全部），再按文本；`openCommandPalette()` 打开即调 `filterCommandPalette()` 应用当前预设。
+- **iframe 嵌入 + postMessage 桥接** `app/bridge.js`（P0-4）：`DENOVA_ORIGIN='http://127.0.0.1:8080'`、`SHELL_ORIGINS` 白名单、`BRIDGE_VER=1`；信封 `{ver,src:'shell'|'denova',id,type:'request'|'event'|'response',cmd,payload,ts}`；`postToDenova(cmd,payload)`（不等响应）、`queryDenova(cmd,payload,timeout)`（Promise+超时）、`handleDenovaMessage(e)`（origin 校验+response/event 路由）；`openDenovaShell(mode)`/`closeDenovaShell()` 控制 `#denovaShell` 全屏 iframe 宿主；DOMContentLoaded 注册 4 命令（打开写作台/游戏模式/导出导入 Profile）。**Denova 侧 messageAdapter 待 Denova 源码侧配合**，未就绪时查询超时 no-op。
+- **脚本加载顺序**（`index.html` 末尾）：`stickman.js → game_engine.js → packs/limitless.js → local_library.js → app.js → presets.js → bridge.js`。`presets.js`/`bridge.js` 在 `app.js` 之后，访问全局 `state`/`switchRightTab`/`UI_COMMANDS`/`saveState`。
+- **样式**（`redesign.css` §10-13）：`.rp-preset-bar`/`.rp-preset-bar select`、`body[data-density=...]` 三档密度、`.denova-shell`/`.denova-shell-bar`/`.denova-frame` 全屏 iframe 宿主；历史 `.director-panel` CSS 即使仍残留也无 DOM 入口。
+- **验收**（P0-6）：`node --check` 三文件通过；:8099 服务 index/presets/bridge/redesign 全 200；index.html 含 10 处新锚点。运行态需浏览器实测：切预设看右栏 Tab 显隐、命令面板按场景过滤、打开 Denova 写作台 iframe。
+- **Denova 导入工程导演策略**：`InteractiveLayout` 读取 `.narraverse/import-manifest.json`；仅 `source=narraverse/version=1` 的工程在新建故事时把 `director_run_policy` 默认设为 `manual` 并首次收起右侧导演区。已有故事自己的策略优先，普通工程默认不变，用户仍可打开导演后台或主动改为按需/定时。
+
+
+### P2 历史导演实现（2026-08-12；已于 2026-08-26 退役）
+- 历史版本曾让 `parseGameResponse/applyParsedResult` 处理 `[EVENTS]/[CHECK]`，并用 `buildDirectorPromptBlock` 驱动右栏导演台。上述活动代码和 DOM 已删除，不能按旧记录恢复；Denova 本身的导演仍保留，且叙界导入工程采用上节所述手动默认。
+- **Denova 设定书 AI 整理入库**：加载库 Denova 条目（_denova）卡片带「📥 AI 整理入库」按钮 → aiOrganizeDenovaBook(projName)（fetch lore → callLLM 中文整理分节 → 桥接 POST /api/denova/import-kb 写 世界观设定/denova-<工程名>.json 平台设定书格式）→ 重跑生成脚本后全局可挂载。
+- **桥接历史兼容**：GET `/api/denova/director-presets` 路由仍可供旧客户端访问，但当前叙界 UI 不调用；POST `/api/denova/import-kb`、GET `/api/denova/projects`、GET `/api/denova/lore?book=` 继续服务 Denova 资料回看/导入。
+- **测试**：旧“导演台/协议必须存在”断言已删除；v4 无头回归改为断言活动代码中不存在导演入口和 `EVENTS/CHECK` 结果字段。
+
+
+### P3 写作工程化：大纲/细纲 + 版本账本（2026-08-12 AI 2）
+- **大纲/细纲**：冒险对象 `novelPlan: {outline, groups:[{title,summary}]}`；`generateNovelOutline()`（LLM 生成主线+章节组细纲，按回合数分 2-5 组）；`renderNovelPlan()/`saveNovelPlan()`（小说弹窗大纲区：textarea + 生成/保存按钮 + 细纲组展示）；`buildNovelSystemPrompt` 注入【故事大纲】+【章节组细纲】——一键生成章节按大纲写作。
+- **版本账本**：冒险对象 `versionLedger: [{ts,type,label,object,blobId}]`（上限 50，格式对齐 Denova ledger 语义）；`createSnapshot` 时写账本、blobId 关联快照；`snapshotDiff()` 对比最近两次快照（角色字段/对话条数/摘要差异），存档弹窗「🔄 对比最近两次」按钮。
+- **测试**：小说章节现在另由 v4 无头回归验证完整素材与来源映射；旧“导演台/协议必须存在”断言已删除。
+
+
+### P4 主题层 + 命令扩展 + 状态保活（2026-08-12 AI 2）
+- **主题**：app/theme-neutral.css（第三套中性基线，body[data-theme="neutral"] 覆盖全部 CSS 变量 + 关键表面）；默认保持暗色游戏风（data-theme=dark）；getTheme/setTheme/initTheme（localStorage adventureAI_theme），DOMContentLoaded 时 initTheme。
+- **命令面板**：UI_COMMANDS 新增 4 条——主题暗色/主题中性/打开 Denova 写作台（openDenovaShell('writing')）/打开 Denova 游戏模式（openDenovaShell('game')）。
+- **状态保活**：switchRightTab 记忆最后 Tab（localStorage adventureAI_rightTab），initRightTab 启动恢复；右栏 Tab 与 denovaShell iframe 切换均不卸载状态。
+- **测试**：无头测试 50 项全过。
+
+
+### P-B 时间轴·回溯中心（分支图，2026-08-13 AI 2）
+- **视图**：剧情线抽屉双视图——🗺 分支图（默认）/ 📋 列表（原时间轴）；setTimelineView 切换并记忆（adventureAI_timelineView）。
+- **buildBranchGraph(adv)**：Denova 风格泳道布局——每条 plotLine 一条泳道（lane），节点按 parentId 链递归算列（同线顺序补列防重叠），SVG 贝塞尔连线（跨线虚线绿色/同线实线半透明白），分支色板 6 色循环；回溯点 markers：💾快照（fromIndex 定位列，createSnapshot 已记 fromIndex）/ 🌿分支记录（branch.fromIndex）/ 📍IF线存档（泳道内）。
+- **renderBranchGraph(adv)**：分支 pill 条（点击 enterPlotNodeFromLine 切线）+ 画布（节点卡：标题/摘要/进行中标记；空分支虚线占位）+ 底部操作（选中节点 → 🌿从该节点开新分支 createBranchFromNode=rewindTo(fromIndex,true) / ↪进入该节点 enterPlotNode）。
+- **onMarkerClick**：快照→loadSnapshot、分支→switchToBranch、IF线→saveLineResume+applyLineResume 切线。
+- **测试**：无头测试 60 项全过（泳道/连线/回溯点/渲染/视图切换/开分支/历史截断/分支记录）。
+
+
+### 命令面板「显示全部」开关（2026-08-13 AI 2）
+- 场景预设 cmdFilter 会按场景隐藏 writing/game 组命令；新增 cmdShowAll（localStorage adventureAI_showAllCmds）+ toggleCmdShowAll + filterCommandPalette 支持全显示；命令面板顶部复选框 + 底部「当前场景隐藏 N 条命令」提示。
+- 完整命令 20 条（UI_COMMANDS）+ 2 条 Profile（bridge.js push）。

@@ -1,0 +1,397 @@
+{
+  "name": "The Sus Spellbook",
+  "description": "\"What was once a dream for our enemies has now become a frightening new reality\"",
+  "is_creation": false,
+  "scan_depth": 50,
+  "token_budget": 500,
+  "recursive_scanning": false,
+  "extensions": {
+    "chub": {
+      "id": 6557,
+      "full_path": "lorebooks/punkrock64/Powers",
+      "expressions": null,
+      "alt_expressions": {},
+      "related_lorebooks": []
+    }
+  },
+  "entries": {
+    "1": {
+      "uid": 1,
+      "key": [
+        "tentacle monster",
+        "tentacle"
+      ],
+      "keysecondary": [
+        "summon tentacle"
+      ],
+      "comment": "comment",
+      "content": "With the verbal component, \"tentacle monster,\" a large, pink, mobile alien with 7 tentacles appears. It seeks to impregnate female women and obeys the commands of its master.",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 0,
+      "useProbability": true,
+      "secondary_keys": [
+        "summon tentacle"
+      ],
+      "keys": [
+        "tentacle monster",
+        "tentacle"
+      ],
+      "id": 1,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 0,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "2": {
+      "uid": 2,
+      "key": [
+        "Timestop"
+      ],
+      "keysecondary": [
+        "stopwatch",
+        "time stop",
+        "stop time"
+      ],
+      "comment": "",
+      "content": "A watch has a button on it that stops time for everyone but the user. It can also dilate and distort time, slowing down or accelerating individuals/objects or the entire world depending on what setting it is switched to.",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 1,
+      "useProbability": true,
+      "secondary_keys": [
+        "stopwatch",
+        "time stop",
+        "stop time"
+      ],
+      "keys": [
+        "Timestop"
+      ],
+      "id": 2,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 1,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "3": {
+      "uid": 3,
+      "key": [
+        "Summon dildo"
+      ],
+      "keysecondary": [
+        "dildo",
+        "dragon dildo"
+      ],
+      "comment": "",
+      "content": "A spell that summons a dildo in a person's ass, visible only to them. It cums buckets every 5 minutes and cannot be removed except by the summoner",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 2,
+      "useProbability": true,
+      "secondary_keys": [
+        "dildo",
+        "dragon dildo"
+      ],
+      "keys": [
+        "Summon dildo"
+      ],
+      "id": 3,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 2,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "4": {
+      "uid": 4,
+      "key": [
+        "Suggestion"
+      ],
+      "keysecondary": [
+        "weakness",
+        "suggest"
+      ],
+      "comment": "",
+      "content": "A spell that makes the target weak to verbal suggestions and more gullible.",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 3,
+      "useProbability": true,
+      "secondary_keys": [
+        "weakness",
+        "suggest"
+      ],
+      "keys": [
+        "Suggestion"
+      ],
+      "id": 4,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 3,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "5": {
+      "uid": 5,
+      "key": [
+        "Lactate"
+      ],
+      "keysecondary": [
+        ""
+      ],
+      "comment": "",
+      "content": "A spell that causes the target to begin to lactate, as well as slightlyenlarging their breasts. The target will feel an urge to be milked to relieve pressure.",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 4,
+      "useProbability": true,
+      "secondary_keys": [
+        ""
+      ],
+      "keys": [
+        "Lactate"
+      ],
+      "id": 5,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 4,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "6": {
+      "uid": 6,
+      "key": [
+        "Mysterious Dildo"
+      ],
+      "keysecondary": [
+        "black dildo",
+        "mystery"
+      ],
+      "comment": "",
+      "content": "This spell summons the Mysterious dildo. The Mysterious Dildo is an inanimate object in the shape of an alien phallus. The object has a small but pronounced head leading down to a thick shaft that's covered in nubs and eventually leads down to a base, also ribbed and covered in nubs. The object has two medial rings, one right below the head and one above the base.\nThe Mysterious Dildo measures 26 cm in total. The head of the dildo has a circumference of 8 cm, the base is 11 cm, and the thickest point on the shaft has a circumference of 16 cm. The dildo is made of a soft, polymer-like material that is able to bend a bit before springing back to its original shape. The bottom of the dildo has a strong suction cup, allowing it to stick to smooth surfaces.\nOnce the mysterious dildo is inserted or summoned, it cannot be uninserted until it orgasms, with the average orgasm being several liters of semen.\n",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 5,
+      "useProbability": true,
+      "secondary_keys": [
+        "black dildo",
+        "mystery"
+      ],
+      "keys": [
+        "Mysterious Dildo"
+      ],
+      "id": 6,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 5,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "7": {
+      "uid": 7,
+      "key": [
+        "Ghost"
+      ],
+      "keysecondary": [
+        "invisible",
+        "ghost spell"
+      ],
+      "comment": "",
+      "content": "This spell makes the caster completely invisible and unable to be detected. Anything the caster does will not be noticed or felt, but the caster can interact with objects and people",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 6,
+      "useProbability": true,
+      "secondary_keys": [
+        "invisible",
+        "ghost spell"
+      ],
+      "keys": [
+        "Ghost"
+      ],
+      "id": 7,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 6,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    },
+    "8": {
+      "uid": 8,
+      "key": [
+        "Amulet"
+      ],
+      "keysecondary": [
+        "amulet",
+        "necklace",
+        "oblivious"
+      ],
+      "comment": "",
+      "content": "This amulet looks like a simple silver amulet with a gold ring. When worn, it makes the wearer unable to perceive or register sexual activity. They cannot register anything sexual happening to them and their sensitivity is increased. They do not notice themselves being fucked or nude, or others being nude or fucking them. The receiver of this thinks it is a simple amulet and don't acknowledge or notice the magical effects.",
+      "constant": false,
+      "selective": false,
+      "selectiveLogic": 0,
+      "order": 1,
+      "position": 1,
+      "disable": false,
+      "addMemo": true,
+      "excludeRecursion": true,
+      "probability": 100,
+      "displayIndex": 7,
+      "useProbability": true,
+      "secondary_keys": [
+        "amulet",
+        "necklace",
+        "oblivious"
+      ],
+      "keys": [
+        "Amulet"
+      ],
+      "id": 8,
+      "priority": 1,
+      "insertion_order": 1,
+      "enabled": true,
+      "name": "",
+      "extensions": {
+        "depth": 4,
+        "weight": 10,
+        "addMemo": true,
+        "displayIndex": 7,
+        "useProbability": true,
+        "characterFilter": null,
+        "excludeRecursion": true
+      },
+      "case_sensitive": false,
+      "depth": 4,
+      "characterFilter": null
+    }
+  }
+}

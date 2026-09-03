@@ -1,0 +1,323 @@
+package api
+
+import (
+	"context"
+	"log"
+	"os"
+	"path/filepath"
+
+	hertzapp "github.com/cloudwego/hertz/pkg/app"
+	hertzserver "github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"denova/internal/api/handlers"
+	"denova/internal/webfs"
+)
+
+// registerRoutes 注册 HTTP API 和静态文件路由。
+func (s *Server) registerRoutes(h *hertzserver.Hertz) {
+	apiHandlers := handlers.New(s.app)
+	api := h.Group("/api")
+	{
+		api.POST("/autosave-conflicts", apiHandlers.HandleAutosaveConflictCreate)
+		api.GET("/workspace/tree", apiHandlers.HandleWorkspaceTree)
+		api.GET("/workspace/summary", apiHandlers.HandleWorkspaceSummary)
+		api.PATCH("/workspace/chapter-status", apiHandlers.HandleWorkspaceChapterStatus)
+		api.GET("/workspace/file", apiHandlers.HandleWorkspaceFile)
+		api.GET("/workspace/asset", apiHandlers.HandleWorkspaceAsset)
+		api.GET("/workspace/search", apiHandlers.HandleWorkspaceSearch)
+		api.POST("/workspace/replace", apiHandlers.HandleWorkspaceReplace)
+		api.POST("/workspace/file", apiHandlers.HandleWorkspaceFileWrite)
+		api.POST("/workspace/create", apiHandlers.HandleWorkspaceCreate)
+		api.POST("/workspace/delete", apiHandlers.HandleWorkspaceDelete)
+		api.POST("/workspace/rename", apiHandlers.HandleWorkspaceRename)
+		api.POST("/workspace/copy", apiHandlers.HandleWorkspaceCopy)
+		api.POST("/workspace/move", apiHandlers.HandleWorkspaceMove)
+		api.GET("/workspace/change-groups", apiHandlers.HandleWorkspaceChangeGroups)
+		api.GET("/workspace/change-groups/:id", apiHandlers.HandleWorkspaceChangeGroup)
+		api.GET("/workspace/change-review-threads/:id", apiHandlers.HandleWorkspaceChangeReviewThread)
+		api.POST("/workspace/change-groups/:id/review", apiHandlers.HandleWorkspaceChangeReview)
+		api.POST("/workspace/change-groups/:id/undo", apiHandlers.HandleWorkspaceChangeUndo)
+		api.POST("/workspace/change-groups/:id/redo", apiHandlers.HandleWorkspaceChangeRedo)
+		api.POST("/workspace/change-comments", apiHandlers.HandleWorkspaceChangeCommentCreate)
+		api.PATCH("/workspace/change-comments/:id", apiHandlers.HandleWorkspaceChangeCommentUpdate)
+		api.DELETE("/workspace/change-comments/:id", apiHandlers.HandleWorkspaceChangeCommentDelete)
+		api.GET("/workspace/document-review", apiHandlers.HandleDocumentReview)
+		api.POST("/workspace/document-comments", apiHandlers.HandleDocumentCommentCreate)
+		api.PATCH("/workspace/document-comments/:id", apiHandlers.HandleDocumentCommentUpdate)
+		api.DELETE("/workspace/document-comments/:id", apiHandlers.HandleDocumentCommentDelete)
+		api.POST("/workspace/import-character-card/preview", apiHandlers.HandleWorkspacePreviewCharacterCard)
+		api.POST("/workspace/import-character-card", apiHandlers.HandleWorkspaceImportCharacterCard)
+		api.POST("/workspace/import-material/preview", apiHandlers.HandleWorkspacePreviewMaterial)
+		api.POST("/workspace/import-material", apiHandlers.HandleWorkspaceImportMaterial)
+		api.POST("/workspace/import-material/master/translation", apiHandlers.HandleWorkspaceApplyMasterTranslation)
+		api.POST("/workspace/import-material/master/finalize", apiHandlers.HandleWorkspaceFinalizeMasterImport)
+		api.GET("/library/assets", apiHandlers.HandleLibraryAssets)
+		api.POST("/library/import-material", apiHandlers.HandleLibraryImportMaterial)
+		api.GET("/library/assets/:id", apiHandlers.HandleLibraryAsset)
+		api.GET("/library/assets/:id/pipeline", apiHandlers.HandleLibraryAssetPipeline)
+		api.GET("/library/assets/:id/translations", apiHandlers.HandleLibraryAssetTranslations)
+		api.GET("/library/assets/:id/usages", apiHandlers.HandleLibraryAssetUsages)
+		api.POST("/library/assets/:id/instances", apiHandlers.HandleLibraryAssetInstantiate)
+		api.GET("/library/assets/:id/runtime", apiHandlers.HandleLibraryAssetRuntime)
+		api.GET("/library/assets/:id/proposals", apiHandlers.HandleLibraryAssetProposals)
+		api.POST("/library/assets/:id/proposals", apiHandlers.HandleLibraryProposalCreate)
+		api.POST("/library/assets/:id/proposals/batch-apply", apiHandlers.HandleLibraryProposalBatchApply)
+		api.POST("/library/proposals/:id/validate", apiHandlers.HandleLibraryProposalValidate)
+		api.POST("/library/proposals/:id/apply", apiHandlers.HandleLibraryProposalApply)
+		api.POST("/library/assets/:id/agent", apiHandlers.HandleLibraryMasterAgentStart)
+		api.GET("/library/agent/tasks/:id/stream", apiHandlers.HandleLibraryMasterAgentStream)
+		api.POST("/workspace/switch", apiHandlers.HandleWorkspaceSwitch)
+		api.GET("/workspace/current", apiHandlers.HandleWorkspaceCurrent)
+		api.GET("/books", apiHandlers.HandleBooks)
+		api.POST("/books/create", apiHandlers.HandleCreateBook)
+		api.GET("/books/cover", apiHandlers.HandleBookCover)
+		api.POST("/books/cover/generate", apiHandlers.HandleBookCoverGenerate)
+		api.POST("/books/cover/upload", apiHandlers.HandleBookCoverUpload)
+		api.GET("/books/export", apiHandlers.HandleBookExport)
+		api.POST("/books/import-novel/preview", apiHandlers.HandlePreviewNovelImport)
+		api.POST("/books/import-novel/preview/stream", apiHandlers.HandlePreviewNovelImportStream)
+		api.POST("/books/import-novel", apiHandlers.HandleNovelImport)
+		api.POST("/books/remove", apiHandlers.HandleBookRemove)
+		api.POST("/books/reorder", apiHandlers.HandleBookReorder)
+		api.POST("/books/sort-mode", apiHandlers.HandleBookSortMode)
+		api.GET("/books/info", apiHandlers.HandleBookInfo)
+		api.PUT("/books/info", apiHandlers.HandleUpdateBookInfo)
+		api.GET("/lore/items", apiHandlers.HandleLoreItems)
+		api.POST("/lore/items", apiHandlers.HandleLoreItemCreate)
+		api.PATCH("/lore/items/:id", apiHandlers.HandleLoreItemUpdate)
+		api.DELETE("/lore/items/:id", apiHandlers.HandleLoreItemDelete)
+		api.POST("/lore/classification/preview", apiHandlers.HandleLoreClassificationPreview)
+		api.POST("/lore/classification/apply", apiHandlers.HandleLoreClassificationApply)
+		api.POST("/lore/items/:id/image/generate", apiHandlers.HandleLoreItemImageGenerate)
+		api.DELETE("/lore/items/:id/image", apiHandlers.HandleLoreItemImageDelete)
+		api.POST("/lore/images/generate/stream", apiHandlers.HandleLoreImagesGenerateStream)
+		api.POST("/lore/images/generate/abort", apiHandlers.HandleLoreImagesGenerateAbort)
+		api.POST("/config-manager/stream", apiHandlers.HandleConfigManagerStream)
+		api.GET("/config-manager/messages", apiHandlers.HandleConfigManagerMessages)
+		api.POST("/config-manager/clear", apiHandlers.HandleConfigManagerClear)
+		api.GET("/interactive/stories", apiHandlers.HandleInteractiveStories)
+		api.POST("/interactive/stories", apiHandlers.HandleInteractiveStoryCreate)
+		api.PATCH("/interactive/stories/:id", apiHandlers.HandleInteractiveStoryUpdate)
+		api.POST("/interactive/stories/:id/select", apiHandlers.HandleInteractiveStorySelect)
+		api.DELETE("/interactive/stories/:id", apiHandlers.HandleInteractiveStoryDelete)
+		api.GET("/interactive/stories/:id/snapshot", apiHandlers.HandleInteractiveSnapshot)
+		api.POST("/interactive/stories/:id/rules/resolutions/:resolution_id/reroll", apiHandlers.HandleInteractiveRuleResolutionReroll)
+		api.GET("/interactive/stories/:id/director", apiHandlers.HandleInteractiveDirector)
+		api.GET("/interactive/stories/:id/director/status", apiHandlers.HandleInteractiveDirectorStatus)
+		api.PATCH("/interactive/stories/:id/director", apiHandlers.HandleInteractiveDirectorUpdate)
+		api.POST("/interactive/stories/:id/director/rebuild", apiHandlers.HandleInteractiveDirectorRebuild)
+		api.POST("/interactive/stories/:id/director/run", apiHandlers.HandleInteractiveDirectorRun)
+		api.POST("/interactive/stories/:id/director/context-analysis", apiHandlers.HandleInteractiveDirectorContextAnalysis)
+		api.GET("/interactive/stories/:id/branches", apiHandlers.HandleInteractiveBranches)
+		api.POST("/interactive/stories/:id/branches", apiHandlers.HandleInteractiveBranchCreate)
+		api.DELETE("/interactive/stories/:id/branches/:branch", apiHandlers.HandleInteractiveBranchDelete)
+		api.POST("/interactive/stories/:id/switch-branch", apiHandlers.HandleInteractiveBranchSwitch)
+		api.POST("/interactive/stories/:id/switch-turn-version", apiHandlers.HandleInteractiveTurnVersionSwitch)
+		api.PATCH("/interactive/stories/:id/turns/:turn_id/narrative", apiHandlers.HandleInteractiveTurnNarrativeUpdate)
+		api.POST("/interactive/stories/:id/images/generate", apiHandlers.HandleInteractiveImageGenerate)
+		api.POST("/interactive/stories/:id/context-compaction", apiHandlers.HandleInteractiveContextCompaction)
+		api.DELETE("/interactive/stories/:id/context-compaction/active", apiHandlers.HandleInteractiveContextCompactionRemove)
+		api.GET("/interactive/tellers", apiHandlers.HandleInteractiveTellers)
+		api.POST("/interactive/tellers", apiHandlers.HandleInteractiveTellerCreate)
+		api.GET("/interactive/tellers/:id", apiHandlers.HandleInteractiveTeller)
+		api.PATCH("/interactive/tellers/:id", apiHandlers.HandleInteractiveTellerUpdate)
+		api.DELETE("/interactive/tellers/:id", apiHandlers.HandleInteractiveTellerDelete)
+		api.GET("/styles", apiHandlers.HandleStyleReferences)
+		api.POST("/styles", apiHandlers.HandleStyleReferenceSave)
+		api.GET("/styles/file", apiHandlers.HandleStyleReferenceFile)
+		api.PUT("/styles/file", apiHandlers.HandleStyleReferenceFileUpdate)
+		api.DELETE("/styles", apiHandlers.HandleStyleReferenceDelete)
+		api.POST("/interactive/actor-traits/roll", apiHandlers.HandleInteractiveActorTraitRoll)
+		api.POST("/interactive/chat", apiHandlers.HandleInteractiveChat)
+		api.POST("/interactive/chat/context-analysis", apiHandlers.HandleInteractiveChatContextAnalysis)
+		api.GET("/interactive/chat/stream", apiHandlers.HandleInteractiveChatStream)
+		api.GET("/interactive/chat/active", apiHandlers.HandleInteractiveChatActive)
+		api.POST("/interactive/chat/abort", apiHandlers.HandleInteractiveChatAbort)
+		api.POST("/chat", apiHandlers.HandleChat)
+		api.POST("/chat/context-analysis", apiHandlers.HandleChatContextAnalysis)
+		api.POST("/chat/context-compaction", apiHandlers.HandleChatContextCompaction)
+		api.DELETE("/chat/context-compaction/active", apiHandlers.HandleChatContextCompactionRemove)
+		api.GET("/chat/stream", apiHandlers.HandleChatStream)
+		api.GET("/chat/active", apiHandlers.HandleChatActive)
+		api.POST("/chat/abort", apiHandlers.HandleChatAbort)
+		api.POST("/images/generate", apiHandlers.HandleImageGenerate)
+		api.GET("/story-directors", apiHandlers.HandleStoryDirectors)
+		api.POST("/story-directors", apiHandlers.HandleStoryDirectorCreate)
+		api.GET("/story-directors/:id", apiHandlers.HandleStoryDirector)
+		api.PATCH("/story-directors/:id", apiHandlers.HandleStoryDirectorUpdate)
+		api.DELETE("/story-directors/:id", apiHandlers.HandleStoryDirectorDelete)
+		api.GET("/event-packages", apiHandlers.HandleEventPackages)
+		api.POST("/event-packages", apiHandlers.HandleEventPackageCreate)
+		api.GET("/event-packages/:id", apiHandlers.HandleEventPackage)
+		api.PATCH("/event-packages/:id", apiHandlers.HandleEventPackageUpdate)
+		api.DELETE("/event-packages/:id", apiHandlers.HandleEventPackageDelete)
+		api.GET("/rule-systems", apiHandlers.HandleRuleSystems)
+		api.POST("/rule-systems", apiHandlers.HandleRuleSystemCreate)
+		api.GET("/rule-systems/:id", apiHandlers.HandleRuleSystem)
+		api.PATCH("/rule-systems/:id", apiHandlers.HandleRuleSystemUpdate)
+		api.DELETE("/rule-systems/:id", apiHandlers.HandleRuleSystemDelete)
+		api.GET("/actor-states", apiHandlers.HandleActorStates)
+		api.POST("/actor-states", apiHandlers.HandleActorStateCreate)
+		api.GET("/actor-states/:id", apiHandlers.HandleActorState)
+		api.PATCH("/actor-states/:id", apiHandlers.HandleActorStateUpdate)
+		api.DELETE("/actor-states/:id", apiHandlers.HandleActorStateDelete)
+		api.GET("/image-presets", apiHandlers.HandleImagePresets)
+		api.POST("/image-presets", apiHandlers.HandleImagePresetCreate)
+		api.GET("/image-presets/:id", apiHandlers.HandleImagePreset)
+		api.PATCH("/image-presets/:id", apiHandlers.HandleImagePresetUpdate)
+		api.DELETE("/image-presets/:id", apiHandlers.HandleImagePresetDelete)
+		api.GET("/agent-runs", apiHandlers.HandleAgentRunTraces)
+		api.GET("/agent-runs/:id/export", apiHandlers.HandleAgentRunTraceExport)
+		api.GET("/agent-runs/:id", apiHandlers.HandleAgentRunTrace)
+		api.GET("/messages", apiHandlers.HandleMessages)
+		api.POST("/messages/read-all", apiHandlers.HandleMessagesReadAll)
+		api.POST("/messages/:id/read", apiHandlers.HandleMessageRead)
+		api.GET("/agents/:agent/session/messages", apiHandlers.HandleAgentSessionMessages)
+		api.POST("/agents/:agent/session/clear", apiHandlers.HandleAgentSessionClear)
+		api.GET("/skills", apiHandlers.HandleSkills)
+		api.GET("/skills/document", apiHandlers.HandleSkillDocument)
+		api.GET("/skills/file", apiHandlers.HandleSkillFileDocument)
+		api.POST("/skills", apiHandlers.HandleSkillCreate)
+		api.PUT("/skills/document", apiHandlers.HandleSkillSave)
+		api.PUT("/skills/file", apiHandlers.HandleSkillFileSave)
+		api.DELETE("/skills/document", apiHandlers.HandleSkillDelete)
+		api.POST("/skills/install/zip/preview", apiHandlers.HandleSkillInstallZipPreview)
+		api.POST("/skills/install/zip", apiHandlers.HandleSkillInstallZip)
+		api.POST("/skills/install/remote/preview", apiHandlers.HandleSkillInstallRemotePreview)
+		api.POST("/skills/install/remote", apiHandlers.HandleSkillInstallRemote)
+		api.POST("/skills/install/github/preview", apiHandlers.HandleSkillInstallGitHubPreview)
+		api.POST("/skills/install/github", apiHandlers.HandleSkillInstallGitHub)
+		api.GET("/automations", apiHandlers.HandleAutomations)
+		api.GET("/automations/templates", apiHandlers.HandleAutomationTemplates)
+		api.POST("/automations", apiHandlers.HandleAutomationCreate)
+		api.GET("/automations/inbox", apiHandlers.HandleAutomationInbox)
+		api.POST("/automations/inbox/:item_id/confirm", apiHandlers.HandleAutomationInboxConfirm)
+		api.POST("/automations/inbox/:item_id/dismiss", apiHandlers.HandleAutomationInboxDismiss)
+		api.POST("/automations/inbox/:item_id/read", apiHandlers.HandleAutomationInboxRead)
+		api.GET("/automations/runs/active", apiHandlers.HandleAutomationActiveRuns)
+		api.GET("/automations/runs/:run_id/stream", apiHandlers.HandleAutomationRunStreamByID)
+		api.POST("/automations/runs/:run_id/chat/stream", apiHandlers.HandleAutomationRunChatStream)
+		api.POST("/automations/runs/:run_id/abort", apiHandlers.HandleAutomationRunAbort)
+		api.GET("/automations/runs/:run_id/messages", apiHandlers.HandleAutomationRunMessages)
+		api.PATCH("/automations/:id", apiHandlers.HandleAutomationUpdate)
+		api.DELETE("/automations/:id", apiHandlers.HandleAutomationDelete)
+		api.POST("/automations/:id/check", apiHandlers.HandleAutomationCheck)
+		api.POST("/automations/:id/run", apiHandlers.HandleAutomationRun)
+		api.POST("/automations/:id/run/stream", apiHandlers.HandleAutomationRunStream)
+		api.GET("/versions/status", apiHandlers.HandleVersionStatus)
+		api.GET("/versions", apiHandlers.HandleVersionHistory)
+		api.POST("/versions", apiHandlers.HandleVersionCreate)
+		api.GET("/versions/:id/diff", apiHandlers.HandleVersionDiff)
+		api.POST("/versions/:id/restore-plan", apiHandlers.HandleVersionRestorePlan)
+		api.POST("/versions/:id/restore", apiHandlers.HandleVersionRestore)
+		api.POST("/command", apiHandlers.HandleCommand)
+		api.GET("/session/messages", apiHandlers.HandleSessionMessages)
+		api.GET("/sessions", apiHandlers.HandleSessions)
+		api.POST("/sessions", apiHandlers.HandleSessionCreate)
+		api.POST("/sessions/switch", apiHandlers.HandleSessionSwitch)
+		api.POST("/sessions/rename", apiHandlers.HandleSessionRename)
+		api.POST("/sessions/delete", apiHandlers.HandleSessionDelete)
+		api.GET("/settings", apiHandlers.HandleSettingsGet)
+		api.PUT("/settings/user", apiHandlers.HandleSettingsUserUpdate)
+		api.PUT("/settings/workspace", apiHandlers.HandleSettingsWorkspaceUpdate)
+		api.GET("/update/check", apiHandlers.HandleUpdateCheck)
+		api.POST("/update/install", apiHandlers.HandleUpdateInstall)
+		api.POST("/update/install/stream", apiHandlers.HandleUpdateInstallStream)
+		api.POST("/update/apply", apiHandlers.HandleUpdateApply)
+		api.GET("/status", apiHandlers.HandleStatus)
+	}
+
+	if webRoot := resolveWebRoot(); webRoot != "" {
+		log.Printf("[startup] Web 静态资源目录: %s", webRoot)
+		staticFS := &hertzapp.FS{Root: webRoot, IndexNames: []string{"index.html"}}
+		if spaFallback := spaFallbackHandler(webRoot); spaFallback != nil {
+			staticFS.PathNotFound = spaFallback
+		}
+		h.StaticFS("/", staticFS)
+	} else {
+		log.Printf("[startup] 未找到 Web 静态资源目录，仅注册 API 路由")
+	}
+}
+
+// spaFallbackHandler serves index.html for unknown GET/HEAD paths so that
+// client-side deep links and full-page reloads resolve to the SPA shell
+// instead of Hertz's default "Cannot open requested path" 404. This matters
+// most on phones, where refresh and "add to home screen" deep links land on
+// arbitrary in-app paths. Real API requests are matched under the /api group
+// before the static catch-all, so they are unaffected; a genuinely missing
+// static asset simply gets the shell, matching standard SPA behaviour.
+//
+// Returns nil (keeping the default 404) if index.html cannot be read, which
+// should not happen given resolveWebRoot already verified its presence.
+func spaFallbackHandler(webRoot string) hertzapp.HandlerFunc {
+	indexPath := filepath.Join(webRoot, "index.html")
+	indexHTML, err := os.ReadFile(indexPath)
+	if err != nil {
+		log.Printf("[startup] 读取 index.html 失败，禁用 SPA 回退: %v", err)
+		return nil
+	}
+	return func(ctx context.Context, c *hertzapp.RequestContext) {
+		method := string(c.Request.Method())
+		if method != "GET" && method != "HEAD" {
+			c.SetStatusCode(consts.StatusNotFound)
+			return
+		}
+		c.SetContentType("text/html; charset=utf-8")
+		c.SetStatusCode(consts.StatusOK)
+		c.SetBodyString(string(indexHTML))
+	}
+}
+
+func resolveWebRoot() string {
+	candidates := []string{}
+	if v := os.Getenv("DENOVA_WEB_DIR"); v != "" {
+		candidates = append(candidates, v)
+	} else if v := os.Getenv("NOVA_WEB_DIR"); v != "" {
+		candidates = append(candidates, v)
+	}
+	candidates = append(candidates, "web")
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "web"),
+			filepath.Join(exeDir, "..", "web"),
+			filepath.Join(exeDir, "..", "..", "web"),
+		)
+	}
+	for _, candidate := range candidates {
+		root := normalizeStaticRoot(candidate)
+		if root == "" {
+			continue
+		}
+		if fi, err := os.Stat(root); err == nil && fi.IsDir() {
+			if _, err := os.Stat(filepath.Join(root, "index.html")); err == nil {
+				return root
+			}
+		}
+	}
+	// Last resort: assets embedded into the binary (build tag "embedweb").
+	// Lets a bare nova binary serve the frontend with no web/ directory on
+	// disk — useful for go install / single-binary distribution. Extracts to
+	// a temp dir the file-based static handler can serve from.
+	if webfs.HasEmbedded() {
+		root, err := webfs.ExtractEmbedded()
+		if err != nil {
+			log.Printf("[startup] 解压内嵌前端资源失败，仅注册 API 路由: %v", err)
+			return ""
+		}
+		log.Printf("[startup] 未找到磁盘 Web 目录，使用内嵌前端资源: %s", root)
+		return root
+	}
+	return ""
+}
+
+func normalizeStaticRoot(root string) string {
+	if root == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		return abs
+	}
+	return filepath.Clean(root)
+}
