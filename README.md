@@ -60,7 +60,7 @@ The source materials remain separate from Module4 runtime state. Module4 stores 
 
 ## Other AI and private repository access
 
-The repository is private. An AI assistant or another computer must be granted access to `llys-p/Narraverse2.0` through the appropriate GitHub account or organization permission before cloning. Start by reading this README, `docs/交付/Narraverse2.0交接指南.md`, `DESIGN.md`, `代码指南.md`, `平台模块功能总览.md`, and the current delivery record under `docs/交付/`.
+The repository is private. An AI assistant or another computer must be granted access to `llys-p/Narraverse2.0` through the appropriate GitHub account or organization permission before cloning. Start by reading this README, `docs/交付/AI协作决策原则.md`, `docs/交付/Narraverse2.0交接指南.md`, `DESIGN.md`, `代码指南.md`, `平台模块功能总览.md`, and the current delivery record under `docs/交付/`.
 
 ## Source-only delivery
 

@@ -18,10 +18,11 @@
 在开始修改前依次读取：
 
 1. 本文件和 `README.md`。
-2. `DESIGN.md`、`代码指南.md`、`CODE_GUIDE.md`、`平台模块功能总览.md`。
-3. `docs/交付/Narraverse2.0交付清单.md`。
-4. `项目协作日志.md`、`COLLABORATION_LOG.md`。
-5. 与当前任务相关的 `docs/module4/`、源码和测试。
+2. `docs/交付/AI协作决策原则.md`，先确认当前任务是否需要新 worktree、branch 或 PR。
+3. `DESIGN.md`、`代码指南.md`、`CODE_GUIDE.md`、`平台模块功能总览.md`。
+4. `docs/交付/Narraverse2.0交付清单.md`。
+5. `项目协作日志.md`、`COLLABORATION_LOG.md`。
+6. 与当前任务相关的 `docs/module4/`、源码和测试。
 
 然后执行：
 
