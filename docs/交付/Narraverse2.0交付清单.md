@@ -21,6 +21,7 @@
 - `tools/setup_narraverse2.ps1`
 - `docs/交付/AI协作决策原则.md`
 - `docs/交付/Narraverse2.0交接指南.md`
+- `docs/交付/AI协作决策原则.md`
 
 ## 初始化与运行链
 
