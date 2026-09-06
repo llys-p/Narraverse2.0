@@ -395,7 +395,7 @@ func atomicWriteRestoreFile(root *os.Root, rel string, data []byte, mode os.File
 	removeTemp = false
 	if parentFile, err := root.Open(filepath.FromSlash(parent)); err == nil {
 		defer parentFile.Close()
-		if err := parentFile.Sync(); err != nil {
+		if err := syncDirectory(parentFile); err != nil {
 			return err
 		}
 	}

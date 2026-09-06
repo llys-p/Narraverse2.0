@@ -73,7 +73,12 @@
 
   Prompts.buildDailyPreviewMessages = function (world) {
     var npcs = Module4.World.listNpcs(world);
+    var scoped = Module4.AI.Context && typeof Module4.AI.Context.forPreview === 'function'
+      ? Module4.AI.Context.forPreview(world)
+      : null;
     var boundNpcs = npcs.map(function (npc) {
+      var scopedNpc = scoped && scoped.npcs && scoped.npcs.find(function (item) { return item.npcId === npc.id; });
+      if (scopedNpc) return scopedNpc;
       return {
         npcId: npc.id,
         sourceRef: npc.sourceRef,
@@ -85,8 +90,8 @@
     var input = {
       day: world && world.clock ? world.clock.day : 1,
       periods: PERIODS,
-      world: worldInput(world),
-      recentFacts: recentFactsInput(world),
+      world: scoped && scoped.world ? scoped.world : worldInput(world),
+      recentFacts: scoped && scoped.facts ? scoped.facts : recentFactsInput(world),
       npcs: boundNpcs
     };
     return [

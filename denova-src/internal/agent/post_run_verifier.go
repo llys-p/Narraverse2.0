@@ -59,7 +59,7 @@ func verifyMutation(bookService *book.Service, mutation ToolMutation) []PostRunV
 	if mutation.Source == ToolSourceLore || mutation.ToolName == "write_lore_items" {
 		return append(checks, verifyLoreMutation(bookService.Workspace(), mutation)...)
 	}
-	target := strings.TrimSpace(filepath.ToSlash(mutation.Target))
+	target := strings.TrimSpace(mutation.Target)
 	if target == "" {
 		return []PostRunVerificationCheck{{
 			Type:    "target",
@@ -67,7 +67,8 @@ func verifyMutation(bookService *book.Service, mutation ToolMutation) []PostRunV
 			Message: fmt.Sprintf("%s did not expose a target path", mutation.ToolName),
 		}}
 	}
-	abs, relativeTarget, err := resolveVerifiedMutationTarget(bookService.Workspace(), target)
+	normalizedTarget := filepath.ToSlash(target)
+	abs, relativeTarget, err := resolveVerifiedMutationTarget(bookService.Workspace(), normalizedTarget)
 	if err != nil {
 		return []PostRunVerificationCheck{{
 			Type:    "path",

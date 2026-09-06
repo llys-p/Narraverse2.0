@@ -220,6 +220,12 @@ assert.strictEqual(help.world.clock.period, 'afternoon');
 assert.strictEqual(help.world.player.energy, 100 - Clock.ENERGY_COSTS.help);
 
 Store.saveWorld(world);
+const remoteContact = submitFreeInput(PlayView, '我打电话给她');
+assert.strictEqual(remoteContact.result.ok, true);
+assert.strictEqual(remoteContact.result.action.type, 'custom');
+assert.strictEqual(remoteContact.input.value, '');
+
+Store.saveWorld(world);
 const custom = submitFreeInput(PlayView, '我想看看窗外的雨').result;
 assert.strictEqual(custom.ok, true);
 assert.strictEqual(custom.changed, true);

@@ -42,7 +42,7 @@ describe('NarraverseWorkspace', () => {
   it('embeds the same-origin narraverse route and never hardcodes host/port/localhost', () => {
     const { iframe } = renderWorkspace()
     expect(iframe).toBeTruthy()
-    expect(iframe.getAttribute('src')).toBe('/narraverse/index.html?embedded=denova&v=20260901-module4-p0')
+    expect(iframe.getAttribute('src')).toBe('/narraverse/index.html?embedded=denova&v=20260906-model-gateway-v1')
     // 不写死盘符/端口/localhost
     expect(iframe.getAttribute('src')).not.toMatch(/localhost|127\.0\.0\.1|:[0-9]{4}/)
     expect(iframe).not.toHaveAttribute('border')

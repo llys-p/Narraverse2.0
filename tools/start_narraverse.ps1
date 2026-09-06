@@ -71,6 +71,31 @@ if (-not $DenovaExe) {
 if (-not (Test-Path -LiteralPath $DenovaExe)) {
   throw "Denova was not found at $DenovaExe. Set -DenovaExe or DENOVA_EXE to override it."
 }
+$denovaExePath = (Resolve-Path -LiteralPath $DenovaExe).Path
+$launchExePath = $denovaExePath
+$launchWorkingDirectory = Split-Path -Parent $denovaExePath
+$launchWebDirectory = $null
+if ((Split-Path -Leaf $launchWorkingDirectory) -eq 'output') {
+  $packagedWeb = Join-Path $launchWorkingDirectory 'web'
+  if (Test-Path -LiteralPath (Join-Path $packagedWeb 'index.html')) {
+    $launchWebDirectory = $packagedWeb
+  }
+  $sourceRoot = Split-Path -Parent $launchWorkingDirectory
+  if (Test-Path -LiteralPath (Join-Path $sourceRoot 'go.mod')) {
+    # Release artifacts live in output/, while the existing .denova runtime
+    # data belongs to denova-src/. Start from the source root so rebuilding the
+    # executable never creates a second empty runtime beside it.
+    $launchWorkingDirectory = $sourceRoot
+  }
+}
+if ([IO.Path]::GetExtension($denovaExePath) -eq '') {
+  $launchExePath = "$denovaExePath.exe"
+  $existingLaunchProcess = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq [IO.Path]::GetFullPath($launchExePath) }
+  if (-not $existingLaunchProcess) {
+    Copy-Item -LiteralPath $denovaExePath -Destination $launchExePath -Force
+  }
+}
 
 function Get-ConfiguredPorts {
   $ports = [System.Collections.Generic.List[int]]::new()
@@ -78,7 +103,9 @@ function Get-ConfiguredPorts {
   if ($env:DENOVA_BACKEND_PORT -match '^\d+$') { $ports.Add([int]$env:DENOVA_BACKEND_PORT) }
   $configCandidates = @(
     (Join-Path (Split-Path -Parent $DenovaExe) 'config.toml'),
-    (Join-Path (Split-Path -Parent $DenovaExe) '.denova\config.toml')
+    (Join-Path (Split-Path -Parent $DenovaExe) '.denova\config.toml'),
+    (Join-Path $launchWorkingDirectory 'config.toml'),
+    (Join-Path $launchWorkingDirectory '.denova\config.toml')
   )
   foreach ($configPath in $configCandidates) {
     if (-not (Test-Path -LiteralPath $configPath)) { continue }
@@ -98,8 +125,18 @@ function Get-ConfiguredPorts {
 
 function Test-DenovaFrontend([string]$Url) {
   try {
+    $uri = [Uri]$Url
     $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
-    return $response.StatusCode -eq 200 -and $response.Content -match 'Denova|Nova'
+    if ($response.StatusCode -ne 200 -or $response.Content -notmatch 'Denova|Nova') { return $false }
+    $connections = Get-NetTCPConnection -State Listen -LocalPort $uri.Port -ErrorAction SilentlyContinue
+    foreach ($connection in $connections) {
+      $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
+      if ($process -and $process.ExecutablePath -and
+          [IO.Path]::GetFullPath($process.ExecutablePath) -eq [IO.Path]::GetFullPath($launchExePath)) {
+        return $true
+      }
+    }
+    return $false
   } catch {
     return $false
   }
@@ -121,12 +158,23 @@ function Get-CandidateUrls {
 }
 
 $candidateUrls = Get-CandidateUrls
-$activeUrl = $candidateUrls | Where-Object { Test-DenovaFrontend $_ } | Select-Object -First 1
+$running = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object { $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq [IO.Path]::GetFullPath($launchExePath) }
+$activeUrl = $null
+if ($running) {
+  $activeUrl = $candidateUrls | Where-Object { Test-DenovaFrontend $_ } | Select-Object -First 1
+}
 
 if (-not $activeUrl) {
-  $running = Get-Process -Name 'denova' -ErrorAction SilentlyContinue
   if (-not $running) {
-    Start-Process -FilePath $DenovaExe -WorkingDirectory (Split-Path -Parent $DenovaExe) -WindowStyle Hidden
+    $previousWebDirectory = $env:DENOVA_WEB_DIR
+    try {
+      if ($launchWebDirectory) { $env:DENOVA_WEB_DIR = $launchWebDirectory }
+      Start-Process -FilePath $launchExePath -WorkingDirectory $launchWorkingDirectory -WindowStyle Hidden
+    } finally {
+      if ($null -eq $previousWebDirectory) { Remove-Item Env:DENOVA_WEB_DIR -ErrorAction SilentlyContinue }
+      else { $env:DENOVA_WEB_DIR = $previousWebDirectory }
+    }
   }
   $deadline = [DateTime]::UtcNow.AddSeconds(60)
   do {

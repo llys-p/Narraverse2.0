@@ -115,10 +115,88 @@ func (h *Handlers) HandleLibraryAssetInstantiate(ctx context.Context, c *app.Req
 	}
 	result, err := h.app.BookService().InstantiateMasterAsset(strings.TrimSpace(c.Param("id")))
 	if err != nil {
+		log.Printf("[api] 总库资产加入当前冒险失败 asset_id=%q error=%v", strings.TrimSpace(c.Param("id")), err)
 		writeLibraryMutationError(c, err)
 		return
 	}
 	writeJSON(c, consts.StatusOK, result)
+}
+
+// HandleLibraryAssetDescriptionUpdate edits a lorebook's human-facing
+// introduction in Master. It does not mutate the archived source file or an
+// existing Adventure instance.
+func (h *Handlers) HandleLibraryAssetDescriptionUpdate(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	var body struct {
+		Description string `json:"description"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := book.NewMasterLibraryStore(h.app.Workspace()).UpdateMasterAssetDescription(strings.TrimSpace(c.Param("id")), body.Description)
+	if err != nil {
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusOK, map[string]any{"item": item})
+}
+
+// HandleLibraryAssetFieldsUpdate saves explicit human edits without routing
+// them through the model translation proposal workflow. Field values are never
+// logged; the store enforces the editor's supported paths and revision check.
+func (h *Handlers) HandleLibraryAssetFieldsUpdate(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	var body struct {
+		ExpectedRevision string            `json:"expected_revision"`
+		Fields           map[string]string `json:"fields"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := book.NewMasterLibraryStore(h.app.Workspace()).UpdateMasterAssetFields(book.MasterHumanFieldEditInput{
+		MasterItemID: strings.TrimSpace(c.Param("id")), ExpectedRevision: body.ExpectedRevision, Fields: body.Fields,
+	})
+	if err != nil {
+		log.Printf("[api] 总库人工字段保存失败 asset_id=%q field_count=%d error=%v", strings.TrimSpace(c.Param("id")), len(body.Fields), err)
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusOK, map[string]any{"item": item})
+}
+
+// HandleLibraryAssetEntryCreate adds one explicit human-authored entry to a
+// Master lorebook. The request contains no model/translation data.
+func (h *Handlers) HandleLibraryAssetEntryCreate(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	var body struct {
+		ExpectedRevision string   `json:"expected_revision"`
+		Name             string   `json:"name"`
+		Content          string   `json:"content"`
+		Keywords         []string `json:"keywords"`
+		SecondaryKeys    []string `json:"secondary_keys"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := book.NewMasterLibraryStore(h.app.Workspace()).AddManualLorebookEntry(book.MasterManualLorebookEntryInput{
+		MasterItemID: strings.TrimSpace(c.Param("id")), ExpectedRevision: body.ExpectedRevision,
+		Name: body.Name, Content: body.Content, Keywords: body.Keywords, SecondaryKeys: body.SecondaryKeys,
+	})
+	if err != nil {
+		log.Printf("[api] 总库手动新增条目失败 asset_id=%q error=%v", strings.TrimSpace(c.Param("id")), err)
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusCreated, map[string]any{"item": item})
 }
 
 // HandleLibraryAssetRuntime returns the backend-only read projection that
@@ -133,6 +211,44 @@ func (h *Handlers) HandleLibraryAssetRuntime(ctx context.Context, c *app.Request
 		return
 	}
 	writeJSON(c, consts.StatusOK, result)
+}
+
+// HandleLibraryAssetAdventureUsage answers whether the current Adventure uses
+// this asset and whether a newer active working revision exists. The frontend
+// must rely on this instead of usages.length > 0, which cannot tell "used by
+// another Adventure" from "used by this one".
+func (h *Handlers) HandleLibraryAssetAdventureUsage(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	usage, err := h.app.BookService().MasterAssetAdventureUsage(strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		writeLibraryReadError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusOK, map[string]any{"usage": usage})
+}
+
+// HandleLibraryAssetSyncAdventure re-projects one Master asset's active
+// working revision onto its existing Adventure instance. It never creates a
+// new instance and never runs automatically.
+func (h *Handlers) HandleLibraryAssetSyncAdventure(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	masterItemID := strings.TrimSpace(c.Param("id"))
+	result, err := h.app.BookService().ReprojectMasterAsset(masterItemID)
+	if err != nil {
+		writeLibraryMutationError(c, err)
+		return
+	}
+	usage, usageErr := h.app.BookService().MasterAssetAdventureUsage(masterItemID)
+	if usageErr == nil {
+		result.Skipped = false
+		writeJSON(c, consts.StatusOK, map[string]any{"result": result, "usage": usage})
+		return
+	}
+	writeJSON(c, consts.StatusOK, map[string]any{"result": result})
 }
 
 func (h *Handlers) HandleLibraryAssetProposals(ctx context.Context, c *app.RequestContext) {
@@ -169,7 +285,14 @@ func (h *Handlers) HandleLibraryProposalValidate(ctx context.Context, c *app.Req
 	if !h.requireWorkspace(c) {
 		return
 	}
-	proposal, err := book.NewMasterLibraryStore(h.app.Workspace()).ValidateMasterProposal(strings.TrimSpace(c.Param("id")))
+	var body struct {
+		AllowProtectedTokenMismatch bool `json:"allow_protected_token_mismatch"`
+	}
+	if err := c.BindJSON(&body); err != nil && len(c.Request.Body()) > 0 {
+		writeError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	proposal, err := book.NewMasterLibraryStore(h.app.Workspace()).ValidateMasterProposalWithOptions(strings.TrimSpace(c.Param("id")), body.AllowProtectedTokenMismatch)
 	if err != nil {
 		writeLibraryMutationError(c, err)
 		return
@@ -182,13 +305,15 @@ func (h *Handlers) HandleLibraryProposalApply(ctx context.Context, c *app.Reques
 		return
 	}
 	var body struct {
-		Confirmed bool `json:"confirmed"`
+		Confirmed                   bool `json:"confirmed"`
+		ForceConflict               bool `json:"force_conflict"`
+		AllowProtectedTokenMismatch bool `json:"allow_protected_token_mismatch"`
 	}
 	if err := c.BindJSON(&body); err != nil && len(c.Request.Body()) > 0 {
 		writeError(c, consts.StatusBadRequest, err.Error())
 		return
 	}
-	result, err := book.NewMasterLibraryStore(h.app.Workspace()).ApplyMasterProposal(strings.TrimSpace(c.Param("id")), body.Confirmed)
+	result, err := book.NewMasterLibraryStore(h.app.Workspace()).ApplyMasterProposal(strings.TrimSpace(c.Param("id")), body.Confirmed, body.ForceConflict, body.AllowProtectedTokenMismatch)
 	if err != nil {
 		writeLibraryMutationError(c, err)
 		return
@@ -196,7 +321,45 @@ func (h *Handlers) HandleLibraryProposalApply(ctx context.Context, c *app.Reques
 	writeJSON(c, consts.StatusOK, result)
 }
 
+func (h *Handlers) HandleLibraryProposalReject(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	proposal, err := book.NewMasterLibraryStore(h.app.Workspace()).RejectMasterProposal(strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusOK, map[string]any{"proposal": proposal})
+}
+
 func (h *Handlers) HandleLibraryProposalBatchApply(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	var body struct {
+		ProposalIDs                 []string `json:"proposal_ids"`
+		ConfirmedHighRisk           bool     `json:"confirmed_high_risk"`
+		ForceConflicts              bool     `json:"force_conflicts"`
+		AllowProtectedTokenMismatch bool     `json:"allow_protected_token_mismatch"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	if len(body.ProposalIDs) == 0 {
+		writeError(c, consts.StatusBadRequest, "至少选择一个 Proposal")
+		return
+	}
+	if len(body.ProposalIDs) > 100 {
+		writeError(c, consts.StatusBadRequest, "一次最多应用 100 个 Proposal")
+		return
+	}
+	result := book.NewMasterLibraryStore(h.app.Workspace()).ApplyMasterProposals(strings.TrimSpace(c.Param("id")), body.ProposalIDs, body.ConfirmedHighRisk, body.ForceConflicts, body.AllowProtectedTokenMismatch)
+	writeJSON(c, consts.StatusOK, result)
+}
+
+func (h *Handlers) HandleLibraryProposalBatchReject(ctx context.Context, c *app.RequestContext) {
 	if !h.requireWorkspace(c) {
 		return
 	}
@@ -212,10 +375,10 @@ func (h *Handlers) HandleLibraryProposalBatchApply(ctx context.Context, c *app.R
 		return
 	}
 	if len(body.ProposalIDs) > 100 {
-		writeError(c, consts.StatusBadRequest, "一次最多应用 100 个 Proposal")
+		writeError(c, consts.StatusBadRequest, "一次最多删除 100 个 Proposal")
 		return
 	}
-	result := book.NewMasterLibraryStore(h.app.Workspace()).ApplyMasterProposals(strings.TrimSpace(c.Param("id")), body.ProposalIDs)
+	result := book.NewMasterLibraryStore(h.app.Workspace()).RejectMasterProposals(strings.TrimSpace(c.Param("id")), body.ProposalIDs)
 	writeJSON(c, consts.StatusOK, result)
 }
 

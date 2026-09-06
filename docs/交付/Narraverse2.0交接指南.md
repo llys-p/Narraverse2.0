@@ -15,15 +15,16 @@
 
 ## 2. 新 AI 接手顺序
 
-在开始修改前依次读取：
+新 AI 首次接手或切换到本仓库时，依次读取：
 
 1. 本文件和 `README.md`。
-2. `DESIGN.md`、`代码指南.md`、`CODE_GUIDE.md`、`平台模块功能总览.md`。
-3. `docs/交付/Narraverse2.0交付清单.md`。
-4. `项目协作日志.md`、`COLLABORATION_LOG.md`。
-5. 与当前任务相关的 `docs/module4/`、源码和测试。
+2. `docs/交付/AI协作决策原则.md`，先确认当前任务是否需要新 worktree、branch 或 PR。
+3. `DESIGN.md`、`代码指南.md`、`CODE_GUIDE.md`、`平台模块功能总览.md`。
+4. `docs/交付/Narraverse2.0交付清单.md`。
+5. `项目协作日志.md`、`COLLABORATION_LOG.md`。
+6. 与当前任务相关的 `docs/module4/`、源码和测试。
 
-然后执行：
+之后执行：
 
 ```powershell
 git status --short --branch
@@ -31,7 +32,7 @@ git log -5 --oneline
 git remote -v
 ```
 
-任何修改前先确认工作树状态；不要把生成目录、浏览器 localStorage 或运行数据当成源码。
+同一会话中的后续任务不必重读整套资料：先确认工作树状态，再只读当前任务相关源码、测试和局部规则。不要把生成目录、浏览器 localStorage 或运行数据当成源码。
 
 ## 3. 四个用户模块
 

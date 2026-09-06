@@ -22,9 +22,11 @@ denova-src/config.toml
 !.env.example
 
 # Build dependencies and generated web assets
+tools/go/
 denova-src/node_modules/
 denova-src/web/node_modules/
 denova-src/web/dist/
+denova-src/web/dist-verify-entry/
 denova-src/web/public/narraverse/
 denova-src/output/
 denova-src/.denova/

@@ -19,7 +19,7 @@ func (h *Handlers) HandleSettingsGet(ctx context.Context, c *app.RequestContext)
 		writeError(c, consts.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(c, consts.StatusOK, layered)
+	writeSettingsSnapshot(c, consts.StatusOK, layered)
 }
 
 // handleSettingsUserUpdate PUT /api/settings/user — 持久化用户级配置。
@@ -42,7 +42,7 @@ func (h *Handlers) HandleSettingsUserUpdate(ctx context.Context, c *app.RequestC
 		writeError(c, consts.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(c, consts.StatusOK, layered)
+	writeSettingsSnapshot(c, consts.StatusOK, layered)
 }
 
 func settingsErrorKey(err error) string {
@@ -76,7 +76,11 @@ func (h *Handlers) HandleSettingsWorkspaceUpdate(ctx context.Context, c *app.Req
 		writeError(c, consts.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(c, consts.StatusOK, layered)
+	writeSettingsSnapshot(c, consts.StatusOK, layered)
+}
+
+func writeSettingsSnapshot(c *app.RequestContext, status int, layered config.LayeredSettings) {
+	writeJSON(c, status, config.RedactLayeredSettingsSecrets(layered))
 }
 
 func bindSettingsUpdate(c *app.RequestContext) (config.Settings, string, error) {

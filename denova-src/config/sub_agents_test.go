@@ -59,7 +59,7 @@ func TestSubAgentsReadWriteMergeSanitize(t *testing.T) {
 }
 
 func TestConfigTemplatePreseedsWritingSubAgentsAsEditableConfig(t *testing.T) {
-	settings, err := ReadSettingsFile(filepath.Join("..", "config.toml"))
+	settings, err := ReadSettingsFile(filepath.Join("testdata", "writing-subagents.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}

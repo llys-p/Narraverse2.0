@@ -12,6 +12,7 @@ export function modelProfileLabel(profile?: ModelProfileSettings): string {
 
 function defaultModelProfileFromSettings(settings?: {
   openai_api_key?: string
+  openai_api_key_configured?: boolean
   openai_base_url?: string
   openai_model?: string
   openai_context_window_tokens?: number | null
@@ -19,6 +20,7 @@ function defaultModelProfileFromSettings(settings?: {
   return {
     id: DEFAULT_MODEL_PROFILE_ID,
     openai_api_key: settings?.openai_api_key,
+    api_key_configured: settings?.openai_api_key_configured,
     openai_base_url: settings?.openai_base_url,
     openai_model: settings?.openai_model,
     context_window_tokens: settings?.openai_context_window_tokens,
@@ -27,6 +29,7 @@ function defaultModelProfileFromSettings(settings?: {
 
 export function modelProfilesWithDefault(settings?: {
   openai_api_key?: string
+  openai_api_key_configured?: boolean
   openai_base_url?: string
   openai_model?: string
   openai_context_window_tokens?: number | null

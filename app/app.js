@@ -965,6 +965,8 @@ function loadAdventure(id) {
   closeMobileSidebar();
   const adv = getCurrentAdventure();
   if (adv) {
+    const rightPanel = document.getElementById('rightPanel');
+    if (rightPanel) rightPanel.style.display = '';
     queueConversationArchiveSeed(adv);
     renderAll();
     document.getElementById('inputArea').style.display = 'flex';
@@ -990,20 +992,24 @@ function deleteAdventure(id) {
 }
 
 function resetMainUI() {
+  const rightPanel = document.getElementById('rightPanel');
+  if (rightPanel) rightPanel.style.display = 'none';
   document.getElementById('adventureTitle').textContent = '尚未开始冒险';
   document.getElementById('sceneTag').textContent = '';
   document.getElementById('charName').textContent = '—';
   document.getElementById('charProfession').textContent = '';
   document.getElementById('charProfession').style.display = 'none';
   document.getElementById('charMoodWrap').style.display = 'none';
-  document.getElementById('charLevelWrap').style.display = 'flex';
+  document.getElementById('charLevelWrap').style.display = 'none';
   document.getElementById('charLevel').textContent = 'Lv.1';
   document.getElementById('expBar').style.width = '0%';
   document.getElementById('expText').textContent = '0/100';
   document.getElementById('hpBar').style.width = '0%';
   document.getElementById('hpValue').textContent = '0/0';
+  document.getElementById('hpWrap').style.display = 'none';
   document.getElementById('mpBar').style.width = '0%';
   document.getElementById('mpValue').textContent = '0/0';
+  document.getElementById('mpWrap').style.display = 'none';
   document.getElementById('charLocation').textContent = '—';
   document.getElementById('charChapter').textContent = '—';
   document.getElementById('attributesSection').style.display = 'none';
@@ -1864,11 +1870,29 @@ function syncSystemPrompt(adventure) {
 const REQUEST_TIMEOUT_MS = 120000;
 
 async function callLLM(messages, onChunk) {
+  /* 嵌入 Denova 时只走统一模型网关：API Key 留在服务端，四个模块共享同一套
+   * Settings/transport。网关当前返回一段完整正文；对旧的流式调用方一次性
+   * 发送完整 chunk，保持现有 UI 回调协议而不再让浏览器直连供应商。 */
+  if (isDenovaEmbedded && window.NarraverseSharedAI && typeof window.NarraverseSharedAI.chat === 'function') {
+    const module = document.body && document.body.classList.contains('module4-active') ? 'module4' : 'narraverse';
+    const response = await window.NarraverseSharedAI.chat(messages, {
+      module,
+      maxTokens: state.apiConfig.maxOutputTokens || 4096,
+      temperature: state.apiConfig.temperature,
+    });
+    if (!response) throw new Error('共享模型没有返回可用内容，请重试');
+    if (typeof onChunk === 'function') onChunk(response, '');
+    return response;
+  }
   const config = state.apiConfig;
   if (!config.endpoint || !config.apiKey) {
     throw new Error('API 未配置，请先在设置中填写 API 信息');
   }
-  const url = config.endpoint.replace(/\/+$/, '') + '/chat/completions';
+  /* 兼容静态模式：用户可能粘贴完整路径，避免重复 /chat/completions 导致 404。 */
+  const baseUrl = String(config.endpoint || '').trim()
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/i, '');
+  const url = baseUrl + '/chat/completions';
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const useStream = typeof onChunk === 'function' && config.streaming !== false;
@@ -8687,6 +8711,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   if (state.currentId) {
     loadAdventure(state.currentId);
   } else {
+    resetMainUI();
     document.getElementById('storyArea').innerHTML = emptyStateHtml();
   }
 

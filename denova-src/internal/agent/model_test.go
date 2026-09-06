@@ -8,6 +8,26 @@ import (
 	"denova/config"
 )
 
+func TestNormalizeChatModelBaseURLRemovesOnlyCompletionSuffix(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "provider root", in: "https://api.deepseek.com", want: "https://api.deepseek.com"},
+		{name: "v1 root", in: "https://api.example.com/v1/", want: "https://api.example.com/v1"},
+		{name: "full path", in: "https://api.example.com/v1/chat/completions", want: "https://api.example.com/v1"},
+		{name: "full path case insensitive", in: "https://api.example.com/chat/Completions/", want: "https://api.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeChatModelBaseURL(tt.in); got != tt.want {
+				t.Fatalf("normalizeChatModelBaseURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestChatModelConfigFromResolvedSkipsEnableThinkingForGemini(t *testing.T) {
 	enabled := true
 	modelCfg := chatModelConfigFromResolved(config.ResolvedModelSettings{

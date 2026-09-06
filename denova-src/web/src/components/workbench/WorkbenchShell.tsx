@@ -24,6 +24,7 @@ import { formatNumber } from './workbench-utils'
 import { formatDateTime } from '@/i18n'
 import { BookSwitcher } from './BookSwitcher'
 import { WorkbenchNoticePill } from './WorkbenchNoticePill'
+import { ModelGatewayControls } from './ModelGatewayControls'
 import type { WorkbenchNotice } from '@/features/notices/use-workbench-notice'
 
 interface WorkbenchShellProps {
@@ -220,6 +221,7 @@ export function WorkbenchShell({
   const automationsActive = mode === 'automations' && !settingsOpen
   const fullWorkspacePanelVisible = settingsOpen || versionsVisible || mode === 'library' || mode === 'skills' || mode === 'agents' || mode === 'automations' || (mode === 'ide' && (loreVisible || tellerVisible))
   const module4Active = mode === 'narraverse' && openModule4
+  const activeModelModule = module4Active ? 'module4' : navigationModelModule(mode, booksReturnMode)
   const modeLabel = settingsOpen ? t('workbench.mode.settings') : versionsVisible ? t('workbench.activity.versions') : module4Active ? t('workbench.mode.module4') : mode === 'interactive' ? t('workbench.mode.interactive') : mode === 'narraverse' ? t('workbench.mode.narraverse') : mode === 'books' ? t('workbench.mode.books') : mode === 'library' ? t('workbench.mode.library') : mode === 'skills' ? t('workbench.mode.skills') : mode === 'agents' ? t('workbench.mode.agents') : mode === 'automations' ? t('workbench.mode.automations') : t('workbench.mode.ide')
   const navigationMode = mode === 'books' || mode === 'library' || mode === 'skills' || mode === 'agents' || mode === 'automations' ? booksReturnMode : mode
   const activityOrderScope: ActivityOrderScope = navigationMode === 'interactive' ? 'interactive' : 'ide'
@@ -561,6 +563,7 @@ export function WorkbenchShell({
         />
       </div>
       <div className="nova-ui-compact flex items-center justify-end gap-2 text-[var(--nova-text-faint)]">
+        <ModelGatewayControls module={activeModelModule} />
         {globalTools}
         <MessageCenterButton className="h-7 w-7" onOpenAutomation={openAutomationNotification} />
         <span>{modeLabel}</span>
@@ -690,6 +693,7 @@ export function WorkbenchShell({
             />
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
+            <ModelGatewayControls module={activeModelModule} compact />
             {globalTools}
             <MessageCenterButton className="h-8 w-8" onOpenAutomation={openAutomationNotification} />
             <button
@@ -967,6 +971,15 @@ function mergeVisibleActivityOrder(visibleIds: ActivityItemId[], currentOrder: A
 
 function defaultActivityOrderForScope(scope: ActivityOrderScope) {
   return scope === 'interactive' ? DEFAULT_INTERACTIVE_ACTIVITY_ORDER : DEFAULT_IDE_ACTIVITY_ORDER
+}
+
+function navigationModelModule(mode: WorkspaceMode, booksReturnMode: ContentMode): 'writing' | 'game' | 'narraverse' {
+  const activeMode = mode === 'books' || mode === 'library' || mode === 'skills' || mode === 'agents' || mode === 'automations'
+    ? booksReturnMode
+    : mode
+  if (activeMode === 'interactive') return 'game'
+  if (activeMode === 'narraverse') return 'narraverse'
+  return 'writing'
 }
 
 function readStoredActivityOrders(): Record<ActivityOrderScope, ActivityItemId[]> {

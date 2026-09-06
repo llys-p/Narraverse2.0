@@ -1287,7 +1287,15 @@ function ModelProfilesEditor({ profiles, effectiveProfiles, onChange }: {
                   onChange={(e) => updateProfile(index, { name: e.target.value })}
                 />
               </ModelProfileInput>
-              <ModelProfileInput label={t('settings.model.profileKeyLabel')} className="md:col-span-5">
+              <ModelProfileInput
+                label={(
+                  <span className="flex items-center gap-2">
+                    <span>{t('settings.model.profileKeyLabel')}</span>
+                    {profile.api_key_configured && <span className="text-[10px] text-emerald-700 dark:text-emerald-300">{t('settings.model.profileKeySaved')}</span>}
+                  </span>
+                )}
+                className="md:col-span-5"
+              >
                 <Input
                   type="password"
                   value={profile.openai_api_key ?? ''}
@@ -1468,7 +1476,15 @@ function ImageAPIProfilesEditor({ profiles, effectiveProfiles, defaultProfileID,
                   onChange={(e) => updateProfile(index, { name: e.target.value })}
                 />
               </ModelProfileInput>
-              <ModelProfileInput label={t('settings.imageApi.profileKeyLabel')} className="md:col-span-5">
+              <ModelProfileInput
+                label={(
+                  <span className="flex items-center gap-2">
+                    <span>{t('settings.imageApi.profileKeyLabel')}</span>
+                    {profile.api_key_configured && <span className="text-[10px] text-emerald-700 dark:text-emerald-300">{t('settings.imageApi.profileKeySaved')}</span>}
+                  </span>
+                )}
+                className="md:col-span-5"
+              >
                 <Input
                   type="password"
                   value={profile.openai_api_key ?? ''}
@@ -1550,7 +1566,7 @@ function imageProfileOptions(localProfiles: ImageAPIProfileSettings[], effective
   return options
 }
 
-function ModelProfileInput({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+function ModelProfileInput({ label, className, children }: { label: ReactNode; className?: string; children: ReactNode }) {
   return (
     <label className={`flex min-w-0 flex-col gap-1 ${className ?? ''}`}>
       <span className="text-[11px] leading-none text-[var(--nova-text-faint)]">{label}</span>

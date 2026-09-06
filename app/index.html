@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css?v=20260822">
 <link rel="stylesheet" href="redesign.css?v=20260830-denova-dark">
 <link rel="stylesheet" href="theme-neutral.css">
-<link rel="stylesheet" href="module4/module4.css">
+<link rel="stylesheet" href="module4/module4.css?v=20260906-module4-v18">
 <script>
   // Mobile layout follows the iframe viewport. mobile=1/0 remains an explicit override.
   (function(){
@@ -1248,15 +1248,18 @@
     window.narraverseIcon = function (name) { return iconNode(name); };
     normalize(document.body);
     cleanIconAttributes();
-    new MutationObserver(function (records) {
-      records.forEach(function (record) {
-        record.addedNodes.forEach(function (node) {
-          if (node.nodeType === 1) normalize(node);
-          else if (node.nodeType === 3 && node.parentNode) normalize(node.parentNode);
+    var observeRoot = document.body;
+    if (observeRoot && typeof MutationObserver !== 'undefined') {
+      new MutationObserver(function (records) {
+        records.forEach(function (record) {
+          record.addedNodes.forEach(function (node) {
+            if (node.nodeType === 1) normalize(node);
+            else if (node.nodeType === 3 && node.parentNode) normalize(node.parentNode);
+          });
         });
-      });
-      cleanIconAttributes();
-    }).observe(document.body, { childList: true, subtree: true });
+        cleanIconAttributes();
+      }).observe(observeRoot, { childList: true, subtree: true });
+    }
   }());
 </script>
 
@@ -1264,28 +1267,31 @@
 <script src="game_engine.js"></script>
 <script src="packs/limitless.js"></script>
 <script src="local_library.js"></script>
-<script src="app.js?v=20260830-denova-dark"></script>
+<script src="ai-client.js?v=20260906-model-gateway-v1"></script>
+<script src="app.js?v=20260906-model-gateway-v1"></script>
 <script src="presets.js"></script>
 <script src="bridge.js"></script>
-<script src="module4/core/world.js"></script>
-<script src="module4/core/clock.js"></script>
-<script src="module4/core/schedule.js"></script>
-<script src="module4/core/location.js"></script>
-<script src="module4/core/encounter.js"></script>
-<script src="module4/core/facts.js"></script>
-<script src="module4/core/settlement.js"></script>
-<script src="module4/core/action.js"></script>
-<script src="module4/core/judgment.js"></script>
-<script src="module4/ai/prompts.js"></script>
-<script src="module4/ai/preview.js"></script>
-<script src="module4/ai/interaction.js"></script>
-<script src="module4/state/migrations.js"></script>
-<script src="module4/state/store.js"></script>
-<script src="module4/ui/components.js"></script>
-<script src="module4/ui/world-list.js"></script>
-<script src="module4/ui/world-create.js"></script>
-<script src="module4/ui/play-view.js"></script>
-<script src="module4/ui/shell.js"></script>
-<script src="module4/module4.js"></script>
+<script src="module4/core/world.js?v=20260906-module4-v17"></script>
+<script src="module4/core/clock.js?v=20260906-module4-v17"></script>
+<script src="module4/core/schedule.js?v=20260906-module4-v17"></script>
+<script src="module4/core/location.js?v=20260906-module4-v17"></script>
+<script src="module4/core/encounter.js?v=20260906-module4-v17"></script>
+<script src="module4/core/facts.js?v=20260906-module4-v17"></script>
+<script src="module4/ai/context.js?v=20260906-module4-v17"></script>
+<script src="module4/core/events.js?v=20260906-module4-v17"></script>
+<script src="module4/core/settlement.js?v=20260906-module4-v17"></script>
+<script src="module4/core/action.js?v=20260906-module4-v17"></script>
+<script src="module4/core/judgment.js?v=20260906-module4-v17"></script>
+<script src="module4/ai/prompts.js?v=20260906-module4-v17"></script>
+<script src="module4/ai/preview.js?v=20260906-module4-v17"></script>
+<script src="module4/ai/interaction.js?v=20260906-module4-v17"></script>
+<script src="module4/state/migrations.js?v=20260906-module4-v17"></script>
+<script src="module4/state/store.js?v=20260906-module4-v17"></script>
+<script src="module4/ui/components.js?v=20260906-module4-v17"></script>
+<script src="module4/ui/world-list.js?v=20260906-module4-v17"></script>
+<script src="module4/ui/world-create.js?v=20260906-module4-v17"></script>
+<script src="module4/ui/play-view.js?v=20260906-module4-v18"></script>
+<script src="module4/ui/shell.js?v=20260906-module4-v18"></script>
+<script src="module4/module4.js?v=20260906-module4-v17"></script>
 </body>
 </html>

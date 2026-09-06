@@ -1,4 +1,4 @@
-/* Module 4 Task 4: world-scoped NPC source bindings and independent Runtime. */
+/* Module 4 V1.5: world-scoped NPC source bindings and independent Runtime. */
 (function (root) {
   var Module4 = root.Module4 = root.Module4 || {};
   Module4.World = Module4.World || {};
@@ -135,6 +135,29 @@
     return schedule;
   }
 
+  function normalizeKnowledge(raw) {
+    var source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    var knowledge = {};
+    Object.keys(source).forEach(function (viewerId) {
+      var entries = Array.isArray(source[viewerId]) ? source[viewerId] : [];
+      knowledge[text(viewerId) || 'player'] = entries.map(function (entry, index) {
+        var item = entry && typeof entry === 'object' && !Array.isArray(entry) ? clone(entry) : { claim: text(entry) };
+        var statuses = ['observation', 'heard', 'inference', 'belief'];
+        var status = text(item.epistemicStatus || item.status);
+        return Object.assign({}, item, {
+          id: text(item.id) || 'knowledge-' + (text(viewerId) || 'player') + '-' + index,
+          claim: text(item.claim || item.summary || item.text).slice(0, 280),
+          epistemicStatus: statuses.indexOf(status) >= 0 ? status : 'observation',
+          sourceFactId: text(item.sourceFactId) || null,
+          sourceActionId: text(item.sourceActionId) || null,
+          day: Number.isFinite(Number(item.day)) ? Number(item.day) : null,
+          period: text(item.period) || null
+        });
+      }).filter(function (entry) { return !!entry.claim; });
+    });
+    return knowledge;
+  }
+
   function createCurrentDay(day) {
     return {
       day: Number(day) > 0 ? Number(day) : 1,
@@ -177,16 +200,21 @@
     return candidates;
   }
 
-  World.version = 'task9-facts-settlement';
+  World.version = 'v1.5-context-boundary';
   World.createInitialState = function () {
     return {
       npcs: {},
       locations: [],
       sourceBindings: {},
       scheduleRewrites: [],
+      sceneObjects: [],
+      events: [],
+      npcRelations: {},
+      knowledge: {},
       facts: [],
       dailyLogs: [],
       actionLogs: [],
+      narrativeEntries: [],
       currentDay: createCurrentDay(1)
     };
   };
@@ -234,9 +262,16 @@
     });
     world.sourceBindings = sourceBindings;
     world.scheduleRewrites = Array.isArray(world.scheduleRewrites) ? clone(world.scheduleRewrites) : [];
+    world.sceneObjects = Array.isArray(world.sceneObjects) ? clone(world.sceneObjects) : [];
+    world.events = Array.isArray(world.events) ? clone(world.events) : [];
+    world.npcRelations = world.npcRelations && typeof world.npcRelations === 'object' && !Array.isArray(world.npcRelations)
+      ? clone(world.npcRelations)
+      : {};
+    world.knowledge = normalizeKnowledge(world.knowledge);
     world.facts = Array.isArray(world.facts) ? clone(world.facts) : [];
     world.dailyLogs = Array.isArray(world.dailyLogs) ? clone(world.dailyLogs) : [];
     world.actionLogs = Array.isArray(world.actionLogs) ? clone(world.actionLogs).slice(-100) : [];
+    world.narrativeEntries = Array.isArray(world.narrativeEntries) ? clone(world.narrativeEntries).slice(-100) : [];
 
     var fallbackDay = world.clock && Number(world.clock.day) > 0 ? Number(world.clock.day) : 1;
     var rawCurrentDay = world.currentDay && typeof world.currentDay === 'object' && !Array.isArray(world.currentDay)

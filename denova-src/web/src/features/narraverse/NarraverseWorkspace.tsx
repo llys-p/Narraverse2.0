@@ -6,7 +6,7 @@ import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
 /**
  * 叙界在 Denova 工作区中的持久嵌入容器。
  *
- * - iframe 地址固定为同源 `/narraverse/index.html?embedded=denova&v=20260901-module4-p0`，禁止写死盘符/端口/localhost。
+ * - iframe 地址固定为同源 `/narraverse/index.html?embedded=denova&v=20260906-model-gateway-v1`，禁止写死盘符/端口/localhost。
  * - iframe 全高、无边框，占满内容区；切换模式只改变可见性，组件只挂载一次、不销毁。
  * - 仅接收来自当前 iframe 且同源的 postMessage；首期只处理 ready / switch-mode / module4-closed。
  * - 宿主（Denova）向 iframe 发送 theme-changed / locale-changed，单向同步主题与语言。
@@ -15,7 +15,7 @@ import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
  *   { source: 'narraverse'|'denova', version: 1, type, payload? }
  */
 
-const NARRAVERSE_IFRAME_SRC = '/narraverse/index.html?embedded=denova&v=20260901-module4-p0'
+const NARRAVERSE_IFRAME_SRC = '/narraverse/index.html?embedded=denova&v=20260906-model-gateway-v1'
 const READY_TIMEOUT_MS = 6000
 
 type NarraverseInbound = {

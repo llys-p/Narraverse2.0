@@ -41,6 +41,54 @@ func TestPreviewMaterialDoesNotMistakeLorebookDescriptionForCharacterCard(t *tes
 	}
 }
 
+func TestLorebookDescriptionIsStoredAndCanBeEdited(t *testing.T) {
+	workspace := t.TempDir()
+	data := []byte(`{"name":"World","description":"原始设定书简介","entries":[{"uid":1,"key":["x"],"comment":"入口","content":"正文"}]}`)
+	result, err := NewService(workspace).ImportMaterialToMaster("world.json", data, MaterialImportOptions{SourceID: "description_world_001"})
+	if err != nil {
+		t.Fatalf("带简介的设定书导入失败: %v", err)
+	}
+	if len(result.MasterItemIDs) != 1 {
+		t.Fatalf("设定书总库资产数量异常: %#v", result)
+	}
+	store := NewMasterLibraryStore(workspace)
+	item, err := store.LoadItem(result.MasterItemIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Fields["lorebook.description"].ActiveText != "原始设定书简介" {
+		t.Fatalf("设定书简介没有进入可编辑字段: %#v", item.Fields["lorebook.description"])
+	}
+	updated, err := store.UpdateMasterAssetDescription(result.MasterItemIDs[0], "人工维护的简介")
+	if err != nil {
+		t.Fatalf("修改设定书简介失败: %v", err)
+	}
+	if updated.Fields["lorebook.description"].ActiveText != "人工维护的简介" || updated.Fields["lorebook.description"].ActiveKind != "human" {
+		t.Fatalf("人工简介没有成为当前内容: %#v", updated.Fields["lorebook.description"])
+	}
+	cleared, err := store.UpdateMasterAssetDescription(result.MasterItemIDs[0], "")
+	if err != nil {
+		t.Fatalf("清空设定书简介失败: %v", err)
+	}
+	if _, ok := cleared.Fields["lorebook.description"]; ok {
+		t.Fatalf("清空简介后字段仍然存在: %#v", cleared.Fields["lorebook.description"])
+	}
+}
+
+func TestInstantiateMasterAssetErrorIncludesFailingStage(t *testing.T) {
+	_, err := NewService(t.TempDir()).InstantiateMasterAsset("missing-master-item")
+	if err == nil {
+		t.Fatal("不存在的总库资产不应加入成功")
+	}
+	var stageErr *MasterAssetInstantiationError
+	if !errors.As(err, &stageErr) {
+		t.Fatalf("加入失败没有返回阶段化错误: %v", err)
+	}
+	if stageErr.Stage != "准备实例事务" || !strings.Contains(err.Error(), "加入当前冒险失败") {
+		t.Fatalf("阶段化错误内容异常: %v", err)
+	}
+}
+
 func TestImportMaterialArchivesAndTracksStableLoreItems(t *testing.T) {
 	workspace := t.TempDir()
 	service := NewService(workspace)
@@ -98,6 +146,9 @@ func TestImportMaterialUpdatesManagedItemButProtectsManualEdit(t *testing.T) {
 	}
 	if len(conflicted.ConflictIDs) != 1 || len(conflicted.UpdatedIDs) != 1 {
 		t.Fatalf("手改项没有产生冲突副本: %#v", conflicted)
+	}
+	if len(conflicted.Conflicts) != 1 || !strings.Contains(conflicted.Conflicts[0].Reason, "人工修改") || !strings.Contains(conflicted.Conflicts[0].Action, "冲突副本") {
+		t.Fatalf("冲突没有返回可解释的原因与处理建议: %#v", conflicted.Conflicts)
 	}
 }
 

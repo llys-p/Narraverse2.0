@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Narraverse2.0 总体架构",
+    "locale": "zh-CN",
+    "output": "docs/architecture/narraverse2-overall.architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "host", "label": "Denova 宿主", "focus": ["browser", "denova", "backend"], "note": "浏览器通过一个正式 Denova 页面承载四个顶层模块。" },
+      { "id": "modules", "label": "四个模块", "focus": ["writing", "game", "narraverse", "module4"], "note": "四个模块在同一个 Denova 顶层入口中切换。" },
+      { "id": "state", "label": "设置与运行态", "focus": ["settings", "storage", "knowledge", "module4"], "note": "共享模型设置、浏览器运行态和源资料保持边界分离。" }
+    ]
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "用户浏览器", "sublabel": "127.0.0.1 正式页面", "pos": [40, 385], "size": [150, 68] },
+    { "id": "denova", "type": "frontend", "label": "Denova 宿主", "sublabel": "统一顶层导航", "pos": [260, 385], "size": [170, 68] },
+    { "id": "writing", "type": "frontend", "label": "Module1 写作", "sublabel": "长篇写作与资料", "pos": [520, 95], "size": [170, 64] },
+    { "id": "game", "type": "frontend", "label": "Module2 游戏", "sublabel": "结构化互动流程", "pos": [520, 225], "size": [170, 64] },
+    { "id": "narraverse", "type": "frontend", "label": "Module3 叙界", "sublabel": "对话式文字冒险", "pos": [520, 355], "size": [170, 64] },
+    { "id": "module4", "type": "frontend", "label": "Module4 开放沙盒", "sublabel": "世界、日程、行动", "pos": [520, 485], "size": [170, 64] },
+    { "id": "settings", "type": "security", "label": "共享 Settings", "sublabel": "endpoint / model / key", "pos": [810, 205], "size": [180, 68] },
+    { "id": "backend", "type": "backend", "label": "Denova Go 后端", "sublabel": "/api/status 与宿主服务", "pos": [810, 650], "size": [180, 68] },
+    { "id": "storage", "type": "database", "label": "浏览器运行态", "sublabel": "Module4 localStorage", "pos": [1080, 510], "size": [180, 68] },
+    { "id": "knowledge", "type": "database", "label": "知识库与角色资料", "sublabel": "knowledge-base / local library", "pos": [1080, 110], "size": [180, 68] }
+  ],
+  "boundaries": [
+    { "kind": "security-group", "label": "本机 Denova 正式运行边界", "wraps": ["denova", "writing", "game", "narraverse", "module4", "settings", "backend"], "pad": 20 },
+    { "kind": "security-group", "label": "浏览器端持久化边界", "wraps": ["storage"], "pad": 14 }
+  ],
+  "connections": [
+    { "from": "browser", "to": "denova", "label": "HTTP 页面", "variant": "emphasis" },
+    { "from": "denova", "to": "writing", "fromSide": "right", "toSide": "left", "via": [[460, 419], [460, 127]] },
+    { "from": "denova", "to": "game", "fromSide": "right", "toSide": "left", "via": [[475, 419], [475, 257]] },
+    { "from": "denova", "to": "narraverse", "fromSide": "right", "toSide": "left", "via": [[490, 419], [490, 387]] },
+    { "from": "denova", "to": "module4", "fromSide": "right", "toSide": "left", "via": [[505, 419], [505, 517]], "variant": "emphasis" },
+    { "from": "denova", "to": "settings", "label": "共享设置", "labelDy": 30, "fromSide": "top", "toSide": "top", "via": [[345, 40], [900, 40]] },
+    { "from": "denova", "to": "backend", "fromSide": "bottom", "toSide": "left", "via": [[345, 780], [760, 780], [760, 684]] },
+    { "from": "narraverse", "to": "settings", "fromSide": "right", "toSide": "left", "via": [[740, 387], [740, 239]], "variant": "dashed" },
+    { "from": "module4", "to": "settings", "label": "共享模型调用", "fromSide": "right", "toSide": "left", "via": [[780, 517], [780, 239]], "variant": "dashed" },
+    { "from": "module4", "to": "storage", "label": "世界 / 日志", "fromSide": "right", "toSide": "left", "via": [[900, 517], [900, 544]], "variant": "emphasis" },
+    { "from": "knowledge", "to": "denova", "label": "源码输入", "fromSide": "top", "toSide": "top", "via": [[1170, 20], [345, 20]] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "宿主边界", "items": ["正式用户入口是 Denova executable 页面", "四个模块由 Denova 顶层导航承载", "5174 静态页不代表完整宿主能力"] },
+    { "dot": "amber", "title": "共享配置", "items": ["Narraverse 与 Module4 复用 window.callLLM()", "模型设置属于 Denova 现有共享 Settings", "不新增 Module4 专属 API 配置"] },
+    { "dot": "emerald", "title": "数据边界", "items": ["知识库是源资料，local library 是生成入口", "Module4 运行态独立保存在浏览器 localStorage", "运行态不回写旧 Adventure 或角色原件"] }
+  ]
+}

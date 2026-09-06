@@ -26,6 +26,9 @@ type ImageAPIProfileSettings struct {
 	Name                string `toml:"name,omitempty" json:"name,omitempty"`
 	Provider            string `toml:"provider,omitempty" json:"provider,omitempty"`
 	OpenAIAPIKey        string `toml:"openai_api_key,omitempty" json:"openai_api_key,omitempty"`
+	// APIKeyConfigured is a transient client hint; the credential is never
+	// returned in settings JSON and this flag is never persisted to TOML.
+	APIKeyConfigured    bool   `toml:"-" json:"api_key_configured,omitempty"`
 	OpenAIBaseURL       string `toml:"openai_base_url,omitempty" json:"openai_base_url,omitempty"`
 	OpenAIModel         string `toml:"openai_model,omitempty" json:"openai_model,omitempty"`
 	DefaultSize         string `toml:"default_size,omitempty" json:"default_size,omitempty"`

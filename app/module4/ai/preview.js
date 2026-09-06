@@ -49,14 +49,45 @@
     return text(value).slice(0, maxLength || 240);
   }
 
-  function normalizeSlot(raw, npcId, period) {
+  function knownLocation(world, reference) {
+    var value = text(reference);
+    var locations = world && Array.isArray(world.locations) ? world.locations : [];
+    return locations.find(function (location) {
+      return location && (text(location.id) === value || text(location.name) === value);
+    }) || null;
+  }
+
+  function fallbackLocation(world, npc) {
+    var locations = world && Array.isArray(world.locations) ? world.locations : [];
+    if (!locations.length) return null;
+    var npcLocation = npc && npc.schedule && npc.schedule.morning && (npc.schedule.morning.locationId || npc.schedule.morning.location);
+    return knownLocation(world, npcLocation)
+      || knownLocation(world, world && world.player && world.player.location)
+      || locations[0];
+  }
+
+  function normalizeSlot(raw, npcId, period, world, npc) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return {};
+      raw = {};
     }
     var slot = clone(raw);
     ['locationId', 'location', 'activity', 'intent', 'mood', 'availability'].forEach(function (field) {
       if (Object.prototype.hasOwnProperty.call(slot, field)) slot[field] = shortText(slot[field]);
     });
+    if (world && world.rulesVersion === 'v1.5') {
+      var reference = text(slot.locationId || slot.location);
+      if (reference) {
+        var location = knownLocation(world, reference);
+        if (!location) throw new Error('Daily Preview 包含未知地点');
+        slot.locationId = location.id;
+        delete slot.location;
+      } else {
+        var fallback = fallbackLocation(world, npc);
+        if (fallback) slot.locationId = text(fallback.id);
+      }
+      if (!slotActivity(slot)) slot.activity = shortText(npc && npc.dailyGoal || npc && npc.goals && npc.goals[0] || '处理当天事务', 160);
+      if (!text(slot.intent)) slot.intent = '本地补齐';
+    }
     return slot;
   }
 
@@ -101,8 +132,9 @@
       var rawSchedule = item.schedule;
       if (!rawSchedule || typeof rawSchedule !== 'object' || Array.isArray(rawSchedule)) rawSchedule = {};
       var schedule = {};
+      var scheduleNpc = Object.assign({}, expected[npcId], { dailyGoal: goal });
       periods().forEach(function (period) {
-        schedule[period] = normalizeSlot(rawSchedule[period], npcId, period);
+        schedule[period] = normalizeSlot(rawSchedule[period], npcId, period, world, scheduleNpc);
       });
       return { npcId: npcId, mood: mood, goal: goal, schedule: schedule };
     });
@@ -136,7 +168,7 @@
         return {
           npcId: npc.id,
           mood: npc.mood || 'neutral',
-          goal: text(npc.goals && npc.goals[0]) || '保持当前状态',
+          goal: text(npc.dailyGoal) || text(npc.goals && npc.goals[0]) || '保持当前状态',
           schedule: schedule
         };
       }),
@@ -152,7 +184,7 @@
       if (!npc) return;
       next.npcs[item.npcId] = Object.assign({}, npc, {
         mood: item.mood,
-        goals: item.goal ? [item.goal] : [],
+        dailyGoal: item.goal || text(npc.dailyGoal) || '',
         schedule: clone(item.schedule)
       });
     });
@@ -169,6 +201,10 @@
       events: clone(preview.worldEvents),
       interactedNpcIds: []
     });
+    if (next.rulesVersion === 'v1.5' && Module4.Events && typeof Module4.Events.ingestCandidates === 'function') {
+      var eventResult = Module4.Events.ingestCandidates(next, preview.worldEvents);
+      if (eventResult.ok && eventResult.changed) next = eventResult.world;
+    }
     next.updatedAt = Date.now();
     return next;
   }
@@ -190,7 +226,13 @@
       return !!(item && item.schedule && typeof item.schedule === 'object' && !Array.isArray(item.schedule)
         && periods().every(function (period) {
           var slot = item.schedule[period];
-          return !!slot && typeof slot === 'object' && !Array.isArray(slot);
+          if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return false;
+          if (world && world.rulesVersion === 'v1.5') {
+            var location = text(slot.locationId || slot.location);
+            var validLocation = !world.locations || !world.locations.length || !!knownLocation(world, location);
+            return validLocation && !!slotActivity(slot);
+          }
+          return true;
         }));
     });
   };
@@ -262,6 +304,13 @@
       throw error;
     });
     return inFlight[key];
+  };
+
+  Preview.ensureDayReady = function (world, options) {
+    if (!world || world.rulesVersion !== 'v1.5') {
+      return Promise.resolve({ ok: true, changed: false, skipped: true, world: clone(world), message: '旧世界保留原有预演入口。' });
+    }
+    return Preview.startDay(world, options || {});
   };
 
   Preview.parse = function (response, world) {

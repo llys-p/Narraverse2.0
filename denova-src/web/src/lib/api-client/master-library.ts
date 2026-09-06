@@ -96,6 +96,7 @@ export interface MasterProposal {
   risk: string
   issue_code?: string
   reason?: string
+  protected_token_override?: boolean
   agent_run_id?: string
   recovery_attempt?: number
   applied_translation_version_id?: string
@@ -113,14 +114,21 @@ export function createMasterProposal(masterItemID: string, input: Partial<Master
   })
 }
 
-export function validateMasterProposal(proposalID: string): Promise<{ proposal: MasterProposal }> {
-  return requestJSON(`/api/library/proposals/${encodeURIComponent(proposalID)}/validate`, { method: 'POST' })
+export function validateMasterProposal(proposalID: string, options: { allowProtectedTokenMismatch?: boolean } = {}): Promise<{ proposal: MasterProposal }> {
+  return requestJSON(`/api/library/proposals/${encodeURIComponent(proposalID)}/validate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allow_protected_token_mismatch: Boolean(options.allowProtectedTokenMismatch) }),
+  })
 }
 
-export function applyMasterProposal(proposalID: string, confirmed = false): Promise<{ proposal: MasterProposal; translation: Record<string, unknown> }> {
+export function applyMasterProposal(proposalID: string, confirmed = false, forceConflict = false, allowProtectedTokenMismatch = false): Promise<{ proposal: MasterProposal; translation: Record<string, unknown> }> {
   return requestJSON(`/api/library/proposals/${encodeURIComponent(proposalID)}/apply`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed, force_conflict: forceConflict, allow_protected_token_mismatch: allowProtectedTokenMismatch }),
   })
+}
+
+export function rejectMasterProposal(proposalID: string): Promise<{ proposal: MasterProposal }> {
+  return requestJSON(`/api/library/proposals/${encodeURIComponent(proposalID)}/reject`, { method: 'POST' })
 }
 
 export interface MasterProposalBatchResult {
@@ -128,8 +136,19 @@ export interface MasterProposalBatchResult {
   results: Array<{ proposal_id: string; status: string; error?: string; translation_version_id?: string }>
 }
 
-export function applyMasterProposals(masterItemID: string, proposalIDs: string[]): Promise<MasterProposalBatchResult> {
+export function applyMasterProposals(masterItemID: string, proposalIDs: string[], confirmedHighRisk = false, forceConflicts = false, allowProtectedTokenMismatch = false): Promise<MasterProposalBatchResult> {
   return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/proposals/batch-apply`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ proposal_ids: proposalIDs, confirmed_high_risk: confirmedHighRisk, force_conflicts: forceConflicts, allow_protected_token_mismatch: allowProtectedTokenMismatch }),
+  })
+}
+
+export interface MasterProposalBatchRejectResult {
+  rejected_count: number
+  results: Array<{ proposal_id: string; status: string; error?: string }>
+}
+
+export function rejectMasterProposals(masterItemID: string, proposalIDs: string[]): Promise<MasterProposalBatchRejectResult> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/proposals/batch-reject`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ proposal_ids: proposalIDs }),
   })
 }
@@ -177,6 +196,58 @@ export function fetchMasterAssetUsages(masterItemID: string): Promise<{ usages: 
 
 export function instantiateMasterAsset(masterItemID: string): Promise<MaterialImportResult> {
   return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/instances`, { method: 'POST' })
+}
+
+export function updateMasterAssetDescription(masterItemID: string, description: string): Promise<{ item: Record<string, unknown> }> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/description`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description }),
+  })
+}
+
+export function updateMasterAssetFields(masterItemID: string, expectedRevision: string, fields: Record<string, string>): Promise<{ item: Record<string, unknown> }> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/fields`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_revision: expectedRevision, fields }),
+  })
+}
+
+export function addMasterLorebookEntry(masterItemID: string, expectedRevision: string, input: { name: string; content: string; keywords: string[]; secondary_keys: string[] }): Promise<{ item: Record<string, unknown> }> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_revision: expectedRevision, ...input }),
+  })
+}
+
+export interface MasterAssetAdventureUsage {
+  used: boolean
+  has_new_version: boolean
+  loaded_revision?: string
+  current_revision?: string
+}
+
+export interface MasterAssetSyncResult {
+  master_item_id: string
+  updated_lore_ids: string[]
+  previous_revision?: string
+  loaded_revision?: string
+  skipped: boolean
+  message?: string
+}
+
+/** 当前冒险是否使用了该资产、是否有新版本可同步。后端判定，前端不得用 usages.length 代替。 */
+export function fetchMasterAssetAdventureUsage(masterItemID: string): Promise<{ usage: MasterAssetAdventureUsage }> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/adventure-usage`)
+}
+
+/** 把总库当前生效工作版本重投影到当前冒险的既有实例，不会新建实例。 */
+export function syncMasterAssetToAdventure(
+  masterItemID: string,
+): Promise<{ result: MasterAssetSyncResult; usage?: MasterAssetAdventureUsage }> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/sync-adventure`, { method: 'POST' })
 }
 
 export async function enqueueMasterTranslationTargets(workspace: string, targets: MasterTranslationTarget[]): Promise<void> {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Check, Languages, Loader2, Pause, Play, RotateCcw, X, Trash2, Pencil } from 'lucide-react'
+import { AlertTriangle, Check, Languages, Loader2, Pause, Play, RefreshCw, RotateCcw, Trash2, X, Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,7 @@ import {
   type TranslationJob,
   type TranslationQueueStatus,
 } from '@/lib/api'
-import type { WorkspaceMode } from '@/stores/workspace-store'
+import { useWorkspaceStore, type WorkspaceMode } from '@/stores/workspace-store'
 
 const POLL_MS = 1200
 const VISIBLE_JOB_LIMIT = 100
@@ -41,6 +41,7 @@ function translationFieldLabel(t: TFunction, field: string): string {
 
 export function TranslationQueueControl({ workspace, mode }: { workspace: string; mode: WorkspaceMode }) {
   const { t } = useTranslation()
+  const setMode = useWorkspaceStore((state) => state.setMode)
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<TranslationQueueStatus | null>(null)
   const [error, setError] = useState('')
@@ -49,6 +50,8 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
   const [editText, setEditText] = useState('')
   const [editLoading, setEditLoading] = useState(false)
   const applyingRef = useRef(new Set<string>())
+  // 清空失败任务：串行删除，逐项容错，避免一个失败就中断。
+  const [clearFailedState, setClearFailedState] = useState({ running: false, done: 0, total: 0, success: 0, failed: 0 })
 
   const refresh = useCallback(async () => {
     try {
@@ -133,6 +136,7 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
   const active = jobs.find((job) => job.id === status?.active_id)
   const pending = (status?.counts.queued || 0) + (status?.counts.running || 0)
   const review = status?.counts.pending_review || 0
+  const inlineReviewJobs = jobs.filter((job) => job.status === 'pending_review' && !isMasterJob(job))
   const failed = (status?.counts.failed || 0) + (status?.counts.conflict || 0)
   const manualPaused = status?.pause_reasons.includes('manual') || false
   const gameDraining = mode === 'interactive' && Boolean(status?.active_id)
@@ -186,7 +190,7 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
   }
 
   const applyAllReview = async () => {
-    const reviewJobs = jobs.filter((job) => job.status === 'pending_review')
+    const reviewJobs = inlineReviewJobs
     if (reviewJobs.length === 0 || bulkApply.running) return
     setError('')
     setBulkApply({ running: true, done: 0, total: reviewJobs.length })
@@ -196,6 +200,30 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
     }
     await refresh()
     setBulkApply({ running: false, done: reviewJobs.length, total: reviewJobs.length })
+  }
+
+  const clearFailedJobs = async () => {
+    // 仅清理失败/冲突/取消态：进行中和待确认任务一律保留，交由主流程处理。
+    const targets = jobs.filter((job) => job.status === 'failed' || job.status === 'conflict' || job.status === 'cancelled')
+    if (targets.length === 0 || clearFailedState.running) return
+    setError('')
+    const progress = { running: true, done: 0, total: targets.length, success: 0, failed: 0 }
+    setClearFailedState({ ...progress })
+    for (let index = 0; index < targets.length; index += 1) {
+      try {
+        await deleteTranslationJob(targets[index].id)
+        progress.success += 1
+      } catch (reason) {
+        progress.failed += 1
+        // 不中断：记录最近一条错误，其余继续清理。
+        if (reason instanceof Error) setError(reason.message)
+      }
+      progress.done = index + 1
+      setClearFailedState({ ...progress })
+    }
+    progress.running = false
+    setClearFailedState({ ...progress })
+    await refresh()
   }
   const label = error
     ? t('settingPanel.translationQueue.offlineShort')
@@ -226,16 +254,28 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
             <span>{t('settingPanel.translationQueue.waiting', { count: pending })}</span>
             <span>{t('settingPanel.translationQueue.reviewCount', { count: review })}</span>
             <span>{t('settingPanel.translationQueue.failedCount', { count: failed })}</span>
+            <Button variant="outline" size="xs" onClick={() => void refresh()} title={t('settingPanel.translationQueue.refresh')}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('settingPanel.translationQueue.refresh')}
+            </Button>
             <Button variant="outline" size="xs" onClick={() => void setTranslationQueuePaused(!manualPaused, 'manual').then(setStatus)}>
               {manualPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
               {manualPaused ? t('settingPanel.translationQueue.resume') : t('settingPanel.translationQueue.pause')}
             </Button>
-            {review > 0 && (
+            {failed > 0 && (
+              <Button variant="outline" size="xs" disabled={clearFailedState.running} data-testid="translation-clear-failed" onClick={() => void clearFailedJobs()}>
+                {clearFailedState.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {clearFailedState.running
+                  ? t('settingPanel.translationQueue.clearingFailed', { done: clearFailedState.done, total: clearFailedState.total, success: clearFailedState.success, failed: clearFailedState.failed })
+                  : t('settingPanel.translationQueue.clearFailed')}
+              </Button>
+            )}
+            {inlineReviewJobs.length > 0 && (
               <Button size="xs" disabled={bulkApply.running} data-testid="translation-adopt-all" onClick={() => void applyAllReview()}>
                 {bulkApply.running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                 {bulkApply.running
                   ? t('settingPanel.translationQueue.adoptingAll', { done: bulkApply.done, total: bulkApply.total })
-                  : t('settingPanel.translationQueue.adoptAll', { count: review })}
+                  : t('settingPanel.translationQueue.adoptAll', { count: inlineReviewJobs.length })}
               </Button>
             )}
           </div>
@@ -247,11 +287,13 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
                 <TranslationJobRow
                   key={job.id}
                   job={job}
+                  masterJob={isMasterJob(job)}
                   onApply={() => void applyJob(job, false)}
                   onCancel={() => void cancelTranslationJob(job.id).then(() => refresh())}
                   onRetry={() => void retryTranslationJob(job.id).then(() => refresh())}
                   onDelete={() => void deleteTranslationJob(job.id).then(() => refresh()).catch((reason) => setError(reason instanceof Error ? reason.message : t('settingPanel.translationQueue.deleteFailed')))}
                   onEdit={() => void openEditor(job)}
+                  onOpenLibrary={() => { setOpen(false); setMode('library') }}
                 />
               ))}
             </div>
@@ -283,13 +325,15 @@ export function TranslationQueueControl({ workspace, mode }: { workspace: string
   )
 }
 
-function TranslationJobRow({ job, onApply, onCancel, onRetry, onDelete, onEdit }: {
+function TranslationJobRow({ job, masterJob, onApply, onCancel, onRetry, onDelete, onEdit, onOpenLibrary }: {
   job: TranslationJob
+  masterJob: boolean
   onApply: () => void
   onCancel: () => void
   onRetry: () => void
   onDelete: () => void
   onEdit: () => void
+  onOpenLibrary: () => void
 }) {
   const { t } = useTranslation()
   const icon = job.status === 'running' ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -303,8 +347,13 @@ function TranslationJobRow({ job, onApply, onCancel, onRetry, onDelete, onEdit }
         <div className="truncate text-[var(--nova-text)]">{job.item_name || job.item_id} · {translationFieldLabel(t, job.field)}</div>
         <div className="truncate text-[11px] text-[var(--nova-text-faint)]">{t(`settingPanel.translationQueue.status.${job.status}`)}{job.error ? ` · ${job.error}` : ''}</div>
       </div>
-      {job.status === 'pending_review' && <Button size="xs" onClick={onApply}>{t('settingPanel.translationQueue.adopt')}</Button>}
-      {(job.status === 'failed' || job.status === 'conflict' || job.status === 'pending_review') && (
+      {/* 总库翻译任务的内容审核集中在「叙界总资料库 → Denova 处理结果」，
+          本地队列不再提供逐条应用/编辑入口，避免与总库 Proposal 流程冲突。 */}
+      {masterJob && (job.status === 'pending_review' || job.status === 'failed' || job.status === 'conflict') && (
+        <Button variant="outline" size="xs" onClick={onOpenLibrary}>{t('settingPanel.translationQueue.masterJobHint')}</Button>
+      )}
+      {!masterJob && job.status === 'pending_review' && <Button size="xs" onClick={onApply}>{t('settingPanel.translationQueue.adopt')}</Button>}
+      {!masterJob && (job.status === 'failed' || job.status === 'conflict' || job.status === 'pending_review') && (
         <Button variant="outline" size="xs" onClick={onEdit} title={t('settingPanel.translationQueue.edit')}>
           <Pencil className="h-3.5 w-3.5" />
           {t('settingPanel.translationQueue.edit')}

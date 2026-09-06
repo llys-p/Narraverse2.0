@@ -3,14 +3,18 @@ package config
 import "strings"
 
 const (
+	DefaultModelProfileID      = "default"
 	DefaultContextWindowTokens = 400000
 	MaxContextWindowTokens     = 2000000
 )
 
 type ModelProfileSettings struct {
-	ID                  string   `toml:"id,omitempty" json:"id,omitempty"`
-	Name                string   `toml:"name,omitempty" json:"name,omitempty"`
-	OpenAIAPIKey        string   `toml:"openai_api_key,omitempty" json:"openai_api_key,omitempty"`
+	ID           string `toml:"id,omitempty" json:"id,omitempty"`
+	Name         string `toml:"name,omitempty" json:"name,omitempty"`
+	OpenAIAPIKey string `toml:"openai_api_key,omitempty" json:"openai_api_key,omitempty"`
+	// APIKeyConfigured is a transient client hint used when settings responses
+	// redact the actual key. It is never persisted to TOML.
+	APIKeyConfigured    bool     `toml:"-" json:"api_key_configured,omitempty"`
 	OpenAIBaseURL       string   `toml:"openai_base_url,omitempty" json:"openai_base_url,omitempty"`
 	OpenAIModel         string   `toml:"openai_model,omitempty" json:"openai_model,omitempty"`
 	Temperature         *float64 `toml:"temperature,omitempty" json:"temperature,omitempty"`

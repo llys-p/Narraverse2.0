@@ -16,6 +16,9 @@
     var sourcePlayer = raw.player && typeof raw.player === 'object' ? raw.player : {};
     var world = Object.assign({}, raw);
     world.id = id;
+    world.rulesVersion = text(raw.rulesVersion) === 'v1.5' ? 'v1.5' : 'legacy';
+    world.schemaVersion = Number(raw.schemaVersion) || (world.rulesVersion === 'v1.5' ? 2 : 1);
+    world.revision = Number.isInteger(Number(raw.revision)) && Number(raw.revision) >= 0 ? Number(raw.revision) : 0;
     world.title = title;
     world.description = text(raw.description);
     world.player = Object.assign({}, sourcePlayer, {
@@ -43,7 +46,7 @@
     var currentWorldId = text(source.currentWorldId);
     if (!worlds.some(function (world) { return world.id === currentWorldId; })) currentWorldId = null;
     return Object.assign({}, source, {
-      version: 1,
+      version: 2,
       currentWorldId: currentWorldId,
       worlds: worlds
     });

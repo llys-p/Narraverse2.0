@@ -15,7 +15,8 @@
       var playerName = form.querySelector('[name="playerName"]');
       var playerIdentity = form.querySelector('[name="playerIdentity"]');
       try {
-        Module4.State.Store.createWorld({
+        var created = Module4.State.Store.createWorld({
+          rulesVersion: 'v1.5',
           title: title && title.value,
           description: description && description.value,
           locations: locations && locations.value,
@@ -23,7 +24,7 @@
         });
         form.reset();
         if (status) status.textContent = '已保存';
-        if (typeof onCreated === 'function') onCreated();
+        if (typeof onCreated === 'function') onCreated(created);
       } catch (error) {
         if (status) status.textContent = error.message || '保存失败';
       }

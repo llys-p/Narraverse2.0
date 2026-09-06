@@ -19,6 +19,7 @@
 - `package.json`、`pnpm-lock.yaml`、`denova-src/go.mod`、`denova-src/go.sum`
 - `Launch-Narraverse.cmd`
 - `tools/setup_narraverse2.ps1`
+- `docs/交付/AI协作决策原则.md`
 - `docs/交付/Narraverse2.0交接指南.md`
 
 ## 初始化与运行链

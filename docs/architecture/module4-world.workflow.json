@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Module4 创建并进入世界流程",
+    "locale": "zh-CN",
+    "output": "docs/architecture/module4-world.workflow.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "create", "label": "创建路径", "focus": ["open_entry", "submit_form", "validate_world", "save_world"], "note": "从 Denova 顶层入口提交世界信息并保存。" },
+      { "id": "enter", "label": "进入路径", "focus": ["save_world", "open_world", "render_world"], "note": "保存后重新打开世界，进入 Module4 运行页面。" },
+      { "id": "invalid", "label": "校验分支", "focus": ["validate_world", "invalid_input", "show_manager"], "note": "输入不完整时回到世界管理页修正。" }
+    ]
+  },
+  "lanes": [
+    { "id": "user", "label": "用户" },
+    { "id": "runtime", "label": "Module4 运行时" },
+    { "id": "exceptions", "label": "校验分支", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "准备", "fromCol": 0, "toCol": 1 },
+    { "id": "create", "label": "创建", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "enter", "label": "进入", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [],
+  "mainPath": ["open_entry", "show_manager", "submit_form", "validate_world", "save_world", "open_world", "render_world"],
+  "nodes": [
+    { "id": "open_entry", "lane": "user", "col": 0, "type": "frontend", "label": "选择开放沙盒", "sublabel": "Denova 顶层入口" },
+    { "id": "show_manager", "lane": "runtime", "col": 1, "type": "frontend", "label": "显示世界管理", "sublabel": "列表 + 创建表单" },
+    { "id": "submit_form", "lane": "user", "col": 2, "type": "frontend", "label": "填写并提交", "sublabel": "名称 / 描述" },
+    { "id": "validate_world", "lane": "runtime", "col": 3, "type": "backend", "label": "校验世界输入", "sublabel": "规范化运行结构", "tag": "guard" },
+    { "id": "save_world", "lane": "runtime", "col": 4, "type": "database", "label": "保存世界", "sublabel": "Module4 localStorage", "tag": "persist" },
+    { "id": "open_world", "lane": "user", "col": 5, "type": "frontend", "label": "打开世界", "sublabel": "选择列表项目" },
+    { "id": "render_world", "lane": "runtime", "col": 5, "type": "frontend", "label": "进入世界详情", "sublabel": "地点 / NPC / 行动" },
+    { "id": "invalid_input", "lane": "exceptions", "col": 3, "type": "security", "label": "提示修正输入", "sublabel": "不写入半成品", "tag": "stop" }
+  ],
+  "edges": [
+    { "from": "open_entry", "to": "show_manager", "role": "main" },
+    { "from": "show_manager", "to": "submit_form", "label": "新建", "role": "main" },
+    { "from": "submit_form", "to": "validate_world", "role": "main" },
+    { "from": "validate_world", "to": "save_world", "label": "有效", "role": "main", "variant": "emphasis" },
+    { "from": "validate_world", "to": "invalid_input", "label": "无效", "role": "error", "variant": "security" },
+    { "from": "invalid_input", "to": "show_manager", "label": "返回管理页", "role": "return", "variant": "dashed" },
+    { "from": "save_world", "to": "open_world", "label": "列表刷新", "role": "main", "variant": "dashed" },
+    { "from": "open_world", "to": "render_world", "label": "进入", "role": "main", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "用户路径", "items": ["从 Denova 顶层选择开放沙盒", "创建世界后从列表打开", "进入详情页后再进行预演与行动"] },
+    { "dot": "emerald", "title": "持久化边界", "items": ["世界数据使用 Module4 独立 localStorage namespace", "输入先规范化再保存", "刷新页面从同一浏览器 origin 恢复"] },
+    { "dot": "rose", "title": "安全分支", "items": ["校验失败不写入半成品世界", "错误返回世界管理页", "不复制 Module3 Adventure / Game Engine"] }
+  ]
+}

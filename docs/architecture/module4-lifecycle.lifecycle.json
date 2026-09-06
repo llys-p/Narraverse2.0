@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Module4 世界与日程状态",
+    "locale": "zh-CN",
+    "output": "docs/architecture/module4-lifecycle.lifecycle.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "world", "label": "世界准备", "focus": ["missing", "created", "opened"], "note": "先创建世界，再进入可玩的世界详情。" },
+      { "id": "day", "label": "每日预演", "focus": ["preview_pending", "preview_ready", "preview_fallback"], "note": "预演保存后才能把当天日程作为运行事实使用。" },
+      { "id": "action", "label": "行动循环", "focus": ["action", "facts", "settlement"], "note": "行动写入事实与日志，结算后进入下一天。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "主流程" },
+    { "id": "events", "label": "每日事件" },
+    { "id": "terminal", "label": "异常出口" }
+  ],
+  "states": [
+    { "id": "missing", "type": "start", "label": "尚无世界", "sublabel": "入口初始状态", "lane": "main", "col": 0, "step": "01", "tag": "start" },
+    { "id": "created", "type": "active", "label": "世界已创建", "sublabel": "元数据已保存", "lane": "main", "col": 1, "step": "02", "tag": "saved" },
+    { "id": "opened", "type": "active", "label": "世界已打开", "sublabel": "当前世界就绪", "lane": "main", "col": 2, "step": "03", "tag": "ready" },
+    { "id": "preview_ready", "type": "success", "label": "今日预演已保存", "sublabel": "日程成为当天输入", "lane": "main", "col": 3, "step": "05", "tag": "valid" },
+    { "id": "action", "type": "decision", "label": "执行移动 / 行动", "sublabel": "消耗时间与精力", "lane": "main", "col": 4, "step": "06", "tag": "choice" },
+    { "id": "preview_pending", "type": "waiting", "label": "等待今日预演", "sublabel": "需要共享模型设置", "lane": "events", "col": 0, "step": "04", "tag": "waiting" },
+    { "id": "facts", "type": "active", "label": "事实与日志已记录", "sublabel": "Facts / dailyLogs", "lane": "events", "col": 1, "step": "07", "tag": "persisted" },
+    { "id": "settlement", "type": "success", "label": "次日结算", "sublabel": "推进时段与日期", "lane": "events", "col": 2, "step": "08", "tag": "next day" },
+    { "id": "preview_fallback", "type": "failure", "label": "预演 fallback", "sublabel": "需检查 API / JSON", "lane": "terminal", "col": 0, "tag": "retry" }
+  ],
+  "transitions": [
+    { "from": "missing", "to": "created", "variant": "emphasis" },
+    { "from": "created", "to": "opened" },
+    { "from": "opened", "to": "preview_pending", "variant": "emphasis" },
+    { "from": "preview_pending", "to": "preview_ready", "label": "Preview 成功", "variant": "emphasis" },
+    { "from": "preview_pending", "to": "preview_fallback", "variant": "security" },
+    { "from": "preview_fallback", "to": "preview_pending", "variant": "dashed" },
+    { "from": "preview_ready", "to": "action", "variant": "emphasis", "route": "straight" },
+    { "from": "action", "to": "facts", "label": "提交事实", "variant": "emphasis" },
+    { "from": "facts", "to": "settlement", "route": "bottom-channel", "fromSide": "bottom", "toSide": "bottom" },
+    { "from": "settlement", "to": "preview_pending", "variant": "dashed", "route": "bottom-channel", "fromSide": "bottom", "toSide": "bottom" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "正常循环", "items": ["创建世界后先打开当前世界", "今日预演保存后才进入行动阶段", "行动结果落入 Facts 与 dailyLogs"] },
+    { "dot": "amber", "title": "时间边界", "items": ["移动和行动按 Clock 规则消耗时间与精力", "次日结算推进日期并重新等待预演", "刷新后从当前浏览器 origin 恢复状态"] },
+    { "dot": "rose", "title": "失败边界", "items": ["fallback 不是真实模型调用成功", "API 或 JSON 修复后回到预演等待态", "不为 Module4 建立独立 API 配置"] }
+  ]
+}

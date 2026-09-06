@@ -226,7 +226,7 @@ describe('ModeRouter autosave navigation policy', () => {
     const view = render(<ModeRouter {...props} />)
     const iframe = view.container.querySelector('iframe')
 
-    expect(iframe).toHaveAttribute('src', '/narraverse/index.html?embedded=denova&v=20260901-module4-p0')
+    expect(iframe).toHaveAttribute('src', '/narraverse/index.html?embedded=denova&v=20260906-model-gateway-v1')
 
     view.rerender(<ModeRouter {...props} mode="ide" />)
     expect(view.container.querySelector('iframe')).toBe(iframe)

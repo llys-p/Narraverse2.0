@@ -11,6 +11,7 @@ const stagingDirectory = path.resolve(publicDirectory, '.narraverse-sync')
 const sourceDirectory = path.resolve(process.env.NARRAVERSE_SOURCE_DIR || process.argv[2] || '')
 const runtimeEntries = [
   'index.html',
+  'ai-client.js',
   'app.js',
   'bridge.js',
   'game_engine.js',

@@ -127,8 +127,9 @@ type tavernCardData struct {
 }
 
 type tavernCharacterBook struct {
-	Name    string            `json:"name"`
-	Entries []tavernBookEntry `json:"entries"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Entries     []tavernBookEntry `json:"entries"`
 }
 
 type tavernBookEntry struct {

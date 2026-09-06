@@ -1,0 +1,47 @@
+[[sub_agents]]
+id = "context-planner"
+name = "上下文规划"
+description = "整理写作所需的上下文和计划。"
+system_prompt = "请整理当前写作上下文，输出清晰、可执行的 Context Plan。"
+enabled = true
+parents = ["ide"]
+
+[[sub_agents]]
+id = "writer"
+name = "正文写作"
+description = "根据已确认的计划撰写正文。"
+system_prompt = "请根据已确认的计划和设定撰写正文，保持人物与情节连贯。"
+enabled = true
+parents = ["ide"]
+
+[[sub_agents]]
+id = "reviewer"
+name = "稿件审阅"
+description = "检查稿件的连贯性、设定和文风。"
+system_prompt = "请检查当前稿件的连贯性、设定一致性和文风问题，并提出具体意见。"
+enabled = true
+parents = ["ide"]
+
+[[sub_agents]]
+id = "fixer"
+name = "修订助手"
+description = "根据审阅意见提出或执行稿件修订。"
+system_prompt = "请根据审阅意见修订稿件，保留有效内容并逐项解决已确认的问题。"
+enabled = true
+parents = ["ide"]
+
+[[sub_agents]]
+id = "final-gate"
+name = "最终检查"
+description = "检查最终稿是否满足要求和设定。"
+system_prompt = "请检查最终稿是否满足用户要求、写作计划、资料库设定和格式约束。"
+enabled = true
+parents = ["ide"]
+
+[[sub_agents]]
+id = "memory-patcher"
+name = "记忆更新"
+description = "生成进度和角色状态等状态更新。"
+system_prompt = "请根据最终稿生成进度、角色状态和后续写作所需的记忆更新。"
+enabled = true
+parents = ["ide"]

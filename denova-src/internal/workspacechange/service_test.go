@@ -443,9 +443,9 @@ func TestForWorkspaceReturnsSharedService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relative, err := filepath.Rel(cwd, workspace)
-	if err != nil {
-		t.Fatal(err)
+	relative := workspace
+	if candidate, relErr := filepath.Rel(cwd, workspace); relErr == nil {
+		relative = candidate
 	}
 	second, err := ForWorkspace(relative)
 	if err != nil {

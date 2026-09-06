@@ -66,7 +66,8 @@
 
   function dayFacts(world, day) {
     return (Array.isArray(world.facts) ? world.facts : []).filter(function (fact) {
-      return fact && Number(fact.day) === Number(day);
+      return fact && Number(fact.day) === Number(day)
+        && (!Module4.Facts || typeof Module4.Facts.isVisibleTo !== 'function' || Module4.Facts.isVisibleTo(fact, 'player'));
     });
   }
 
@@ -124,7 +125,9 @@
     var createdAt = Number(source.createdAt);
     if (!Number.isFinite(createdAt) || createdAt <= 0) createdAt = Date.now();
     var day = currentDay(next);
-    var eventFacts = Module4.Facts && typeof Module4.Facts.recordWorldEvents === 'function'
+    var eventFacts = next.rulesVersion === 'v1.5'
+      ? { world: next, facts: [] }
+      : Module4.Facts && typeof Module4.Facts.recordWorldEvents === 'function'
       ? Module4.Facts.recordWorldEvents(next)
       : { world: next, facts: [] };
     next = eventFacts.world || next;
@@ -134,6 +137,7 @@
 
     clearTemporaryState(next);
     next.clock = Object.assign({}, next.clock, { day: day + 1, period: 'morning' });
+    if (next.rulesVersion === 'v1.5') next.clock.tick = 0;
     next.player = Object.assign({}, next.player, { energy: next.player.maxEnergy });
     next.currentDay = newCurrentDay(day + 1);
     next.updatedAt = createdAt;

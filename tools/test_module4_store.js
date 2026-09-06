@@ -61,4 +61,22 @@ assert.strictEqual(store.deleteWorld(second.id), true);
 assert.strictEqual(store.listWorlds().length, 2);
 assert.strictEqual(store.getWorld(third.id).title, '旧城区');
 
+const corruptStorage = createStorage();
+const corruptRaw = '{"worlds":';
+corruptStorage.setItem('narraverse:module4:state', corruptRaw);
+const recoveryStore = loadStore(corruptStorage);
+assert.strictEqual(recoveryStore.getRecovery().available, true);
+assert.strictEqual(corruptStorage.getItem(recoveryStore.storageKey), corruptRaw);
+assert.strictEqual(corruptStorage.getItem(recoveryStore.recoveryKey), corruptRaw);
+assert.throws(() => recoveryStore.createWorld({ title: '恢复期间不应写入' }), /正在恢复/);
+
+const recoverySource = createStorage();
+const sourceStore = loadStore(recoverySource);
+const recoverableWorld = sourceStore.createWorld({ title: '可恢复世界' });
+corruptStorage.setItem(recoveryStore.recoveryKey, recoverySource.getItem(sourceStore.storageKey));
+assert.ok(recoveryStore.restoreRecovery());
+assert.strictEqual(recoveryStore.getRecovery().available, false);
+assert.strictEqual(recoveryStore.getCurrentWorld().id, recoverableWorld.id);
+assert.strictEqual(corruptStorage.getItem(recoveryStore.recoveryKey), recoverySource.getItem(sourceStore.storageKey));
+
 console.log('Module4 Task 1 store test passed.');

@@ -25,6 +25,15 @@ export interface MaterialPreview {
 
 export type MaterialManagementMode = 'master_managed' | 'unmanaged_direct'
 
+export interface MaterialImportConflict {
+  source_record_id: string
+  original_target_id: string
+  conflict_id: string
+  name: string
+  reason: string
+  action: string
+}
+
 export interface MasterTranslationTarget {
   import_id: string
   source_id: string
@@ -47,6 +56,7 @@ export interface MaterialImportResult {
   created_ids: string[]
   updated_ids: string[]
   conflict_ids: string[]
+  conflicts: MaterialImportConflict[]
   skipped_ids: string[]
   failed: string[]
   item_ids: string[]
@@ -160,6 +170,21 @@ function normalizeMaterialImportResult(result: Partial<MaterialImportResult>, fi
     created_ids: strings(result.created_ids),
     updated_ids: strings(result.updated_ids),
     conflict_ids: strings(result.conflict_ids),
+    conflicts: Array.isArray(result.conflicts)
+      ? result.conflicts.flatMap((value) => {
+        if (!value || typeof value !== 'object') return []
+        const conflict = value as Partial<MaterialImportConflict>
+        if (typeof conflict.conflict_id !== 'string') return []
+        return [{
+          source_record_id: typeof conflict.source_record_id === 'string' ? conflict.source_record_id : '',
+          original_target_id: typeof conflict.original_target_id === 'string' ? conflict.original_target_id : '',
+          conflict_id: conflict.conflict_id,
+          name: typeof conflict.name === 'string' ? conflict.name : '',
+          reason: typeof conflict.reason === 'string' ? conflict.reason : '',
+          action: typeof conflict.action === 'string' ? conflict.action : '',
+        }]
+      })
+      : [],
     skipped_ids: strings(result.skipped_ids),
     failed: strings(result.failed),
     item_ids: strings(result.item_ids),

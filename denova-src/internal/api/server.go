@@ -50,6 +50,7 @@ func newServer(application *app.App, port string, listener net.Listener) *Server
 	h := hertzserver.Default(options...)
 	h.Use(corsMiddleware)
 	h.Use(remoteAccessMiddleware(application))
+	h.Use(staticDocumentCacheMiddleware)
 	s.registerRoutes(h)
 	s.engine = h
 	return s

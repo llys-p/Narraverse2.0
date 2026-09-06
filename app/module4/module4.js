@@ -1,9 +1,23 @@
-/* Module 4 Task 9 entry point. Facts and deterministic day settlement are world-scoped. */
+/* Module 4 V1.5 entry point. Facts, context, and deterministic day settlement are world-scoped. */
 (function (root) {
   'use strict';
 
   var Module4 = root.Module4 = root.Module4 || {};
-  Module4.version = 'task9-facts-settlement';
+  Module4.version = 'v1.5-context-interaction';
+
+  Module4.ensureDayReady = function (shell, worldOverride) {
+    if (!Module4.State || !Module4.State.Store || !Module4.AI || !Module4.AI.Preview
+      || typeof Module4.AI.Preview.ensureDayReady !== 'function') return;
+    var world = worldOverride || Module4.State.Store.getCurrentWorld();
+    if (!world || world.rulesVersion !== 'v1.5') return;
+    Module4.AI.Preview.ensureDayReady(world).then(function (result) {
+      if (!result || !result.ok || !result.changed) return;
+      var saved = Module4.State.Store.saveWorld(result.world);
+      if (saved && Module4.UI && typeof Module4.UI.render === 'function') Module4.UI.render(shell, result.message);
+    }).catch(function () {
+      /* Preview 自己会 fallback；这里不把请求错误写入页面或诊断。 */
+    });
+  };
 
   function setWorkspaceVisible(visible) {
     var app = document.querySelector('.app');
@@ -13,6 +27,7 @@
     if (visible) {
       if (Module4.UI && typeof Module4.UI.mount === 'function') Module4.UI.mount(shell);
       if (Module4.UI && typeof Module4.UI.render === 'function') Module4.UI.render(shell);
+      Module4.ensureDayReady(shell);
       if (app) app.setAttribute('aria-hidden', 'true');
       shell.hidden = false;
       shell.setAttribute('aria-hidden', 'false');

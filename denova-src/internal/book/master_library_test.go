@@ -248,3 +248,58 @@ func TestMasterPolishCandidateDoesNotReplaceActiveTranslation(t *testing.T) {
 		t.Fatalf("确认采用应生成并激活新的 Translation Version: %#v", applied)
 	}
 }
+
+func TestMasterBatchApplyValidatesProposedTranslation(t *testing.T) {
+	store, adventure := masterTestStore(t)
+	ingested, err := store.Ingest(MasterIngestInput{
+		Filename: "batch.json", Data: []byte("batch-source"), SourceKind: "user_upload",
+		AdventureWorkspace: adventure, Items: []MasterItemInput{masterTestItem("lore", "English batch content")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := ingested.Transaction.TranslationTargets[0]
+	proposal, err := store.CreateMasterProposal(MasterProposalInput{
+		Kind: MasterProposalRecovery, ApplyMode: MasterProposalConfirm,
+		MasterItemID: target.MasterItemID, FieldPath: target.FieldPath, Translation: "批量确认后的译文",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proposal.Status != MasterProposalStatusProposed {
+		t.Fatalf("新 Proposal 应等待确认: %#v", proposal)
+	}
+
+	result := store.ApplyMasterProposals(target.MasterItemID, []string{proposal.ProposalID})
+	if result.AppliedCount != 1 || len(result.Results) != 1 || result.Results[0].Status != MasterProposalStatusApplied {
+		t.Fatalf("批量确认应先验证再应用: %#v", result)
+	}
+	loaded, err := store.LoadItem(target.MasterItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Fields[target.FieldPath].ActiveText != "批量确认后的译文" {
+		t.Fatalf("批量确认后的译文未成为活动内容: %#v", loaded.Fields[target.FieldPath])
+	}
+}
+
+func TestMasterTextNeedsTranslationUsesNaturalLanguageSignals(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "url and acronyms", text: "https://example.com/a {{user}} HUD HP MP NPC", want: false},
+		{name: "product acronym in Chinese", text: "中文 RPG系统", want: false},
+		{name: "short English prose", text: "The room is quiet.", want: true},
+		{name: "label", text: "Age: 15", want: true},
+		{name: "Chinese only", text: "这是已经完成的中文内容。", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := masterTextNeedsTranslation(test.text); got != test.want {
+				t.Fatalf("masterTextNeedsTranslation(%q) = %v, want %v", test.text, got, test.want)
+			}
+		})
+	}
+}

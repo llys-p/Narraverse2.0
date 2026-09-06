@@ -18,6 +18,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from difflib import SequenceMatcher
 from pathlib import Path
 
 
@@ -27,9 +28,21 @@ PART_LIMIT = 8 * 1024 * 1024
 TRANSCRIPT_TARGET_BYTES = 512 * 1024
 DEFAULT_TRANSLATION_MODEL = "hy-mt1.5:1.8b-q4_k_m"
 OLLAMA_URL = "http://127.0.0.1:11434"
-TRANSLATION_CACHE_VERSION = 10
-TRANSLATION_PROMPT_VERSION = 6
-TRANSLATION_VALIDATOR_VERSION = 6
+TRANSLATION_CACHE_VERSION = 12
+TRANSLATION_PROMPT_VERSION = 9
+TRANSLATION_VALIDATOR_VERSION = 9
+TRANSLATION_QUALITY_CONTRACT_VERSION = 2
+TRANSLATION_CHUNK_TARGET = 720
+TRANSLATION_CHUNK_MAX = 1200
+QUALITY_REASONS = {
+    "empty_output": "模型返回了空内容",
+    "source_echo": "模型回显了英文原文",
+    "mixed_language": "译文中残留连续英文句段",
+    "missing_cjk": "译文缺少中文内容",
+    "placeholder_mismatch": "受保护占位符或变量不完整",
+    "structure_mismatch": "译文结构或长度异常",
+    "bridge_or_model_error": "模型调用失败或返回拒绝话术",
+}
 HY_MT_REPO = "tencent/HY-MT1.5-1.8B-GGUF"
 HY_MT_FILE = "HY-MT1.5-1.8B-Q4_K_M.gguf"
 HY_MT_PUBLISHED_SIZE = 1133080512
@@ -77,6 +90,8 @@ def valid_translation_field_path(value: str) -> bool:
 
 
 def translation_job_completion_status(apply_policy: str) -> str:
+    # 质量 pass 的任务仍需遵守应用策略：旧 Lore 正文和 Master 高风险字段交人工确认；
+    # 只有 auto_apply_metadata / master_auto 可以进入前端自动写回流程。
     return "pending_review" if apply_policy in {"review_content", "master_review"} else "completed"
 
 
@@ -256,6 +271,9 @@ def translate_field(translator, original: str, context: str, check_control, fail
 
 
 class LocalTranslator:
+    english_word_pattern = re.compile(r"\b[A-Za-z][A-Za-z'-]*\b")
+    english_sentence_pattern = re.compile(r"\b[A-Za-z][A-Za-z'-]*(?:[ \t]+[A-Za-z][A-Za-z'-]*){2,}\b")
+    protected_token_pattern = re.compile(r"__NV_(?:PROTECTED|EXISTING_ZH)_\d{4}__")
     protected_pattern = re.compile(
         # A slash-delimited expression is protected only when it has no
         # whitespace (or has an explicit regex flag). This avoids treating
@@ -279,28 +297,256 @@ class LocalTranslator:
         except Exception as error:
             return {"online": False, "model": self.model, "installed": False, "error": str(error)}
 
-    def needs_translation(self, text: str) -> bool:
-        latin = len(re.findall(r"[A-Za-z]", text or ""))
-        cjk = len(re.findall(r"[\u3400-\u9fff]", text or ""))
-        return latin >= 8 and latin > cjk
+    def _translation_probe(self, text: str) -> str:
+        probe = self.protected_pattern.sub(" ", text or "")
+        for term in self.glossary.get("do_not_translate") or []:
+            probe = probe.replace(str(term), " ")
+        return probe
 
-    def chunks(self, text: str, target: int = 1800) -> list[str]:
-        # Keep lines independent. This lets already-Chinese headings and notes
-        # pass through untouched instead of mixing them into an English prompt.
-        chunks = []
-        for line in re.split(r"(\r?\n)", text):
-            if not line:
+    @classmethod
+    def _english_words(cls, text: str) -> list[str]:
+        return cls.english_word_pattern.findall(text or "")
+
+    def needs_translation(self, text: str) -> bool:
+        """Use a natural-language signal instead of any Latin character.
+
+        Go has a parallel classifier for Master fields. Keep this rule made of
+        small deterministic signals so both implementations can share the same
+        examples without introducing a runtime dependency between languages.
+        """
+        probe = self._translation_probe(text)
+        if not probe.strip():
+            return False
+        words = self._english_words(probe)
+        if not words:
+            return False
+        meaningful = [word for word in words if not (word.isupper() and len(word) <= 8)]
+        if re.search(r"(?im)^\s*[A-Za-z][A-Za-z \t/&-]{1,32}\s*[:：]", probe):
+            return True
+        # A single ordinary English label (for example "Harbor" or "dock")
+        # is still a real translation target. Only machine-like tokens are
+        # filtered above; short human-facing fields must not disappear.
+        if meaningful:
+            return True
+        return False
+
+    @staticmethod
+    def _latin_cjk(text: str) -> tuple[int, int]:
+        return (
+            len(re.findall(r"[A-Za-z]", text or "")),
+            len(re.findall(r"[\u3400-\u9fff]", text or "")),
+        )
+
+    @staticmethod
+    def _normalized_text(text: str) -> str:
+        return re.sub(r"[\W_]+", "", (text or "").lower(), flags=re.UNICODE)
+
+    def _call_model(self, prompt: str) -> str:
+        payload = json.dumps({
+            "model": self.model, "prompt": prompt, "stream": False,
+            "options": {"temperature": 0, "num_ctx": 8192}, "keep_alive": "5m",
+        }).encode("utf-8")
+        request = urllib.request.Request(OLLAMA_URL + "/api/generate", data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=180) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        return str(result.get("response") or "").strip()
+
+    @staticmethod
+    def _structure_signature(text: str) -> tuple:
+        """Return only stable Markdown structure, not translated wording."""
+        headings = tuple(len(match.group(1)) for match in re.finditer(r"(?m)^\s{0,3}(#{1,6})\s+", text or ""))
+        ordered = len(re.findall(r"(?m)^\s*\d+[.)]\s+", text or ""))
+        unordered = len(re.findall(r"(?m)^\s*[-*+]\s+", text or ""))
+        fences = len(re.findall(r"(?m)^\s*```", text or ""))
+        horizontal = len(re.findall(r"(?m)^\s*(?:---+|___+|\*\*\*+)\s*$", text or ""))
+        return headings, ordered, unordered, fences, horizontal
+
+    def _assess_quality(self, output: str, model_chunk: str, values: list[tuple[str, str]], mode: str) -> dict:
+        """统一质量契约：pass 可自动采用；needs_review 交人工；failed 无可用候选。
+
+        统计前先排除受保护片段（占位符还原后的 URL、变量、专名等），检测目标是
+        自然语言英文句段或原文回显，而不是变量、URL、缩写和角色名。
+        """
+        if not output or not output.strip():
+            return {"quality_status": "failed", "quality_codes": ["empty_output"], "quality_reason": QUALITY_REASONS["empty_output"]}
+        refusal_pattern = r"(?:I can(?:not|'t)\s+(?:translate|assist|help)|(?:抱歉.{0,20})?(?:无法|不能).{0,12}(?:翻译|协助|处理))"
+        if re.search(refusal_pattern, output, re.I):
+            return {"quality_status": "failed", "quality_codes": ["bridge_or_model_error"], "quality_reason": QUALITY_REASONS["bridge_or_model_error"]}
+        if re.search(r"(?im)^\s*(?:NSFW\s+Terminology|Context|Terminology|SOURCE|参考上下文|参考术语表|需要翻译的文本|上下文|术语表|来源)\s*[:：]", output) or "SOURCE:\n" in output or "需要翻译的文本：" in output:
+            return {"quality_status": "failed", "quality_codes": ["structure_mismatch"], "quality_reason": QUALITY_REASONS["structure_mismatch"]}
+        codes: list[str] = []
+        # 占位符：受保护内容必须数量一致（丢失、新增、改名都算疑点）；
+        # 已有中文片段允许在译文中自然重复出现，只检查不丢失
+        for token, original in values:
+            expected = model_chunk.count(token)
+            actual = output.count(original)
+            if actual < expected or (actual > expected and not re.search(r"[\u3400-\u9fff]", original)):
+                codes.append("placeholder_mismatch")
+                break
+        restored_source = self.restore(model_chunk, values)
+        source_signature = self._structure_signature(restored_source)
+        output_signature = self._structure_signature(output)
+        if source_signature != output_signature:
+            codes.append("structure_mismatch")
+        source_compact = re.sub(r"\s+", "", restored_source)
+        output_compact = re.sub(r"\s+", "", output)
+        if len(output) > max(200, len(model_chunk) * 6) or re.search(r"(.{12,80})\1\1", output):
+            if "structure_mismatch" not in codes:
+                codes.append("structure_mismatch")
+        if len(source_compact) >= 80 and len(output_compact) < max(12, int(len(source_compact) * 0.15)):
+            if "structure_mismatch" not in codes:
+                codes.append("structure_mismatch")
+        # 回显 / 混杂判断：排除受保护片段后再统计
+        source_probe = re.sub(r"__NV_(?:PROTECTED|EXISTING_ZH)_\d{4}__", "", model_chunk)
+        out_probe = output
+        for _, original in values:
+            out_probe = out_probe.replace(original, " ")
+        latin_out = len(re.findall(r"[A-Za-z]", out_probe))
+        cjk_out = len(re.findall(r"[\u3400-\u9fff]", out_probe))
+        source_words = [word.lower() for word in self._english_words(source_probe) if not (word.isupper() and len(word) <= 8)]
+        output_words = [word.lower() for word in self._english_words(out_probe) if not (word.isupper() and len(word) <= 8)]
+        if source_words:
+            if cjk_out == 0:
+                same_source = self._normalized_text(output) == self._normalized_text(restored_source)
+                approx_source = bool(source_words and output_words and SequenceMatcher(None, source_words, output_words).ratio() >= 0.78)
+                codes.append("source_echo" if same_source or approx_source else "missing_cjk")
+            elif latin_out > 0 and output_words:
+                codes.append("mixed_language")
+        if mode == "name_zh" and re.search(r"[A-Za-z]", out_probe) and re.search(r"[A-Za-z]", source_probe):
+            if "mixed_language" not in codes:
+                codes.append("mixed_language")
+        if not codes:
+            return {"quality_status": "pass", "quality_codes": [], "quality_reason": ""}
+        return {
+            "quality_status": "needs_review",
+            "quality_codes": codes,
+            "quality_reason": "；".join(QUALITY_REASONS.get(code, code) for code in codes),
+        }
+
+    def _better_candidate(self, first: dict, second: dict) -> dict:
+        """两次都未通过时，取更完整的候选作为人工参考，但状态保持非 pass。"""
+        rank = {"pass": 2, "needs_review": 1, "failed": 0}
+        if rank.get(second.get("quality_status"), 0) != rank.get(first.get("quality_status"), 0):
+            return second if rank.get(second.get("quality_status"), 0) > rank.get(first.get("quality_status"), 0) else first
+        first_cjk = self._latin_cjk(str(first.get("translation") or ""))[1]
+        second_cjk = self._latin_cjk(str(second.get("translation") or ""))[1]
+        return second if second_cjk > first_cjk else first
+
+    def _translate_chunk_once(
+        self,
+        model_chunk: str,
+        values: list[tuple[str, str]],
+        terminology: str,
+        mode: str,
+        context: str = "",
+        corrective: bool = False,
+        prior_output: str = "",
+        issue_codes: list[str] | None = None,
+    ) -> dict:
+        try:
+            context_hint = re.sub(r"\s+", " ", context or "").strip()[:240] or "（无）"
+            if mode == "name_zh":
+                prompt = (
+                    "你是专业的专名中文化译者。把下面的英文或罗马字名称翻译或音译为自然的简体中文名称。\n"
+                    "有通行中文译名时优先使用；不要保留拉丁字母，不要解释，不要添加引号或标签。\n"
+                    "只输出一个中文名称。\n\n参考上下文（仅用于理解，不要输出）：%s\n%s\n需要翻译的文本：\n%s"
+                ) % (context_hint, terminology or "", model_chunk)
+            elif corrective:
+                prompt = (
+                    "请把以下英文文本完整翻译成简体中文，只输出中文译文，不得出现英文句子，"
+                    "不得复述原文，不得解释，原样保留 __NV_*__ 占位符、变量、URL 和数字。"
+                    "保持标题、列表、代码围栏和段落结构。\n"
+                    "参考上下文（仅用于理解，不要输出）：%s\n问题：%s\n上一次候选（仅用于修正）：\n%s\n"
+                    "术语：%s\n原文：\n%s"
+                ) % (context_hint, "、".join(issue_codes or []) or "质量校验未通过", prior_output[:2400], terminology or "无", model_chunk)
+            else:
+                prompt = (
+                    "把下面的文本翻译成简体中文。要求：只返回最终译文；不要解释、不复述原文、"
+                    "不增加标题；原样保留受保护变量、URL、数字和指定专名；保留 __NV_*__ 占位符"
+                    "不变；保持输入文本的标题、列表、代码围栏和段落结构。\n"
+                    "参考上下文（仅用于理解，不要输出）：%s\n术语：%s\n原文：\n%s"
+                ) % (context_hint, terminology or "无", model_chunk)
+            output = self._call_model(prompt)
+        except Exception as error:
+            return {"quality_status": "failed", "quality_codes": ["bridge_or_model_error"],
+                    "quality_reason": "本地翻译失败: %s" % error, "translation": ""}
+        output = self.restore(output, values)
+        output = self._strip_prompt_echo(output)
+        # 受保护内容被模型丢弃时保留缺失状态，不把它粗暴追加到译文末尾。
+        missing_before = sum(max(model_chunk.count(token) - output.count(original), 0) for token, original in values)
+        quality = self._assess_quality(output, model_chunk, values, mode)
+        if missing_before > 0 and quality["quality_status"] == "pass":
+            quality = {"quality_status": "needs_review", "quality_codes": ["placeholder_mismatch"],
+                       "quality_reason": QUALITY_REASONS["placeholder_mismatch"]}
+        quality["translation"] = output
+        return quality
+
+    def _safe_cut(self, text: str, limit: int) -> int:
+        cut = min(limit, len(text))
+        boundary = list(re.finditer(r"(?:[。！？!?；;.!?][ \t]*(?:\r?\n|$)|\r?\n)", text[:cut]))
+        if boundary:
+            candidate = boundary[-1].end()
+            if candidate >= max(80, limit // 2):
+                cut = candidate
+        for match in self.protected_token_pattern.finditer(text):
+            if match.start() < cut < match.end():
+                cut = match.start() if match.start() else match.end()
+                break
+        return max(1, min(cut, len(text)))
+
+    def _split_long_block(self, text: str, hard_max: int) -> list[str]:
+        parts = []
+        rest = text
+        while len(rest) > hard_max:
+            cut = self._safe_cut(rest, hard_max)
+            parts.append(rest[:cut])
+            rest = rest[cut:]
+        if rest:
+            parts.append(rest)
+        return parts
+
+    def chunks(self, text: str, target: int = TRANSLATION_CHUNK_TARGET, hard_max: int = TRANSLATION_CHUNK_MAX) -> list[str]:
+        """Pack paragraphs and list groups while preserving Markdown shape."""
+        blocks: list[str] = []
+        current: list[str] = []
+        last_nonempty = ""
+
+        def flush() -> None:
+            nonlocal current, last_nonempty
+            if current:
+                block = "".join(current)
+                if block.strip():
+                    blocks.extend(self._split_long_block(block, hard_max))
+                current = []
+            last_nonempty = ""
+
+        for line in re.split(r"(?<=\n)", text or ""):
+            stripped = line.strip()
+            if not stripped:
+                current.append(line)
+                flush()
                 continue
-            while len(line) > target:
-                cut = target
-                for match in re.finditer(r"__NV_PROTECTED_\d{4}__", line):
-                    if match.start() < cut < match.end():
-                        cut = match.start() if match.start() else match.end()
-                        break
-                chunks.append(line[:cut])
-                line = line[cut:]
-            if line:
-                chunks.append(line)
+            is_heading = bool(re.match(r"^\s{0,3}#{1,6}\s+", line))
+            is_list = bool(re.match(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", line))
+            last_is_list = bool(re.match(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", last_nonempty))
+            if is_heading or (last_nonempty and is_list != last_is_list):
+                flush()
+            current.append(line)
+            last_nonempty = line
+        flush()
+
+        chunks: list[str] = []
+        pending = ""
+        for block in blocks:
+            if not pending:
+                pending = block
+            elif len(pending) + len(block) <= target:
+                pending += block
+            else:
+                chunks.append(pending)
+                pending = block
+        if pending:
+            chunks.append(pending)
         return chunks
 
     def protect(self, text: str):
@@ -385,24 +631,34 @@ class LocalTranslator:
         return output
 
     def translate(self, text: str, context: str, check_control, mode: str = "faithful_zh") -> str:
+        result = self.translate_with_quality(text, context, check_control, mode)
+        if result["quality_status"] != "pass":
+            raise RuntimeError(result["quality_reason"] or "模型未产生可用中文译文")
+        return result["translation"]
+
+    def translate_with_quality(self, text: str, context: str, check_control, mode: str = "faithful_zh") -> dict:
         if mode not in ("faithful_zh", "name_zh"):
             raise ValueError("未知翻译模式: %s" % mode)
+        contract = {"quality_contract_version": TRANSLATION_QUALITY_CONTRACT_VERSION}
         if not text:
-            return text
+            return {"quality_status": "pass", "quality_codes": [], "quality_reason": "", "translation": text, **contract}
         if mode == "name_zh":
             latin = len(re.findall(r"[A-Za-z]", text))
             cjk = len(re.findall(r"[\u3400-\u9fff]", text))
             if not latin or cjk >= latin:
-                return text
+                return {"quality_status": "pass", "quality_codes": [], "quality_reason": "", "translation": text, **contract}
         elif not self.needs_translation(text):
-            return text
+            return {"quality_status": "pass", "quality_codes": [], "quality_reason": "", "translation": text, **contract}
         translated = []
+        codes: list[str] = []
+        reasons: list[str] = []
+        worst = "pass"
+        rank = {"pass": 2, "needs_review": 1, "failed": 0}
         protected_text, protected_values = self.protect(text)
         # Long, explicit character cards can make a local model refuse the
         # whole request. Keep metadata efficient, but translate正文 in
         # smaller ordered pieces so no source content is discarded.
-        chunk_target = 180 if mode == "faithful_zh" else 1800
-        for chunk in self.chunks(protected_text, target=chunk_target):
+        for chunk in self.chunks(protected_text, target=TRANSLATION_CHUNK_TARGET, hard_max=TRANSLATION_CHUNK_MAX):
             check_control()
             values = [(token, original) for token, original in protected_values if token in chunk]
             restored_source = self.restore(chunk, values)
@@ -420,14 +676,13 @@ class LocalTranslator:
             cache_path = self.cache_root / (key + ".json")
             cached = load_json(cache_path, None)
             if cached and cached.get("translation"):
-                try:
-                    cached_output = str(cached["translation"])
-                    self._validate_output(cached_output, model_chunk, values, mode)
-                    translated.append(cached_output)
+                # 缓存结果必须按当前质量契约复验，坏缓存立即作废
+                quality = self._assess_quality(str(cached["translation"]), model_chunk, values, mode)
+                if quality["quality_status"] == "pass":
+                    translated.append(str(cached["translation"]))
                     continue
-                except RuntimeError:
-                    try: cache_path.unlink()
-                    except OSError: pass
+                try: cache_path.unlink()
+                except OSError: pass
             terms = self.glossary.get("terms") or {}
             model_chunk_lower = model_chunk.lower()
             matching_terms = [
@@ -435,40 +690,50 @@ class LocalTranslator:
                 for term, translation in terms.items()
                 if str(term).lower() in model_chunk_lower
             ]
-            glossary_text = "\n".join("%s => %s" % pair for pair in matching_terms) if matching_terms else "(none)"
-            if mode == "name_zh":
-                prompt = (
-                    "你是专业的专名中文化译者。把下面的英文或罗马字名称翻译或音译为自然的简体中文名称。\n"
-                    "有通行中文译名时优先使用；不要保留拉丁字母，不要解释，不要添加引号或标签。\n"
-                    "只输出一个中文名称。\n\n参考上下文：%s\n需要翻译的文本：\n%s"
-                ) % (context[:300], chunk)
+            terminology = "" if not matching_terms else "术语：%s。" % "；".join("%s=%s" % pair for pair in matching_terms)
+            outcome = self._translate_chunk_once(model_chunk, values, terminology, mode, context=context)
+            if outcome["quality_status"] != "pass":
+                # 自动重试最多一次：第一次 needs_review / failed 使用纠错 Prompt 重试
+                retried = self._translate_chunk_once(
+                    model_chunk,
+                    values,
+                    terminology,
+                    mode,
+                    context=context,
+                    corrective=True,
+                    prior_output=str(outcome.get("translation") or ""),
+                    issue_codes=list(outcome.get("quality_codes") or []),
+                )
+                outcome = retried if retried["quality_status"] == "pass" else self._better_candidate(outcome, retried)
+            if outcome["quality_status"] == "pass":
+                # 只有 pass 才允许写成功缓存
+                atomic_json(cache_path, {
+                    "translation": outcome["translation"], "model": self.model, "mode": mode,
+                    "quality_status": "pass",
+                    "cache_version": TRANSLATION_CACHE_VERSION,
+                    "prompt_version": TRANSLATION_PROMPT_VERSION,
+                    "validator_version": TRANSLATION_VALIDATOR_VERSION,
+                    "quality_contract_version": TRANSLATION_QUALITY_CONTRACT_VERSION,
+                    "created_at": now_iso(),
+                })
+                translated.append(outcome["translation"])
             else:
-                terminology = "" if not matching_terms else "术语：%s。" % "；".join("%s=%s" % pair for pair in matching_terms)
-                prompt = "翻译成简体中文，只输出译文，保留 __NV_*__ 占位符不变。%s\n%s" % (terminology, model_chunk)
-            payload = json.dumps({
-                "model": self.model, "prompt": prompt, "stream": False,
-                "options": {"temperature": 0, "num_ctx": 8192}, "keep_alive": "5m",
-            }).encode("utf-8")
-            request = urllib.request.Request(OLLAMA_URL + "/api/generate", data=payload, headers={"Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(request, timeout=180) as response:
-                    result = json.loads(response.read().decode("utf-8"))
-                output = str(result.get("response") or "").strip()
-            except Exception as error:
-                raise RuntimeError("本地翻译失败: %s" % error)
-            output = self.restore(output, values)
-            output = self._strip_prompt_echo(output)
-            output = self._restore_missing_protected(output, model_chunk, values)
-            self._validate_output(output, model_chunk, values, mode)
-            atomic_json(cache_path, {
-                "translation": output, "model": self.model, "mode": mode,
-                "cache_version": TRANSLATION_CACHE_VERSION,
-                "prompt_version": TRANSLATION_PROMPT_VERSION,
-                "validator_version": TRANSLATION_VALIDATOR_VERSION,
-                "created_at": now_iso(),
-            })
-            translated.append(output)
-        return "".join(translated)
+                if rank.get(outcome["quality_status"], 0) < rank.get(worst, 2):
+                    worst = outcome["quality_status"]
+                for code in outcome.get("quality_codes") or []:
+                    if code not in codes:
+                        codes.append(code)
+                reason = str(outcome.get("quality_reason") or "")
+                if reason and reason not in reasons:
+                    reasons.append(reason)
+                translated.append(str(outcome.get("translation") or ""))
+        return {
+            "quality_status": worst,
+            "quality_codes": codes,
+            "quality_reason": "；".join(reasons),
+            "translation": "".join(translated),
+            **contract,
+        }
 
 
 class TranslationModelInstaller:
@@ -801,6 +1066,9 @@ class ExportJobManager:
                     "source_sha256": source_hash, "mode": mode, "apply_policy": policy,
                     **master_metadata,
                     "cache_version": TRANSLATION_CACHE_VERSION,
+                    "prompt_version": TRANSLATION_PROMPT_VERSION,
+                    "validator_version": TRANSLATION_VALIDATOR_VERSION,
+                    "quality_contract_version": TRANSLATION_QUALITY_CONTRACT_VERSION,
                 })[:24]
                 job_id = "translation-" + digest
                 path = self._translation_job_path(job_id)
@@ -818,7 +1086,12 @@ class ExportJobManager:
                     "base_revision": str(raw.get("base_revision") or "")[:240],
                     **master_metadata,
                     "status": "queued", "translation": "", "model": self.translator.model,
-                    "cache_version": TRANSLATION_CACHE_VERSION, "attempts": 0,
+                    "cache_version": TRANSLATION_CACHE_VERSION,
+                    "prompt_version": TRANSLATION_PROMPT_VERSION,
+                    "validator_version": TRANSLATION_VALIDATOR_VERSION,
+                    "quality_status": "", "quality_codes": [], "quality_reason": "",
+                    "quality_contract_version": TRANSLATION_QUALITY_CONTRACT_VERSION,
+                    "attempts": 0,
                     "error": "", "created_at": now_iso(), "updated_at": now_iso(),
                 }
                 self._save_translation_job(job)
@@ -830,13 +1103,18 @@ class ExportJobManager:
 
     @staticmethod
     def _translation_job_summary(job: dict) -> dict:
-        return {key: job.get(key) for key in (
+        summary = {key: job.get(key) for key in (
             "id", "workspace", "item_id", "item_name", "field", "mode",
             "apply_policy", "source_sha256", "base_revision", "status",
             "import_id", "source_id", "source_revision", "master_item_id",
             "model", "cache_version", "attempts", "error", "created_at",
             "updated_at", "completed_at",
+            "quality_status", "quality_codes", "quality_reason", "quality_contract_version",
         )}
+        # 候选译文只随待人工/失败/冲突状态下发，避免队列轮询负载过大
+        if job.get("status") in ("pending_review", "failed", "conflict"):
+            summary["translation"] = job.get("translation") or ""
+        return summary
 
     def translation_queue_status(self, workspace: str = "") -> dict:
         with self._translation_queue_lock:
@@ -921,7 +1199,8 @@ class ExportJobManager:
             job = self._translation_job(job_id)
             if job.get("status") not in ("failed", "conflict", "cancelled"):
                 raise ValueError("只有失败、冲突或已取消任务可以重试")
-            job.update({"status": "queued", "error": "", "translation": "", "cancel_requested": False})
+            job.update({"status": "queued", "error": "", "translation": "", "cancel_requested": False,
+                        "quality_status": "", "quality_codes": [], "quality_reason": ""})
             self._save_translation_job(job)
             self._ensure_translation_worker()
             return job
@@ -973,17 +1252,26 @@ class ExportJobManager:
                             raise RuntimeError("Ollama 当前不可用")
                         if not status.get("installed"):
                             raise RuntimeError("尚未安装 HY-MT 本地翻译模型")
-                        translation = self.translator.translate(
+                        result = self.translator.translate_with_quality(
                             str(selected.get("source_text") or ""),
                             "%s · %s" % (selected.get("item_name") or selected.get("item_id"), selected.get("field")),
                             lambda: None, str(selected.get("mode") or "faithful_zh"),
                         )
-                    if not translation:
-                        raise RuntimeError("模型未产生可用中文译文")
-                    if translation == selected.get("source_text") and not re.search(r"[\u3400-\u9fff]", str(selected.get("source_text") or "")):
-                        raise RuntimeError("模型未产生可用中文译文")
-                    selected["translation"] = translation
-                    selected["status"] = translation_job_completion_status(str(selected.get("apply_policy") or ""))
+                    selected["translation"] = str(result.get("translation") or "")
+                    selected["quality_status"] = str(result.get("quality_status") or "")
+                    selected["quality_codes"] = [str(code) for code in result.get("quality_codes") or []]
+                    selected["quality_reason"] = str(result.get("quality_reason") or "")[:500]
+                    selected["quality_contract_version"] = TRANSLATION_QUALITY_CONTRACT_VERSION
+                    if result.get("quality_status") == "pass":
+                        selected["status"] = translation_job_completion_status(str(selected.get("apply_policy") or ""))
+                        selected["error"] = ""
+                    elif result.get("quality_status") == "needs_review":
+                        # 有可用候选但存在回显/混杂/占位符疑点：不自动生效，交人工处理
+                        selected["status"] = "pending_review"
+                        selected["error"] = selected["quality_reason"]
+                    else:
+                        selected["status"] = "failed"
+                        selected["error"] = selected["quality_reason"] or "模型未产生可用中文译文"
                     selected["completed_at"] = now_iso()
                 except Exception as error:
                     selected["status"] = "failed"

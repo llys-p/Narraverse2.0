@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	hertzapp "github.com/cloudwego/hertz/pkg/app"
 	hertzserver "github.com/cloudwego/hertz/pkg/app/server"
@@ -59,12 +60,19 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.GET("/library/assets/:id/translations", apiHandlers.HandleLibraryAssetTranslations)
 		api.GET("/library/assets/:id/usages", apiHandlers.HandleLibraryAssetUsages)
 		api.POST("/library/assets/:id/instances", apiHandlers.HandleLibraryAssetInstantiate)
+		api.PATCH("/library/assets/:id/description", apiHandlers.HandleLibraryAssetDescriptionUpdate)
+		api.PATCH("/library/assets/:id/fields", apiHandlers.HandleLibraryAssetFieldsUpdate)
+		api.POST("/library/assets/:id/entries", apiHandlers.HandleLibraryAssetEntryCreate)
 		api.GET("/library/assets/:id/runtime", apiHandlers.HandleLibraryAssetRuntime)
+		api.GET("/library/assets/:id/adventure-usage", apiHandlers.HandleLibraryAssetAdventureUsage)
+		api.POST("/library/assets/:id/sync-adventure", apiHandlers.HandleLibraryAssetSyncAdventure)
 		api.GET("/library/assets/:id/proposals", apiHandlers.HandleLibraryAssetProposals)
 		api.POST("/library/assets/:id/proposals", apiHandlers.HandleLibraryProposalCreate)
 		api.POST("/library/assets/:id/proposals/batch-apply", apiHandlers.HandleLibraryProposalBatchApply)
+		api.POST("/library/assets/:id/proposals/batch-reject", apiHandlers.HandleLibraryProposalBatchReject)
 		api.POST("/library/proposals/:id/validate", apiHandlers.HandleLibraryProposalValidate)
 		api.POST("/library/proposals/:id/apply", apiHandlers.HandleLibraryProposalApply)
+		api.POST("/library/proposals/:id/reject", apiHandlers.HandleLibraryProposalReject)
 		api.POST("/library/assets/:id/agent", apiHandlers.HandleLibraryMasterAgentStart)
 		api.GET("/library/agent/tasks/:id/stream", apiHandlers.HandleLibraryMasterAgentStream)
 		api.POST("/workspace/switch", apiHandlers.HandleWorkspaceSwitch)
@@ -221,6 +229,9 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.GET("/settings", apiHandlers.HandleSettingsGet)
 		api.PUT("/settings/user", apiHandlers.HandleSettingsUserUpdate)
 		api.PUT("/settings/workspace", apiHandlers.HandleSettingsWorkspaceUpdate)
+		api.GET("/model/status", apiHandlers.HandleModelStatus)
+		api.POST("/model/test", apiHandlers.HandleModelTest)
+		api.POST("/model/chat", apiHandlers.HandleModelChat)
 		api.GET("/update/check", apiHandlers.HandleUpdateCheck)
 		api.POST("/update/install", apiHandlers.HandleUpdateInstall)
 		api.POST("/update/install/stream", apiHandlers.HandleUpdateInstallStream)
@@ -263,10 +274,46 @@ func spaFallbackHandler(webRoot string) hertzapp.HandlerFunc {
 			c.SetStatusCode(consts.StatusNotFound)
 			return
 		}
+		requestPath := string(c.Request.URI().Path())
+		if !shouldServeSPAFallback(requestPath) {
+			// Never turn a missing JavaScript/CSS/font/image into index.html.
+			// Browsers then report the real missing asset instead of a misleading
+			// dynamic-import MIME error, and API typos remain API 404s.
+			c.SetStatusCode(consts.StatusNotFound)
+			return
+		}
 		c.SetContentType("text/html; charset=utf-8")
+		c.Response.Header.Set("Cache-Control", "no-store")
 		c.SetStatusCode(consts.StatusOK)
 		c.SetBodyString(string(indexHTML))
 	}
+}
+
+// shouldServeSPAFallback only accepts extensionless client-side routes. A
+// hashed asset from a previous frontend build must not receive index.html;
+// otherwise a stale page reports a successful 200 with the wrong MIME type
+// and the actual deployment problem is hidden.
+func shouldServeSPAFallback(requestPath string) bool {
+	requestPath = strings.TrimSpace(requestPath)
+	if requestPath == "" || requestPath == "/" {
+		return true
+	}
+	if requestPath == "/api" || strings.HasPrefix(requestPath, "/api/") {
+		return false
+	}
+	return filepath.Ext(requestPath) == ""
+}
+
+// staticDocumentCacheMiddleware keeps the SPA entry documents fresh after a
+// rebuild while retaining normal browser caching for hashed assets. This is
+// important for the desktop app, where an old index can outlive a rebuilt
+// output directory and point at deleted chunk names.
+func staticDocumentCacheMiddleware(ctx context.Context, c *hertzapp.RequestContext) {
+	requestPath := string(c.Request.URI().Path())
+	if requestPath == "" || requestPath == "/" || strings.HasSuffix(strings.ToLower(requestPath), ".html") {
+		c.Response.Header.Set("Cache-Control", "no-store")
+	}
+	c.Next(ctx)
 }
 
 func resolveWebRoot() string {

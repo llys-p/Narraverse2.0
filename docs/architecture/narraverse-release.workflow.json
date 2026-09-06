@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Narraverse2.0 Windows 发布与验收流程",
+    "locale": "zh-CN",
+    "output": "docs/architecture/narraverse-release.workflow.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "build", "label": "构建主线", "focus": ["source", "preflight", "prepare", "build"], "note": "从当前源码和环境检查走到正式构建产物。" },
+      { "id": "runtime", "label": "启动验收", "focus": ["build", "start", "verify"], "note": "启动 executable 后以正式页面和 API 进行验收。" },
+      { "id": "failure", "label": "错误边界", "focus": ["build", "repair", "preflight"], "note": "构建错误先分类并修复环境或输入，再重跑正式入口。" }
+    ]
+  },
+  "lanes": [
+    { "id": "setup", "label": "setup_narraverse2.ps1" },
+    { "id": "build", "label": "前端与 Go 构建" },
+    { "id": "runtime", "label": "Denova executable" },
+    { "id": "exceptions", "label": "错误修复", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "source", "label": "源码准备", "fromCol": 0, "toCol": 1 },
+    { "id": "build_phase", "label": "生成与构建", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "acceptance", "label": "启动与验收", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "reproducible_build", "label": "可重复构建输入", "lane": "setup", "fromCol": 1, "toCol": 4, "variant": "emphasis" },
+    { "id": "acceptance_gates", "label": "正式验收门", "lane": "runtime", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["source", "preflight", "prepare", "build", "start", "verify"],
+  "nodes": [
+    { "id": "source", "lane": "setup", "col": 0, "type": "frontend", "label": "当前 main 源码", "sublabel": "干净工作树优先" },
+    { "id": "preflight", "lane": "setup", "col": 1, "type": "security", "label": "检查环境", "sublabel": "Git / Node / pnpm / Python / Go / Bash", "width": 170, "tag": "gate" },
+    { "id": "prepare", "lane": "setup", "col": 2, "type": "backend", "label": "生成并同步", "sublabel": "local library + Narraverse assets", "width": 150 },
+    { "id": "build", "lane": "build", "col": 4, "type": "backend", "label": "构建正式包", "sublabel": "前端 + Go executable", "tag": "artifact" },
+    { "id": "start", "lane": "runtime", "col": 4, "type": "cloud", "label": "启动 Denova", "sublabel": "自动选择可用正式端口", "tag": "runtime" },
+    { "id": "verify", "lane": "runtime", "col": 5, "type": "security", "label": "正式验收", "sublabel": "页面 / api/status / Module1–4", "width": 145, "tag": "accept" },
+    { "id": "repair", "lane": "exceptions", "col": 3, "type": "security", "label": "分类并修复", "sublabel": "环境 / 依赖 / 文件锁 / 端口", "width": 130, "tag": "retry" }
+  ],
+  "edges": [
+    { "from": "source", "to": "preflight", "role": "main" },
+    { "from": "preflight", "to": "prepare", "role": "main", "variant": "emphasis" },
+    { "from": "prepare", "to": "build", "label": "pnpm frozen + build.sh", "role": "main", "variant": "emphasis" },
+    { "from": "build", "to": "start", "label": "output/denova(.exe)", "role": "main", "variant": "emphasis" },
+    { "from": "start", "to": "verify", "label": "正式 URL", "role": "main", "variant": "emphasis" },
+    { "from": "preflight", "to": "repair", "label": "检查失败", "role": "error", "variant": "security" },
+    { "from": "build", "to": "repair", "label": "构建失败", "role": "error", "variant": "security" },
+    { "from": "repair", "to": "preflight", "label": "修复后重跑", "role": "return", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "正式入口", "items": ["setup_narraverse2.ps1 串起生成、同步、安装、构建、启动", "最终用户入口是 Denova executable", "5174 静态页和 8097 bridge 不替代正式验收"] },
+    { "dot": "emerald", "title": "验收门", "items": ["根页面、/api/status、Narraverse 资源返回正常", "Denova 顶层可见 Module1–4", "Module4 世界、进入、滚动、刷新路径可复现"] },
+    { "dot": "rose", "title": "错误处理", "items": ["端口冲突以程序实际 URL 为准", "文件锁先停止自己启动的进程", "API 未配置时 fallback 不算真实模型验收"] }
+  ]
+}

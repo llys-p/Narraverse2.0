@@ -1,4 +1,4 @@
-/* Module 4 Task 9: one action pipeline, facts, and a single settlement boundary. */
+/* Module 4 V1.5: one action pipeline, explicit time controls, and a single settlement boundary. */
 (function (root) {
   'use strict';
 
@@ -30,6 +30,8 @@
     view_status: { label: '查看状态', energyCost: 0, advancesTime: false, clockType: null },
     view_log: { label: '查看日志', energyCost: 0, advancesTime: false, clockType: null },
     move: { label: '移动', energyCost: clockCost('move'), advancesTime: true, clockType: 'move' },
+    inspect: { label: '观察调查', energyCost: clockCost('inspect'), advancesTime: true, clockType: 'inspect' },
+    take: { label: '尝试拿取', energyCost: clockCost('inspect'), advancesTime: true, clockType: 'inspect' },
     chat: { label: '闲聊', energyCost: clockCost('chat'), advancesTime: true, clockType: 'chat' },
     study: { label: '学习', energyCost: clockCost('study'), advancesTime: true, clockType: 'study' },
     help: { label: '帮忙', energyCost: clockCost('help'), advancesTime: true, clockType: 'help' },
@@ -40,7 +42,10 @@
     train: { label: '训练', energyCost: clockCost('train'), advancesTime: true, clockType: 'train' },
     intensive: { label: '高强度活动', energyCost: clockCost('intensive'), advancesTime: true, clockType: 'intensive' },
     seek: { label: '寻找 NPC', energyCost: clockCost('chat'), advancesTime: true, clockType: 'chat' },
-    custom: { label: '自定义行动', energyCost: 0, advancesTime: false, clockType: null }
+    wait: { label: '等待', energyCost: 0, advancesTime: true, clockType: null },
+    sleep: { label: '睡到明天', energyCost: 0, advancesTime: true, clockType: null },
+    unsupported: { label: '暂不支持的行动', energyCost: 0, advancesTime: false, clockType: null },
+    custom: { label: '待确认行动', energyCost: 0, advancesTime: false, clockType: null }
   };
 
   var TYPE_ALIASES = {
@@ -74,7 +79,7 @@
   }
 
   function customInput(raw) {
-    return { type: 'custom', text: raw };
+    return { type: 'custom', text: raw, parseStatus: text(raw) ? 'ready' : 'needs_clarification' };
   }
 
   function scheduleChangeFromText(raw) {
@@ -89,24 +94,46 @@
     var raw = text(input);
     if (!raw) return customInput(raw);
 
-    var match = raw.match(/^(?:去|前往|到|移动到)\s*(.+)$/);
-    if (match) return { type: 'move', targetLocationId: text(match[1]), text: raw };
+    var normalizedRaw = raw.replace(/^我(?:想(?:要)?|要)?\s*/, '').trim();
+    var match = normalizedRaw.match(/^(?:去|前往|到|移动到)\s*(.+)$/);
+    if (match) {
+      var moveBody = text(match[1]);
+      var seekMatch = moveBody.match(/^(.+?)(?:找|寻找|主动寻找)\s*(.+)$/);
+      if (seekMatch) {
+        return {
+          type: 'move',
+          targetLocationId: text(seekMatch[1]),
+          followUp: { type: 'seek', targetNpcId: text(seekMatch[2]), text: '抵达后寻找' + text(seekMatch[2]) },
+          text: raw
+        };
+      }
+      return { type: 'move', targetLocationId: moveBody, text: raw };
+    }
 
-    match = raw.match(/^(?:找|寻找|主动寻找)\s*(.+)$/);
+    match = normalizedRaw.match(/^(?:找|寻找|主动寻找)\s*(.+)$/);
     if (match) return { type: 'seek', targetNpcId: text(match[1]), text: raw };
 
-    if (/^(?:查看|看看|打开)?\s*(?:状态|当前状态)$/.test(raw)) return { type: 'view_status', text: raw };
-    if (/^(?:查看|看看|打开)?\s*(?:世界|地图|地点)$/.test(raw)) return { type: 'view_world', text: raw };
-    if (/^(?:查看|看看|打开)?\s*(?:日志|记录)$/.test(raw)) return { type: 'view_log', text: raw };
-    if (/(?:邀请|邀约|约)/.test(raw)) return { type: 'invite', text: raw, scheduleChange: scheduleChangeFromText(raw) };
-    if (/说服/.test(raw)) return { type: 'persuade', text: raw, scheduleChange: scheduleChangeFromText(raw) };
-    if (/(?:请求|拜托|请).*(?:帮助|帮忙|帮)/.test(raw)) return { type: 'request_help', text: raw };
-    if (/(?:高风险|危险|冒险).*(?:训练)|(?:训练).*(?:高风险|危险|冒险)/.test(raw)) return { type: 'intensive', text: raw };
-    if (/(?:聊天|闲聊|打招呼|聊聊)/.test(raw)) return { type: 'chat', text: raw };
-    if (/(?:帮忙|帮助|帮)/.test(raw)) return { type: 'help', text: raw };
-    if (/学习/.test(raw)) return { type: 'study', text: raw };
-    if (/训练/.test(raw)) return { type: 'train', text: raw };
-    if (/探索/.test(raw)) return { type: 'explore', text: raw };
+    match = normalizedRaw.match(/^等到\s*(早上|上午|早晨|中午|下午|傍晚|晚上|晚间)$/);
+    if (match) return { type: 'wait', waitUntil: SCHEDULE_PERIOD_ALIASES[match[1]], text: raw };
+    if (/^(?:睡到明天|睡觉|睡一觉|休息到明天|进入睡眠)$/.test(normalizedRaw)) return { type: 'sleep', text: raw };
+
+    if (/^(?:查看|看看|打开)?\s*(?:状态|当前状态)$/.test(normalizedRaw)) return { type: 'view_status', text: raw };
+    if (/^(?:查看|看看|打开)?\s*(?:世界|地图|地点)$/.test(normalizedRaw)) return { type: 'view_world', text: raw };
+    if (/^(?:查看|看看|打开)?\s*(?:日志|记录)$/.test(normalizedRaw)) return { type: 'view_log', text: raw };
+    match = normalizedRaw.match(/^(?:观察|查看|调查|检查)\s*(.*)$/);
+    if (match && text(match[1])) return { type: 'inspect', targetObjectId: text(match[1]), text: raw };
+    match = normalizedRaw.match(/^(?:拿走|拿取|拿|取|捡起)\s*(.*)$/);
+    if (match && text(match[1])) return { type: 'take', targetObjectId: text(match[1]), text: raw };
+    if (/(?:打电话|发短信|发消息)/.test(normalizedRaw)) return customInput(raw);
+    if (/(?:邀请|邀约|约)/.test(normalizedRaw)) return { type: 'invite', text: raw, scheduleChange: scheduleChangeFromText(raw) };
+    if (/说服/.test(normalizedRaw)) return { type: 'persuade', text: raw, scheduleChange: scheduleChangeFromText(raw) };
+    if (/(?:请求|拜托|请).*(?:帮助|帮忙|帮)/.test(normalizedRaw)) return { type: 'request_help', text: raw };
+    if (/(?:高风险|危险|冒险).*(?:训练)|(?:训练).*(?:高风险|危险|冒险)/.test(normalizedRaw)) return { type: 'intensive', text: raw };
+    if (/(?:聊天|闲聊|打招呼|聊聊)/.test(normalizedRaw)) return { type: 'chat', text: raw };
+    if (/(?:帮忙|帮助|帮)/.test(normalizedRaw)) return { type: 'help', text: raw };
+    if (/学习/.test(normalizedRaw)) return { type: 'study', text: raw };
+    if (/训练/.test(normalizedRaw)) return { type: 'train', text: raw };
+    if (/探索/.test(normalizedRaw)) return { type: 'explore', text: raw };
 
     return customInput(raw);
   }
@@ -158,8 +185,13 @@
       actorId: 'player',
       targetNpcId: text(raw.targetNpcId || raw.npcId) || null,
       targetLocationId: text(raw.targetLocationId || raw.locationId || raw.target) || null,
+      targetObjectId: text(raw.targetObjectId || raw.objectId) || null,
       text: actionText,
       source: source,
+      parseStatus: text(raw.parseStatus) || 'ready',
+      reason: text(raw.reason) || null,
+      waitUntil: text(raw.waitUntil) || null,
+      followUp: raw.followUp && typeof raw.followUp === 'object' ? normalize(raw.followUp) : null,
       energyCost: actionDefinition.energyCost,
       advancesTime: actionDefinition.advancesTime,
       scheduleChange: normalizeScheduleChange(raw)
@@ -186,6 +218,45 @@
     return Module4.Encounter && typeof Module4.Encounter.checkNatural === 'function'
       ? Module4.Encounter.checkNatural(world)
       : { found: false, npcs: [] };
+  }
+
+  function listSceneObjects(world) {
+    if (Array.isArray(world && world.sceneObjects)) return world.sceneObjects;
+    if (world && world.sceneObjects && typeof world.sceneObjects === 'object') {
+      return Object.keys(world.sceneObjects).map(function (id) {
+        return Object.assign({ id: id }, world.sceneObjects[id]);
+      });
+    }
+    return [];
+  }
+
+  function findSceneObject(world, reference) {
+    var value = text(reference);
+    if (!value) return null;
+    return listSceneObjects(world).find(function (object) {
+      return object && (text(object.id) === value || text(object.name) === value);
+    }) || null;
+  }
+
+  function sceneObjectAtPlayer(world, object) {
+    if (!object) return false;
+    var location = text(object.locationId || object.location);
+    var holder = text(object.holderId || object.holder);
+    return (!location || location === text(world.player && world.player.location))
+      && (!holder || holder === 'world' || holder === text(world.player && world.player.location));
+  }
+
+  function objectIsTakeable(object) {
+    var affordances = Array.isArray(object && object.affordances) ? object.affordances.map(text) : [];
+    return object && (object.takeable === true || affordances.indexOf('take') >= 0 || affordances.indexOf('takeable') >= 0);
+  }
+
+  function updateSceneObject(world, objectId, patch) {
+    var objects = listSceneObjects(world).map(function (object) {
+      return text(object && object.id) === text(objectId) ? Object.assign({}, object, patch) : object;
+    });
+    world.sceneObjects = objects;
+    return world;
   }
 
   function resolveActionNpc(world, action) {
@@ -311,6 +382,19 @@
     return Module4.Settlement.settle(world);
   }
 
+  function advanceEvents(world, action, judgment, clock, timeChanged, isSettlement) {
+    if (!world || world.rulesVersion !== 'v1.5' || !Module4.Events || typeof Module4.Events.advance !== 'function') {
+      return { ok: true, changed: false, world: world, facts: [] };
+    }
+    return Module4.Events.advance(world, {
+      action: action,
+      judgment: judgment,
+      clock: clock,
+      timeChanged: !!timeChanged,
+      isSettlement: !!isSettlement
+    });
+  }
+
   function addRecommendation(list, input) {
     list.push(normalize(Object.assign({}, input, { source: 'recommended' })));
   }
@@ -334,6 +418,13 @@
       settlement: null,
       message: message
     };
+  }
+
+  function inputFailure(action, world, status, reason, message) {
+    var result = failure(action, world, message);
+    result.status = status;
+    result.reason = reason;
+    return result;
   }
 
   function finish(action, world, clockResult, encounter, extraMessage, judgment, scheduleRewrite, factResult, settlement) {
@@ -462,12 +553,61 @@
     var next = normalizeWorld(world);
     var beforeWorld = clone(next);
     var actionDefinition = definition(action.type);
+    if (action.type === 'unsupported') {
+      return inputFailure(action, next, 'unsupported', action.reason || 'unsupported', '这个行动目前还没有对应的模块四能力。');
+    }
+    if (Module4.Clock.isV15(next) && action.type === 'custom' && action.parseStatus !== 'ready') {
+      return inputFailure(action, next, action.parseStatus || 'needs_clarification', 'intent-not-resolved', '我还不能确定要执行什么；请换一种说法，或先说明人物、地点或对象。');
+    }
+    if (action.type === 'wait') {
+      var waited = Module4.Clock.waitUntil(next, action.waitUntil);
+      if (!waited.ok) return failure(action, next, waited.message);
+      var waitedEvents = advanceEvents(waited.world, action, null, waited.world.clock, waited.changed, false);
+      return appendActionLog(finish(action, waitedEvents.world, waited, null, '', null, null, {
+        changed: waitedEvents.changed,
+        facts: waitedEvents.facts || []
+      }, null), beforeWorld);
+    }
+    if (action.type === 'sleep') {
+      var slept = Module4.Clock.sleep(next);
+      if (!slept.ok) return failure(action, next, slept.message);
+      var sleepEvents = advanceEvents(slept.world, action, null, slept.world.clock, true, true);
+      var sleepSettlement = settleDay(sleepEvents.world);
+      if (!sleepSettlement.ok) return failure(action, next, sleepSettlement.message, slept, null, null);
+      return appendActionLog(finish(action, sleepSettlement.world, slept, null, '', null, null, {
+        changed: sleepEvents.changed,
+        facts: sleepEvents.facts || []
+      }, sleepSettlement), beforeWorld);
+    }
+    var sceneObject = null;
+    if (action.type === 'inspect' || action.type === 'take') {
+      sceneObject = findSceneObject(next, action.targetObjectId);
+      if (!sceneObject) return failure(action, next, '没有找到可以观察的目标对象。');
+      if (!sceneObjectAtPlayer(next, sceneObject)) return failure(action, next, '目标对象不在当前地点。');
+      if (action.type === 'take' && !objectIsTakeable(sceneObject)) return failure(action, next, '这个对象当前不能拿取。');
+    }
     if (action.type === 'move') {
       var target = Module4.Location && typeof Module4.Location.get === 'function'
         ? Module4.Location.get(next, action.targetLocationId)
         : null;
       if (!target) return failure(action, next, '目标地点不存在。');
       action = Object.assign({}, action, { targetLocationId: target.id });
+      if (target.id === text(next.player && next.player.location)) {
+        return appendActionLog({
+          ok: true,
+          changed: false,
+          kind: 'action',
+          action: action,
+          world: next,
+          clock: null,
+          encounter: currentEncounter(next),
+          judgment: evaluateJudgment(next, action),
+          scheduleRewrite: null,
+          facts: [],
+          settlement: null,
+          message: '你已经在' + target.name + '，没有消耗时间。'
+        }, beforeWorld);
+      }
     }
 
     var resolvedNpc = resolveActionNpc(next, action);
@@ -569,8 +709,26 @@
       completedWorld = moved.world;
     }
 
+    if (sceneObject && action.type === 'take') {
+      completedWorld = updateSceneObject(completedWorld, sceneObject.id, {
+        holderId: 'player',
+        locationId: null,
+        state: 'held'
+      });
+    }
+    if (action.followUp && action.followUp.type === 'seek' && action.type === 'move') {
+      var followNpc = resolveActionNpc(completedWorld, action.followUp);
+      encounter = Module4.Encounter && typeof Module4.Encounter.seekNpc === 'function'
+        ? Module4.Encounter.seekNpc(completedWorld, followNpc ? followNpc.id : action.followUp.targetNpcId)
+        : encounter;
+    }
+
+    var eventResult = advanceEvents(completedWorld, action, judgment, clockResult.world.clock, clockResult.changed, false);
+    completedWorld = eventResult.world;
     var factResult = recordFacts(completedWorld, action, judgment, scheduleRewrite);
     completedWorld = factResult.world;
+    factResult.changed = !!factResult.changed || !!eventResult.changed;
+    factResult.facts = (eventResult.facts || []).concat(factResult.facts || []);
     var settlement = null;
     if (clockResult.requiresSettlement) {
       settlement = settleDay(completedWorld);

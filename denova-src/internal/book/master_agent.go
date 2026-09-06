@@ -78,11 +78,62 @@ type MasterProposal struct {
 	Risk                        string              `json:"risk"`
 	IssueCode                   string              `json:"issue_code,omitempty"`
 	Reason                      string              `json:"reason,omitempty"`
+	ProtectedTokenOverride      bool                `json:"protected_token_override,omitempty"`
 	AgentRunID                  string              `json:"agent_run_id,omitempty"`
 	RecoveryAttempt             int                 `json:"recovery_attempt,omitempty"`
 	AppliedTranslationVersionID string              `json:"applied_translation_version_id,omitempty"`
 	CreatedAt                   string              `json:"created_at"`
 	UpdatedAt                   string              `json:"updated_at"`
+}
+
+// MasterTranslationMarkerMismatchError describes a protected-marker mismatch
+// without echoing the original text, URLs, or user content into API errors.
+// The UI already shows the source and candidate side by side, so category and
+// count are enough to explain why strict validation stopped the operation.
+type MasterTranslationMarkerMismatchError struct {
+	MissingVariables int
+	MissingLinks     int
+	MissingNumbers   int
+	ExtraVariables   int
+	ExtraLinks       int
+	ExtraNumbers     int
+}
+
+func (e *MasterTranslationMarkerMismatchError) Error() string {
+	if e == nil {
+		return "候选译文未保留原文中的变量、链接或数字标记"
+	}
+	missing := make([]string, 0, 3)
+	if e.MissingVariables > 0 {
+		missing = append(missing, fmt.Sprintf("变量 %d 个", e.MissingVariables))
+	}
+	if e.MissingLinks > 0 {
+		missing = append(missing, fmt.Sprintf("链接 %d 个", e.MissingLinks))
+	}
+	if e.MissingNumbers > 0 {
+		missing = append(missing, fmt.Sprintf("数字标记 %d 个", e.MissingNumbers))
+	}
+	extra := make([]string, 0, 3)
+	if e.ExtraVariables > 0 {
+		extra = append(extra, fmt.Sprintf("变量 %d 个", e.ExtraVariables))
+	}
+	if e.ExtraLinks > 0 {
+		extra = append(extra, fmt.Sprintf("链接 %d 个", e.ExtraLinks))
+	}
+	if e.ExtraNumbers > 0 {
+		extra = append(extra, fmt.Sprintf("数字标记 %d 个", e.ExtraNumbers))
+	}
+	parts := make([]string, 0, 2)
+	if len(missing) > 0 {
+		parts = append(parts, "缺少"+strings.Join(missing, "、"))
+	}
+	if len(extra) > 0 {
+		parts = append(parts, "多出"+strings.Join(extra, "、"))
+	}
+	if len(parts) == 0 {
+		return "候选译文未保留原文中的变量、链接或数字标记"
+	}
+	return "候选译文未保留原文中的变量、链接或数字标记：" + strings.Join(parts, "；")
 }
 
 type MasterProposalInput struct {
@@ -115,6 +166,11 @@ type MasterProposalList struct {
 type MasterProposalBatchResult struct {
 	AppliedCount int                         `json:"applied_count"`
 	Results      []MasterProposalBatchStatus `json:"results"`
+}
+
+type MasterProposalRejectResult struct {
+	RejectedCount int                         `json:"rejected_count"`
+	Results       []MasterProposalBatchStatus `json:"results"`
 }
 
 type MasterProposalBatchStatus struct {
@@ -167,6 +223,20 @@ func (s *MasterLibraryStore) CreateMasterProposal(input MasterProposalInput) (Ma
 	if err != nil {
 		return MasterProposal{}, err
 	}
+	if existing, found := s.findEquivalentMasterProposalUnlocked(
+		item.MasterItemID,
+		strings.TrimSpace(input.FieldPath),
+		candidate,
+		inputRevision,
+		sourceSHA,
+		baseVersion,
+		kind,
+		applyMode,
+	); found {
+		// Saving the same user candidate twice is idempotent. Reuse the durable
+		// record instead of creating a second review row.
+		return existing, nil
+	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	proposal := MasterProposal{
 		SchemaVersion: masterProposalSchemaVersion,
@@ -189,6 +259,61 @@ func (s *MasterLibraryStore) CreateMasterProposal(input MasterProposalInput) (Ma
 		return MasterProposal{}, err
 	}
 	return proposal, nil
+}
+
+// RejectMasterProposal soft-deletes a review candidate. The Proposal file is
+// retained for audit, while rejected candidates no longer enter the review UI.
+func (s *MasterLibraryStore) RejectMasterProposal(proposalID string) (MasterProposal, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	proposal, err := s.loadMasterProposalUnlocked(proposalID)
+	if err != nil {
+		return MasterProposal{}, err
+	}
+	if proposal.Status == MasterProposalStatusRejected {
+		return proposal, nil
+	}
+	switch proposal.Status {
+	case MasterProposalStatusProposed, MasterProposalStatusValid, MasterProposalStatusCandidate, MasterProposalStatusConflict:
+		// Reviewable candidates may be dismissed without changing the Master item.
+	default:
+		return MasterProposal{}, fmt.Errorf("Proposal 当前状态不可删除: %s", proposal.Status)
+	}
+	proposal.Status = MasterProposalStatusRejected
+	proposal.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := s.writeMasterProposalUnlocked(proposal); err != nil {
+		return MasterProposal{}, err
+	}
+	return proposal, nil
+}
+
+func (s *MasterLibraryStore) RejectMasterProposals(masterItemID string, proposalIDs []string) MasterProposalRejectResult {
+	result := MasterProposalRejectResult{Results: make([]MasterProposalBatchStatus, 0, len(proposalIDs))}
+	seen := map[string]bool{}
+	for _, proposalID := range proposalIDs {
+		proposalID = strings.TrimSpace(proposalID)
+		if proposalID == "" || seen[proposalID] {
+			continue
+		}
+		seen[proposalID] = true
+		status := MasterProposalBatchStatus{ProposalID: proposalID}
+		proposal, err := s.GetMasterProposal(proposalID)
+		if err == nil && proposal.MasterItemID != strings.TrimSpace(masterItemID) {
+			err = errors.New("Proposal 不属于当前总库资产")
+		}
+		if err == nil {
+			_, err = s.RejectMasterProposal(proposalID)
+		}
+		if err != nil {
+			status.Status = MasterProposalStatusConflict
+			status.Error = err.Error()
+		} else {
+			status.Status = MasterProposalStatusRejected
+			result.RejectedCount++
+		}
+		result.Results = append(result.Results, status)
+	}
+	return result
 }
 
 func (s *MasterLibraryStore) GetMasterProposal(proposalID string) (MasterProposal, error) {
@@ -227,6 +352,13 @@ func (s *MasterLibraryStore) ListMasterProposals(masterItemID string) (MasterPro
 }
 
 func (s *MasterLibraryStore) ValidateMasterProposal(proposalID string) (MasterProposal, error) {
+	return s.ValidateMasterProposalWithOptions(proposalID, false)
+}
+
+// ValidateMasterProposalWithOptions validates a proposal. Protected-marker
+// mismatch can only be bypassed through an explicit human edit action; model
+// and batch candidates continue to use the strict default above.
+func (s *MasterLibraryStore) ValidateMasterProposalWithOptions(proposalID string, allowProtectedTokenMismatch bool) (MasterProposal, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	proposal, err := s.loadMasterProposalUnlocked(proposalID)
@@ -247,7 +379,12 @@ func (s *MasterLibraryStore) ValidateMasterProposal(proposalID string) (MasterPr
 		return MasterProposal{}, err
 	}
 	if err := validateMasterTranslationCandidate(field.SourceText, proposal.Patch.Translation); err != nil {
-		return MasterProposal{}, err
+		var markerMismatch *MasterTranslationMarkerMismatchError
+		if !allowProtectedTokenMismatch || !errors.As(err, &markerMismatch) {
+			return MasterProposal{}, err
+		}
+		proposal.ProtectedTokenOverride = true
+		proposal.Reason = strings.TrimSpace("人工确认允许保护标记不一致；" + proposal.Reason)
 	}
 	proposal.Status = MasterProposalStatusValid
 	proposal.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
@@ -257,25 +394,61 @@ func (s *MasterLibraryStore) ValidateMasterProposal(proposalID string) (MasterPr
 	return proposal, nil
 }
 
-func (s *MasterLibraryStore) ApplyMasterProposal(proposalID string, confirmed bool) (MasterProposalApplyResult, error) {
+// ApplyMasterProposal applies a validated/candidate Proposal. The first
+// optional forceConflict flag is only for an explicit human approval of a
+// stale conflict. The second optional flag permits a protected-marker
+// mismatch for the same explicit human edit flow; validated proposals also
+// retain that decision in ProtectedTokenOverride.
+func (s *MasterLibraryStore) ApplyMasterProposal(proposalID string, confirmed bool, forceConflict ...bool) (MasterProposalApplyResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	allowForceConflict := len(forceConflict) > 0 && forceConflict[0]
+	allowProtectedTokenMismatch := len(forceConflict) > 1 && forceConflict[1]
 	proposal, err := s.loadMasterProposalUnlocked(proposalID)
 	if err != nil {
 		return MasterProposalApplyResult{}, err
 	}
-	if proposal.Status != MasterProposalStatusValid && proposal.Status != MasterProposalStatusCandidate {
+	wasConflict := proposal.Status == MasterProposalStatusConflict
+	if !wasConflict && proposal.Status != MasterProposalStatusValid && proposal.Status != MasterProposalStatusCandidate {
 		return MasterProposalApplyResult{}, fmt.Errorf("Proposal 当前状态不可应用: %s", proposal.Status)
 	}
 	item, field, err := s.loadMasterProposalTargetUnlocked(proposal.MasterItemID, proposal.FieldPath)
 	if err != nil {
 		return MasterProposalApplyResult{}, err
 	}
+	if wasConflict {
+		if !allowForceConflict {
+			return MasterProposalApplyResult{}, fmt.Errorf("Proposal 当前状态不可应用: %s", proposal.Status)
+		}
+		rebaseMasterProposalForForce(&proposal, item, field)
+	}
 	if err := validateMasterProposalCAS(proposal, item, field); err != nil {
-		proposal.Status = MasterProposalStatusConflict
-		proposal.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-		_ = s.writeMasterProposalUnlocked(proposal)
-		return MasterProposalApplyResult{}, err
+		if !allowForceConflict {
+			proposal.Status = MasterProposalStatusConflict
+			proposal.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			_ = s.writeMasterProposalUnlocked(proposal)
+			return MasterProposalApplyResult{}, err
+		}
+		// The explicit approval also covers a race between the read above and
+		// the apply. Re-read once and rebase to the newest field.
+		item, field, err = s.loadMasterProposalTargetUnlocked(proposal.MasterItemID, proposal.FieldPath)
+		if err != nil {
+			return MasterProposalApplyResult{}, err
+		}
+		rebaseMasterProposalForForce(&proposal, item, field)
+		if err := validateMasterProposalCAS(proposal, item, field); err != nil {
+			return MasterProposalApplyResult{}, err
+		}
+	}
+	if err := validateMasterTranslationCandidate(field.SourceText, proposal.Patch.Translation); err != nil {
+		var markerMismatch *MasterTranslationMarkerMismatchError
+		if !errors.As(err, &markerMismatch) || (!allowProtectedTokenMismatch && !proposal.ProtectedTokenOverride) {
+			return MasterProposalApplyResult{}, err
+		}
+		if allowProtectedTokenMismatch && !proposal.ProtectedTokenOverride {
+			proposal.ProtectedTokenOverride = true
+			proposal.Reason = strings.TrimSpace("人工确认允许保护标记不一致；" + proposal.Reason)
+		}
 	}
 	if proposal.Kind == MasterProposalPolish && proposal.ApplyMode == MasterProposalAuto {
 		return MasterProposalApplyResult{}, errors.New("主动润色不允许自动应用")
@@ -310,14 +483,22 @@ func (s *MasterLibraryStore) ApplyMasterProposal(proposalID string, confirmed bo
 	if err := s.writeMasterProposalUnlocked(proposal); err != nil {
 		return MasterProposalApplyResult{}, err
 	}
+	if proposal.Status == MasterProposalStatusApplied {
+		s.rejectSupersededMasterProposalsUnlocked(proposal)
+	}
 	return MasterProposalApplyResult{Proposal: proposal, Translation: translation}, nil
 }
 
-// ApplyMasterProposals applies selected low-risk proposals one by one. If an
+// ApplyMasterProposals applies selected proposals one by one. If an
 // earlier proposal changed the parent revision, an untouched target field is
 // rebased to that new parent revision before the existing CAS/apply path runs.
 // A changed target field still fails CAS and is reported independently.
-func (s *MasterLibraryStore) ApplyMasterProposals(masterItemID string, proposalIDs []string) MasterProposalBatchResult {
+// High-risk proposals require confirmedHighRisk=true; without the explicit
+// flag they are reported as requires_high_risk_confirmation and never applied.
+func (s *MasterLibraryStore) ApplyMasterProposals(masterItemID string, proposalIDs []string, options ...bool) MasterProposalBatchResult {
+	highRiskConfirmed := len(options) > 0 && options[0]
+	allowForceConflict := len(options) > 1 && options[1]
+	allowProtectedTokenMismatch := len(options) > 2 && options[2]
 	result := MasterProposalBatchResult{Results: make([]MasterProposalBatchStatus, 0, len(proposalIDs))}
 	seen := map[string]bool{}
 	for _, proposalID := range proposalIDs {
@@ -331,12 +512,21 @@ func (s *MasterLibraryStore) ApplyMasterProposals(masterItemID string, proposalI
 		if err == nil && proposal.MasterItemID != strings.TrimSpace(masterItemID) {
 			err = errors.New("Proposal 不属于当前总库资产")
 		}
-		if err == nil && strings.EqualFold(strings.TrimSpace(proposal.Risk), masterFieldRiskHigh) {
-			err = errors.New("高风险 Proposal 需要单独确认")
+		if err == nil && strings.EqualFold(strings.TrimSpace(proposal.Risk), masterFieldRiskHigh) && !highRiskConfirmed {
+			err = errors.New("requires_high_risk_confirmation: 高风险 Proposal 需要显式确认")
 		}
 		if err == nil {
 			s.rebaseUntouchedBatchProposal(proposalID)
-			_, err = s.ApplyMasterProposal(proposalID, true)
+			// Agent-created proposals are intentionally persisted as proposed until
+			// the user confirms them in the shared review workbench. Batch apply is
+			// that confirmation, so validate each proposal immediately before the
+			// existing CAS/apply path instead of rejecting all proposed candidates.
+			if proposal.Status == MasterProposalStatusProposed {
+				_, err = s.ValidateMasterProposalWithOptions(proposalID, allowProtectedTokenMismatch)
+			}
+			if err == nil {
+				_, err = s.ApplyMasterProposal(proposalID, true, allowForceConflict, allowProtectedTokenMismatch)
+			}
 		}
 		if err != nil {
 			status.Status = MasterProposalStatusConflict
@@ -354,6 +544,17 @@ func (s *MasterLibraryStore) ApplyMasterProposals(masterItemID string, proposalI
 	return result
 }
 
+func rebaseMasterProposalForForce(proposal *MasterProposal, item MasterItem, field MasterField) {
+	proposal.InputRevision = item.Revision
+	proposal.SourceSHA256 = field.SourceSHA256
+	proposal.BaseTranslationVersion = field.ActiveTranslationVersionID
+	proposal.Original = field.SourceText
+	proposal.CurrentTranslation = field.ActiveText
+	proposal.Status = MasterProposalStatusValid
+	proposal.Reason = strings.TrimSpace("人工批准并完成：覆盖当前版本；" + proposal.Reason)
+	proposal.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+}
+
 func (s *MasterLibraryStore) rebaseUntouchedBatchProposal(proposalID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -362,7 +563,10 @@ func (s *MasterLibraryStore) rebaseUntouchedBatchProposal(proposalID string) {
 		return
 	}
 	item, field, err := s.loadMasterProposalTargetUnlocked(proposal.MasterItemID, proposal.FieldPath)
-	if err != nil || proposal.SourceSHA256 != field.SourceSHA256 || proposal.BaseTranslationVersion != field.ActiveTranslationVersionID || proposal.InputRevision == item.Revision {
+	if err != nil {
+		return
+	}
+	if proposal.SourceSHA256 != field.SourceSHA256 || proposal.BaseTranslationVersion != field.ActiveTranslationVersionID || proposal.InputRevision == item.Revision {
 		return
 	}
 	proposal.InputRevision = item.Revision
@@ -427,6 +631,74 @@ func (s *MasterLibraryStore) writeMasterProposalUnlocked(proposal MasterProposal
 	return s.writeJSONUnlocked(filepath.ToSlash(filepath.Join(masterProposalDir, proposal.ProposalID+".json")), proposal)
 }
 
+func masterProposalIsReviewable(status string) bool {
+	switch status {
+	case MasterProposalStatusProposed, MasterProposalStatusValid, MasterProposalStatusCandidate, MasterProposalStatusConflict:
+		return true
+	default:
+		return false
+	}
+}
+
+func masterProposalCanDeduplicate(status string) bool {
+	return status == MasterProposalStatusProposed || status == MasterProposalStatusValid || status == MasterProposalStatusCandidate
+}
+
+func (s *MasterLibraryStore) findEquivalentMasterProposalUnlocked(masterItemID, fieldPath, translation, inputRevision, sourceSHA, baseVersion, kind, applyMode string) (MasterProposal, bool) {
+	entries, err := os.ReadDir(filepath.Join(s.workspace, filepath.FromSlash(masterProposalDir)))
+	if errors.Is(err, os.ErrNotExist) || err != nil {
+		return MasterProposal{}, false
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(s.workspace, filepath.FromSlash(masterProposalDir), entry.Name()))
+		if readErr != nil {
+			continue
+		}
+		var proposal MasterProposal
+		if json.Unmarshal(data, &proposal) != nil || !masterProposalCanDeduplicate(proposal.Status) {
+			continue
+		}
+		if proposal.MasterItemID == masterItemID && proposal.FieldPath == fieldPath &&
+			proposal.Patch.Translation == translation && proposal.InputRevision == inputRevision &&
+			proposal.SourceSHA256 == sourceSHA && proposal.BaseTranslationVersion == baseVersion &&
+			proposal.Kind == kind && proposal.ApplyMode == applyMode {
+			return proposal, true
+		}
+	}
+	return MasterProposal{}, false
+}
+
+func (s *MasterLibraryStore) rejectSupersededMasterProposalsUnlocked(applied MasterProposal) {
+	entries, err := os.ReadDir(filepath.Join(s.workspace, filepath.FromSlash(masterProposalDir)))
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" || entry.Name() == applied.ProposalID+".json" {
+			continue
+		}
+		path := filepath.Join(s.workspace, filepath.FromSlash(masterProposalDir), entry.Name())
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			continue
+		}
+		var sibling MasterProposal
+		if json.Unmarshal(data, &sibling) != nil || !masterProposalIsReviewable(sibling.Status) {
+			continue
+		}
+		if sibling.MasterItemID != applied.MasterItemID || sibling.FieldPath != applied.FieldPath || sibling.SourceSHA256 != applied.SourceSHA256 {
+			continue
+		}
+		sibling.Status = MasterProposalStatusRejected
+		sibling.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		sibling.Reason = strings.TrimSpace("已由候选 " + applied.ProposalID + " 应用覆盖；" + sibling.Reason)
+		_ = s.writeMasterProposalUnlocked(sibling)
+	}
+}
+
 func validateMasterProposalCAS(proposal MasterProposal, item MasterItem, field MasterField) error {
 	if proposal.MasterItemID != item.MasterItemID || proposal.FieldPath != proposal.Patch.FieldPath {
 		return errors.New("Proposal 目标字段不一致")
@@ -450,9 +722,57 @@ func validateMasterTranslationCandidate(original, candidate string) error {
 	originalTokens := masterProtectedTokenPattern.FindAllString(original, -1)
 	candidateTokens := masterProtectedTokenPattern.FindAllString(candidate, -1)
 	if !sameMasterTokenMultiset(originalTokens, candidateTokens) {
-		return errors.New("候选译文未保留原文中的变量、链接或数字标记")
+		missing, extra := masterProtectedTokenDiff(originalTokens, candidateTokens)
+		return &MasterTranslationMarkerMismatchError{
+			MissingVariables: missing.Variables,
+			MissingLinks:     missing.Links,
+			MissingNumbers:   missing.Numbers,
+			ExtraVariables:   extra.Variables,
+			ExtraLinks:       extra.Links,
+			ExtraNumbers:     extra.Numbers,
+		}
 	}
 	return nil
+}
+
+type masterProtectedTokenCounts struct {
+	Variables int
+	Links     int
+	Numbers   int
+}
+
+func masterProtectedTokenDiff(original, candidate []string) (masterProtectedTokenCounts, masterProtectedTokenCounts) {
+	originalCounts := map[string]int{}
+	candidateCounts := map[string]int{}
+	for _, token := range original {
+		originalCounts[token]++
+	}
+	for _, token := range candidate {
+		candidateCounts[token]++
+	}
+	var missing, extra masterProtectedTokenCounts
+	for token, count := range originalCounts {
+		if difference := count - candidateCounts[token]; difference > 0 {
+			addMasterProtectedTokenCount(&missing, token, difference)
+		}
+	}
+	for token, count := range candidateCounts {
+		if difference := count - originalCounts[token]; difference > 0 {
+			addMasterProtectedTokenCount(&extra, token, difference)
+		}
+	}
+	return missing, extra
+}
+
+func addMasterProtectedTokenCount(counts *masterProtectedTokenCounts, token string, amount int) {
+	switch {
+	case strings.HasPrefix(token, "{{"):
+		counts.Variables += amount
+	case strings.HasPrefix(token, "http://"), strings.HasPrefix(token, "https://"):
+		counts.Links += amount
+	default:
+		counts.Numbers += amount
+	}
 }
 
 func sameMasterTokenMultiset(left, right []string) bool {

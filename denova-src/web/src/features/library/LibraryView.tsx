@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ArrowLeft, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Database, FileUp, Loader2, Menu, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, Search, UserRound, X, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, BookOpen, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Database, FileUp, Loader2, Menu, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2, UserRound, X, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { ConfigManagerChat } from '@/components/Chat/ConfigManagerChat'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AdaptiveSurface } from '@/components/layout/adaptive-surface'
 import { FeaturePageShell } from '@/components/layout/feature-page-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { applyMasterProposal, applyMasterProposals, createMasterProposal, fetchMasterAsset, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, retryTranslationJob, startMasterAgent, validateMasterProposal, type MasterAssetDetail, type MasterAssetSummary, type MasterPipelineNode, type MasterPipelineStatus, type MasterProposal, type MasterTranslationFieldRuntime, type MasterTranslationRuntime } from '@/lib/api-client'
+import { addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, resolveTranslationJob, retryTranslationJob, startMasterAgent, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal, type MasterAssetAdventureUsage, type MasterAssetDetail, type MasterAssetSummary, type MasterPipelineNode, type MasterPipelineStatus, type MasterProposal, type MasterTranslationFieldRuntime, type MasterTranslationRuntime } from '@/lib/api-client'
 import { MasterImportDialog } from './MasterImportDialog'
 
 const PAGE_SIZE = 25
@@ -286,6 +287,27 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [proposals, setProposals] = useState<MasterProposal[]>([])
   const [instantiating, setInstantiating] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [adventureUsage, setAdventureUsage] = useState<MasterAssetAdventureUsage | null>(null)
+  // 精修轮询：记录当前正在轮询的字段路径集合，供按钮禁用与 spinner。
+  const [polishingFields, setPolishingFields] = useState<Set<string>>(() => new Set())
+  // 每个 field_path 的轮询句柄：interval / timeout / 起始时间 / 启动前 Proposal ID 快照。
+  const polishPollersRef = useRef<Map<string, { interval: ReturnType<typeof setInterval>; timeout: ReturnType<typeof setTimeout>; snapshot: Set<string> }>>(new Map())
+
+  // 提示只在切换资产时清空：操作成功后会触发 reloadToken 刷新，
+  // 若在取数 effect 里清空会把刚刚的「已同步」提示一并抹掉。
+  useEffect(() => { setActionMessage(null) }, [masterItemID])
+
+  // 切换资产或卸载时清理全部精修轮询，避免拿到上一个资产的 Proposal。
+  useEffect(() => {
+    return () => {
+      for (const entry of polishPollersRef.current.values()) {
+        clearInterval(entry.interval)
+        clearTimeout(entry.timeout)
+      }
+      polishPollersRef.current.clear()
+    }
+  }, [masterItemID])
 
   useEffect(() => {
     let cancelled = false
@@ -293,8 +315,8 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
     setPipeline(null)
     setRuntime(null)
     setProposals([])
+    setAdventureUsage(null)
     setError(null)
-    setActionMessage(null)
     Promise.all([
       fetchMasterAsset(masterItemID),
       fetchMasterAssetPipeline(masterItemID),
@@ -302,12 +324,17 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
       fetchMasterAssetUsages(masterItemID),
     ]).then(async ([asset, nextPipeline, translations, usages]) => {
       const nextDetail = { ...asset, translations: translations.translations, usages: usages.usages }
-      const [nextRuntime, nextProposals] = await Promise.all([fetchMasterTranslationRuntime(nextDetail), fetchMasterAssetProposals(masterItemID)])
+      const [nextRuntime, nextProposals, nextUsage] = await Promise.all([
+        fetchMasterTranslationRuntime(nextDetail),
+        fetchMasterAssetProposals(masterItemID),
+        fetchMasterAssetAdventureUsage(masterItemID).catch(() => null),
+      ])
       if (cancelled) return
       setDetail(nextDetail)
       setPipeline(nextPipeline)
       setRuntime(nextRuntime)
       setProposals(nextProposals.proposals)
+      setAdventureUsage(nextUsage?.usage ?? null)
     }).catch((reason: unknown) => {
       if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason))
     })
@@ -339,10 +366,32 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
       const result = await instantiateMasterAsset(masterItemID)
       setActionMessage(result.skipped_ids.length ? t('library.alreadyInAdventure') : t('library.addedToAdventure'))
       setReloadToken((value) => value + 1)
-    } catch {
-      setActionMessage(t('library.addToAdventureUnavailable'))
+    } catch (reason: unknown) {
+      setActionMessage(t('library.addToAdventureFailed', { reason: reason instanceof Error ? reason.message : String(reason) }))
     } finally {
       setInstantiating(false)
+    }
+  }
+
+  // 是否可同步完全由后端 usage 决定；前端不用 usages.length 推断，
+  // 因为 usages 包含其它冒险的实例，长度 > 0 不代表当前冒险已加入。
+  const canSyncToAdventure = !!adventureUsage?.used && !!adventureUsage.has_new_version && detail.summary.availability === 'usable'
+
+  const syncToAdventure = async () => {
+    setSyncing(true)
+    setActionMessage(null)
+    try {
+      const response = await syncMasterAssetToAdventure(masterItemID)
+      setAdventureUsage(response.usage ?? { used: true, has_new_version: false, loaded_revision: response.result.loaded_revision, current_revision: response.result.loaded_revision })
+      setActionMessage(t('library.syncedToAdventure', { count: response.result.updated_lore_ids.length }))
+      if (response.result.updated_lore_ids.length > 0) {
+        window.dispatchEvent(new CustomEvent('nova:lore-updated', { detail: { item_ids: response.result.updated_lore_ids } }))
+      }
+      setReloadToken((value) => value + 1)
+    } catch (reason: unknown) {
+      setActionMessage(t('library.syncFailed', { reason: reason instanceof Error ? reason.message : String(reason) }))
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -356,68 +405,132 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
     }
   }
 
+  const stopPolishing = (fieldPath: string) => {
+    const entry = polishPollersRef.current.get(fieldPath)
+    if (entry) {
+      clearInterval(entry.interval)
+      clearTimeout(entry.timeout)
+      polishPollersRef.current.delete(fieldPath)
+    }
+    setPolishingFields((prev) => {
+      if (!prev.has(fieldPath)) return prev
+      const next = new Set(prev)
+      next.delete(fieldPath)
+      return next
+    })
+  }
+
   const polishField = async (field: MasterTranslationFieldRuntime) => {
+    // 避免重复发起：同一字段已在轮询时直接忽略。
+    if (polishPollersRef.current.has(field.field_path)) return
+    // 启动前的 Proposal ID 快照：只有「新增」的 polish 候选才算本次精修产物，
+    // 避免把上一次遗留的候选误判为成功。
+    const snapshot = new Set(
+      proposals
+        .filter((proposal) => proposal.field_path === field.field_path && proposal.kind === 'polish')
+        .map((proposal) => proposal.proposal_id),
+    )
     try {
       await startMasterAgent(masterItemID, field.field_path, 'polish')
-      setActionMessage(t('library.agentProcessing'))
-      window.setTimeout(() => setReloadToken((value) => value + 1), 4000)
     } catch {
       setActionMessage(t('library.agentUnavailable'))
+      return
     }
-  }
+    setPolishingFields((prev) => new Set(prev).add(field.field_path))
+    setActionMessage(t('library.agentProcessing'))
 
-  const applyProposal = async (proposal: MasterProposal, confirmed: boolean) => {
-    try {
-      await applyMasterProposal(proposal.proposal_id, confirmed)
-      setActionMessage(confirmed ? t('library.proposalApplied') : t('library.candidateCreated'))
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetchMasterAssetProposals(masterItemID)
+        const candidates = response.proposals.filter(
+          (proposal) =>
+            proposal.field_path === field.field_path &&
+            proposal.kind === 'polish' &&
+            !snapshot.has(proposal.proposal_id),
+        )
+        if (candidates.length === 0) return
+        const terminal = candidates.find((proposal) => proposal.status === 'conflict' || proposal.status === 'rejected')
+        if (terminal) {
+          stopPolishing(field.field_path)
+          setActionMessage(t('library.polishRejected'))
+          setReloadToken((value) => value + 1)
+          return
+        }
+        const ready = candidates.find((proposal) => proposal.status === 'candidate_ready' || proposal.status === 'validated')
+        if (ready) {
+          stopPolishing(field.field_path)
+          setActionMessage(t('library.polishReady'))
+          setReloadToken((value) => value + 1)
+        }
+      } catch {
+        // 单次轮询失败不致命，等下一个 tick。
+      }
+    }, 3000)
+    const timeout = setTimeout(() => {
+      stopPolishing(field.field_path)
+      setActionMessage(t('library.polishTimeout'))
       setReloadToken((value) => value + 1)
-    } catch {
-      setActionMessage(t('library.proposalUnavailable'))
-    }
-  }
-
-  const applyProposals = async (selected: MasterProposal[]) => {
-    try {
-      const result = await applyMasterProposals(masterItemID, selected.map((proposal) => proposal.proposal_id))
-      setActionMessage(t('library.batchApplyResult', { applied: result.applied_count, total: selected.length }))
-      setReloadToken((value) => value + 1)
-    } catch {
-      setActionMessage(t('library.proposalUnavailable'))
-    }
+    }, 120000)
+    polishPollersRef.current.set(field.field_path, { interval, timeout, snapshot })
   }
 
   const saveEntry = async (entry: Record<string, unknown>, values: EntryEditValues) => {
     const prefix = `${detail.summary.record_kind === 'character_template' ? 'character_book.entries' : 'lorebook.entries'}/${valueOf(entry, 'entry_id', '')}`
     const changes: Array<[string, string]> = [['comment', values.comment], ['content', values.content], ['keys', values.keys], ['secondary_keys', values.secondary_keys]]
-    let changed = 0
+    const fields: Record<string, string> = {}
     for (const [field, translation] of changes) {
-      const current = field === 'comment' ? nestedEntryText(item, detail.summary.record_kind, entry, 'comment') : field === 'content' ? nestedEntryText(item, detail.summary.record_kind, entry, 'content') : masterFieldText(item, `${prefix}/${field}`)
+      const current = nestedEntryField(item, detail.summary.record_kind, entry, field)
       if (translation.trim() === current.trim()) continue
       if (!translation.trim()) throw new Error(t('library.editEmptyField'))
-      const created = await createMasterProposal(masterItemID, { field_path: `${prefix}/${field}`, translation, kind: 'polish', apply_mode: 'confirm', reason: '用户直接编辑条目' })
-      await validateMasterProposal(created.proposal.proposal_id)
-      await applyMasterProposal(created.proposal.proposal_id, true)
-      changed += 1
+      fields[`${prefix}/${field}`] = translation
     }
-    if (changed === 0) throw new Error(t('library.editNoChanges'))
+    if (Object.keys(fields).length === 0) throw new Error(t('library.editNoChanges'))
+    await updateMasterAssetFields(masterItemID, valueOf(item, 'revision', ''), fields)
     setActionMessage(t('library.entrySaved'))
+    setReloadToken((value) => value + 1)
+  }
+
+  const saveDescription = async (description: string) => {
+    await updateMasterAssetDescription(masterItemID, description)
+    setActionMessage(t('library.descriptionSaved'))
     setReloadToken((value) => value + 1)
   }
 
   const saveCharacter = async (values: CharacterEditValues) => {
     const changes: Array<[string, string]> = Object.entries(values)
-    let changed = 0
+    const fields: Record<string, string> = {}
     for (const [fieldPath, translation] of changes) {
       const current = masterFieldText(item, fieldPath)
       if (translation.trim() === current.trim()) continue
       if (!translation.trim()) throw new Error(t('library.editEmptyField'))
-      const created = await createMasterProposal(masterItemID, { field_path: fieldPath, translation, kind: 'polish', apply_mode: 'confirm', reason: '用户直接编辑角色卡' })
-      await validateMasterProposal(created.proposal.proposal_id)
-      await applyMasterProposal(created.proposal.proposal_id, true)
-      changed += 1
+      fields[fieldPath] = translation
     }
-    if (changed === 0) throw new Error(t('library.editNoChanges'))
+    if (Object.keys(fields).length === 0) throw new Error(t('library.editNoChanges'))
+    await updateMasterAssetFields(masterItemID, valueOf(item, 'revision', ''), fields)
     setActionMessage(t('library.characterSaved'))
+    setReloadToken((value) => value + 1)
+  }
+
+  const addEntryManually = async (values: EntryEditValues) => {
+    const name = values.comment.trim()
+    const content = values.content.trim()
+    if (!name || !content) throw new Error(t('library.manualAddEmptyFields'))
+    const keywords = splitEntryKeywords(values.keys)
+    const secondaryKeys = splitEntryKeywords(values.secondary_keys)
+    await addMasterLorebookEntry(masterItemID, valueOf(item, 'revision', ''), { name, content, keywords, secondary_keys: secondaryKeys })
+    const adventureItem = await createLoreItem({
+      enabled: true,
+      type: 'other',
+      name,
+      importance: 'important',
+      load_mode: 'auto',
+      tags: ['叙界总资料库', '手动添加'],
+      brief_description: content.slice(0, 240),
+      keywords: [...new Set([...keywords, ...secondaryKeys])],
+      content,
+    })
+    window.dispatchEvent(new CustomEvent('nova:lore-updated', { detail: { item_ids: [adventureItem.id] } }))
+    setActionMessage(t('library.manualEntryAdded'))
     setReloadToken((value) => value + 1)
   }
 
@@ -433,7 +546,19 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
               <p className={`mt-3 text-xs ${userState === 'needs_user' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'}`}>{statusSummary}</p>
               <p className="mt-3 text-[11px] text-muted-foreground">{t('library.sourceFile')}: {valueOf(source, 'filename', detail.summary.source_name)} · {t('library.importedAt')}: {formatDate(valueOf(sourceRevision, 'imported_at', ''))}</p>
             </div>
-            <Button type="button" size="sm" disabled={!workspace || detail.summary.availability !== 'usable' || instantiating} onClick={() => void addToAdventure()}><Plus data-icon="inline-start" />{instantiating ? t('library.addingToAdventure') : t('library.addToAdventure')}</Button>
+            <div className="flex flex-none flex-wrap items-center gap-2">
+              <Button type="button" size="sm" disabled={!workspace || detail.summary.availability !== 'usable' || instantiating} onClick={() => void addToAdventure()}><Plus data-icon="inline-start" />{instantiating ? t('library.addingToAdventure') : t('library.addToAdventure')}</Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!workspace || !canSyncToAdventure || syncing}
+                title={canSyncToAdventure ? t('library.syncToAdventure') : t('library.syncUnavailable')}
+                onClick={() => void syncToAdventure()}
+              >
+                <RefreshCw data-icon="inline-start" className={syncing ? 'animate-spin' : undefined} />{syncing ? t('library.syncingToAdventure') : t('library.syncToAdventure')}
+              </Button>
+            </div>
           </div>
         </div>
         {actionMessage && <div className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-xs text-foreground">{actionMessage}</div>}
@@ -441,14 +566,14 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
           <TabsList variant="line" className="h-auto w-full justify-start gap-1 overflow-x-auto border-b border-[var(--nova-border)] bg-transparent p-0">
             {(['content', 'progress', 'versions', 'adventures', 'technical'] as const).map((tab) => <TabsTrigger key={tab} value={tab} className="h-10 flex-none rounded-none px-3 text-xs after:bottom-0">{t(`library.tab.${tab}`)}</TabsTrigger>)}
           </TabsList>
-          <TabsContent value="content"><AssetContent item={item} recordKind={detail.summary.record_kind} t={t} onSaveEntry={saveEntry} onSaveCharacter={saveCharacter} onOpenAgent={onOpenAgent} /></TabsContent>
+          <TabsContent value="content"><AssetContent item={item} recordKind={detail.summary.record_kind} t={t} onSaveEntry={saveEntry} onSaveCharacter={saveCharacter} onSaveDescription={detail.summary.record_kind === 'lorebook_template' ? saveDescription : undefined} onManualAddEntry={detail.summary.record_kind === 'lorebook_template' ? addEntryManually : undefined} onOpenAgent={onOpenAgent} /></TabsContent>
           <TabsContent value="progress" className="space-y-3">
             <ProcessingSummary pipeline={pipeline} runtime={runtime} onOpenAgent={onOpenAgent} t={t} />
             <details className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface)]">
               <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-foreground">{t('library.showDetailedPipeline')}</summary>
-              <div className="border-t border-[var(--nova-border)] p-3"><PipelineOverview pipeline={pipeline} item={item} runtime={runtime} t={t} onRetry={retryField} onPolish={polishField} /></div>
+              <div className="border-t border-[var(--nova-border)] p-3"><PipelineOverview pipeline={pipeline} item={item} runtime={runtime} t={t} onRetry={retryField} onPolish={polishField} polishingFields={polishingFields} /></div>
             </details>
-            <ProposalList proposals={proposals} t={t} onApply={applyProposal} onBatchApply={applyProposals} />
+            <ReviewWorkbench masterItemID={masterItemID} item={item} runtime={runtime} proposals={proposals} t={t} onChanged={() => setReloadToken((value) => value + 1)} onMessage={setActionMessage} />
           </TabsContent>
           <TabsContent value="versions"><InfoSection title={t('library.translation')}><TranslationSummary pipeline={pipeline} translations={translations} t={t} />{translations.length === 0 ? <p className="mt-3 text-xs text-muted-foreground">{t('library.noTranslations')}</p> : <div className="mt-3 space-y-2">{translations.map((entry, index) => <TranslationRow key={valueOf(entry.version, 'translation_version_id', `${entry.content_version_kind}-${index}`)} entry={entry} activeIDs={activeTranslationVersionIDs(item)} t={t} />)}</div>}</InfoSection></TabsContent>
           <TabsContent value="adventures"><AdventureUsages usages={usages} t={t} /></TabsContent>
@@ -486,7 +611,9 @@ function nestedEntryField(item: Record<string, unknown>, recordKind: string, ent
   const path = `${nestedPrefix(recordKind)}/${valueOf(entry, 'entry_id', '')}/${field}`
   const active = masterFieldText(item, path)
   if (active) return active
-  return sourceEntryValues(recordValue(entry.original), field).join('\n')
+  const original = recordValue(entry.original)
+  const aliases = field === 'keys' ? ['keys', 'key'] : [field]
+  return [...new Set(aliases.flatMap((alias) => sourceEntryValues(original, alias)))].join('\n')
 }
 
 function nestedEntryKeywords(item: Record<string, unknown>, recordKind: string, entry: Record<string, unknown>) {
@@ -508,6 +635,10 @@ function sourceEntryValues(original: Record<string, unknown>, key: string) {
 function originalEntryKeywords(entry: Record<string, unknown>) {
   const original = recordValue(entry.original)
   return [...new Set(['keys', 'key', 'secondary_keys'].flatMap((key) => sourceEntryValues(original, key)))]
+}
+
+function splitEntryKeywords(value: string) {
+  return [...new Set(value.split(/[\r\n,，、]+/).map((part) => part.trim()).filter(Boolean))]
 }
 
 function nestedEntryTitle(item: Record<string, unknown>, recordKind: string, entry: Record<string, unknown>, index: number, t: (key: string, options?: Record<string, unknown>) => string) {
@@ -535,7 +666,17 @@ function formatBytes(value: string) {
 }
 
 type EntryEditValues = { comment: string; content: string; keys: string; secondary_keys: string }
-type CharacterEditValues = Record<'character.name' | 'character.description' | 'character.personality' | 'character.creator_notes' | 'character.scenario' | 'character.first_mes' | 'character.alternate_greetings' | 'character.mes_example', string>
+type CharacterEditValues = Record<string, string>
+
+function characterOpeningPaths(item: Record<string, unknown>) {
+  const paths = Object.keys(recordValue(item.fields)).filter((path) => /^character\.openings\[\d+\]$/.test(path))
+  paths.sort((left, right) => Number(left.match(/\d+/)?.[0] || 0) - Number(right.match(/\d+/)?.[0] || 0))
+  if (!paths.includes('character.openings[0]')) paths.unshift('character.openings[0]')
+  // Keep one empty alternate slot available so a card without alternate
+  // greetings can still receive its first one through explicit human editing.
+  if (!paths.some((path) => path !== 'character.openings[0]')) paths.push('character.openings[1]')
+  return paths
+}
 
 function changedCharacterFields(fields: Array<[keyof CharacterEditValues, string, boolean]>, draft: CharacterEditValues, item: Record<string, unknown>) {
   return fields.map(([path, label]) => ({ field_path: path, field_label: label, before: masterFieldText(item, path), after: draft[path] })).filter((change) => change.before.trim() !== change.after.trim())
@@ -550,8 +691,8 @@ function EditPreview({ changes, t }: { changes: Array<{ field_path: string; fiel
   return <div className="space-y-2 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3"><div className="text-xs font-semibold text-foreground">{t('library.changePreview')}</div>{changes.map((change) => <div key={change.field_path} className="grid gap-2 rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2 lg:grid-cols-2"><div><div className="text-[10px] text-muted-foreground">{change.field_label} · {t('library.beforeChange')}</div><p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-foreground">{change.before || '—'}</p></div><div><div className="text-[10px] text-emerald-700 dark:text-emerald-300">{change.field_label} · {t('library.afterChange')}</div><p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-foreground">{change.after || '—'}</p></div></div>)}</div>
 }
 
-function AssetContent({ item, recordKind, t, onSaveEntry, onSaveCharacter, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
-  return recordKind === 'lorebook_template' ? <LorebookReader item={item} recordKind={recordKind} t={t} onSaveEntry={onSaveEntry} onOpenAgent={onOpenAgent} /> : <CharacterReader item={item} t={t} onSaveCharacter={onSaveCharacter} onOpenAgent={onOpenAgent} />
+function AssetContent({ item, recordKind, t, onSaveEntry, onSaveCharacter, onSaveDescription, onManualAddEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onSaveDescription?: (description: string) => Promise<void>; onManualAddEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
+  return recordKind === 'lorebook_template' ? <LorebookReader item={item} recordKind={recordKind} t={t} onSaveEntry={onSaveEntry} onSaveDescription={onSaveDescription} onManualAddEntry={onManualAddEntry} onOpenAgent={onOpenAgent} /> : <CharacterReader item={item} t={t} onSaveCharacter={onSaveCharacter} onOpenAgent={onOpenAgent} />
 }
 
 function CharacterReader({ item, t, onSaveCharacter, onOpenAgent }: { item: Record<string, unknown>; t: (key: string, options?: Record<string, unknown>) => string; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
@@ -559,18 +700,20 @@ function CharacterReader({ item, t, onSaveCharacter, onOpenAgent }: { item: Reco
   const [preview, setPreview] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
-  const [draft, setDraft] = useState<CharacterEditValues>({ 'character.name': '', 'character.description': '', 'character.personality': '', 'character.creator_notes': '', 'character.scenario': '', 'character.first_mes': '', 'character.alternate_greetings': '', 'character.mes_example': '' })
+  const [draft, setDraft] = useState<CharacterEditValues>({})
+  const openingPaths = characterOpeningPaths(item)
+  const alternateOpeningPaths = openingPaths.filter((path) => path !== 'character.openings[0]')
   const groups = [
     { title: t('library.character.overview'), values: [[t('library.character.description'), masterFieldText(item, 'character.description')]] },
     { title: t('library.character.personalityBackground'), values: [[t('library.character.personality'), masterFieldText(item, 'character.personality')], [t('library.character.creatorNotes'), masterFieldText(item, 'character.creator_notes')]] },
-    { title: t('library.character.sceneOpening'), values: [[t('library.character.scenario'), masterFieldText(item, 'character.scenario')], [t('library.character.firstMessage'), masterFieldText(item, 'character.first_mes')], [t('library.character.alternateGreetings'), masterFieldText(item, 'character.alternate_greetings')]] },
+    { title: t('library.character.sceneOpening'), values: [[t('library.character.scenario'), masterFieldText(item, 'character.scenario')], [t('library.character.firstMessage'), masterFieldText(item, 'character.openings[0]')], ...alternateOpeningPaths.map((path, index) => [`${t('library.character.alternateGreetings')} ${index + 1}`, masterFieldText(item, path)])] },
     { title: t('library.character.exampleDialogue'), values: [[t('library.character.exampleDialogue'), masterFieldText(item, 'character.mes_example')]] },
   ]
   const entries = nestedEntries(item)
   const advanced = [[t('library.character.systemPrompt'), masterFieldText(item, 'character.system_prompt')], [t('library.character.postHistory'), masterFieldText(item, 'character.post_history_instructions')]].filter(([, value]) => value)
   const editFields: Array<[keyof CharacterEditValues, string, boolean]> = [
     ['character.name', t('library.character.name'), false], ['character.description', t('library.character.description'), true], ['character.personality', t('library.character.personality'), true], ['character.creator_notes', t('library.character.creatorNotes'), true],
-    ['character.scenario', t('library.character.scenario'), true], ['character.first_mes', t('library.character.firstMessage'), true], ['character.alternate_greetings', t('library.character.alternateGreetings'), true], ['character.mes_example', t('library.character.exampleDialogue'), true],
+    ['character.scenario', t('library.character.scenario'), true], ['character.openings[0]', t('library.character.firstMessage'), true], ...alternateOpeningPaths.map((path, index) => [path, `${t('library.character.alternateGreetings')} ${index + 1}`, true] as [string, string, boolean]), ['character.mes_example', t('library.character.exampleDialogue'), true],
   ]
   const beginEdit = () => {
     setDraft(Object.fromEntries(editFields.map(([path]) => [path, masterFieldText(item, path)])) as CharacterEditValues)
@@ -598,16 +741,22 @@ function ReadingValues({ values }: { values: string[][] }) {
   return <div className="space-y-4">{values.map(([label, value]) => <div key={label}><h3 className="text-[11px] font-medium text-muted-foreground">{label}</h3><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">{value}</p></div>)}</div>
 }
 
-function LorebookReader({ item, recordKind, t, onSaveEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
+function LorebookReader({ item, recordKind, t, onSaveEntry, onSaveDescription, onManualAddEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onSaveDescription?: (description: string) => Promise<void>; onManualAddEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
   const entries = nestedEntries(item)
   const [query, setQuery] = useState('')
   const [directoryOpen, setDirectoryOpen] = useState(false)
   const [selectedID, setSelectedID] = useState(valueOf(entries[0], 'entry_id', ''))
   const [editing, setEditing] = useState(false)
+  const [manualAdding, setManualAdding] = useState(false)
   const [preview, setPreview] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [draft, setDraft] = useState<EntryEditValues>({ comment: '', content: '', keys: '', secondary_keys: '' })
+  const currentDescription = masterFieldText(item, 'lorebook.description') || valueOf(recordValue(item.original), 'description', '')
+  const [descriptionEditing, setDescriptionEditing] = useState(false)
+  const [descriptionSaving, setDescriptionSaving] = useState(false)
+  const [descriptionError, setDescriptionError] = useState<string | null>(null)
+  const [descriptionDraft, setDescriptionDraft] = useState('')
   const needle = query.trim().toLowerCase()
   const filtered = entries.filter((entry, index) => {
     if (!needle) return true
@@ -622,22 +771,68 @@ function LorebookReader({ item, recordKind, t, onSaveEntry, onOpenAgent }: { ite
     setPreview(false)
     setEditing(true)
   }
+  const beginManualAdd = () => {
+    if (!onManualAddEntry) return
+    setDraft({ comment: '', content: '', keys: '', secondary_keys: '' })
+    setEditError(null)
+    setPreview(false)
+    setManualAdding(true)
+    setEditing(false)
+  }
   const save = async () => {
     if (!active || !onSaveEntry) return
     setSaving(true)
     setEditError(null)
     try { await onSaveEntry(active, draft); setEditing(false) } catch (reason: unknown) { setEditError(reason instanceof Error ? reason.message : t('library.editSaveFailed')) } finally { setSaving(false) }
   }
-  if (entries.length === 0) return <InfoSection title={t('library.fullContent')}><p className="text-sm text-muted-foreground">{t('library.noEntries')}</p></InfoSection>
+  const saveManual = async () => {
+    if (!onManualAddEntry) return
+    setSaving(true)
+    setEditError(null)
+    try { await onManualAddEntry(draft); setManualAdding(false) } catch (reason: unknown) { setEditError(reason instanceof Error ? reason.message : t('library.manualAddFailed')) } finally { setSaving(false) }
+  }
+  const beginDescriptionEdit = () => {
+    setDescriptionDraft(currentDescription)
+    setDescriptionError(null)
+    setDescriptionEditing(true)
+  }
+  const saveDescription = async () => {
+    if (!onSaveDescription) return
+    setDescriptionSaving(true)
+    setDescriptionError(null)
+    try {
+      await onSaveDescription(descriptionDraft)
+      setDescriptionEditing(false)
+    } catch (reason: unknown) {
+      setDescriptionError(reason instanceof Error ? reason.message : t('library.descriptionSaveFailed'))
+    } finally {
+      setDescriptionSaving(false)
+    }
+  }
+  const descriptionPanel = <div className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-sm font-semibold text-foreground">{t('library.lorebook.introduction')}</h2>
+      {onSaveDescription && !descriptionEditing && <Button type="button" variant="outline" size="sm" onClick={beginDescriptionEdit}><Pencil data-icon="inline-start" />{t('library.editDescription')}</Button>}
+    </div>
+    {!descriptionEditing ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{currentDescription || t('library.noDescription')}</p> : <div className="mt-3 space-y-2">
+      <textarea className="min-h-28 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={descriptionDraft} onChange={(event) => setDescriptionDraft(event.target.value)} placeholder={t('library.descriptionPlaceholder')} />
+      <p className="text-[11px] text-muted-foreground">{t('library.descriptionHint')}</p>
+      {descriptionError && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{descriptionError}</p>}
+      <div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setDescriptionEditing(false)} disabled={descriptionSaving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void saveDescription()} disabled={descriptionSaving || descriptionDraft.trim() === currentDescription.trim()}>{descriptionSaving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t('library.saveDescription')}</Button></div>
+    </div>}
+  </div>
+  const editorOpen = editing || manualAdding
+  if (entries.length === 0) return <div className="space-y-3">{descriptionPanel}<InfoSection title={t('library.fullContent')}><p className="text-sm text-muted-foreground">{t('library.noEntries')}</p></InfoSection></div>
   return <div className="overflow-hidden rounded-xl border border-[var(--nova-border)] bg-[var(--nova-surface)]">
+    <div className="border-b border-[var(--nova-border)] p-4">{descriptionPanel}</div>
     <div className="flex items-center justify-between border-b border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3 lg:hidden"><span className="text-xs font-medium text-foreground">{t('library.entryDirectory')}</span><Button type="button" variant="outline" size="sm" onClick={() => setDirectoryOpen(true)}><Menu data-icon="inline-start" />{t('library.openEntryDirectory')}</Button></div>
     <div className="relative grid min-h-[34rem] lg:grid-cols-[17rem_minmax(0,1fr)]">
     <aside className={`${directoryOpen ? 'fixed inset-y-0 left-0 z-50 block w-[min(86vw,20rem)] shadow-2xl' : 'hidden'} border-b border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3 lg:static lg:block lg:border-b-0 lg:border-r lg:shadow-none`}>
       <div className="mb-3 flex items-center justify-between lg:hidden"><span className="text-xs font-semibold text-foreground">{t('library.entryDirectory')}</span><Button type="button" variant="ghost" size="icon-xs" onClick={() => setDirectoryOpen(false)} aria-label={t('library.closeEntryDirectory')}><X /></Button></div>
       <label className="relative block"><span className="sr-only">{t('library.searchEntries')}</span><Search className="pointer-events-none absolute left-2.5 top-2 size-3.5 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('library.searchEntries')} className="bg-[var(--nova-surface)] pl-8" /></label>
-      <div className="mt-3 max-h-72 space-y-1 overflow-auto lg:max-h-[30rem]">{filtered.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">{t('library.noMatchingEntries')}</p> : filtered.map((entry) => { const id = valueOf(entry, 'entry_id', ''); return <button key={id} type="button" onClick={() => { setSelectedID(id); setDirectoryOpen(false) }} aria-current={active === entry ? 'true' : undefined} className={`w-full rounded-lg px-3 py-2 text-left text-xs transition-colors ${active === entry ? 'bg-[var(--nova-active)] font-medium text-foreground' : 'text-[var(--nova-text-muted)] hover:bg-[var(--nova-hover)] hover:text-foreground'}`}><span className="block truncate">{nestedEntryTitle(item, recordKind, entry, entries.indexOf(entry), t)}</span><span className="mt-0.5 block truncate text-[10px] opacity-70">{nestedEntryKeywords(item, recordKind, entry).slice(0, 3).join(' · ')}</span></button> })}</div>
+      <div className="mt-3 max-h-72 space-y-1 overflow-auto lg:max-h-[30rem]">{filtered.length === 0 ? <p className="px-2 py-4 text-xs text-muted-foreground">{t('library.noMatchingEntries')}</p> : filtered.map((entry) => { const id = valueOf(entry, 'entry_id', ''); return <button key={id} type="button" onClick={() => { setSelectedID(id); setDirectoryOpen(false); setEditing(false); setManualAdding(false); setEditError(null) }} aria-current={active === entry ? 'true' : undefined} className={`w-full rounded-lg px-3 py-2 text-left text-xs transition-colors ${active === entry ? 'bg-[var(--nova-active)] font-medium text-foreground' : 'text-[var(--nova-text-muted)] hover:bg-[var(--nova-hover)] hover:text-foreground'}`}><span className="block truncate">{nestedEntryTitle(item, recordKind, entry, entries.indexOf(entry), t)}</span><span className="mt-0.5 block truncate text-[10px] opacity-70">{nestedEntryKeywords(item, recordKind, entry).slice(0, 3).join(' · ')}</span></button> })}</div>
     </aside>
-    <article className="min-w-0 p-4 md:p-6">{active ? <>{!editing ? <><div className="flex flex-wrap items-start justify-between gap-3"><h2 className="text-lg font-semibold text-foreground">{nestedEntryTitle(item, recordKind, active, entries.indexOf(active), t)}</h2><div className="flex flex-wrap gap-2">{onOpenAgent && <Button type="button" variant="outline" size="sm" onClick={() => onOpenAgent({ field_path: `${nestedPrefix(recordKind)}/${valueOf(active, 'entry_id', '')}/content`, field_label: t('library.content') })}><Bot data-icon="inline-start" />{t('library.askAgentField')}</Button>}{onSaveEntry && <Button type="button" variant="outline" size="sm" onClick={beginEdit}><Pencil data-icon="inline-start" />{t('library.editEntry')}</Button>}</div></div><p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-foreground">{nestedEntryText(item, recordKind, active, 'content') || t('library.noContent')}</p>{nestedEntryKeywords(item, recordKind, active).length > 0 && <div className="mt-6 border-t border-[var(--nova-border)] pt-4"><h3 className="text-[11px] font-medium text-muted-foreground">{t('library.keywords')}</h3><div className="mt-2 flex flex-wrap gap-1.5">{nestedEntryKeywords(item, recordKind, active).map((keyword) => <span key={keyword} className="rounded-full border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2 py-1 text-[11px] text-foreground">{keyword}</span>)}</div></div>}</> : <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold text-foreground">{t('library.editEntry')}</h2><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setPreview((value) => !value)} disabled={saving}>{t(preview ? 'library.hidePreview' : 'library.previewChanges')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void save()} disabled={saving || changedEntryFields(item, recordKind, active, draft, t).length === 0}>{saving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t('library.saveEntry')}</Button></div></div><p className="text-xs text-muted-foreground">{t('library.editEntryHint')}</p>{editError && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{editError}</p>}{preview && <EditPreview changes={changedEntryFields(item, recordKind, active, draft, t)} t={t} />}{<label className="block text-xs font-medium text-foreground">{t('library.entryTitle')}<Input className="mt-1" value={draft.comment} onChange={(event) => setDraft((current) => ({ ...current, comment: event.target.value }))} /></label>}<label className="block text-xs font-medium text-foreground">{t('library.content')}<textarea className="mt-1 min-h-48 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.content} onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))} /></label><div className="grid gap-3 md:grid-cols-2"><label className="block text-xs font-medium text-foreground">{t('library.keywords')}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.keys} onChange={(event) => setDraft((current) => ({ ...current, keys: event.target.value }))} /></label><label className="block text-xs font-medium text-foreground">{t('library.secondaryKeywords')}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.secondary_keys} onChange={(event) => setDraft((current) => ({ ...current, secondary_keys: event.target.value }))} /></label></div></div>}</> : <p className="text-sm text-muted-foreground">{t('library.noMatchingEntries')}</p>}</article>
+    <article className="min-w-0 p-4 md:p-6">{active ? <>{!editorOpen ? <><div className="flex flex-wrap items-start justify-between gap-3"><h2 className="text-lg font-semibold text-foreground">{nestedEntryTitle(item, recordKind, active, entries.indexOf(active), t)}</h2><div className="flex flex-wrap gap-2">{onOpenAgent && <Button type="button" variant="outline" size="sm" onClick={() => onOpenAgent({ field_path: `${nestedPrefix(recordKind)}/${valueOf(active, 'entry_id', '')}/content`, field_label: t('library.content') })}><Bot data-icon="inline-start" />{t('library.askAgentField')}</Button>}{onSaveEntry && <Button type="button" variant="outline" size="sm" onClick={beginEdit}><Pencil data-icon="inline-start" />{t('library.editEntry')}</Button>}{onManualAddEntry && <Button type="button" variant="outline" size="sm" onClick={beginManualAdd}><Plus data-icon="inline-start" />{t('library.manualAddEntry')}</Button>}</div></div><p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-foreground">{nestedEntryText(item, recordKind, active, 'content') || t('library.noContent')}</p>{nestedEntryKeywords(item, recordKind, active).length > 0 && <div className="mt-6 border-t border-[var(--nova-border)] pt-4"><h3 className="text-[11px] font-medium text-muted-foreground">{t('library.keywords')}</h3><div className="mt-2 flex flex-wrap gap-1.5">{nestedEntryKeywords(item, recordKind, active).map((keyword) => <span key={keyword} className="rounded-full border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2 py-1 text-[11px] text-foreground">{keyword}</span>)}</div></div>}</> : <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold text-foreground">{manualAdding ? t('library.manualAddEntryTitle') : t('library.editEntry')}</h2><div className="flex flex-wrap gap-2">{!manualAdding && <Button type="button" variant="outline" size="sm" onClick={() => setPreview((value) => !value)} disabled={saving}>{t(preview ? 'library.hidePreview' : 'library.previewChanges')}</Button>}<Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setManualAdding(false) }} disabled={saving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void (manualAdding ? saveManual() : save())} disabled={saving || (manualAdding ? !draft.comment.trim() || !draft.content.trim() : changedEntryFields(item, recordKind, active, draft, t).length === 0)}>{saving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t(manualAdding ? 'library.manualAddEntry' : 'library.saveEntry')}</Button></div></div><p className="text-xs text-muted-foreground">{t(manualAdding ? 'library.manualAddEntryHint' : 'library.editEntryHint')}</p>{editError && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{editError}</p>}{!manualAdding && preview && <EditPreview changes={changedEntryFields(item, recordKind, active, draft, t)} t={t} />}{<label className="block text-xs font-medium text-foreground">{t('library.entryTitle')}<Input className="mt-1" value={draft.comment} onChange={(event) => setDraft((current) => ({ ...current, comment: event.target.value }))} /></label>}<label className="block text-xs font-medium text-foreground">{t('library.content')}<textarea className="mt-1 min-h-48 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.content} onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))} /></label><div className="grid gap-3 md:grid-cols-2"><label className="block text-xs font-medium text-foreground">{t('library.keywords')}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.keys} onChange={(event) => setDraft((current) => ({ ...current, keys: event.target.value }))} /></label><label className="block text-xs font-medium text-foreground">{t('library.secondaryKeywords')}<textarea className="mt-1 min-h-24 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.secondary_keys} onChange={(event) => setDraft((current) => ({ ...current, secondary_keys: event.target.value }))} /></label></div></div>}</> : <p className="text-sm text-muted-foreground">{t('library.noMatchingEntries')}</p>}</article>
     {directoryOpen && <button type="button" aria-label={t('library.closeEntryDirectory')} className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setDirectoryOpen(false)} />}
     </div>
   </div>
@@ -676,10 +871,10 @@ function InfoGrid({ items }: { items: Array<[string, string]> }) {
   return <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">{items.map(([label, value]) => <div key={label} className="min-w-0"><div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div><div className="mt-1 break-words text-xs text-foreground">{value || '—'}</div></div>)}</div>
 }
 
-function PipelineOverview({ pipeline, item, runtime, t, onRetry, onPolish }: { pipeline: MasterPipelineStatus; item: Record<string, unknown>; runtime: MasterTranslationRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void> }) {
+function PipelineOverview({ pipeline, item, runtime, t, onRetry, onPolish, polishingFields }: { pipeline: MasterPipelineStatus; item: Record<string, unknown>; runtime: MasterTranslationRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void>; polishingFields: Set<string> }) {
   const [selectedNode, setSelectedNode] = useState<LibraryNodeKey>('translation')
   const node = nodeFor(pipeline, selectedNode)
-  return <InfoSection title={t('library.pipeline')}><p className="mb-3 text-[11px] text-muted-foreground">{t('library.pipelineReadOnly')}</p><div className="grid gap-2 md:grid-cols-7">{NODE_KEYS.map((key) => { const nextNode = nodeFor(pipeline, key); return <button key={key} type="button" onClick={() => setSelectedNode(key)} className={`rounded-lg border p-2 text-left transition-colors hover:brightness-95 ${statusClass(nextNode.status)} ${selectedNode === key ? 'ring-2 ring-primary/30' : ''}`} title={nextNode.reason ? t('library.nodeReason', { reason: nextNode.reason }) : undefined}><div className="flex items-center gap-1.5"><StatusIcon status={nextNode.status} /><span className="text-xs font-medium">{nodeLabel(key, t)}</span></div><div className="mt-1 text-[10px] opacity-80">{key === 'translation' ? translationSummaryLabel(runtime, pipeline.translation.total_fields, t) : statusLabel(nextNode.status, t)}</div>{nextNode.inferred && <div className="mt-1 text-[10px] opacity-70">{t('library.inferred')}</div>}</button> })}</div><div className="mt-4 rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3"><div className="flex items-center gap-2 text-xs font-medium text-foreground"><span>{nodeLabel(selectedNode, t)}</span><span className="text-[11px] font-normal text-muted-foreground">{statusLabel(node.status, t)}</span></div><div className="mt-3">{selectedNode === 'translation' ? <TranslationFieldList runtime={runtime} t={t} onRetry={onRetry} onPolish={onPolish} /> : selectedNode === 'check' ? <IssueList pipeline={pipeline} t={t} /> : <NodeEvidence node={node} item={item} nodeKey={selectedNode} t={t} />}</div></div></InfoSection>
+  return <InfoSection title={t('library.pipeline')}><p className="mb-3 text-[11px] text-muted-foreground">{t('library.pipelineReadOnly')}</p><div className="grid gap-2 md:grid-cols-7">{NODE_KEYS.map((key) => { const nextNode = nodeFor(pipeline, key); return <button key={key} type="button" onClick={() => setSelectedNode(key)} className={`rounded-lg border p-2 text-left transition-colors hover:brightness-95 ${statusClass(nextNode.status)} ${selectedNode === key ? 'ring-2 ring-primary/30' : ''}`} title={nextNode.reason ? t('library.nodeReason', { reason: nextNode.reason }) : undefined}><div className="flex items-center gap-1.5"><StatusIcon status={nextNode.status} /><span className="text-xs font-medium">{nodeLabel(key, t)}</span></div><div className="mt-1 text-[10px] opacity-80">{key === 'translation' ? translationSummaryLabel(runtime, pipeline.translation.total_fields, t) : statusLabel(nextNode.status, t)}</div>{nextNode.inferred && <div className="mt-1 text-[10px] opacity-70">{t('library.inferred')}</div>}</button> })}</div><div className="mt-4 rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3"><div className="flex items-center gap-2 text-xs font-medium text-foreground"><span>{nodeLabel(selectedNode, t)}</span><span className="text-[11px] font-normal text-muted-foreground">{statusLabel(node.status, t)}</span></div><div className="mt-3">{selectedNode === 'translation' ? <TranslationFieldList runtime={runtime} t={t} onRetry={onRetry} onPolish={onPolish} polishingFields={polishingFields} /> : selectedNode === 'check' ? <IssueList pipeline={pipeline} t={t} /> : <NodeEvidence node={node} item={item} nodeKey={selectedNode} t={t} />}</div></div></InfoSection>
 }
 
 function NodeEvidence({ node, item, nodeKey, t }: { node: MasterPipelineNode; item: Record<string, unknown>; nodeKey: LibraryNodeKey; t: (key: string, options?: Record<string, unknown>) => string }) {
@@ -689,26 +884,442 @@ function NodeEvidence({ node, item, nodeKey, t }: { node: MasterPipelineNode; it
   return <div className="space-y-2 text-xs"><div className="text-muted-foreground">{node.reason || t('library.inferred')}</div><div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2"><div className="text-[11px] text-muted-foreground">{nodeKey === 'parse' ? t('library.recognizedFields') : t('library.normalizedFields')}</div><div className="mt-1 break-words text-foreground">{names.length ? names.join(', ') : t('library.noFieldEvidence')}</div></div>{node.input_revision && <div className="font-mono text-[10px] text-muted-foreground">{t('library.inputRevision')}: {node.input_revision}</div>}{node.output_revision && <div className="font-mono text-[10px] text-muted-foreground">{t('library.outputRevision')}: {node.output_revision}</div>}</div>
 }
 
-function TranslationFieldList({ runtime, t, onRetry, onPolish }: { runtime: MasterTranslationRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void> }) {
+function TranslationFieldList({ runtime, t, onRetry, onPolish, polishingFields }: { runtime: MasterTranslationRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void>; polishingFields: Set<string> }) {
   if (runtime.fields.length === 0) return <p className="text-xs text-muted-foreground">{t('library.noFieldEvidence')}</p>
-  return <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-medium text-foreground">{translationSummaryLabel(runtime, runtime.total_fields, t)}</span><span className="text-[11px] text-muted-foreground">{runtime.runtime_available ? t('library.runtimeAggregated') : t('library.translationUnavailable')}</span></div>{runtime.fields.map((field) => <TranslationFieldRow key={field.field_path} field={field} t={t} onRetry={onRetry} onPolish={onPolish} />)}</div>
+  return <div className="space-y-2"><div className="flex flex-wrap items-center justify-between gap-2 text-xs"><span className="font-medium text-foreground">{translationSummaryLabel(runtime, runtime.total_fields, t)}</span><span className="text-[11px] text-muted-foreground">{runtime.runtime_available ? t('library.runtimeAggregated') : t('library.translationUnavailable')}</span></div>{runtime.fields.map((field) => <TranslationFieldRow key={field.field_path} field={field} t={t} onRetry={onRetry} onPolish={onPolish} polishingFields={polishingFields} />)}</div>
 }
 
-function TranslationFieldRow({ field, t, onRetry, onPolish }: { field: MasterTranslationFieldRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void> }) {
+function TranslationFieldRow({ field, t, onRetry, onPolish, polishingFields }: { field: MasterTranslationFieldRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void>; polishingFields: Set<string> }) {
   const [open, setOpen] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const needsRetry = field.task_status === 'failed' && Boolean(field.task_id)
   const recoveryProcessing = ['eligible', 'agent_running', 'proposal_ready', 'applying', 'revalidating'].includes(field.recovery_status || '')
+  const polishing = polishingFields.has(field.field_path)
   const userStatus = recoveryProcessing ? t('library.agentProcessing') : field.recovery_status === 'recovered' ? t('library.fieldCompleted') : field.recovery_status === 'needs_user' ? t('library.fieldNeedsConfirmation') : field.review_required ? t('library.fieldNeedsConfirmation') : field.task_status === 'failed' ? t('library.fieldNeedsAttention') : field.task_status === 'completed' && field.content_version_status !== 'original' ? t('library.fieldCompleted') : field.task_status === 'running' || field.task_status === 'queued' || field.task_status === 'paused' ? t('library.fieldProcessing') : t('library.fieldNotCompleted')
-  return <div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2.5"><div className="flex items-center gap-2"><button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${field.review_required || field.task_status === 'failed' ? 'border-amber-500/40 bg-amber-500/10 text-amber-600' : field.task_status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : 'border-blue-500/40 bg-blue-500/10 text-blue-600'}`}>{field.task_status === 'completed' && !field.review_required ? <Check className="size-3" /> : field.task_status === 'failed' ? <XCircle className="size-3" /> : field.task_status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Circle className="size-2.5" />}</span><span className="min-w-0 truncate font-mono text-[11px] text-foreground">{field.field_path}</span><span className="truncate text-[11px] text-muted-foreground">{userStatus}</span><ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} /></button><Button type="button" variant="ghost" size="sm" onClick={() => void onPolish(field)}>{t('library.polish')}</Button>{needsRetry && <Button type="button" variant="outline" size="icon-xs" disabled={retrying} onClick={async () => { setRetrying(true); try { await onRetry(field) } finally { setRetrying(false) } }} title={t('library.retry')} aria-label={t('library.retry')}>{retrying ? <Loader2 className="animate-spin" /> : <RotateCcw />}</Button>}</div>{field.task_status === 'failed' && <div className="mt-1 pl-7 text-[11px] text-amber-700 dark:text-amber-300">{t('library.fieldNotCompleted')}</div>}{open && <div className="mt-2 grid gap-1 border-t border-[var(--nova-border)] pt-2 text-[11px] text-muted-foreground sm:grid-cols-2"><span>{t('library.taskStatus')}: {enumLabel('status', field.task_status, t)}</span><span>{t('library.contentVersion')}: {enumLabel('contentKind', field.content_version_status, t)}</span><span>{t('library.translationVersion')}: {field.translation_version || t('library.unknown')}</span><span>{t('library.inputRevision')}: {field.input_revision || t('library.unknown')}</span>{field.failure_reason && <span className="sm:col-span-2">{t('library.failureReason')}: {field.failure_reason}</span>}</div>}</div>
+  return <div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2.5"><div className="flex items-center gap-2"><button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${field.review_required || field.task_status === 'failed' ? 'border-amber-500/40 bg-amber-500/10 text-amber-600' : field.task_status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : 'border-blue-500/40 bg-blue-500/10 text-blue-600'}`}>{field.task_status === 'completed' && !field.review_required ? <Check className="size-3" /> : field.task_status === 'failed' ? <XCircle className="size-3" /> : field.task_status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Circle className="size-2.5" />}</span><span className="min-w-0 truncate font-mono text-[11px] text-foreground">{field.field_path}</span><span className="truncate text-[11px] text-muted-foreground">{userStatus}</span><ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} /></button><Button type="button" variant="ghost" size="sm" disabled={polishing} onClick={() => void onPolish(field)}>{polishing ? <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" /> : null}{polishing ? t('library.polishing') : t('library.polish')}</Button>{needsRetry && <Button type="button" variant="outline" size="icon-xs" disabled={retrying} onClick={async () => { setRetrying(true); try { await onRetry(field) } finally { setRetrying(false) } }} title={t('library.retry')} aria-label={t('library.retry')}>{retrying ? <Loader2 className="animate-spin" /> : <RotateCcw />}</Button>}</div>{field.task_status === 'failed' && <div className="mt-1 pl-7 text-[11px] text-amber-700 dark:text-amber-300">{t('library.fieldNotCompleted')}</div>}{open && <div className="mt-2 grid gap-1 border-t border-[var(--nova-border)] pt-2 text-[11px] text-muted-foreground sm:grid-cols-2"><span>{t('library.taskStatus')}: {enumLabel('status', field.task_status, t)}</span><span>{t('library.contentVersion')}: {enumLabel('contentKind', field.content_version_status, t)}</span><span>{t('library.translationVersion')}: {field.translation_version || t('library.unknown')}</span><span>{t('library.inputRevision')}: {field.input_revision || t('library.unknown')}</span>{field.failure_reason && <span className="sm:col-span-2">{t('library.failureReason')}: {field.failure_reason}</span>}</div>}</div>
 }
 
-function ProposalList({ proposals, t, onApply, onBatchApply }: { proposals: MasterProposal[]; t: (key: string, options?: Record<string, unknown>) => string; onApply: (proposal: MasterProposal, confirmed: boolean) => Promise<void>; onBatchApply: (proposals: MasterProposal[]) => Promise<void> }) {
-  const batchable = proposals.filter((proposal) => proposal.risk !== 'high' && (proposal.status === 'candidate_ready' || (proposal.status === 'validated' && proposal.apply_mode === 'confirm')))
-  const [selected, setSelected] = useState<string[]>(batchable.map((proposal) => proposal.proposal_id))
-  if (proposals.length === 0) return null
-  const selectedProposals = batchable.filter((proposal) => selected.includes(proposal.proposal_id))
-  return <InfoSection title={t('library.proposals')}><div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3"><div><div className="text-xs font-medium text-foreground">{t('library.batchApplyTitle')}</div><div className="mt-1 text-[11px] text-muted-foreground">{t('library.batchApplyHint')}</div></div><Button type="button" size="sm" disabled={selectedProposals.length === 0} onClick={() => void onBatchApply(selectedProposals)}>{t('library.batchApply', { count: selectedProposals.length })}</Button></div><div className="space-y-2">{proposals.map((proposal) => { const canApply = proposal.status === 'candidate_ready' || (proposal.status === 'validated' && proposal.apply_mode === 'confirm'); const canBatch = canApply && proposal.risk !== 'high'; const before = proposal.current_translation || proposal.original; return <div key={proposal.proposal_id} className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface)] p-3 text-xs"><div className="flex flex-wrap items-center gap-2">{canBatch && <input type="checkbox" aria-label={t('library.selectProposal')} checked={selected.includes(proposal.proposal_id)} onChange={(event) => setSelected((ids) => event.target.checked ? [...ids, proposal.proposal_id] : ids.filter((id) => id !== proposal.proposal_id))} />}<span className="font-medium text-foreground">{proposal.kind === 'polish' ? t('library.polishCandidate') : t('library.recoveryProposal')}</span><span className="text-[11px] text-muted-foreground">{proposal.field_path}</span>{proposal.risk === 'high' && <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] text-amber-600">{t('library.highRisk')}</span>}</div><div className="mt-3 grid gap-2 lg:grid-cols-2"><div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-2"><div className="mb-1 text-[10px] text-muted-foreground">{t('library.beforeChange')}</div><p className="whitespace-pre-wrap text-foreground">{before}</p></div><div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2"><div className="mb-1 text-[10px] text-emerald-700 dark:text-emerald-300">{t('library.afterChange')}</div><p className="whitespace-pre-wrap text-foreground">{proposal.patch.translation}</p></div></div>{proposal.reason && <p className="mt-2 text-[11px] text-muted-foreground">{proposal.reason}</p>}{canApply && <Button type="button" size="sm" className="mt-2" onClick={() => { if (proposal.risk === 'high' && !window.confirm(t('library.highRiskConfirm'))) return; void onApply(proposal, true) }}>{t('library.applyChange')}</Button>}</div> })}</div></InfoSection>
+type ReviewRowStatus = 'needsEdit' | 'pendingConfirm' | 'failed' | 'conflict'
+
+const APPLYABLE_PROPOSAL_STATUSES = new Set(['proposed', 'validated', 'candidate_ready'])
+const REVIEWABLE_PROPOSAL_STATUSES = new Set(['proposed', 'validated', 'candidate_ready', 'conflict'])
+const MASTER_PROPOSAL_BATCH_SIZE = 100
+
+interface ReviewRow {
+  key: string
+  field_path: string
+  field_label: string
+  source: string
+  candidate: string
+  reason: string
+  codes: string[]
+  risk: string
+  status: ReviewRowStatus
+  task_id?: string
+  proposal?: MasterProposal
+}
+
+function proposalIsNewer(left: string, right: string) {
+  if (!left || !right) return false
+  const leftTime = Date.parse(left)
+  const rightTime = Date.parse(right)
+  if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) return leftTime > rightTime
+  return left > right
+}
+
+function reviewableProposals(proposals: MasterProposal[]) {
+  const latestAppliedAt = new Map<string, string>()
+  for (const proposal of proposals) {
+    if (proposal.status !== 'applied') continue
+    const current = latestAppliedAt.get(proposal.field_path)
+    if (!current || proposalIsNewer(proposal.updated_at, current)) latestAppliedAt.set(proposal.field_path, proposal.updated_at)
+  }
+  const seenCandidates = new Set<string>()
+  return proposals.filter((proposal) => {
+    if (!REVIEWABLE_PROPOSAL_STATUSES.has(proposal.status)) return false
+    const appliedAt = latestAppliedAt.get(proposal.field_path)
+    if (appliedAt && !proposalIsNewer(proposal.updated_at, appliedAt)) return false
+    const candidateKey = `${proposal.field_path}\u0000${proposal.patch.translation.trim()}`
+    if (seenCandidates.has(candidateKey)) return false
+    seenCandidates.add(candidateKey)
+    return true
+  })
+}
+
+function reviewRowsFor(item: Record<string, unknown>, runtime: MasterTranslationRuntime | null, proposals: MasterProposal[], t: (key: string, options?: Record<string, unknown>) => string): ReviewRow[] {
+  const rows: ReviewRow[] = []
+  const fields = recordValue(item.fields)
+  const visibleProposals = reviewableProposals(proposals)
+  const proposalFields = new Set([
+    ...visibleProposals.map((proposal) => proposal.field_path),
+    ...proposals.filter((proposal) => proposal.status === 'applied').map((proposal) => proposal.field_path),
+  ])
+  for (const field of runtime?.fields ?? []) {
+    if (proposalFields.has(field.field_path)) continue
+    const queueFailed = field.quality_status === 'failed' || field.task_status === 'failed'
+    const needsReview = field.quality_status === 'needs_review' || field.review_required
+    if (!queueFailed && !needsReview) continue
+    const source = valueOf(recordValue(fields[field.field_path]), 'source_text', '')
+    rows.push({
+      key: `f:${field.field_path}`, field_path: field.field_path, field_label: translationFieldLabel(field.field_path, t),
+      source, candidate: field.candidate_translation || '',
+      reason: field.quality_reason || field.failure_reason || '', codes: field.quality_codes || [],
+      risk: valueOf(recordValue(fields[field.field_path]), 'risk', 'safe') || 'safe',
+      status: queueFailed ? 'failed' : 'needsEdit',
+      task_id: field.task_id,
+    })
+  }
+  for (const proposal of visibleProposals) {
+    const source = valueOf(recordValue(fields[proposal.field_path]), 'source_text', '') || proposal.original
+    rows.push({
+      key: `p:${proposal.proposal_id}`, field_path: proposal.field_path, field_label: translationFieldLabel(proposal.field_path, t),
+      source, candidate: proposal.patch.translation,
+      reason: proposal.reason || '', codes: [],
+      risk: proposal.risk || 'safe',
+      status: proposal.status === 'conflict' ? 'conflict' : 'pendingConfirm',
+      proposal,
+    })
+  }
+  rows.sort((left, right) => left.field_path.localeCompare(right.field_path))
+  return rows
+}
+
+function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged, onMessage }: { masterItemID: string; item: Record<string, unknown>; runtime: MasterTranslationRuntime | null; proposals: MasterProposal[]; t: (key: string, options?: Record<string, unknown>) => string; onChanged: () => void; onMessage: (message: string) => void }) {
+  const rows = reviewRowsFor(item, runtime, proposals, t)
+  const [selected, setSelected] = useState<string[]>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [openRows, setOpenRows] = useState<string[]>([])
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
+  const [busyKey, setBusyKey] = useState('')
+  const applyingRowsRef = useRef(new Set<string>())
+  const applyingBatchRef = useRef(false)
+  const [batchBusy, setBatchBusy] = useState<'retranslate' | 'save' | 'apply' | ''>('')
+  const [riskConfirm, setRiskConfirm] = useState<{ rows: ReviewRow[]; forceConflicts: boolean } | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<ReviewRow[] | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const rowKeySignature = rows.map((row) => row.key).join('\u0000')
+  useEffect(() => {
+    const rowKeys = new Set(rowKeySignature ? rowKeySignature.split('\u0000') : [])
+    setOpenRows((current) => {
+      const next = current.filter((key) => rowKeys.has(key))
+      return next.length === current.length ? current : next
+    })
+    setSelected((current) => {
+      const next = current.filter((key) => rowKeys.has(key))
+      return next.length === current.length ? current : next
+    })
+  }, [rowKeySignature])
+  if (rows.length === 0) return null
+  const selectedRows = rows.filter((row) => selected.includes(row.key))
+  const draftOf = (row: ReviewRow) => drafts[row.key] ?? row.candidate
+  const isDirty = (row: ReviewRow) => { const draft = draftOf(row).trim(); return draft !== row.candidate.trim() && draft !== '' }
+  const hasCandidate = (row: ReviewRow) => draftOf(row).trim() !== ''
+  const canApply = (row: ReviewRow) => hasCandidate(row) && (isDirty(row) || !row.proposal || APPLYABLE_PROPOSAL_STATUSES.has(row.proposal.status))
+  const canForceConflict = (row: ReviewRow) => hasCandidate(row) && row.proposal?.status === 'conflict'
+  const retranslatable = selectedRows.filter((row) => row.task_id && (row.status === 'needsEdit' || row.status === 'failed' || row.status === 'conflict'))
+  const saveable = selectedRows.filter((row) => isDirty(row))
+  const applicable = selectedRows.filter((row) => !isDirty(row) && canApply(row))
+  const forceApplicable = selectedRows.filter(canForceConflict)
+  const deletable = selectedRows.filter((row) => row.proposal || row.task_id)
+  const anyDirty = rows.some((row) => isDirty(row))
+
+  const progressMessage = (done: number, total: number, succeeded: number, failed: number) => t('library.review.progress', { done, total, succeeded, failed })
+
+  const retranslate = async (targets: ReviewRow[]) => {
+    if (targets.length === 0 || batchBusy) return
+    setBatchBusy('retranslate')
+    let succeeded = 0, failed = 0
+    for (const [index, row] of targets.entries()) {
+      try { await retryTranslationJob(row.task_id || ''); succeeded += 1 } catch { failed += 1 }
+      if (failed > 0) setRowErrors((current) => ({ ...current, [row.key]: t('library.review.rowFailed', { reason: t('library.retryUnavailable') }) }))
+      if (index === targets.length - 1) onMessage(progressMessage(index + 1, targets.length, succeeded, failed))
+    }
+    setBatchBusy('')
+    onChanged()
+  }
+
+  const saveDraft = async (row: ReviewRow, allowProtectedTokenMismatch = isDirty(row)): Promise<MasterProposal | null> => {
+    const draft = draftOf(row).trim()
+    if (!draft) return null
+    try {
+      const created = await createMasterProposal(masterItemID, { field_path: row.field_path, translation: draft, kind: 'recovery', apply_mode: 'confirm', reason: '人工审核修改' })
+      const validated = created.proposal.status === 'proposed'
+        ? allowProtectedTokenMismatch
+          ? await validateMasterProposal(created.proposal.proposal_id, { allowProtectedTokenMismatch: true })
+          : await validateMasterProposal(created.proposal.proposal_id)
+        : created
+      setRowErrors((current) => { const next = { ...current }; delete next[row.key]; return next })
+      return validated.proposal
+    } catch (reason: unknown) {
+      setRowErrors((current) => ({ ...current, [row.key]: t('library.review.rowFailed', { reason: reason instanceof Error ? reason.message : String(reason) }) }))
+      return null
+    }
+  }
+
+  const saveEdits = async (targets: ReviewRow[]) => {
+    if (targets.length === 0 || batchBusy) return
+    setBatchBusy('save')
+    let succeeded = 0, failed = 0
+    for (const [index, row] of targets.entries()) {
+      if (await saveDraft(row)) succeeded += 1; else failed += 1
+      if (index === targets.length - 1) onMessage(failed === 0 ? t('library.review.saved') : progressMessage(index + 1, targets.length, succeeded, failed))
+    }
+    setBatchBusy('')
+    onChanged()
+  }
+
+  const resolveAppliedJob = async (row: ReviewRow) => {
+    if (!row.task_id) return
+    try { await resolveTranslationJob(row.task_id, 'applied') } catch { /* Master apply already succeeded; queue cleanup is best effort. */ }
+  }
+
+  const deleteRows = async (targets: ReviewRow[]) => {
+    const candidates = targets.filter((row) => row.proposal || row.task_id)
+    if (candidates.length === 0 || deleteBusy) return
+    setDeleteBusy(true)
+    let deleted = 0
+    let failed = 0
+    const deletedKeys = new Set<string>()
+    const proposalRows = candidates.filter((row) => row.proposal)
+    if (proposalRows.length === 1) {
+      const row = proposalRows[0]
+      try {
+        const result = await rejectMasterProposal(row.proposal?.proposal_id || '')
+        if (result.proposal.status === 'rejected') {
+          deleted += 1
+          deletedKeys.add(row.key)
+        } else {
+          failed += 1
+        }
+      } catch {
+        failed += 1
+      }
+    } else {
+      for (let start = 0; start < proposalRows.length; start += MASTER_PROPOSAL_BATCH_SIZE) {
+        const chunk = proposalRows.slice(start, start + MASTER_PROPOSAL_BATCH_SIZE)
+        try {
+          const result = await rejectMasterProposals(masterItemID, chunk.map((row) => row.proposal?.proposal_id || ''))
+          deleted += result.rejected_count
+          for (const entry of result.results) {
+            const row = chunk.find((candidate) => candidate.proposal?.proposal_id === entry.proposal_id)
+            if (entry.status === 'rejected') {
+              if (row) deletedKeys.add(row.key)
+            } else {
+              failed += 1
+              if (row) setRowErrors((current) => ({ ...current, [row.key]: t('library.review.rowFailed', { reason: entry.error || entry.status }) }))
+            }
+          }
+        } catch {
+          failed += chunk.length
+        }
+      }
+    }
+    const runtimeRows = candidates.filter((row) => !row.proposal && row.task_id)
+    await Promise.all(runtimeRows.map(async (row) => {
+      try {
+        await deleteTranslationJob(row.task_id || '')
+        deleted += 1
+        deletedKeys.add(row.key)
+      } catch {
+        failed += 1
+        setRowErrors((current) => ({ ...current, [row.key]: t('library.review.rowFailed', { reason: t('library.review.deleteFailed') }) }))
+      }
+    }))
+    setSelected((current) => current.filter((key) => !deletedKeys.has(key)))
+    if (deleted > 0) onChanged()
+    onMessage(failed > 0 ? progressMessage(deleted + failed, candidates.length, deleted, failed) : t('library.review.deleted', { count: deleted }))
+    setDeleteBusy(false)
+  }
+
+  const applyRows = async (targets: ReviewRow[], confirmedHighRisk: boolean, forceConflicts = false) => {
+    const candidates = targets.filter((row) => isDirty(row) || canApply(row) || (forceConflicts && canForceConflict(row)))
+    if (candidates.length === 0 || busyKey || batchBusy || applyingBatchRef.current || applyingRowsRef.current.size > 0) return
+    const highRisk = candidates.filter((row) => row.risk === 'high')
+    if (highRisk.length > 0 && !confirmedHighRisk) { setRiskConfirm({ rows: candidates, forceConflicts }); return }
+    setRiskConfirm(null)
+    applyingBatchRef.current = true
+    setBatchBusy('apply')
+    try {
+      const prepared: Array<{ row: ReviewRow; proposal: MasterProposal }> = []
+      let failedCount = 0
+      for (const row of candidates) {
+        const proposal = isDirty(row) || !row.proposal ? await saveDraft(row) : row.proposal
+        if (!proposal || (!APPLYABLE_PROPOSAL_STATUSES.has(proposal.status) && !(forceConflicts && proposal.status === 'conflict'))) {
+          failedCount += 1
+          continue
+        }
+        prepared.push({ row, proposal })
+      }
+
+      const results: Array<{ proposal_id: string; status: string; error?: string; translation_version_id?: string }> = []
+      let applied = 0
+      for (let start = 0; start < prepared.length; start += MASTER_PROPOSAL_BATCH_SIZE) {
+        const chunk = prepared.slice(start, start + MASTER_PROPOSAL_BATCH_SIZE)
+        const proposalIDs = chunk.map(({ proposal }) => proposal.proposal_id)
+        const result = forceConflicts
+          ? await applyMasterProposals(masterItemID, proposalIDs, confirmedHighRisk, true, true)
+          : await applyMasterProposals(masterItemID, proposalIDs, confirmedHighRisk)
+        applied += result.applied_count
+        results.push(...result.results)
+      }
+
+      await Promise.all(results.filter((entry) => entry.status === 'applied').map((entry) => {
+        const row = prepared.find((candidate) => candidate.proposal.proposal_id === entry.proposal_id)?.row
+        return row ? resolveAppliedJob(row) : Promise.resolve()
+      }))
+
+      const conflicted = results.filter((entry) => entry.status === 'conflict').length
+      failedCount += results.length - applied - conflicted
+      for (const entry of results) {
+        if (entry.status !== 'applied') {
+          const row = prepared.find((candidate) => candidate.proposal.proposal_id === entry.proposal_id)?.row
+          if (row) setRowErrors((current) => ({ ...current, [row.key]: t('library.review.rowFailed', { reason: entry.error || entry.status }) }))
+        }
+      }
+      onMessage(t('library.review.applyResult', { applied, total: candidates.length, conflicted, failed: failedCount }))
+    } catch (reason: unknown) {
+      onMessage(t('library.proposalUnavailable'))
+    } finally {
+      applyingBatchRef.current = false
+      setBatchBusy('')
+      onChanged()
+    }
+  }
+
+  const applySingle = async (row: ReviewRow) => {
+    const forceConflict = canForceConflict(row)
+    if (busyKey || batchBusy || applyingBatchRef.current || applyingRowsRef.current.has(row.key) || (!canApply(row) && !forceConflict)) return
+    if (row.risk === 'high') { setRiskConfirm({ rows: [row], forceConflicts: forceConflict }); return }
+    applyingRowsRef.current.add(row.key)
+    setBusyKey(row.key)
+    try {
+      const proposal = isDirty(row) || !row.proposal ? await saveDraft(row) : row.proposal
+      if (!proposal) return
+      if (proposal.status === 'proposed') {
+        if (forceConflict || isDirty(row)) await validateMasterProposal(proposal.proposal_id, { allowProtectedTokenMismatch: true })
+        else await validateMasterProposal(proposal.proposal_id)
+      }
+      if (forceConflict || isDirty(row) || proposal.protected_token_override) await applyMasterProposal(proposal.proposal_id, true, forceConflict, true)
+      else await applyMasterProposal(proposal.proposal_id, true)
+      await resolveAppliedJob(row)
+      onMessage(t('library.review.savedApplied'))
+    } catch (reason: unknown) {
+      setRowErrors((current) => ({ ...current, [row.key]: reason instanceof Error ? reason.message : t('library.proposalUnavailable') }))
+    } finally {
+      applyingRowsRef.current.delete(row.key)
+      setBusyKey('')
+      onChanged()
+    }
+  }
+
+  const selectBy = (predicate: (row: ReviewRow) => boolean) => setSelected(rows.filter(predicate).map((row) => row.key))
+  const statusLabelOf = (status: ReviewRowStatus) => t(`library.review.status.${status}`)
+  const statusClassOf = (status: ReviewRowStatus) => status === 'pendingConfirm' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : status === 'needsEdit' ? 'border-amber-500/40 bg-amber-500/10 text-amber-600' : 'border-red-500/40 bg-red-500/10 text-red-600'
+
+  return <InfoSection title={t('library.review.title')}>
+    <p className="mb-3 text-[11px] text-muted-foreground">{t('library.review.hint')}</p>
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3 text-xs">
+      <Button type="button" variant="outline" size="xs" onClick={() => selectBy(() => true)}>{t('library.review.selectAll')}</Button>
+      <Button type="button" variant="outline" size="xs" onClick={() => selectBy((row) => row.status === 'needsEdit')}>{t('library.review.selectNeedsWork')}</Button>
+      <Button type="button" variant="outline" size="xs" onClick={() => selectBy((row) => row.status === 'failed' || row.status === 'conflict')}>{t('library.review.selectFailed')}</Button>
+      <Button type="button" variant="ghost" size="xs" onClick={() => setSelected([])}>{t('library.review.clearSelection')}</Button>
+      {anyDirty && <span className="text-[11px] text-amber-600">{t('library.review.unsaved')}</span>}
+      <span className="grow" />
+      {retranslatable.length > 0 && <Button type="button" variant="outline" size="xs" disabled={Boolean(batchBusy)} onClick={() => void retranslate(retranslatable)}>
+        {batchBusy === 'retranslate' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+        {t('library.review.batchRetranslate', { count: retranslatable.length })}
+      </Button>}
+      {saveable.length > 0 && <Button type="button" variant="outline" size="xs" disabled={Boolean(batchBusy)} onClick={() => void saveEdits(saveable)}>
+        {batchBusy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        {t('library.review.batchSave', { count: saveable.length })}
+      </Button>}
+      {applicable.length > 0 && <Button type="button" size="xs" disabled={Boolean(batchBusy)} onClick={() => void applyRows(applicable, false)}>
+        {batchBusy === 'apply' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        {t('library.review.batchApply', { count: applicable.length })}
+      </Button>}
+      {forceApplicable.length > 0 && <Button type="button" size="xs" variant="outline" disabled={Boolean(batchBusy)} onClick={() => void applyRows(forceApplicable, false, true)}>
+        {batchBusy === 'apply' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        {t('library.review.forceBatchApply', { count: forceApplicable.length })}
+      </Button>}
+      {deletable.length > 0 && <Button type="button" variant="outline" size="xs" disabled={Boolean(batchBusy) || deleteBusy} onClick={() => setDeleteConfirm(deletable)}>
+        {deleteBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+        {t('library.review.batchDelete', { count: deletable.length })}
+      </Button>}
+    </div>
+    {riskConfirm && (
+      <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
+        <div className="font-medium text-foreground">{t('library.review.highRiskTitle')}</div>
+        <p className="mt-1 text-muted-foreground">{t('library.review.highRiskMessage')}</p>
+        <ul className="mt-2 list-inside list-disc space-y-1">{riskConfirm.rows.map((row) => <li key={`risk-${row.key}`} className="text-foreground">{row.field_label} <span className="text-muted-foreground">({row.field_path})</span></li>)}</ul>
+        <div className="mt-3 flex gap-2">
+          <Button type="button" size="xs" disabled={batchBusy === 'apply'} onClick={() => { const confirmation = riskConfirm; setRiskConfirm(null); void applyRows(confirmation.rows, true, confirmation.forceConflicts) }}>{t('library.review.highRiskConfirm')}</Button>
+          <Button type="button" variant="ghost" size="xs" onClick={() => setRiskConfirm(null)}>{t('common.cancel')}</Button>
+        </div>
+      </div>
+    )}
+    <div className="space-y-2">
+      {rows.map((row) => {
+        const dirty = isDirty(row)
+        const checked = selected.includes(row.key)
+        const open = openRows.includes(row.key)
+        const detailsID = `review-details-${row.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+        const displayReason = row.reason === '人工审核修改' ? '' : row.reason
+        return (
+          <div key={row.key} className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface)] p-3 text-xs">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <input type="checkbox" aria-label={t('library.selectProposal')} checked={checked} onChange={(event) => setSelected((current) => event.target.checked ? [...current, row.key] : current.filter((key) => key !== row.key))} />
+              <Button type="button" variant="ghost" size="icon-xs" aria-expanded={open} aria-controls={detailsID} aria-label={t(open ? 'library.review.collapse' : 'library.review.expand')} onClick={() => setOpenRows((current) => open ? current.filter((key) => key !== row.key) : [...current, row.key])}>
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+              </Button>
+              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${statusClassOf(row.status)}`}>{statusLabelOf(row.status)}</span>
+              <span className="min-w-0 max-w-full truncate font-medium text-foreground" title={row.field_path}>{row.field_label}</span>
+              {row.risk === 'high' && <span title={t('library.review.risk.high')}><AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-label={t('library.review.risk.high')} /></span>}
+              <span className="min-w-0 grow" />
+              {row.task_id && (row.status === 'needsEdit' || row.status === 'failed' || row.status === 'conflict') && (
+                <Button type="button" variant="outline" size="xs" className="relative z-10 shrink-0" disabled={Boolean(batchBusy)} onClick={() => void retranslate([row])}><RotateCcw className="h-3.5 w-3.5" />{t('library.review.retranslate')}</Button>
+              )}
+              {dirty && <Button type="button" variant="outline" size="xs" className="relative z-10 shrink-0" disabled={Boolean(batchBusy)} onClick={() => void saveEdits([row])}><Check className="h-3.5 w-3.5" />{t('library.review.save')}</Button>}
+              {(row.proposal || hasCandidate(row) || dirty) && <Button type="button" size="xs" className="relative z-10 shrink-0" disabled={Boolean(busyKey) || Boolean(batchBusy)} onClick={() => void applySingle(row)}>{busyKey === row.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}{t(row.proposal?.status === 'conflict' ? 'library.review.forceApply' : row.proposal && !dirty ? 'library.review.apply' : 'library.review.saveApply')}</Button>}
+              <Button type="button" variant="outline" size="xs" className="relative z-10 shrink-0 text-[var(--nova-danger)]" disabled={Boolean(busyKey) || Boolean(batchBusy) || deleteBusy} onClick={() => setDeleteConfirm([row])}><Trash2 className="h-3.5 w-3.5" />{t('library.review.delete')}</Button>
+            </div>
+            {(displayReason || row.codes.length > 0) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {row.codes.length > 0 ? row.codes.map((code) => t(`library.review.quality.${code}`)).join('；') : null}
+                {displayReason ? <span className="text-muted-foreground">{displayReason}</span> : null}
+              </div>
+            )}
+            {open && <div id={detailsID} className="mt-3 grid gap-2 border-t border-[var(--nova-border)] pt-3 lg:grid-cols-2">
+              <div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-2">
+                <div className="mb-1 text-[10px] text-muted-foreground">{t('library.review.source')}</div>
+                <p className="max-h-40 overflow-auto whitespace-pre-wrap leading-5 text-foreground">{row.source || '—'}</p>
+              </div>
+              <div className="grid gap-1">
+                <div className="text-[10px] text-muted-foreground">{t('library.review.candidate')}</div>
+                <textarea
+                  value={draftOf(row)}
+                  onChange={(event) => setDrafts((current) => ({ ...current, [row.key]: event.target.value }))}
+                  placeholder={t('library.review.editPlaceholder')}
+                  className="min-h-28 w-full resize-y rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-2 leading-5 text-foreground"
+                />
+              </div>
+            </div>}
+            {rowErrors[row.key] && <div className="mt-2 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-600 dark:text-red-400">{rowErrors[row.key]}</div>}
+          </div>
+        )
+      })}
+    </div>
+    <ConfirmDialog
+      open={Boolean(deleteConfirm)}
+      onOpenChange={(open) => { if (!open && !deleteBusy) setDeleteConfirm(null) }}
+      title={deleteConfirm?.length === 1 ? t('library.review.deleteTitle') : t('library.review.deleteBatchTitle', { count: deleteConfirm?.length || 0 })}
+      description={deleteConfirm?.some((row) => isDirty(row)) ? t('library.review.deleteUnsavedDescription') : t('library.review.deleteDescription')}
+      confirmLabel={t('common.delete')}
+      tone="danger"
+      details={deleteConfirm?.map((row) => `${row.field_label} · ${row.field_path}`).slice(0, 20)}
+      onConfirm={() => deleteRows(deleteConfirm || [])}
+    />
+  </InfoSection>
 }
 
 function IssueList({ pipeline, t }: { pipeline: MasterPipelineStatus; t: (key: string, options?: Record<string, unknown>) => string }) {

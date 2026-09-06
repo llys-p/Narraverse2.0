@@ -41,6 +41,43 @@ type MaterialImportOptions struct {
 	MasterOnly        bool
 }
 
+// MasterAssetInstantiationError keeps the failing stage visible to the UI
+// instead of reducing a normal projection failure to a generic HTTP 500.
+// The wrapped error is intentionally limited to the operation's stage and
+// backend error; source content and user archives are never included here.
+type MasterAssetInstantiationError struct {
+	Stage string
+	Err   error
+}
+
+func (e *MasterAssetInstantiationError) Error() string {
+	if e == nil {
+		return "加入当前冒险失败"
+	}
+	if strings.TrimSpace(e.Stage) == "" {
+		return fmt.Sprintf("加入当前冒险失败：%v", e.Err)
+	}
+	return fmt.Sprintf("加入当前冒险失败（阶段：%s）：%v", e.Stage, e.Err)
+}
+
+func (e *MasterAssetInstantiationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func wrapMasterAssetInstantiationError(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var alreadyWrapped *MasterAssetInstantiationError
+	if errors.As(err, &alreadyWrapped) {
+		return err
+	}
+	return &MasterAssetInstantiationError{Stage: stage, Err: err}
+}
+
 type MaterialImportResult struct {
 	Kind               string                    `json:"kind"`
 	Name               string                    `json:"name"`
@@ -48,6 +85,7 @@ type MaterialImportResult struct {
 	CreatedIDs         []string                  `json:"created_ids"`
 	UpdatedIDs         []string                  `json:"updated_ids"`
 	ConflictIDs        []string                  `json:"conflict_ids"`
+	Conflicts          []MaterialImportConflict  `json:"conflicts"`
 	SkippedIDs         []string                  `json:"skipped_ids"`
 	Failed             []string                  `json:"failed"`
 	ItemIDs            []string                  `json:"item_ids"`
@@ -61,6 +99,18 @@ type MaterialImportResult struct {
 	MasterSourceID     string                    `json:"master_source_id,omitempty"`
 	MasterItemIDs      []string                  `json:"master_item_ids"`
 	TranslationTargets []MasterTranslationTarget `json:"translation_targets"`
+}
+
+// MaterialImportConflict explains why a direct import created or reused a
+// conflict copy instead of overwriting an existing manually edited entry.
+// Keep this metadata free of entry content so it is safe to show in the UI.
+type MaterialImportConflict struct {
+	SourceRecordID   string `json:"source_record_id"`
+	OriginalTargetID string `json:"original_target_id"`
+	ConflictID       string `json:"conflict_id"`
+	Name             string `json:"name"`
+	Reason           string `json:"reason"`
+	Action           string `json:"action"`
 }
 
 type materialManifest struct {
@@ -150,7 +200,16 @@ func (s *Service) ImportMaterialToMaster(filename string, data []byte, options M
 }
 
 // InstantiateMasterAsset projects one usable Master asset into this Adventure.
-func (s *Service) InstantiateMasterAsset(masterItemID string) (MaterialImportResult, error) {
+func (s *Service) InstantiateMasterAsset(masterItemID string) (result MaterialImportResult, err error) {
+	stage := "准备实例事务"
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = MaterialImportResult{}
+			err = &MasterAssetInstantiationError{Stage: stage, Err: fmt.Errorf("内部异常：%v", recovered)}
+			return
+		}
+		err = wrapMasterAssetInstantiationError(stage, err)
+	}()
 	master := NewMasterLibraryStore(s.workspace)
 	importID, err := master.PrepareAssetInstantiation(masterItemID, s.workspace)
 	if err != nil {
@@ -226,6 +285,9 @@ func (s *Service) importMaterialDirect(filename string, data []byte, options Mat
 	}
 	if result.ConflictIDs == nil {
 		result.ConflictIDs = []string{}
+	}
+	if result.Conflicts == nil {
+		result.Conflicts = []MaterialImportConflict{}
 	}
 	if result.SkippedIDs == nil {
 		result.SkippedIDs = []string{}
@@ -353,7 +415,16 @@ func (s *Service) importMaterialManaged(filename string, data []byte, options Ma
 // FinalizeMasterImport projects a ready Master transaction into the current
 // adventure. Repeated calls are idempotent and never overwrite an existing
 // adventure instance.
-func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, error) {
+func (s *Service) FinalizeMasterImport(importID string) (result MaterialImportResult, err error) {
+	stage := "读取导入事务"
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = MaterialImportResult{}
+			err = &MasterAssetInstantiationError{Stage: stage, Err: fmt.Errorf("内部异常：%v", recovered)}
+			return
+		}
+		err = wrapMasterAssetInstantiationError(stage, err)
+	}()
 	master := NewMasterLibraryStore(s.workspace)
 	transaction, err := master.LoadImport(strings.TrimSpace(importID))
 	if err != nil {
@@ -369,13 +440,16 @@ func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, e
 		return result, nil
 	}
 	if !masterTransactionReady(transaction) {
+		stage = "检查翻译状态"
 		return MaterialImportResult{}, errors.New("总库素材仍有必需字段等待翻译")
 	}
+	stage = "读取总库原件"
 	source, revision, data, err := master.LoadSourceRevision(transaction.SourceID, transaction.SourceRevision)
 	if err != nil {
 		return MaterialImportResult{}, err
 	}
 	items := make([]MasterItem, 0, len(transaction.ItemIDs))
+	stage = "读取总库条目"
 	for _, itemID := range transaction.ItemIDs {
 		item, loadErr := master.LoadItem(itemID)
 		if loadErr != nil {
@@ -383,20 +457,23 @@ func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, e
 		}
 		items = append(items, item)
 	}
+	stage = "解析总库原件"
 	preview, err := PreviewMaterial(source.Filename, data)
 	if err != nil {
 		return MaterialImportResult{}, err
 	}
 	store := NewLoreStore(s.workspace)
+	stage = "读取当前冒险资料"
 	existing, err := store.ListAll()
 	if err != nil {
 		return MaterialImportResult{}, err
 	}
+	stage = "生成冒险资料操作"
 	ops, activeCard, itemTargets, nestedLoreIDs, err := buildMasterRuntimeOperations(source.Filename, data, items, transaction, existing)
 	if err != nil {
 		return MaterialImportResult{}, err
 	}
-	result := emptyMaterialImportResult()
+	result = emptyMaterialImportResult()
 	result.Kind, result.Name, result.EntryCount, result.Truncated = preview.Kind, preview.Name, len(items), preview.Truncated
 	result.ManagementMode, result.Status, result.ImportID = MaterialModeManaged, "ready", transaction.ImportID
 	result.MasterWorkspace, result.MasterSourceID = master.Workspace(), transaction.SourceID
@@ -414,6 +491,7 @@ func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, e
 		}
 		pending = append(pending, op)
 	}
+	stage = "读取运行文件快照"
 	snapshots, err := snapshotCharacterCardImportFiles(s.workspace)
 	if err != nil {
 		return MaterialImportResult{}, err
@@ -425,6 +503,7 @@ func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, e
 		return MaterialImportResult{}, cause
 	}
 	if activeCard != nil {
+		stage = "写入角色卡附属资源"
 		if _, err := s.importTavernCardCover(*activeCard, data); err != nil {
 			return rollback(err)
 		}
@@ -433,6 +512,7 @@ func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, e
 		}
 	}
 	if len(pending) > 0 {
+		stage = "写入冒险资料"
 		applied, applyErr := store.ApplyOperations("从叙界总资料库加载「"+preview.Name+"」", pending)
 		if applyErr != nil {
 			return rollback(applyErr)
@@ -452,6 +532,7 @@ func (s *Service) FinalizeMasterImport(importID string) (MaterialImportResult, e
 			TargetLoreIDs: targets, NestedEntryLoreIDs: nestedLoreIDs[item.MasterItemID], LoadedRevision: item.ActiveWorkingRevision,
 		})
 	}
+	stage = "登记当前冒险实例"
 	if _, err := master.MarkImportInstantiated(transaction.ImportID, allTargets, instances); err != nil {
 		return rollback(err)
 	}
@@ -521,10 +602,17 @@ func masterLorebookItemInput(name string, book *tavernCharacterBook) MasterItemI
 	}
 	addMasterNestedFields(fields, nested, "lorebook")
 	bookMap := masterJSONMap(book)
+	original := map[string]any{"name": name, "entries": bookMap["entries"]}
+	sourceSemantics := map[string]any{"format": "lorebook", "entries": bookMap["entries"]}
+	if description := strings.TrimSpace(book.Description); description != "" {
+		fields["lorebook.description"] = MasterFieldInput{Text: description, Risk: masterFieldRiskSafe, Required: false}
+		original["description"] = bookMap["description"]
+		sourceSemantics["description"] = bookMap["description"]
+	}
 	return MasterItemInput{
 		SourceEntryIdentity: "lorebook", RecordKind: "lorebook_template", SemanticType: "lorebook", Name: name,
-		Original:         map[string]any{"name": name, "entries": bookMap["entries"]},
-		SourceSemantics:  map[string]any{"format": "lorebook", "entries": bookMap["entries"]},
+		Original:         original,
+		SourceSemantics:  sourceSemantics,
 		RuntimeSemantics: map[string]any{"load_mode": LoreLoadModeAuto}, Fields: fields, NestedEntries: nested,
 	}
 }
@@ -837,7 +925,7 @@ func masterStringSlice(value any) []string {
 
 func emptyMaterialImportResult() MaterialImportResult {
 	return MaterialImportResult{
-		CreatedIDs: []string{}, UpdatedIDs: []string{}, ConflictIDs: []string{}, SkippedIDs: []string{},
+		CreatedIDs: []string{}, UpdatedIDs: []string{}, ConflictIDs: []string{}, Conflicts: []MaterialImportConflict{}, SkippedIDs: []string{},
 		Failed: []string{}, ItemIDs: []string{}, MasterItemIDs: []string{}, TranslationTargets: []MasterTranslationTarget{},
 	}
 }
@@ -870,7 +958,8 @@ func parseStandaloneLorebook(filename string, data []byte) (string, *tavernChara
 	if value := strings.TrimSpace(materialString(container["name"])); value != "" {
 		name = value
 	}
-	return name, &tavernCharacterBook{Name: name, Entries: entries}, nil
+	description := materialString(container["description"])
+	return name, &tavernCharacterBook{Name: name, Description: description, Entries: entries}, nil
 }
 
 func materialLooksLikeCharacterCard(filename string, data []byte) bool {
@@ -971,7 +1060,7 @@ func reconcileMaterialOperations(sourceID string, preview MaterialPreview, ops [
 		byID[item.ID] = item
 	}
 	names := newLoreNameAllocator(existing)
-	result := MaterialImportResult{}
+	result := MaterialImportResult{Conflicts: []MaterialImportConflict{}}
 	reconciled := make([]LoreOperation, 0, len(ops))
 	targets := make([]materialManifestTarget, 0, len(ops))
 	for index, op := range ops {
@@ -999,16 +1088,32 @@ func reconcileMaterialOperations(sourceID string, preview MaterialPreview, ops [
 				targets = append(targets, materialManifestTarget{SourceRecordID: recordID, TargetID: current.ID, ManagedHash: managedHash, Status: "updated"})
 				continue
 			}
+			originalTargetID := op.Item.ID
 			conflictID := op.Item.ID + "-conflict-" + op.Item.Provenance.SourceHash[:8]
 			op.Item.ID, op.Item.Name = conflictID, names.Claim(op.Item.Name+"（导入冲突）")
 			managedHash := materialInputHash(op.Item)
-			if _, exists := byID[conflictID]; exists {
+			_, exists := byID[conflictID]
+			if exists {
 				result.SkippedIDs = append(result.SkippedIDs, conflictID)
 			} else {
 				reconciled = append(reconciled, op)
 				result.ConflictIDs = append(result.ConflictIDs, conflictID)
 				byID[conflictID] = LoreItem{ID: conflictID, Name: op.Item.Name}
 			}
+			reason := "目标条目包含人工修改，导入未覆盖原条目"
+			action := "已创建独立冲突副本，请在当前资料库中编辑它"
+			if exists {
+				reason = "相同来源的冲突副本已经存在，本次没有重复创建"
+				action = "请打开已有冲突副本，或使用手动添加创建新条目"
+			}
+			result.Conflicts = append(result.Conflicts, MaterialImportConflict{
+				SourceRecordID:   recordID,
+				OriginalTargetID: originalTargetID,
+				ConflictID:       conflictID,
+				Name:             op.Item.Name,
+				Reason:           reason,
+				Action:           action,
+			})
 			targets = append(targets, materialManifestTarget{SourceRecordID: recordID, TargetID: conflictID, ManagedHash: managedHash, Status: "conflict"})
 			continue
 		}

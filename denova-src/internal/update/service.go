@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -92,8 +91,10 @@ func (s *Service) latestRelease(ctx context.Context) (githubRelease, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return githubRelease{}, fmt.Errorf("检查 GitHub Release 失败: HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			return githubRelease{}, fmt.Errorf("检查 GitHub Release 失败：GitHub API 暂时限制了请求，请稍后重试")
+		}
+		return githubRelease{}, fmt.Errorf("检查 GitHub Release 失败：HTTP %d", resp.StatusCode)
 	}
 	var release githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {

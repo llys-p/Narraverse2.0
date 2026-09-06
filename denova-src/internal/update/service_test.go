@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,6 +47,30 @@ func TestDefaultServiceUsesDenovaReleaseRepository(t *testing.T) {
 	service.githubAPIBase = "https://api.example.test/repos"
 	if got, want := service.githubLatestReleaseURL(), "https://api.example.test/repos/alfredxw/denova/releases/latest"; got != want {
 		t.Fatalf("githubLatestReleaseURL = %s, want %s", got, want)
+	}
+}
+
+func TestLatestReleaseHidesUpstreamErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("{\"message\":\"API rate limit exceeded\",\"documentation_url\":\"https://example.com/internal\"}"))
+	}))
+	defer server.Close()
+
+	service := &Service{
+		repository:    "owner/repo",
+		httpClient:    server.Client(),
+		githubAPIBase: server.URL + "/repos",
+	}
+	_, err := service.latestRelease(context.Background())
+	if err == nil {
+		t.Fatal("latestRelease should fail for a rate-limited response")
+	}
+	if got := err.Error(); got != "检查 GitHub Release 失败：GitHub API 暂时限制了请求，请稍后重试" {
+		t.Fatalf("unexpected sanitized error: %q", got)
+	}
+	if strings.Contains(err.Error(), "documentation_url") || strings.Contains(err.Error(), "rate limit exceeded") {
+		t.Fatalf("upstream response leaked through error: %v", err)
 	}
 }
 

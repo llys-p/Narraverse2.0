@@ -1,10 +1,12 @@
 export interface Settings {
   openai_api_key?: string
+  openai_api_key_configured?: boolean
   openai_base_url?: string
   openai_model?: string
   openai_context_window_tokens?: number | null
   model_profiles?: ModelProfileSettings[]
   image_api_key?: string
+  image_api_key_configured?: boolean
   image_api_base_url?: string
   image_api_model?: string
   default_image_api_profile_id?: string
@@ -61,6 +63,7 @@ export interface ModelProfileSettings {
   id?: string
   name?: string
   openai_api_key?: string
+  api_key_configured?: boolean
   openai_base_url?: string
   openai_model?: string
   temperature?: number | null
@@ -72,6 +75,7 @@ export interface ImageAPIProfileSettings {
   name?: string
   provider?: string
   openai_api_key?: string
+  api_key_configured?: boolean
   openai_base_url?: string
   openai_model?: string
   default_size?: string

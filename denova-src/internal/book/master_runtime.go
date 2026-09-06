@@ -37,6 +37,10 @@ type MasterTranslationFieldRuntime struct {
 	UpdatedAt            string                      `json:"updated_at,omitempty"`
 	FinalFailure         bool                        `json:"final_failure"`
 	RecoveryStatus       string                      `json:"recovery_status,omitempty"`
+	CandidateTranslation string                      `json:"candidate_translation,omitempty"`
+	QualityStatus        string                      `json:"quality_status,omitempty"`
+	QualityCodes         []string                    `json:"quality_codes,omitempty"`
+	QualityReason        string                      `json:"quality_reason,omitempty"`
 }
 
 type MasterTranslationRuntime struct {
@@ -51,18 +55,23 @@ type MasterTranslationRuntime struct {
 }
 
 type masterQueueJob struct {
-	ID             string `json:"id"`
-	MasterItemID   string `json:"master_item_id"`
-	Field          string `json:"field"`
-	SourceSHA256   string `json:"source_sha256"`
-	BaseRevision   string `json:"base_revision"`
-	SourceRevision string `json:"source_revision"`
-	Status         string `json:"status"`
-	ApplyPolicy    string `json:"apply_policy"`
-	Error          string `json:"error"`
-	Model          string `json:"model"`
-	Attempts       int    `json:"attempts"`
-	UpdatedAt      string `json:"updated_at"`
+	ID                   string   `json:"id"`
+	MasterItemID         string   `json:"master_item_id"`
+	Field                string   `json:"field"`
+	SourceSHA256         string   `json:"source_sha256"`
+	BaseRevision         string   `json:"base_revision"`
+	SourceRevision       string   `json:"source_revision"`
+	Status               string   `json:"status"`
+	ApplyPolicy          string   `json:"apply_policy"`
+	Error                string   `json:"error"`
+	Model                string   `json:"model"`
+	Attempts             int      `json:"attempts"`
+	UpdatedAt            string   `json:"updated_at"`
+	Translation          string   `json:"translation"`
+	QualityStatus        string   `json:"quality_status"`
+	QualityCodes         []string `json:"quality_codes"`
+	QualityReason        string   `json:"quality_reason"`
+	QualityContractVer   int      `json:"quality_contract_version"`
 }
 
 type masterQueueSnapshot struct {
@@ -171,7 +180,7 @@ func buildMasterTranslationRuntime(detail MasterAssetDetail, queue masterQueueSn
 		entry := MasterTranslationFieldRuntime{
 			FieldPath: fieldPath, TaskStatus: status,
 			ContentVersionStatus: masterRuntimeContentVersionStatus(field, version),
-			TranslationVersion:   field.ActiveTranslationVersionID, ReviewRequired: job != nil && (job.Status == "pending_review" || job.ApplyPolicy == "master_review"),
+			TranslationVersion:   field.ActiveTranslationVersionID, ReviewRequired: job != nil && job.Status == "pending_review",
 			InputRevision: detail.Item.Revision, SourceSHA256: field.SourceSHA256,
 		}
 		if job != nil {
@@ -181,6 +190,10 @@ func buildMasterTranslationRuntime(detail MasterAssetDetail, queue masterQueueSn
 			if job.BaseRevision != "" {
 				entry.InputRevision = job.BaseRevision
 			}
+			entry.CandidateTranslation = job.Translation
+			entry.QualityStatus = job.QualityStatus
+			entry.QualityCodes = job.QualityCodes
+			entry.QualityReason = job.QualityReason
 		}
 		if version != nil && entry.Model == "" {
 			entry.Model = version.Version.Model

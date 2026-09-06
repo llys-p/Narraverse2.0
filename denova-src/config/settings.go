@@ -20,11 +20,15 @@ type Settings struct {
 
 	// 模型
 	OpenAIAPIKey              string                       `toml:"openai_api_key,omitempty" json:"openai_api_key,omitempty"`
+	// OpenAIAPIKeyConfigured is a transient client hint. It is never persisted
+	// to TOML and never contains the credential itself.
+	OpenAIAPIKeyConfigured    bool                         `toml:"-" json:"openai_api_key_configured,omitempty"`
 	OpenAIBaseURL             string                       `toml:"openai_base_url,omitempty" json:"openai_base_url,omitempty"`
 	OpenAIModel               string                       `toml:"openai_model,omitempty" json:"openai_model,omitempty"`
 	OpenAIContextWindowTokens *int                         `toml:"openai_context_window_tokens,omitempty" json:"openai_context_window_tokens,omitempty"`
 	ModelProfiles             []ModelProfileSettings       `toml:"model_profiles,omitempty" json:"model_profiles,omitempty"`
 	ImageAPIKey               string                       `toml:"image_api_key,omitempty" json:"image_api_key,omitempty"`
+	ImageAPIKeyConfigured     bool                         `toml:"-" json:"image_api_key_configured,omitempty"`
 	ImageAPIBaseURL           string                       `toml:"image_api_base_url,omitempty" json:"image_api_base_url,omitempty"`
 	ImageAPIModel             string                       `toml:"image_api_model,omitempty" json:"image_api_model,omitempty"`
 	DefaultImageAPIProfileID  string                       `toml:"default_image_api_profile_id,omitempty" json:"default_image_api_profile_id,omitempty"`

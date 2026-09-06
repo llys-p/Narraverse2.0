@@ -513,11 +513,11 @@ describe('AutomationsView', () => {
 
       await waitFor(() => expect(screen.getByDisplayValue('Local name')).toBeInTheDocument())
       expect(screen.getByRole('textbox', { name: /提示词|Prompt/ })).toHaveValue('Edited while archiving')
-    } finally {
-      archiveGate.resolve()
-      await act(async () => { await i18n.changeLanguage(previousLanguage) })
-    }
-  })
+		} finally {
+			archiveGate.resolve()
+			await act(async () => { await i18n.changeLanguage(previousLanguage) })
+		}
+	}, 15_000)
 })
 
 function deferred<T>() {

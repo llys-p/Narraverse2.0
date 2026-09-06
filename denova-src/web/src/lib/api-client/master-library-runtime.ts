@@ -20,6 +20,10 @@ export interface MasterTranslationFieldRuntime {
   updated_at?: string
   final_failure?: boolean
   recovery_status?: 'waiting_for_runtime' | 'eligible' | 'agent_running' | 'proposal_ready' | 'applying' | 'revalidating' | 'recovered' | 'needs_user' | 'failed' | string
+  candidate_translation?: string
+  quality_status?: 'pass' | 'needs_review' | 'failed' | ''
+  quality_codes?: string[]
+  quality_reason?: string
 }
 
 export interface MasterTranslationRuntime {
@@ -70,12 +74,16 @@ export function buildMasterTranslationRuntime(detail: MasterAssetDetail, queue: 
         content_version_status: contentVersionStatus,
         translation_version: activeVersionID,
         failure_reason: job?.error || undefined,
-        review_required: job?.status === 'pending_review' || job?.apply_policy === 'master_review',
+        review_required: job?.status === 'pending_review',
         input_revision: job?.base_revision || job?.source_revision || stringValue(activeVersion?.version, 'source_revision'),
         source_sha256: job?.source_sha256 || stringValue(activeVersion?.version, 'source_sha256'),
         task_id: job?.id,
         model: job?.model || stringValue(activeVersion?.version, 'model'),
         final_failure: false,
+        candidate_translation: job?.translation,
+        quality_status: job?.quality_status,
+        quality_codes: job?.quality_codes,
+        quality_reason: job?.quality_reason,
       } satisfies MasterTranslationFieldRuntime
     })
   return {

@@ -67,6 +67,7 @@
     var createdAt = nowOf(source);
     var day = number(source.day, number(world.clock && world.clock.day, 1));
     var period = text(source.period) || text(world.clock && world.clock.period) || 'morning';
+    var knownTo = uniqueText(source.knownTo || source.audience);
     var fact = {
       id: text(source.id) || factId(world, day, period, createdAt),
       day: day,
@@ -74,6 +75,12 @@
       type: text(source.type) || 'world',
       actors: uniqueText(source.actors),
       summary: summary,
+      visibility: text(source.visibility) || (knownTo.length ? 'restricted' : 'public'),
+      knownTo: knownTo,
+      observerId: text(source.observerId) || null,
+      locationId: text(source.locationId) || null,
+      sourceFactId: text(source.sourceFactId) || null,
+      epistemicStatus: text(source.epistemicStatus) || null,
       persistent: source.persistent !== false,
       sourceActionId: text(source.sourceActionId) || null,
       createdAt: createdAt
@@ -200,5 +207,21 @@
     var total = Math.max(0, Number(limit) || 12);
     var facts = world && Array.isArray(world.facts) ? world.facts : [];
     return clone(facts.filter(function (fact) { return fact && fact.persistent !== false; }).slice(-total));
+  };
+
+  function visibleTo(fact, viewerId) {
+    if (!fact || fact.persistent === false) return false;
+    var viewer = text(viewerId);
+    if (!viewer) return true;
+    var knownTo = uniqueText(fact.knownTo || fact.audience);
+    if (knownTo.indexOf(viewer) >= 0 || knownTo.indexOf('*') >= 0) return true;
+    return text(fact.visibility) !== 'restricted' && text(fact.visibility) !== 'private';
+  }
+
+  Facts.isVisibleTo = visibleTo;
+  Facts.recentFor = function (world, viewerId, limit) {
+    var total = Math.max(0, Number(limit) || 12);
+    var facts = world && Array.isArray(world.facts) ? world.facts : [];
+    return clone(facts.filter(function (fact) { return visibleTo(fact, viewerId); }).slice(-total));
   };
 }(window));

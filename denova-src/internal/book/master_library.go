@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -489,6 +490,57 @@ func (s *MasterLibraryStore) LoadItem(masterItemID string) (MasterItem, error) {
 	return s.loadItemUnlocked(masterItemID)
 }
 
+// UpdateMasterAssetDescription edits the human-facing introduction of a
+// lorebook directly in Master. It is metadata editing, not a translation
+// proposal, so it remains available even when the source had no description
+// field or the previous field was not a translation target.
+func (s *MasterLibraryStore) UpdateMasterAssetDescription(masterItemID, description string) (MasterItem, error) {
+	masterItemID = strings.TrimSpace(masterItemID)
+	description = strings.TrimSpace(description)
+	if masterItemID == "" {
+		return MasterItem{}, errors.New("总库资产 ID 不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	manifest, err := s.loadManifestUnlocked()
+	if err != nil {
+		return MasterItem{}, err
+	}
+	item, err := s.loadItemUnlocked(masterItemID)
+	if err != nil {
+		return MasterItem{}, err
+	}
+	if item.RecordKind != "lorebook_template" {
+		return MasterItem{}, errors.New("只有设定书资产可以修改设定书介绍")
+	}
+	if item.Fields == nil {
+		item.Fields = map[string]MasterField{}
+	}
+	if description == "" {
+		delete(item.Fields, "lorebook.description")
+	} else {
+		item.Fields["lorebook.description"] = MasterField{
+			SourceText: description, SourceSHA256: masterHashString(description),
+			Risk: masterFieldRiskSafe, Required: false, NeedsTranslation: false,
+			ActiveText: description, ActiveKind: "human",
+		}
+	}
+	item.Original = cloneMasterMap(item.Original)
+	if description == "" {
+		delete(item.Original, "description")
+	} else {
+		item.Original["description"] = description
+	}
+	item.ActiveWorkingRevision = masterActiveWorkingRevision(item.Fields)
+	if err := s.saveItemUnlocked(&manifest, item); err != nil {
+		return MasterItem{}, err
+	}
+	if err := s.saveManifestUnlocked(manifest); err != nil {
+		return MasterItem{}, err
+	}
+	return item, nil
+}
+
 func (s *MasterLibraryStore) LoadSourceRevision(sourceID, revisionID string) (MasterSourceRecord, MasterSourceRevision, []byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -933,11 +985,35 @@ func masterImportRelPath(importID string) string {
 	return filepath.ToSlash(filepath.Join(".narraverse", "transactions", importID+".json"))
 }
 
+var (
+	masterTranslationProbePattern = regexp.MustCompile("https?://[^\\s]+|\\{\\{[^{}\\r\\n]+\\}\\}|__NV_[A-Z_]+_[0-9]{4}__|<[^>]+>|`[^`\\r\\n]+`")
+	masterTranslationWordPattern  = regexp.MustCompile(`[A-Za-z][A-Za-z'-]*`)
+	masterTranslationLabelPattern = regexp.MustCompile(`(?m)^\s*[A-Za-z][A-Za-z \t/&-]{1,32}\s*[:：]`)
+)
+
 func masterTextNeedsTranslation(text string) bool {
-	for _, r := range text {
-		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
-			return true
+	probe := masterTranslationProbePattern.ReplaceAllString(text, " ")
+	words := masterTranslationWordPattern.FindAllString(probe, -1)
+	if len(words) == 0 {
+		return false
+	}
+	meaningful := 0
+	for _, word := range words {
+		// Short all-cap tokens are usually product names, variables, or game
+		// acronyms. They are preserved instead of creating a useless job.
+		if strings.ToUpper(word) == word && len([]rune(word)) <= 8 {
+			continue
 		}
+		meaningful++
+	}
+	if masterTranslationLabelPattern.MatchString(probe) {
+		return true
+	}
+	// A single ordinary English label (for example "Harbor" or "dock") is
+	// still a real translation target. Only machine-like tokens are filtered
+	// above; short human-facing fields must not disappear.
+	if meaningful > 0 {
+		return true
 	}
 	return false
 }

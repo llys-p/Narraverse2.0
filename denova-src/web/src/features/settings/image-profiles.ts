@@ -15,6 +15,7 @@ export function imageAPIProfileLabel(profile?: ImageAPIProfileSettings): string 
 
 function defaultImageAPIProfileFromSettings(settings?: {
   image_api_key?: string
+  image_api_key_configured?: boolean
   image_api_base_url?: string
   image_api_model?: string
 }): ImageAPIProfileSettings {
@@ -22,6 +23,7 @@ function defaultImageAPIProfileFromSettings(settings?: {
     id: DEFAULT_IMAGE_API_PROFILE_ID,
     provider: DEFAULT_IMAGE_API_PROVIDER,
     openai_api_key: settings?.image_api_key,
+    api_key_configured: settings?.image_api_key_configured,
     openai_base_url: settings?.image_api_base_url || DEFAULT_IMAGE_API_BASE_URL,
     openai_model: settings?.image_api_model || DEFAULT_IMAGE_API_MODEL,
   }
@@ -29,6 +31,7 @@ function defaultImageAPIProfileFromSettings(settings?: {
 
 export function imageAPIProfilesWithDefault(settings?: {
   image_api_key?: string
+  image_api_key_configured?: boolean
   image_api_base_url?: string
   image_api_model?: string
   image_api_profiles?: ImageAPIProfileSettings[]

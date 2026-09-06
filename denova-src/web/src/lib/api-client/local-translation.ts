@@ -63,6 +63,10 @@ export interface TranslationJob {
   source_id?: string
   source_revision?: string
   master_item_id?: string
+  quality_status?: 'pass' | 'needs_review' | 'failed' | ''
+  quality_codes?: string[]
+  quality_reason?: string
+  quality_contract_version?: number
 }
 
 export interface TranslationQueueStatus {
