@@ -10,7 +10,7 @@ import { FeaturePageShell } from '@/components/layout/feature-page-shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, resolveTranslationJob, retryTranslationJob, startMasterAgent, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal, type MasterAssetAdventureUsage, type MasterAssetDetail, type MasterAssetSummary, type MasterPipelineNode, type MasterPipelineStatus, type MasterProposal, type MasterTranslationFieldRuntime, type MasterTranslationRuntime } from '@/lib/api-client'
+import { addMasterCharacterEntry, addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, removeMasterAsset, resolveTranslationJob, retryTranslationJob, startMasterAgent, stopMasterAsset, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal, type MasterAssetAdventureUsage, type MasterAssetDetail, type MasterAssetSummary, type MasterPipelineNode, type MasterPipelineStatus, type MasterProposal, type MasterTranslationFieldRuntime, type MasterTranslationRuntime } from '@/lib/api-client'
 import { MasterImportDialog } from './MasterImportDialog'
 
 const PAGE_SIZE = 25
@@ -51,6 +51,7 @@ function translationSummaryLabel(runtime: MasterTranslationRuntime, totalFields:
   if (runtime.fields.some((field) => ['eligible', 'agent_running', 'proposal_ready', 'applying', 'revalidating'].includes(field.recovery_status || ''))) return t('library.agentProcessing')
   if (runtime.fields.some((field) => field.recovery_status === 'needs_user')) return t('library.translationNeedsConfirmation', { count: 1 })
   if (runtime.failed_fields > 0) return t('library.translationNeedsAttention', { count: runtime.failed_fields })
+  if ((runtime.cancelled_fields || 0) > 0) return t('library.translationCancelled', { count: runtime.cancelled_fields || 0 })
   if (runtime.review_fields > 0) return t('library.translationNeedsConfirmation', { count: runtime.review_fields })
   if (runtime.active_fields < runtime.total_fields) return t('library.translationProcessing', { active: runtime.active_fields, total: runtime.total_fields })
   if (totalFields === 0) return t('library.translationNotRequired')
@@ -68,7 +69,7 @@ function nodeFor(status: MasterPipelineStatus, key: LibraryNodeKey): MasterPipel
 function StatusIcon({ status }: { status: string }) {
   if (status === 'completed') return <Check className="size-4" aria-hidden="true" />
   if (status === 'running') return <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-  if (status === 'failed') return <XCircle className="size-4" aria-hidden="true" />
+  if (status === 'failed' || status === 'cancelled') return <XCircle className="size-4" aria-hidden="true" />
   if (status === 'warning' || status === 'review_required' || status === 'stale') return <AlertTriangle className="size-4" aria-hidden="true" />
   if (status === 'skipped') return <MinusCircle className="size-4" aria-hidden="true" />
   return <Circle className="size-3.5" aria-hidden="true" />
@@ -77,6 +78,7 @@ function StatusIcon({ status }: { status: string }) {
 function statusClass(status: string) {
   if (status === 'completed') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
   if (status === 'failed') return 'border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400'
+  if (status === 'cancelled') return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
   if (status === 'warning' || status === 'review_required' || status === 'stale') return 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
   if (status === 'running') return 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400'
   return 'border-[var(--nova-border)] bg-[var(--nova-surface-2)] text-[var(--nova-text-muted)]'
@@ -93,6 +95,7 @@ function StatusBadge({ status, t }: { status: string; t: (key: string) => string
 
 function assetUserState(pipeline: MasterPipelineStatus, runtime?: MasterTranslationRuntime): AssetUserState {
   if (pipeline.availability === 'usable') return 'ready'
+  if (pipeline.translation.failed_fields > 0 || runtime?.failed_fields) return 'needs_user'
   if (runtime?.fields.some((field) => field.recovery_status === 'needs_user' || field.review_required)) return 'needs_user'
   if (pipeline.nodes.some((node) => node.status === 'review_required')) return 'needs_user'
   return 'processing'
@@ -120,6 +123,9 @@ export function LibraryView({ workspace = '', onClose }: LibraryViewProps) {
   const [agentOpen, setAgentOpen] = useState(false)
   const [agentContext, setAgentContext] = useState<Record<string, string>>({})
   const [detailReloadToken, setDetailReloadToken] = useState(0)
+  const [deleteTarget, setDeleteTarget] = useState<MasterAssetSummary | null>(null)
+  const [assetBusyID, setAssetBusyID] = useState<string | null>(null)
+  const [assetActionMessage, setAssetActionMessage] = useState<string | null>(null)
 
   useEffect(() => {
     setPage(0)
@@ -151,13 +157,12 @@ export function LibraryView({ workspace = '', onClose }: LibraryViewProps) {
     setPage((current) => current)
     setLoading(true)
     setError(null)
-    void listMasterAssets({ query, recordKind, semanticType, availability: availability || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
+    return listMasterAssets({ query, recordKind, semanticType, availability: availability || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE })
       .then((result) => { setAssets(result.assets); setTotal(result.total) })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
       .finally(() => setLoading(false))
   }
 
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const closeDetail = () => {
     setSelectedID(null)
     setAgentOpen(false)
@@ -167,7 +172,38 @@ export function LibraryView({ workspace = '', onClose }: LibraryViewProps) {
     setAgentContext(context)
     setAgentOpen(true)
   }
-  const detail = selectedID ? <LibraryDetail masterItemID={selectedID} workspace={workspace} externalReloadToken={detailReloadToken} onBack={closeDetail} onOpenAgent={openAgent} t={t} /> : null
+
+  const stopAsset = async (masterItemID: string) => {
+    setAssetBusyID(masterItemID)
+    setAssetActionMessage(null)
+    try {
+      const result = await stopMasterAsset(masterItemID)
+      setAssetActionMessage(result.queue_error ? t('library.assetStopSavedWithWarning') : t('library.assetStopSuccess'))
+      await refresh()
+      if (selectedID === masterItemID) setDetailReloadToken((value) => value + 1)
+    } catch {
+      setAssetActionMessage(t('library.assetStopFailed'))
+    } finally {
+      setAssetBusyID(null)
+    }
+  }
+
+  const confirmRemoveAsset = async () => {
+    if (!deleteTarget) return
+    const masterItemID = deleteTarget.master_item_id
+    setAssetBusyID(masterItemID)
+    try {
+      const result = await removeMasterAsset(masterItemID)
+      if (selectedID === masterItemID) closeDetail()
+      await refresh()
+      setAssetActionMessage(result.queue.queue_error ? t('library.assetRemoveSavedWithWarning') : t('library.assetRemoveSuccess'))
+    } finally {
+      setAssetBusyID(null)
+    }
+  }
+
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const detail = selectedID ? <LibraryDetail masterItemID={selectedID} workspace={workspace} externalReloadToken={detailReloadToken} onBack={closeDetail} onOpenAgent={openAgent} onStopAsset={(masterItemID) => { void stopAsset(masterItemID) }} onRemoveAsset={setDeleteTarget} assetBusy={assetBusyID === selectedID} t={t} /> : null
 
   const content = selectedID ? detail : (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -203,27 +239,38 @@ export function LibraryView({ workspace = '', onClose }: LibraryViewProps) {
         </label>
       </div>
       <div className="nova-library-results min-h-0 flex-1 overflow-auto p-3">
+        {assetActionMessage && <div role="status" className="mb-3 rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-xs text-foreground">{assetActionMessage}</div>}
         {loading ? <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">{t('library.loading')}</div> : error ? null : assets.length === 0 ? (
           <EmptyState icon={Database} title={t('library.empty')} variant="page" className="text-xs text-[var(--nova-text-faint)]" />
         ) : (
           <div className="nova-library-card-grid grid gap-3">
             {assets.map((asset) => (
-              <button key={asset.master_item_id} type="button" onClick={() => { setSelectedID(asset.master_item_id); setAgentOpen(false) }} className="nova-library-card flex min-h-40 w-full flex-col rounded-xl border border-[var(--nova-border)] bg-[var(--nova-surface)] p-4 text-left transition-colors hover:bg-[var(--nova-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
-                <span className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[var(--nova-surface-2)] text-[var(--nova-text-muted)]">{asset.record_kind === 'character_template' ? <UserRound className="size-4" /> : <BookOpen className="size-4" />}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-foreground">{asset.name || asset.master_item_id}</span>
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground">{enumLabel('recordKindValue', asset.record_kind, t)}</span>
+              <div key={asset.master_item_id} className="nova-library-card flex min-h-40 w-full flex-col rounded-xl border border-[var(--nova-border)] bg-[var(--nova-surface)] p-4 transition-colors hover:bg-[var(--nova-surface-2)]">
+                <button type="button" onClick={() => { setSelectedID(asset.master_item_id); setAgentOpen(false) }} className="flex min-w-0 flex-1 flex-col text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+                  <span className="flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--nova-surface-2)] text-[var(--nova-text-muted)]">{asset.record_kind === 'character_template' ? <CharacterAvatar src={asset.avatar_url} alt={asset.name || asset.master_item_id} size="sm" /> : <BookOpen className="size-4" />}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-foreground">{asset.name || asset.master_item_id}</span>
+                      {asset.record_kind === 'character_template' && asset.tags && asset.tags.length > 0 && <span className="mt-1 flex flex-wrap items-center gap-1" aria-label={t('library.character.tags')}>
+                        <span className="mr-0.5 text-[10px] text-muted-foreground">{t('library.character.tags')}:</span>
+                        {[...new Set(asset.tags.map(localizedCharacterTag))].map((tag) => <span key={tag} className="rounded-full bg-[var(--nova-surface-2)] px-1.5 py-0.5 text-[10px] text-muted-foreground">{tag}</span>)}
+                      </span>}
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">{enumLabel('recordKindValue', asset.record_kind, t)}</span>
+                    </span>
+                    <AssetStatusBadge pipeline={asset.pipeline} t={t} />
                   </span>
-                  <AssetStatusBadge pipeline={asset.pipeline} t={t} />
-                </span>
-                <span className="mt-3 line-clamp-3 min-h-15 text-xs leading-5 text-[var(--nova-text-muted)]">{asset.description || t('library.noDescription')}</span>
-                <span className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-3 text-[11px] text-muted-foreground">
-                  <span>{asset.nested_entry_count > 0 ? t(asset.record_kind === 'character_template' ? 'library.internalSettingCount' : 'library.entryCount', { count: asset.nested_entry_count }) : t(asset.record_kind === 'character_template' ? 'library.completeCharacterCard' : 'library.noEntries')}</span>
-                  <span>{asset.usage_count > 0 ? t('library.usageCount', { count: asset.usage_count }) : t('library.notUsed')}</span>
-                  <span className="min-w-0 truncate">{t('library.sourceFile')}: {asset.source_name || t('library.unknown')}</span>
-                </span>
-              </button>
+                  <span className="mt-3 line-clamp-3 min-h-15 text-xs leading-5 text-[var(--nova-text-muted)]">{asset.description || t('library.noDescription')}</span>
+                  <span className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 pt-3 text-[11px] text-muted-foreground">
+                    <span>{asset.nested_entry_count > 0 ? t(asset.record_kind === 'character_template' ? 'library.internalSettingCount' : 'library.entryCount', { count: asset.nested_entry_count }) : t(asset.record_kind === 'character_template' ? 'library.completeCharacterCard' : 'library.noEntries')}</span>
+                    <span>{asset.usage_count > 0 ? t('library.usageCount', { count: asset.usage_count }) : t('library.notUsed')}</span>
+                    <span className="min-w-0 truncate">{t('library.sourceFile')}: {asset.source_name || t('library.unknown')}</span>
+                  </span>
+                </button>
+                {asset.record_kind === 'character_template' && <div className="mt-3 flex justify-end gap-2 border-t border-[var(--nova-border)] pt-3">
+                  <Button type="button" variant="outline" size="sm" disabled={assetBusyID === asset.master_item_id || asset.pipeline.translation.pending_fields <= 0} onClick={() => { void stopAsset(asset.master_item_id) }} title={asset.pipeline.translation.pending_fields > 0 ? t('library.assetStop') : t('library.assetStopUnavailable')}><X data-icon="inline-start" />{t('library.assetStop')}</Button>
+                  <Button type="button" variant="ghost" size="sm" disabled={assetBusyID === asset.master_item_id} onClick={() => setDeleteTarget(asset)} className="text-destructive hover:text-destructive"><Trash2 data-icon="inline-start" />{t('library.assetRemove')}</Button>
+                </div>}
+              </div>
             ))}
           </div>
         )}
@@ -274,11 +321,20 @@ export function LibraryView({ workspace = '', onClose }: LibraryViewProps) {
         {content}
       </AdaptiveSurface>
       <MasterImportDialog open={importOpen} workspace={workspace} onOpenChange={setImportOpen} onImported={refresh} />
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open && !assetBusyID) setDeleteTarget(null) }}
+        title={t('library.assetRemoveTitle')}
+        description={t('library.assetRemoveDescription', { name: deleteTarget?.name || deleteTarget?.master_item_id || '' })}
+        confirmLabel={t('library.assetRemove')}
+        tone="danger"
+        onConfirm={confirmRemoveAsset}
+      />
     </FeaturePageShell>
   )
 }
 
-function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, onOpenAgent, t }: { masterItemID: string; workspace: string; externalReloadToken: number; onBack: () => void; onOpenAgent: (context?: Record<string, string>) => void; t: (key: string, options?: Record<string, unknown>) => string }) {
+function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, onOpenAgent, onStopAsset, onRemoveAsset, assetBusy, t }: { masterItemID: string; workspace: string; externalReloadToken: number; onBack: () => void; onOpenAgent: (context?: Record<string, string>) => void; onStopAsset: (masterItemID: string) => void; onRemoveAsset: (asset: MasterAssetSummary) => void; assetBusy: boolean; t: (key: string, options?: Record<string, unknown>) => string }) {
   const [detail, setDetail] = useState<MasterAssetDetail | null>(null)
   const [pipeline, setPipeline] = useState<MasterPipelineStatus | null>(null)
   const [runtime, setRuntime] = useState<MasterTranslationRuntime | null>(null)
@@ -350,7 +406,7 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
   const translations = detail.translations
   const usages = detail.usages
   const userState = assetUserState(pipeline, runtime)
-  const description = detail.summary.description || masterFieldText(item, 'character.description') || firstNestedContent(item, detail.summary.record_kind) || t('library.noDescription')
+  const description = detail.summary.description || t('library.noDescription')
   const contentCount = detail.summary.nested_entry_count ?? nestedEntries(item).length
   const contentLabel = contentCount > 0
     ? t(detail.summary.record_kind === 'character_template' ? 'library.internalSettingCount' : 'library.entryCount', { count: contentCount })
@@ -511,6 +567,14 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
     setReloadToken((value) => value + 1)
   }
 
+  const saveCharacterTags = async (tags: string[]) => {
+    const normalized = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))]
+    if (normalized.length === 0) throw new Error(t('library.character.tagsRequired'))
+    await updateMasterAssetFields(masterItemID, valueOf(item, 'revision', ''), { 'character.tags': normalized.join('\n') })
+    setActionMessage(t('library.character.tagsSaved'))
+    setReloadToken((value) => value + 1)
+  }
+
   const addEntryManually = async (values: EntryEditValues) => {
     const name = values.comment.trim()
     const content = values.content.trim()
@@ -534,6 +598,15 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
     setReloadToken((value) => value + 1)
   }
 
+  const addCharacterEntry = async (values: EntryEditValues) => {
+    const name = values.comment.trim()
+    const content = values.content.trim()
+    if (!name || !content) throw new Error(t('library.character.addEntryEmpty'))
+    await addMasterCharacterEntry(masterItemID, valueOf(item, 'revision', ''), { name, content })
+    setActionMessage(t('library.character.entryAdded'))
+    setReloadToken((value) => value + 1)
+  }
+
   return (
     <div className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
       <div className="mx-auto flex max-w-6xl flex-col gap-3">
@@ -542,11 +615,15 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-xl font-semibold text-foreground">{detail.summary.name}</h1><AssetStatusBadge pipeline={pipeline} runtime={runtime} t={t} /></div>
               <p className="mt-1 text-xs text-muted-foreground">{enumLabel('recordKindValue', detail.summary.record_kind, t)} · {contentLabel}</p>
-              <p className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-6 text-foreground">{description}</p>
+              {detail.summary.record_kind !== 'lorebook_template' && detail.summary.record_kind !== 'character_template' && <p className="mt-4 max-w-3xl whitespace-pre-wrap text-sm leading-6 text-foreground">{description}</p>}
               <p className={`mt-3 text-xs ${userState === 'needs_user' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'}`}>{statusSummary}</p>
               <p className="mt-3 text-[11px] text-muted-foreground">{t('library.sourceFile')}: {valueOf(source, 'filename', detail.summary.source_name)} · {t('library.importedAt')}: {formatDate(valueOf(sourceRevision, 'imported_at', ''))}</p>
             </div>
             <div className="flex flex-none flex-wrap items-center gap-2">
+              {detail.summary.record_kind === 'character_template' && <>
+                <Button type="button" variant="outline" size="sm" disabled={assetBusy || pipeline.translation.pending_fields <= 0} onClick={() => onStopAsset(masterItemID)} title={pipeline.translation.pending_fields > 0 ? t('library.assetStop') : t('library.assetStopUnavailable')}>{assetBusy ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <X data-icon="inline-start" />}{t('library.assetStop')}</Button>
+                <Button type="button" variant="ghost" size="sm" disabled={assetBusy} onClick={() => onRemoveAsset(detail.summary)} className="text-destructive hover:text-destructive"><Trash2 data-icon="inline-start" />{t('library.assetRemove')}</Button>
+              </>}
               <Button type="button" size="sm" disabled={!workspace || detail.summary.availability !== 'usable' || instantiating} onClick={() => void addToAdventure()}><Plus data-icon="inline-start" />{instantiating ? t('library.addingToAdventure') : t('library.addToAdventure')}</Button>
               <Button
                 type="button"
@@ -561,12 +638,13 @@ function LibraryDetail({ masterItemID, workspace, externalReloadToken, onBack, o
             </div>
           </div>
         </div>
+        {detail.summary.record_kind === 'lorebook_template' && <MasterDescriptionPanel description={detail.summary.description || ''} onSave={saveDescription} t={t} />}
         {actionMessage && <div className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2 text-xs text-foreground">{actionMessage}</div>}
         <Tabs defaultValue="content" className="gap-3">
           <TabsList variant="line" className="h-auto w-full justify-start gap-1 overflow-x-auto border-b border-[var(--nova-border)] bg-transparent p-0">
             {(['content', 'progress', 'versions', 'adventures', 'technical'] as const).map((tab) => <TabsTrigger key={tab} value={tab} className="h-10 flex-none rounded-none px-3 text-xs after:bottom-0">{t(`library.tab.${tab}`)}</TabsTrigger>)}
           </TabsList>
-          <TabsContent value="content"><AssetContent item={item} recordKind={detail.summary.record_kind} t={t} onSaveEntry={saveEntry} onSaveCharacter={saveCharacter} onSaveDescription={detail.summary.record_kind === 'lorebook_template' ? saveDescription : undefined} onManualAddEntry={detail.summary.record_kind === 'lorebook_template' ? addEntryManually : undefined} onOpenAgent={onOpenAgent} /></TabsContent>
+          <TabsContent value="content"><AssetContent item={item} recordKind={detail.summary.record_kind} avatarURL={detail.summary.avatar_url} t={t} onSaveEntry={saveEntry} onSaveCharacter={saveCharacter} onSaveCharacterTags={saveCharacterTags} onAddCharacterEntry={detail.summary.record_kind === 'character_template' ? addCharacterEntry : undefined} onManualAddEntry={detail.summary.record_kind === 'lorebook_template' ? addEntryManually : undefined} onOpenAgent={onOpenAgent} /></TabsContent>
           <TabsContent value="progress" className="space-y-3">
             <ProcessingSummary pipeline={pipeline} runtime={runtime} onOpenAgent={onOpenAgent} t={t} />
             <details className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface)]">
@@ -597,6 +675,77 @@ function masterFieldText(item: Record<string, unknown>, path: string) {
   return valueOf(field, 'active_text', '') || valueOf(field, 'source_text', '')
 }
 
+type CharacterLanguageMode = 'current' | 'original' | 'compare'
+type CharacterProfileValue = { current: string; original: string }
+type CharacterTagValue = { current: string[]; original: string[] }
+
+const commonCharacterTagTranslations: Record<string, string> = {
+  anypov: '任意视角',
+  anime: '动漫',
+  'big breast': '巨乳',
+  'big butt': '大屁股',
+  'breeding kink': '繁殖癖',
+  cuckolding: '戴绿帽',
+  dominant: '支配型',
+  elf: '精灵',
+  english: '英语',
+  exhibitionism: '暴露癖',
+  female: '女性',
+  horny: '好色',
+  humiliation: '羞辱',
+  incest: '乱伦',
+  human: '人类',
+  'huge breasts': '巨乳',
+  love: '恋爱',
+  male: '男性',
+  malepov: '男性视角',
+  milf: '熟女',
+  mommy: '妈妈型',
+  mother: '母亲',
+  'multiple greetings': '多开场白',
+  nsfw: '成人向',
+  ntr: '寝取',
+  oc: '原创角色',
+  office: '办公室',
+  original: '原创',
+  'original character': '原创角色',
+  pregnancy: '怀孕',
+  roleplay: '角色扮演',
+  root: '根目录',
+  sadistic: '施虐型',
+  scenario: '场景',
+  smut: '成人向',
+  strict: '严厉',
+  switch: '双向',
+  tavern: '酒馆格式',
+  'thick thighs': '丰腴大腿',
+  'my dress-up darling': '更衣人偶坠入爱河',
+}
+
+function masterFieldPair(item: Record<string, unknown>, path: string): CharacterProfileValue {
+  const field = recordValue(recordValue(item.fields)[path])
+  const original = valueOf(field, 'source_text', '')
+  return { current: valueOf(field, 'active_text', '') || original, original }
+}
+
+function splitCharacterTags(value: string) {
+  return [...new Set(value.split(/[\r\n,，、]+/).map((tag) => tag.trim()).filter(Boolean))]
+}
+
+function localizedCharacterTag(tag: string) {
+  return commonCharacterTagTranslations[tag.trim().toLowerCase()] || tag
+}
+
+function localizedCharacterTags(tags: string[]) {
+  return [...new Set(tags.map(localizedCharacterTag))]
+}
+
+function characterTagValue(item: Record<string, unknown>): CharacterTagValue {
+  const original = [...new Set([...listValue(recordValue(item.original), 'tags'), ...listValue(recordValue(item.source_semantics), 'tags')])]
+  const stored = masterFieldPair(item, 'character.tags')
+  return { current: stored.current ? splitCharacterTags(stored.current) : original, original }
+}
+
 function nestedPrefix(recordKind: string) {
   return recordKind === 'character_template' ? 'character_book.entries' : 'lorebook.entries'
 }
@@ -605,6 +754,14 @@ function nestedEntryText(item: Record<string, unknown>, recordKind: string, entr
   const path = `${nestedPrefix(recordKind)}/${valueOf(entry, 'entry_id', '')}/${field}`
   const original = recordValue(entry.original)
   return masterFieldText(item, path) || valueOf(original, field, '') || (field === 'comment' ? valueOf(original, 'name', '') : '')
+}
+
+function nestedEntryPair(item: Record<string, unknown>, recordKind: string, entry: Record<string, unknown>, field: string): CharacterProfileValue {
+  const path = `${nestedPrefix(recordKind)}/${valueOf(entry, 'entry_id', '')}/${field}`
+  const masterField = recordValue(recordValue(item.fields)[path])
+  const originalRecord = recordValue(entry.original)
+  const original = valueOf(masterField, 'source_text', '') || valueOf(originalRecord, field, '') || (field === 'comment' ? valueOf(originalRecord, 'name', '') : '')
+  return { current: valueOf(masterField, 'active_text', '') || original, original }
 }
 
 function nestedEntryField(item: Record<string, unknown>, recordKind: string, entry: Record<string, unknown>, field: string) {
@@ -647,11 +804,6 @@ function nestedEntryTitle(item: Record<string, unknown>, recordKind: string, ent
   return (!genericComment && comment) || nestedEntryKeywords(item, recordKind, entry)[0] || t('library.unnamedEntry', { index: index + 1 })
 }
 
-function firstNestedContent(item: Record<string, unknown>, recordKind: string) {
-  const entry = nestedEntries(item)[0]
-  return entry ? nestedEntryText(item, recordKind, entry, 'content') : ''
-}
-
 function formatDate(value: string) {
   if (!value) return '—'
   const date = new Date(value)
@@ -691,30 +843,108 @@ function EditPreview({ changes, t }: { changes: Array<{ field_path: string; fiel
   return <div className="space-y-2 rounded-lg border border-blue-500/30 bg-blue-500/5 p-3"><div className="text-xs font-semibold text-foreground">{t('library.changePreview')}</div>{changes.map((change) => <div key={change.field_path} className="grid gap-2 rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2 lg:grid-cols-2"><div><div className="text-[10px] text-muted-foreground">{change.field_label} · {t('library.beforeChange')}</div><p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-foreground">{change.before || '—'}</p></div><div><div className="text-[10px] text-emerald-700 dark:text-emerald-300">{change.field_label} · {t('library.afterChange')}</div><p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-foreground">{change.after || '—'}</p></div></div>)}</div>
 }
 
-function AssetContent({ item, recordKind, t, onSaveEntry, onSaveCharacter, onSaveDescription, onManualAddEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onSaveDescription?: (description: string) => Promise<void>; onManualAddEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
-  return recordKind === 'lorebook_template' ? <LorebookReader item={item} recordKind={recordKind} t={t} onSaveEntry={onSaveEntry} onSaveDescription={onSaveDescription} onManualAddEntry={onManualAddEntry} onOpenAgent={onOpenAgent} /> : <CharacterReader item={item} t={t} onSaveCharacter={onSaveCharacter} onOpenAgent={onOpenAgent} />
+function MasterDescriptionPanel({ description, onSave, t }: { description: string; onSave: (description: string) => Promise<void>; t: (key: string, options?: Record<string, unknown>) => string }) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [draft, setDraft] = useState(description)
+
+  const beginEdit = () => {
+    setDraft(description)
+    setError(null)
+    setEditing(true)
+  }
+  const save = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      await onSave(draft)
+      setEditing(false)
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : t('library.descriptionSaveFailed'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <div className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-sm font-semibold text-foreground">{t('library.lorebook.introduction')}</h2>
+      {!editing && <Button type="button" variant="outline" size="sm" onClick={beginEdit}><Pencil data-icon="inline-start" />{t('library.editDescription')}</Button>}
+    </div>
+    {!editing ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{description || t('library.noDescription')}</p> : <div className="mt-3 space-y-2">
+      <textarea aria-label={t('library.lorebook.introduction')} className="min-h-28 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={t('library.descriptionPlaceholder')} />
+      <p className="text-[11px] text-muted-foreground">{t('library.descriptionHint')}</p>
+      {error && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      <div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void save()} disabled={saving || draft.trim() === description.trim()}>{saving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t('library.saveDescription')}</Button></div>
+    </div>}
+  </div>
 }
 
-function CharacterReader({ item, t, onSaveCharacter, onOpenAgent }: { item: Record<string, unknown>; t: (key: string, options?: Record<string, unknown>) => string; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
+function CharacterAvatar({ src, alt, size = 'md' }: { src?: string; alt: string; size?: 'sm' | 'md' | 'lg' }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [src])
+  if (src && !failed) {
+    const sizeClass = size === 'sm' ? 'size-9' : size === 'lg' ? 'size-20' : 'size-16'
+    return <img src={src} alt={alt} className={`${sizeClass} object-cover`} onError={() => setFailed(true)} />
+  }
+  return <UserRound className={size === 'sm' ? 'size-4' : size === 'lg' ? 'size-9' : 'size-8'} aria-hidden="true" />
+}
+
+function AssetContent({ item, recordKind, avatarURL, t, onSaveEntry, onSaveCharacter, onSaveCharacterTags, onAddCharacterEntry, onManualAddEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; avatarURL?: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onSaveCharacterTags?: (tags: string[]) => Promise<void>; onAddCharacterEntry?: (values: EntryEditValues) => Promise<void>; onManualAddEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
+  return recordKind === 'lorebook_template' ? <LorebookReader item={item} recordKind={recordKind} t={t} onSaveEntry={onSaveEntry} onManualAddEntry={onManualAddEntry} onOpenAgent={onOpenAgent} /> : <CharacterReader item={item} avatarURL={avatarURL} t={t} onSaveCharacter={onSaveCharacter} onSaveCharacterTags={onSaveCharacterTags} onSaveEntry={onSaveEntry} onAddCharacterEntry={onAddCharacterEntry} onOpenAgent={onOpenAgent} />
+}
+
+function CharacterReader({ item, avatarURL, t, onSaveCharacter, onSaveCharacterTags, onSaveEntry, onAddCharacterEntry, onOpenAgent }: { item: Record<string, unknown>; avatarURL?: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveCharacter?: (values: CharacterEditValues) => Promise<void>; onSaveCharacterTags?: (tags: string[]) => Promise<void>; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onAddCharacterEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
   const [editing, setEditing] = useState(false)
+  const [editingTags, setEditingTags] = useState(false)
+  const [tagDraft, setTagDraft] = useState('')
+  const [tagSaving, setTagSaving] = useState(false)
+  const [tagError, setTagError] = useState<string | null>(null)
+  const [languageMode, setLanguageMode] = useState<CharacterLanguageMode>('current')
   const [preview, setPreview] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CharacterEditValues>({})
+  const [selectedID, setSelectedID] = useState('profile')
+  const [tagsExpanded, setTagsExpanded] = useState(false)
+  const [entryEditing, setEntryEditing] = useState(false)
+  const [addingEntry, setAddingEntry] = useState(false)
+  const [entrySaving, setEntrySaving] = useState(false)
+  const [entryError, setEntryError] = useState<string | null>(null)
+  const [entryDraft, setEntryDraft] = useState<EntryEditValues>({ comment: '', content: '', keys: '', secondary_keys: '' })
+
   const openingPaths = characterOpeningPaths(item)
   const alternateOpeningPaths = openingPaths.filter((path) => path !== 'character.openings[0]')
-  const groups = [
-    { title: t('library.character.overview'), values: [[t('library.character.description'), masterFieldText(item, 'character.description')]] },
-    { title: t('library.character.personalityBackground'), values: [[t('library.character.personality'), masterFieldText(item, 'character.personality')], [t('library.character.creatorNotes'), masterFieldText(item, 'character.creator_notes')]] },
-    { title: t('library.character.sceneOpening'), values: [[t('library.character.scenario'), masterFieldText(item, 'character.scenario')], [t('library.character.firstMessage'), masterFieldText(item, 'character.openings[0]')], ...alternateOpeningPaths.map((path, index) => [`${t('library.character.alternateGreetings')} ${index + 1}`, masterFieldText(item, path)])] },
-    { title: t('library.character.exampleDialogue'), values: [[t('library.character.exampleDialogue'), masterFieldText(item, 'character.mes_example')]] },
+  const originalRecord = recordValue(item.original)
+  const name = masterFieldPair(item, 'character.name')
+  const displayName = name.current || valueOf(originalRecord, 'name', '') || t('library.character.unknown')
+  const originalName = name.original || valueOf(originalRecord, 'name', '')
+  const tagValue = characterTagValue(item)
+  const currentTags = localizedCharacterTags(tagValue.current)
+  const originalTags = tagValue.original
+  const description = masterFieldPair(item, 'character.description')
+  const groups: Array<{ id: string; title: string; values: Array<{ label: string; value: CharacterProfileValue }> }> = [
+    { id: 'profile', title: t('library.character.overview'), values: [{ label: t('library.character.description'), value: description }, { label: t('library.character.personality'), value: masterFieldPair(item, 'character.personality') }, { label: t('library.character.creatorNotes'), value: masterFieldPair(item, 'character.creator_notes') }] },
+    { id: 'scene', title: t('library.character.sceneOpening'), values: [{ label: t('library.character.scenario'), value: masterFieldPair(item, 'character.scenario') }, { label: t('library.character.firstMessage'), value: masterFieldPair(item, 'character.openings[0]') }, ...alternateOpeningPaths.map((path, index) => ({ label: `${t('library.character.alternateGreetings')} ${index + 1}`, value: masterFieldPair(item, path) }))] },
+    { id: 'dialogue', title: t('library.character.exampleDialogue'), values: [{ label: t('library.character.exampleDialogue'), value: masterFieldPair(item, 'character.mes_example') }] },
+    { id: 'advanced', title: t('library.character.advancedInstructions'), values: [{ label: t('library.character.systemPrompt'), value: masterFieldPair(item, 'character.system_prompt') }, { label: t('library.character.postHistory'), value: masterFieldPair(item, 'character.post_history_instructions') }] },
   ]
   const entries = nestedEntries(item)
-  const advanced = [[t('library.character.systemPrompt'), masterFieldText(item, 'character.system_prompt')], [t('library.character.postHistory'), masterFieldText(item, 'character.post_history_instructions')]].filter(([, value]) => value)
+  const advanced = [{ label: t('library.character.systemPrompt'), value: masterFieldPair(item, 'character.system_prompt') }, { label: t('library.character.postHistory'), value: masterFieldPair(item, 'character.post_history_instructions') }]
   const editFields: Array<[keyof CharacterEditValues, string, boolean]> = [
     ['character.name', t('library.character.name'), false], ['character.description', t('library.character.description'), true], ['character.personality', t('library.character.personality'), true], ['character.creator_notes', t('library.character.creatorNotes'), true],
     ['character.scenario', t('library.character.scenario'), true], ['character.openings[0]', t('library.character.firstMessage'), true], ...alternateOpeningPaths.map((path, index) => [path, `${t('library.character.alternateGreetings')} ${index + 1}`, true] as [string, string, boolean]), ['character.mes_example', t('library.character.exampleDialogue'), true],
   ]
+  const selectedEntryID = selectedID.startsWith('entry:') ? selectedID.slice('entry:'.length) : ''
+  const selectedEntry = entries.find((entry) => valueOf(entry, 'entry_id', '') === selectedEntryID)
+  const selectedGroup = groups.find((group) => group.id === selectedID)
+  const entryTitle = selectedEntry ? nestedEntryTitle(item, 'character_template', selectedEntry, entries.indexOf(selectedEntry), t) : ''
+
+  useEffect(() => {
+    if (selectedEntryID && !selectedEntry) setSelectedID('profile')
+  }, [selectedEntry, selectedEntryID])
+
   const beginEdit = () => {
     setDraft(Object.fromEntries(editFields.map(([path]) => [path, masterFieldText(item, path)])) as CharacterEditValues)
     setEditError(null)
@@ -727,21 +957,111 @@ function CharacterReader({ item, t, onSaveCharacter, onOpenAgent }: { item: Reco
     setEditError(null)
     try { await onSaveCharacter(draft); setEditing(false) } catch (reason: unknown) { setEditError(reason instanceof Error ? reason.message : t('library.editSaveFailed')) } finally { setSaving(false) }
   }
+  const beginTagEdit = () => {
+    setTagDraft(currentTags.join('、'))
+    setTagError(null)
+    setEditingTags(true)
+  }
+  const saveTags = async () => {
+    if (!onSaveCharacterTags) return
+    const tags = splitCharacterTags(tagDraft)
+    if (tags.length === 0) { setTagError(t('library.character.tagsRequired')); return }
+    setTagSaving(true)
+    setTagError(null)
+    try { await onSaveCharacterTags(tags); setEditingTags(false) } catch (reason: unknown) { setTagError(reason instanceof Error ? reason.message : t('library.editSaveFailed')) } finally { setTagSaving(false) }
+  }
+  const beginEntryEdit = (entry: Record<string, unknown>) => {
+    setEntryDraft({ comment: nestedEntryField(item, 'character_template', entry, 'comment'), content: nestedEntryField(item, 'character_template', entry, 'content'), keys: nestedEntryField(item, 'character_template', entry, 'keys'), secondary_keys: nestedEntryField(item, 'character_template', entry, 'secondary_keys') })
+    setEntryError(null)
+    setAddingEntry(false)
+    setEntryEditing(true)
+  }
+  const beginEntryAdd = () => {
+    setSelectedID('new-entry')
+    setEntryDraft({ comment: '', content: '', keys: '', secondary_keys: '' })
+    setEntryError(null)
+    setAddingEntry(true)
+    setEntryEditing(true)
+  }
+  const saveEntry = async () => {
+    if (addingEntry ? !onAddCharacterEntry : !selectedEntry || !onSaveEntry) return
+    setEntrySaving(true)
+    setEntryError(null)
+    try {
+      if (addingEntry) {
+        await onAddCharacterEntry?.(entryDraft)
+        setSelectedID('internal')
+        setAddingEntry(false)
+      } else if (selectedEntry) {
+        await onSaveEntry?.(selectedEntry, entryDraft)
+      }
+      setEntryEditing(false)
+    } catch (reason: unknown) {
+      setEntryError(reason instanceof Error ? reason.message : t('library.editSaveFailed'))
+    } finally { setEntrySaving(false) }
+  }
+
   if (editing) return <div className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold text-foreground">{t('library.editCharacter')}</h2><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setPreview((value) => !value)} disabled={saving}>{t(preview ? 'library.hidePreview' : 'library.previewChanges')}</Button><Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void save()} disabled={saving || changedCharacterFields(editFields, draft, item).length === 0}>{saving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t('library.saveCharacter')}</Button></div></div><p className="text-xs text-muted-foreground">{t('library.editCharacterHint')}</p>{editError && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{editError}</p>}{preview && <EditPreview changes={changedCharacterFields(editFields, draft, item)} t={t} />}{editFields.map(([path, label, multiline]) => <div key={path} className="block text-xs font-medium text-foreground"><div className="flex items-center justify-between gap-2"><span>{label}</span>{onOpenAgent && <Button type="button" variant="ghost" size="sm" onClick={() => onOpenAgent({ field_path: path, field_label: label })}>{t('library.askAgentField')}</Button>}</div>{multiline ? <textarea aria-label={label} className="mt-1 min-h-28 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft[path]} onChange={(event) => setDraft((current) => ({ ...current, [path]: event.target.value }))} /> : <Input aria-label={label} className="mt-1" value={draft[path]} onChange={(event) => setDraft((current) => ({ ...current, [path]: event.target.value }))} />}</div>)}</div>
-  return <div className="space-y-3">{onSaveCharacter && <div className="flex justify-end"><Button type="button" variant="outline" size="sm" onClick={beginEdit}><Pencil data-icon="inline-start" />{t('library.editCharacter')}</Button></div>}{groups.map((group) => <ReadingSection key={group.title} title={group.title} values={group.values} />)}{entries.length > 0 && <InfoSection title={t('library.character.internalSettings')}><div className="space-y-2">{entries.map((entry, index) => <details key={valueOf(entry, 'entry_id', String(index))} className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)]"><summary className="cursor-pointer px-3 py-2 text-xs font-medium text-foreground">{nestedEntryTitle(item, 'character_template', entry, index, t)}</summary><p className="whitespace-pre-wrap border-t border-[var(--nova-border)] px-3 py-3 text-sm leading-6 text-foreground">{nestedEntryText(item, 'character_template', entry, 'content') || t('library.noContent')}</p></details>)}</div></InfoSection>}{advanced.length > 0 && <InfoSection title={t('library.character.advancedInstructions')}><div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">{t('library.character.advancedHint')}</div><ReadingValues values={advanced} /></InfoSection>}</div>
+
+  const visibleTags = tagsExpanded ? currentTags : currentTags.slice(0, 8)
+  return <div className="space-y-3">
+    <div className="rounded-xl border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-4 md:p-5">
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-primary/20 bg-primary/10 text-primary"><CharacterAvatar src={avatarURL} alt={displayName} size="lg" /></div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-semibold text-foreground">{displayName}</h2><span className="rounded-full border border-[var(--nova-border)] px-2 py-0.5 text-[11px] text-muted-foreground">{t('library.character.profile')}</span></div>
+          {originalName && originalName !== displayName && <p className="mt-1 text-xs text-muted-foreground">{t('library.character.sourceName')}: {originalName}</p>}
+          <div className="mt-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-[11px] font-medium text-muted-foreground">{t('library.character.tags')}</h3>{onSaveCharacterTags && !editingTags && <Button type="button" variant="ghost" size="sm" onClick={beginTagEdit}><Pencil data-icon="inline-start" />{t('library.character.editTags')}</Button>}</div>
+            {editingTags ? <div className="mt-2 space-y-2"><Input aria-label={t('library.character.tags')} placeholder={t('library.character.tagsPlaceholder')} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} /><p className="text-[11px] text-muted-foreground">{t('library.character.tagsHint')}</p>{tagError && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{tagError}</p>}<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setEditingTags(false)} disabled={tagSaving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void saveTags()} disabled={tagSaving || !tagDraft.trim()}>{tagSaving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t('library.character.saveTags')}</Button></div></div> : languageMode === 'compare' ? <div className="mt-2 space-y-2"><div><div className="mb-1 text-[10px] text-muted-foreground">{t('library.character.currentContent')}</div><CharacterTagList tags={currentTags} emptyLabel={t('library.character.tagsEmpty')} /></div><div className="border-t border-[var(--nova-border)] pt-2"><div className="mb-1 text-[10px] text-muted-foreground">{t('library.character.originalContent')}</div><CharacterTagList tags={originalTags} emptyLabel={t('library.character.tagsEmpty')} /></div></div> : <div className="mt-2"><CharacterTagList tags={visibleTags} emptyLabel={t('library.character.tagsEmpty')} />{currentTags.length > 8 && <Button type="button" variant="ghost" size="sm" className="mt-1 px-0" onClick={() => setTagsExpanded((value) => !value)}>{t(tagsExpanded ? 'library.character.collapseTags' : 'library.character.expandTags', { count: currentTags.length })}</Button>}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">{t('library.character.profileHint')}</p><div className="flex flex-wrap items-center gap-1 rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-1" role="group" aria-label={t('library.character.languageMode')}><Button type="button" size="sm" variant={languageMode === 'current' ? 'default' : 'ghost'} onClick={() => setLanguageMode('current')}>{t('library.character.currentContent')}</Button><Button type="button" size="sm" variant={languageMode === 'original' ? 'default' : 'ghost'} onClick={() => setLanguageMode('original')}>{t('library.character.originalContent')}</Button><Button type="button" size="sm" variant={languageMode === 'compare' ? 'default' : 'ghost'} onClick={() => setLanguageMode('compare')}>{t('library.character.compareContent')}</Button></div></div>
+    {onSaveCharacter && <div className="flex justify-end"><Button type="button" variant="outline" size="sm" onClick={beginEdit}><Pencil data-icon="inline-start" />{t('library.editCharacter')}</Button></div>}
+    <div className="grid gap-4 lg:grid-cols-[14rem_minmax(0,1fr)]">
+      <aside className="rounded-xl border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2" aria-label={t('library.character.entryDirectory')}>
+        <div className="flex items-center justify-between gap-2 px-2 py-2"><div><p className="text-xs font-semibold text-foreground">{t('library.character.entryDirectory')}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{t('library.character.entryDirectoryHint')}</p></div>{onAddCharacterEntry && <Button type="button" variant="outline" size="icon-xs" onClick={beginEntryAdd} aria-label={t('library.character.addEntry')} title={t('library.character.addEntry')}><Plus /></Button>}</div>
+        <nav className="space-y-1">
+          {groups.map((group) => { const hasContent = group.values.some(({ value }) => value.current || value.original); return <button key={group.id} type="button" aria-current={selectedID === group.id ? 'page' : undefined} onClick={() => { setSelectedID(group.id); setEntryEditing(false) }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${selectedID === group.id ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:bg-[var(--nova-surface-2)] hover:text-foreground'}`}><span className="min-w-0 truncate">{group.title}</span>{!hasContent && <span className="shrink-0 text-[10px] text-muted-foreground">{t('library.character.unknown')}</span>}</button> })}
+          <button type="button" aria-current={selectedID === 'internal' ? 'page' : undefined} onClick={() => { setSelectedID('internal'); setEntryEditing(false) }} className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${selectedID === 'internal' ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:bg-[var(--nova-surface-2)] hover:text-foreground'}`}><span>{t('library.character.internalSettings')}</span><span className="shrink-0 text-[10px] text-muted-foreground">{entries.length > 0 ? entries.length : t('library.character.unknown')}</span></button>
+          {entries.map((entry, index) => { const id = valueOf(entry, 'entry_id', String(index)); return <button key={id} type="button" aria-current={selectedID === `entry:${id}` ? 'page' : undefined} onClick={() => { setSelectedID(`entry:${id}`); setEntryEditing(false) }} className={`ml-2 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${selectedID === `entry:${id}` ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:bg-[var(--nova-surface-2)] hover:text-foreground'}`}><span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" /><span className="min-w-0 truncate">{nestedEntryTitle(item, 'character_template', entry, index, t)}</span></button> })}
+        </nav>
+      </aside>
+      <main className="min-w-0">
+        {selectedID === 'new-entry' && entryEditing ? <CharacterEntryEditor draft={entryDraft} setDraft={setEntryDraft} error={entryError} saving={entrySaving} isNew t={t} onCancel={() => { setEntryEditing(false); setSelectedID('internal') }} onSave={() => void saveEntry()} /> : selectedEntry ? entryEditing ? <CharacterEntryEditor draft={entryDraft} setDraft={setEntryDraft} error={entryError} saving={entrySaving} t={t} onCancel={() => setEntryEditing(false)} onSave={() => void saveEntry()} /> : <InfoSection title={entryTitle}><div className="flex justify-end"><Button type="button" variant="outline" size="sm" onClick={() => beginEntryEdit(selectedEntry)}><Pencil data-icon="inline-start" />{t('library.editEntry')}</Button></div><div className="mt-3"><CharacterProfileText value={nestedEntryPair(item, 'character_template', selectedEntry, 'content')} mode={languageMode} t={t} emptyLabel={t('library.character.unknown')} /></div></InfoSection> : selectedID === 'internal' ? <InfoSection title={t('library.character.internalSettings')}><p className="text-xs text-muted-foreground">{entries.length > 0 ? t('library.character.internalHint') : t('library.character.unknown')}</p></InfoSection> : selectedGroup ? <>{selectedID === 'advanced' && <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">{t('library.character.advancedHint')}</div>}<CharacterReadingSection title={selectedGroup.title} values={selectedGroup.values} mode={languageMode} t={t} showEmpty emptyLabel={t('library.character.unknown')} /></> : <InfoSection title={t('library.character.advancedInstructions')}><div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">{t('library.character.advancedHint')}</div><CharacterReadingValues values={advanced} mode={languageMode} t={t} emptyLabel={t('library.character.unknown')} /></InfoSection>}
+      </main>
+    </div>
+  </div>
 }
 
-function ReadingSection({ title, values }: { title: string; values: string[][] }) {
-  const visible = values.filter(([, value]) => value)
+function CharacterEntryEditor({ draft, setDraft, error, saving, isNew = false, t, onCancel, onSave }: { draft: EntryEditValues; setDraft: (value: EntryEditValues | ((current: EntryEditValues) => EntryEditValues)) => void; error: string | null; saving: boolean; isNew?: boolean; t: (key: string, options?: Record<string, unknown>) => string; onCancel: () => void; onSave: () => void }) {
+  return <InfoSection title={t(isNew ? 'library.character.addEntry' : 'library.editEntry')}><div className="space-y-3"><p className="text-xs text-muted-foreground">{t('library.character.entryEditorHint')}</p>{error && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{error}</p>}<label className="block text-xs font-medium text-foreground">{t('library.entryTitle')}<Input aria-label={t('library.entryTitle')} className="mt-1" value={draft.comment} onChange={(event) => setDraft((current) => ({ ...current, comment: event.target.value }))} /></label><label className="block text-xs font-medium text-foreground">{t('library.content')}<textarea aria-label={t('library.content')} className="mt-1 min-h-52 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={draft.content} onChange={(event) => setDraft((current) => ({ ...current, content: event.target.value }))} /></label>{!isNew && <><label className="block text-xs font-medium text-foreground">{t('library.keywords')}<Input aria-label={t('library.keywords')} className="mt-1" value={draft.keys} onChange={(event) => setDraft((current) => ({ ...current, keys: event.target.value }))} /></label><label className="block text-xs font-medium text-foreground">{t('library.secondaryKeywords')}<Input aria-label={t('library.secondaryKeywords')} className="mt-1" value={draft.secondary_keys} onChange={(event) => setDraft((current) => ({ ...current, secondary_keys: event.target.value }))} /></label></>}<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={saving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={onSave} disabled={saving || !draft.comment.trim() || !draft.content.trim()}>{saving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t(isNew ? 'library.character.saveEntry' : 'library.saveEntry')}</Button></div></div></InfoSection>
+}
+
+function CharacterReadingSection({ title, values, mode, t, showEmpty = false, emptyLabel }: { title: string; values: Array<{ label: string; value: CharacterProfileValue }>; mode: CharacterLanguageMode; t: (key: string, options?: Record<string, unknown>) => string; showEmpty?: boolean; emptyLabel?: string }) {
+  const visible = showEmpty ? values : values.filter(({ value }) => value.current || value.original)
   if (visible.length === 0) return null
-  return <InfoSection title={title}><ReadingValues values={visible} /></InfoSection>
+  return <InfoSection title={title}><CharacterReadingValues values={visible} mode={mode} t={t} emptyLabel={emptyLabel} /></InfoSection>
 }
 
-function ReadingValues({ values }: { values: string[][] }) {
-  return <div className="space-y-4">{values.map(([label, value]) => <div key={label}><h3 className="text-[11px] font-medium text-muted-foreground">{label}</h3><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">{value}</p></div>)}</div>
+function CharacterReadingValues({ values, mode, t, emptyLabel }: { values: Array<{ label: string; value: CharacterProfileValue }>; mode: CharacterLanguageMode; t: (key: string, options?: Record<string, unknown>) => string; emptyLabel?: string }) {
+  return <div className="space-y-4">{values.map(({ label, value }) => <div key={label}><h3 className="text-[11px] font-medium text-muted-foreground">{label}</h3><div className="mt-1"><CharacterProfileText value={value} mode={mode} t={t} emptyLabel={emptyLabel} /></div></div>)}</div>
 }
 
-function LorebookReader({ item, recordKind, t, onSaveEntry, onSaveDescription, onManualAddEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onSaveDescription?: (description: string) => Promise<void>; onManualAddEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
+function CharacterProfileText({ value, mode, t, emptyLabel }: { value: CharacterProfileValue; mode: CharacterLanguageMode; t: (key: string, options?: Record<string, unknown>) => string; emptyLabel?: string }) {
+  const current = value.current || value.original
+  const original = value.original || value.current
+  const fallback = emptyLabel || t('library.noContent')
+  if (mode === 'compare') return <div className="space-y-2"><div><div className="text-[10px] text-muted-foreground">{t('library.character.currentContent')}</div><p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{current || fallback}</p></div><div className="border-t border-[var(--nova-border)] pt-2"><div className="text-[10px] text-muted-foreground">{t('library.character.originalContent')}</div><p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{original || fallback}</p></div></div>
+  return <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">{(mode === 'original' ? original : current) || fallback}</p>
+}
+
+function CharacterTagList({ tags, emptyLabel }: { tags: string[]; emptyLabel: string }) {
+  return tags.length > 0 ? <div className="flex flex-wrap gap-1.5">{tags.map((tag) => <span key={tag} className="rounded-full bg-background px-2 py-0.5 text-[11px] text-muted-foreground">{tag}</span>)}</div> : <span className="text-xs text-muted-foreground">{emptyLabel}</span>
+}
+
+function LorebookReader({ item, recordKind, t, onSaveEntry, onManualAddEntry, onOpenAgent }: { item: Record<string, unknown>; recordKind: string; t: (key: string, options?: Record<string, unknown>) => string; onSaveEntry?: (entry: Record<string, unknown>, values: EntryEditValues) => Promise<void>; onManualAddEntry?: (values: EntryEditValues) => Promise<void>; onOpenAgent?: (context?: Record<string, string>) => void }) {
   const entries = nestedEntries(item)
   const [query, setQuery] = useState('')
   const [directoryOpen, setDirectoryOpen] = useState(false)
@@ -752,11 +1072,6 @@ function LorebookReader({ item, recordKind, t, onSaveEntry, onSaveDescription, o
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
   const [draft, setDraft] = useState<EntryEditValues>({ comment: '', content: '', keys: '', secondary_keys: '' })
-  const currentDescription = masterFieldText(item, 'lorebook.description') || valueOf(recordValue(item.original), 'description', '')
-  const [descriptionEditing, setDescriptionEditing] = useState(false)
-  const [descriptionSaving, setDescriptionSaving] = useState(false)
-  const [descriptionError, setDescriptionError] = useState<string | null>(null)
-  const [descriptionDraft, setDescriptionDraft] = useState('')
   const needle = query.trim().toLowerCase()
   const filtered = entries.filter((entry, index) => {
     if (!needle) return true
@@ -791,40 +1106,9 @@ function LorebookReader({ item, recordKind, t, onSaveEntry, onSaveDescription, o
     setEditError(null)
     try { await onManualAddEntry(draft); setManualAdding(false) } catch (reason: unknown) { setEditError(reason instanceof Error ? reason.message : t('library.manualAddFailed')) } finally { setSaving(false) }
   }
-  const beginDescriptionEdit = () => {
-    setDescriptionDraft(currentDescription)
-    setDescriptionError(null)
-    setDescriptionEditing(true)
-  }
-  const saveDescription = async () => {
-    if (!onSaveDescription) return
-    setDescriptionSaving(true)
-    setDescriptionError(null)
-    try {
-      await onSaveDescription(descriptionDraft)
-      setDescriptionEditing(false)
-    } catch (reason: unknown) {
-      setDescriptionError(reason instanceof Error ? reason.message : t('library.descriptionSaveFailed'))
-    } finally {
-      setDescriptionSaving(false)
-    }
-  }
-  const descriptionPanel = <div className="rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <h2 className="text-sm font-semibold text-foreground">{t('library.lorebook.introduction')}</h2>
-      {onSaveDescription && !descriptionEditing && <Button type="button" variant="outline" size="sm" onClick={beginDescriptionEdit}><Pencil data-icon="inline-start" />{t('library.editDescription')}</Button>}
-    </div>
-    {!descriptionEditing ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">{currentDescription || t('library.noDescription')}</p> : <div className="mt-3 space-y-2">
-      <textarea className="min-h-28 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={descriptionDraft} onChange={(event) => setDescriptionDraft(event.target.value)} placeholder={t('library.descriptionPlaceholder')} />
-      <p className="text-[11px] text-muted-foreground">{t('library.descriptionHint')}</p>
-      {descriptionError && <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400">{descriptionError}</p>}
-      <div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setDescriptionEditing(false)} disabled={descriptionSaving}>{t('library.cancelEdit')}</Button><Button type="button" size="sm" onClick={() => void saveDescription()} disabled={descriptionSaving || descriptionDraft.trim() === currentDescription.trim()}>{descriptionSaving ? <Loader2 className="animate-spin" /> : <Check data-icon="inline-start" />}{t('library.saveDescription')}</Button></div>
-    </div>}
-  </div>
   const editorOpen = editing || manualAdding
-  if (entries.length === 0) return <div className="space-y-3">{descriptionPanel}<InfoSection title={t('library.fullContent')}><p className="text-sm text-muted-foreground">{t('library.noEntries')}</p></InfoSection></div>
+  if (entries.length === 0) return <div className="space-y-3"><InfoSection title={t('library.fullContent')}><p className="text-sm text-muted-foreground">{t('library.noEntries')}</p></InfoSection></div>
   return <div className="overflow-hidden rounded-xl border border-[var(--nova-border)] bg-[var(--nova-surface)]">
-    <div className="border-b border-[var(--nova-border)] p-4">{descriptionPanel}</div>
     <div className="flex items-center justify-between border-b border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3 lg:hidden"><span className="text-xs font-medium text-foreground">{t('library.entryDirectory')}</span><Button type="button" variant="outline" size="sm" onClick={() => setDirectoryOpen(true)}><Menu data-icon="inline-start" />{t('library.openEntryDirectory')}</Button></div>
     <div className="relative grid min-h-[34rem] lg:grid-cols-[17rem_minmax(0,1fr)]">
     <aside className={`${directoryOpen ? 'fixed inset-y-0 left-0 z-50 block w-[min(86vw,20rem)] shadow-2xl' : 'hidden'} border-b border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-3 lg:static lg:block lg:border-b-0 lg:border-r lg:shadow-none`}>
@@ -892,11 +1176,11 @@ function TranslationFieldList({ runtime, t, onRetry, onPolish, polishingFields }
 function TranslationFieldRow({ field, t, onRetry, onPolish, polishingFields }: { field: MasterTranslationFieldRuntime; t: (key: string, options?: Record<string, unknown>) => string; onRetry: (field: MasterTranslationFieldRuntime) => Promise<void>; onPolish: (field: MasterTranslationFieldRuntime) => Promise<void>; polishingFields: Set<string> }) {
   const [open, setOpen] = useState(false)
   const [retrying, setRetrying] = useState(false)
-  const needsRetry = field.task_status === 'failed' && Boolean(field.task_id)
+  const needsRetry = (field.task_status === 'failed' || field.task_status === 'cancelled') && Boolean(field.task_id)
   const recoveryProcessing = ['eligible', 'agent_running', 'proposal_ready', 'applying', 'revalidating'].includes(field.recovery_status || '')
   const polishing = polishingFields.has(field.field_path)
-  const userStatus = recoveryProcessing ? t('library.agentProcessing') : field.recovery_status === 'recovered' ? t('library.fieldCompleted') : field.recovery_status === 'needs_user' ? t('library.fieldNeedsConfirmation') : field.review_required ? t('library.fieldNeedsConfirmation') : field.task_status === 'failed' ? t('library.fieldNeedsAttention') : field.task_status === 'completed' && field.content_version_status !== 'original' ? t('library.fieldCompleted') : field.task_status === 'running' || field.task_status === 'queued' || field.task_status === 'paused' ? t('library.fieldProcessing') : t('library.fieldNotCompleted')
-  return <div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2.5"><div className="flex items-center gap-2"><button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${field.review_required || field.task_status === 'failed' ? 'border-amber-500/40 bg-amber-500/10 text-amber-600' : field.task_status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : 'border-blue-500/40 bg-blue-500/10 text-blue-600'}`}>{field.task_status === 'completed' && !field.review_required ? <Check className="size-3" /> : field.task_status === 'failed' ? <XCircle className="size-3" /> : field.task_status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Circle className="size-2.5" />}</span><span className="min-w-0 truncate font-mono text-[11px] text-foreground">{field.field_path}</span><span className="truncate text-[11px] text-muted-foreground">{userStatus}</span><ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} /></button><Button type="button" variant="ghost" size="sm" disabled={polishing} onClick={() => void onPolish(field)}>{polishing ? <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" /> : null}{polishing ? t('library.polishing') : t('library.polish')}</Button>{needsRetry && <Button type="button" variant="outline" size="icon-xs" disabled={retrying} onClick={async () => { setRetrying(true); try { await onRetry(field) } finally { setRetrying(false) } }} title={t('library.retry')} aria-label={t('library.retry')}>{retrying ? <Loader2 className="animate-spin" /> : <RotateCcw />}</Button>}</div>{field.task_status === 'failed' && <div className="mt-1 pl-7 text-[11px] text-amber-700 dark:text-amber-300">{t('library.fieldNotCompleted')}</div>}{open && <div className="mt-2 grid gap-1 border-t border-[var(--nova-border)] pt-2 text-[11px] text-muted-foreground sm:grid-cols-2"><span>{t('library.taskStatus')}: {enumLabel('status', field.task_status, t)}</span><span>{t('library.contentVersion')}: {enumLabel('contentKind', field.content_version_status, t)}</span><span>{t('library.translationVersion')}: {field.translation_version || t('library.unknown')}</span><span>{t('library.inputRevision')}: {field.input_revision || t('library.unknown')}</span>{field.failure_reason && <span className="sm:col-span-2">{t('library.failureReason')}: {field.failure_reason}</span>}</div>}</div>
+  const userStatus = recoveryProcessing ? t('library.agentProcessing') : field.recovery_status === 'recovered' ? t('library.fieldCompleted') : field.recovery_status === 'needs_user' ? t('library.fieldNeedsConfirmation') : field.review_required ? t('library.fieldNeedsConfirmation') : field.task_status === 'cancelled' ? t('library.fieldCancelled') : field.task_status === 'failed' ? t('library.fieldNeedsAttention') : field.task_status === 'completed' && field.content_version_status !== 'original' ? t('library.fieldCompleted') : field.task_status === 'running' || field.task_status === 'queued' || field.task_status === 'paused' ? t('library.fieldProcessing') : t('library.fieldNotCompleted')
+  return <div className="rounded-md border border-[var(--nova-border)] bg-[var(--nova-surface)] p-2.5"><div className="flex items-center gap-2"><button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left"><span className={`flex size-5 shrink-0 items-center justify-center rounded-full border ${field.review_required || field.task_status === 'failed' || field.task_status === 'cancelled' ? 'border-amber-500/40 bg-amber-500/10 text-amber-600' : field.task_status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600' : 'border-blue-500/40 bg-blue-500/10 text-blue-600'}`}>{field.task_status === 'completed' && !field.review_required ? <Check className="size-3" /> : field.task_status === 'failed' || field.task_status === 'cancelled' ? <XCircle className="size-3" /> : field.task_status === 'running' ? <Loader2 className="size-3 animate-spin" /> : <Circle className="size-2.5" />}</span><span className="min-w-0 truncate font-mono text-[11px] text-foreground">{field.field_path}</span><span className="truncate text-[11px] text-muted-foreground">{userStatus}</span><ChevronDown className={`size-3 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} /></button><Button type="button" variant="ghost" size="sm" disabled={polishing} onClick={() => void onPolish(field)}>{polishing ? <Loader2 className="size-3.5 animate-spin" data-icon="inline-start" /> : null}{polishing ? t('library.polishing') : t('library.polish')}</Button>{needsRetry && <Button type="button" variant="outline" size="icon-xs" disabled={retrying} onClick={async () => { setRetrying(true); try { await onRetry(field) } finally { setRetrying(false) } }} title={t('library.retry')} aria-label={t('library.retry')}>{retrying ? <Loader2 className="animate-spin" /> : <RotateCcw />}</Button>}</div>{(field.task_status === 'failed' || field.task_status === 'cancelled') && <div className="mt-1 pl-7 text-[11px] text-amber-700 dark:text-amber-300">{t('library.fieldNotCompleted')}</div>}{open && <div className="mt-2 grid gap-1 border-t border-[var(--nova-border)] pt-2 text-[11px] text-muted-foreground sm:grid-cols-2"><span>{t('library.taskStatus')}: {enumLabel('status', field.task_status, t)}</span><span>{t('library.contentVersion')}: {enumLabel('contentKind', field.content_version_status, t)}</span><span>{t('library.translationVersion')}: {field.translation_version || t('library.unknown')}</span><span>{t('library.inputRevision')}: {field.input_revision || t('library.unknown')}</span>{field.failure_reason && <span className="sm:col-span-2">{t('library.failureReason')}: {field.failure_reason}</span>}</div>}</div>
 }
 
 type ReviewRowStatus = 'needsEdit' | 'pendingConfirm' | 'failed' | 'conflict'

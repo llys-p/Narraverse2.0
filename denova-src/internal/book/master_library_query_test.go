@@ -1,6 +1,76 @@
 package book
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
+
+func TestMasterItemTagsUsesActiveCharacterTagsAndFallsBackToSource(t *testing.T) {
+	item := MasterItem{
+		RecordKind:      "character_template",
+		Original:        map[string]any{"tags": []any{"Anime", "Love"}},
+		SourceSemantics: map[string]any{"tags": []any{"Love", "Female"}},
+		Fields:          map[string]MasterField{"character.tags": {ActiveText: "动漫\n恋爱"}},
+	}
+	if got := masterItemTags(item); len(got) != 2 || got[0] != "动漫" || got[1] != "恋爱" {
+		t.Fatalf("应优先返回当前角色标签: %#v", got)
+	}
+
+	item.Fields = map[string]MasterField{}
+	got := masterItemTags(item)
+	if len(got) != 3 || got[0] != "Anime" || got[1] != "Love" || got[2] != "Female" {
+		t.Fatalf("应从原始和来源语义合并去重角色标签: %#v", got)
+	}
+}
+
+func TestMasterItemDescriptionDoesNotPromoteNestedEntryContent(t *testing.T) {
+	item := MasterItem{
+		RecordKind: "lorebook_template",
+		Original:   map[string]any{"name": "World"},
+		Fields: map[string]MasterField{
+			"lorebook.entries/entry-1/content": {SourceText: "第一条正文"},
+		},
+		NestedEntries: []MasterNestedEntry{{EntryID: "entry-1"}},
+	}
+	if got := masterItemDescription(item); got != "" {
+		t.Fatalf("没有大条目简介时不应提升小条目正文: %q", got)
+	}
+
+	item.Fields["lorebook.description"] = MasterField{ActiveText: "世界简介"}
+	if got := masterItemDescription(item); got != "世界简介" {
+		t.Fatalf("应优先返回独立的大条目简介: %q", got)
+	}
+}
+
+func TestMasterCharacterAvatarUsesArchivedPNGWithoutExposingArchivePath(t *testing.T) {
+	store, adventure := masterTestStore(t)
+	result, err := store.Ingest(MasterIngestInput{
+		Filename: "aiko.png", Data: []byte("png-data"), SourceKind: "user_upload", AdventureWorkspace: adventure,
+		Items: []MasterItemInput{{
+			SourceEntryIdentity: "character:0", RecordKind: "character_template", SemanticType: "character", Name: "Aiko",
+			Original: map[string]any{"name": "Aiko"}, SourceSemantics: map[string]any{}, RuntimeSemantics: map[string]any{},
+			Fields: map[string]MasterFieldInput{"character.name": {Text: "Aiko", Risk: masterFieldRiskSafe, Required: true}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("导入角色卡失败: %v", err)
+	}
+	detail, err := store.GetAsset(result.Items[0].MasterItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantURL := "/api/library/assets/" + result.Items[0].MasterItemID + "/avatar"
+	if detail.Summary.AvatarURL != wantURL {
+		t.Fatalf("角色卡摘要头像地址错误: got %q want %q", detail.Summary.AvatarURL, wantURL)
+	}
+	data, err := store.GetAssetAvatar(result.Items[0].MasterItemID)
+	if err != nil {
+		t.Fatalf("读取归档角色头像失败: %v", err)
+	}
+	if !bytes.Equal(data, []byte("png-data")) {
+		t.Fatalf("读取的头像内容错误: %q", data)
+	}
+}
 
 func TestMasterLibraryQueryDerivesStagingThenUsableAndListsUsages(t *testing.T) {
 	store, adventure := masterTestStore(t)

@@ -23,12 +23,13 @@ func TestUpdateMasterAssetFieldsAllowsHumanOverwriteAndMissingCharacterField(t *
 		Fields: map[string]string{
 			"character.description": "人工说明",
 			"character.openings[0]": "人工开场白",
+			"character.tags":        "中文标签\n另一个标签",
 		},
 	})
 	if err != nil {
 		t.Fatalf("人工直接保存失败: %v", err)
 	}
-	for path, want := range map[string]string{"character.description": "人工说明", "character.openings[0]": "人工开场白"} {
+	for path, want := range map[string]string{"character.description": "人工说明", "character.openings[0]": "人工开场白", "character.tags": "中文标签\n另一个标签"} {
 		field, ok := updated.Fields[path]
 		if !ok || field.ActiveText != want || field.ActiveKind != "human" || field.NeedsTranslation || field.ActiveTranslationVersionID != "" {
 			t.Fatalf("人工字段没有正确生效 path=%s field=%#v", path, field)
@@ -134,5 +135,47 @@ func TestAddManualLorebookEntryPersistsAndIsIdempotent(t *testing.T) {
 	})
 	if err != nil || len(idempotent.NestedEntries) != 2 {
 		t.Fatalf("重复重试不应生成第二个条目: len=%d err=%v", len(idempotent.NestedEntries), err)
+	}
+}
+
+func TestAddManualCharacterEntryPersistsAndIsIdempotent(t *testing.T) {
+	workspace := t.TempDir()
+	result, err := NewService(workspace).ImportMaterialToMaster("aiko.json", []byte(`{"spec":"chara_card_v2","data":{"name":"Aiko","description":"A curious alchemist"}}`), MaterialImportOptions{SourceID: "human_add_character_001"})
+	if err != nil {
+		t.Fatalf("导入角色卡失败: %v", err)
+	}
+	store := NewMasterLibraryStore(workspace)
+	item, err := store.LoadItem(result.MasterItemIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := MasterManualCharacterEntryInput{
+		MasterItemID: item.MasterItemID, ExpectedRevision: item.Revision,
+		Name: "人工设定", Content: "这是角色卡的人工补充条目。",
+	}
+	updated, err := store.AddManualCharacterEntry(input)
+	if err != nil {
+		t.Fatalf("新增角色卡条目失败: %v", err)
+	}
+	if len(updated.NestedEntries) != 1 {
+		t.Fatalf("新增后角色卡条目数量错误: %d", len(updated.NestedEntries))
+	}
+	entry := updated.NestedEntries[0]
+	if entry.SourceEntryIdentity == "" || entry.Original["comment"] != input.Name || entry.Original["content"] != input.Content {
+		t.Fatalf("人工角色条目内容未持久化: %#v", entry)
+	}
+	if got := updated.Fields["character_book.entries/"+entry.EntryID+"/content"]; got.ActiveText != input.Content || got.ActiveKind != "human" || got.NeedsTranslation {
+		t.Fatalf("人工角色条目字段状态错误: %#v", got)
+	}
+	reloaded, err := store.LoadItem(item.MasterItemID)
+	if err != nil || len(reloaded.NestedEntries) != 1 {
+		t.Fatalf("重新读取后人工角色条目消失: len=%d err=%v", len(reloaded.NestedEntries), err)
+	}
+	idempotent, err := store.AddManualCharacterEntry(MasterManualCharacterEntryInput{
+		MasterItemID: item.MasterItemID, ExpectedRevision: reloaded.Revision,
+		Name: input.Name, Content: input.Content,
+	})
+	if err != nil || len(idempotent.NestedEntries) != 1 {
+		t.Fatalf("重复重试不应生成第二个角色条目: len=%d err=%v", len(idempotent.NestedEntries), err)
 	}
 }

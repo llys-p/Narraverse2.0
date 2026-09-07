@@ -2,6 +2,12 @@ package book
 
 import "testing"
 
+func TestMasterTaskStatusPreservesCancelledState(t *testing.T) {
+	if got := masterTaskStatus(&masterQueueJob{Status: "cancelled"}, false); got != MasterTaskCancelled {
+		t.Fatalf("cancelled task status = %q, want %q", got, MasterTaskCancelled)
+	}
+}
+
 func TestRecoveredRuntimeFieldUsesCurrentMasterVersion(t *testing.T) {
 	field := &MasterTranslationFieldRuntime{
 		TaskStatus:         MasterTaskFailed,

@@ -2,7 +2,7 @@ import { type TranslationJob, type TranslationQueueStatus } from './local-transl
 import { requestJSON } from './client'
 import type { MasterAssetDetail, MasterPipelineStatus } from './master-library'
 
-export type MasterTaskStatus = 'queued' | 'running' | 'paused' | 'failed' | 'completed' | 'retrying'
+export type MasterTaskStatus = 'queued' | 'running' | 'paused' | 'failed' | 'completed' | 'retrying' | 'cancelled'
 export type MasterContentVersionStatus = 'original' | 'hy_mt_active' | 'polish_candidate' | 'polished_active'
 
 export interface MasterTranslationFieldRuntime {
@@ -32,6 +32,7 @@ export interface MasterTranslationRuntime {
   total_fields: number
   review_fields: number
   failed_fields: number
+  cancelled_fields?: number
   queue_paused: boolean
   runtime_available: boolean
   runtime_error?: string
@@ -92,6 +93,7 @@ export function buildMasterTranslationRuntime(detail: MasterAssetDetail, queue: 
     total_fields: fields.length,
     review_fields: fields.filter((field) => field.review_required).length,
     failed_fields: fields.filter((field) => field.task_status === 'failed').length,
+    cancelled_fields: fields.filter((field) => field.task_status === 'cancelled').length,
     queue_paused: queue.paused,
     runtime_available: true,
   }
@@ -102,7 +104,8 @@ function taskStatusOf(job: TranslationJob | undefined, hasActiveVersion: boolean
   if (job.status === 'queued') return 'queued'
   if (job.status === 'running') return 'running'
   if (job.status === 'paused') return 'paused'
-  if (job.status === 'failed' || job.status === 'conflict' || job.status === 'cancelled') return 'failed'
+  if (job.status === 'failed' || job.status === 'conflict') return 'failed'
+  if (job.status === 'cancelled') return 'cancelled'
   if (job.status === 'pending_review' || job.status === 'completed' || job.status === 'applied') return 'completed'
   return 'retrying'
 }
@@ -122,6 +125,7 @@ function stringValue(record: Record<string, unknown> | undefined, key: string) {
 export function masterTranslationSummaryStatus(runtime: MasterTranslationRuntime, pipeline: MasterPipelineStatus) {
   if (!runtime.runtime_available) return 'unavailable' as const
   if (runtime.failed_fields > 0) return 'needs_attention' as const
+  if ((runtime.cancelled_fields || 0) > 0) return 'needs_attention' as const
   if (runtime.review_fields > 0) return 'needs_confirmation' as const
   if (runtime.active_fields < runtime.total_fields) return 'processing' as const
   if (pipeline.translation.total_fields === 0) return 'not_required' as const

@@ -759,9 +759,11 @@ func buildMasterRuntimeOperations(filename string, data []byte, items []MasterIt
 			}
 			built, _ := buildTavernCardLoreOperations(card, filename, coverPath, userName, names)
 			nestedBySource := map[string]string{}
-			for _, entry := range card.CharacterBook.Entries {
-				nestedBySource[tavernEntryRecordID(entry, entry.ID)] = masterNestedEntryID(entry)
-				nestedBySource[entry.SourceRecordID] = masterNestedEntryID(entry)
+			if card.CharacterBook != nil {
+				for _, entry := range card.CharacterBook.Entries {
+					nestedBySource[tavernEntryRecordID(entry, entry.ID)] = masterNestedEntryID(entry)
+					nestedBySource[entry.SourceRecordID] = masterNestedEntryID(entry)
+				}
 			}
 			for index := range built {
 				suffix := "character"

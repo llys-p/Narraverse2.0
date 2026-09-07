@@ -33,6 +33,16 @@ type MasterManualLorebookEntryInput struct {
 	SecondaryKeys    []string
 }
 
+// MasterManualCharacterEntryInput describes a human-authored entry added to
+// the editable character-card directory. It is stored in the Master item and
+// is intentionally independent from the archived card source.
+type MasterManualCharacterEntryInput struct {
+	MasterItemID     string
+	ExpectedRevision string
+	Name             string
+	Content          string
+}
+
 func masterHumanMapString(values map[string]any, key string) string {
 	value, _ := values[key].(string)
 	return strings.TrimSpace(value)
@@ -147,6 +157,77 @@ func (s *MasterLibraryStore) AddManualLorebookEntry(input MasterManualLorebookEn
 	return s.loadItemUnlocked(item.MasterItemID)
 }
 
+// AddManualCharacterEntry appends a human-authored character-book entry. An
+// exact human entry is idempotent so a client retry cannot duplicate it.
+func (s *MasterLibraryStore) AddManualCharacterEntry(input MasterManualCharacterEntryInput) (MasterItem, error) {
+	input.MasterItemID = strings.TrimSpace(input.MasterItemID)
+	input.ExpectedRevision = strings.TrimSpace(input.ExpectedRevision)
+	input.Name = strings.TrimSpace(input.Name)
+	input.Content = strings.TrimSpace(input.Content)
+	if input.MasterItemID == "" {
+		return MasterItem{}, errors.New("总库资产 ID 不能为空")
+	}
+	if input.ExpectedRevision == "" {
+		return MasterItem{}, errors.New("页面版本不能为空，请刷新后重试")
+	}
+	if input.Name == "" || input.Content == "" {
+		return MasterItem{}, errors.New("角色条目标题和正文不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	manifest, err := s.loadManifestUnlocked()
+	if err != nil {
+		return MasterItem{}, err
+	}
+	item, err := s.loadItemUnlocked(input.MasterItemID)
+	if err != nil {
+		return MasterItem{}, err
+	}
+	if item.RecordKind != "character_template" {
+		return MasterItem{}, errors.New("只有角色卡资产支持手动新增条目")
+	}
+	if input.ExpectedRevision != item.Revision {
+		return MasterItem{}, &MasterCASConflictError{
+			MasterItemID: item.MasterItemID, FieldPath: "manual-character-entry",
+			ExpectedRevision: input.ExpectedRevision, ActualRevision: item.Revision,
+		}
+	}
+	for _, entry := range item.NestedEntries {
+		if entry.SourceEntryIdentity != "" && strings.HasPrefix(entry.SourceEntryIdentity, "human:") &&
+			masterHumanMapString(entry.Original, "comment") == input.Name &&
+			masterHumanMapString(entry.Original, "content") == input.Content {
+			return item, nil
+		}
+	}
+
+	entryID := "human-" + uuid.New().String()
+	item.NestedEntries = append(item.NestedEntries, MasterNestedEntry{
+		EntryID: entryID, SourceEntryIdentity: "human:" + entryID,
+		Original:         map[string]any{"comment": input.Name, "content": input.Content},
+		SourceSemantics:  map[string]any{"origin": "human"},
+		RuntimeSemantics: map[string]any{"enabled": true, "load_mode": "auto"},
+	})
+	prefix := "character_book.entries/" + entryID + "/"
+	if item.Fields == nil {
+		item.Fields = map[string]MasterField{}
+	}
+	for field, value := range map[string]string{"comment": input.Name, "content": input.Content} {
+		item.Fields[prefix+field] = MasterField{
+			SourceText: value, SourceSHA256: masterHashString(value), Risk: masterFieldRiskSafe,
+			ActiveText: value, ActiveKind: "human", NeedsTranslation: false,
+		}
+	}
+	item.ActiveWorkingRevision = masterActiveWorkingRevision(item.Fields)
+	if err := s.saveItemUnlocked(&manifest, item); err != nil {
+		return MasterItem{}, err
+	}
+	if err := s.saveManifestUnlocked(manifest); err != nil {
+		return MasterItem{}, err
+	}
+	return s.loadItemUnlocked(item.MasterItemID)
+}
+
 // UpdateMasterAssetFields applies explicit human edits atomically to one
 // Master asset. Missing fields displayed by the editor may be created; unknown
 // paths are rejected so the UI cannot report success for data runtime ignores.
@@ -223,7 +304,7 @@ func validateMasterHumanEditPath(item MasterItem, path string) error {
 			"character.name": true, "character.description": true, "character.personality": true,
 			"character.scenario": true, "character.mes_example": true, "character.creator_notes": true,
 			"character.creator_comment": true, "character.system_prompt": true,
-			"character.post_history_instructions": true,
+			"character.post_history_instructions": true, "character.tags": true,
 		}
 		if allowed[path] || masterCharacterOpeningPath.MatchString(path) {
 			return nil

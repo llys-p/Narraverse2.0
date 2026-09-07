@@ -368,6 +368,35 @@ func TestManagedCharacterCardKeepsStructuredMasterFields(t *testing.T) {
 	}
 }
 
+func TestInstantiateMasterCharacterCardWithoutCharacterBook(t *testing.T) {
+	workspace := t.TempDir()
+	service := NewService(workspace)
+	data := []byte(`{"spec":"chara_card_v2","data":{"name":"无书角色","description":"这是一个没有角色书的角色。","personality":"沉静","scenario":"在港口","first_mes":"你好。"}}`)
+
+	imported, err := service.ImportMaterialToMaster("no-book.json", data, MaterialImportOptions{SourceID: "character_no_book_001"})
+	if err != nil {
+		t.Fatalf("无角色书角色卡导入总库失败: %v", err)
+	}
+	if imported.Status != "ready" || len(imported.MasterItemIDs) != 1 {
+		t.Fatalf("无角色书角色卡总库状态异常: %#v", imported)
+	}
+
+	instantiated, err := service.InstantiateMasterAsset(imported.MasterItemIDs[0])
+	if err != nil {
+		t.Fatalf("无角色书角色卡加入当前冒险失败: %v", err)
+	}
+	if instantiated.Status != "instantiated" || len(instantiated.ItemIDs) != 1 {
+		t.Fatalf("无角色书角色卡实例化结果异常: %#v", instantiated)
+	}
+	items, err := NewLoreStore(workspace).ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Name != "无书角色" {
+		t.Fatalf("无角色书角色卡未生成唯一角色资料: %#v", items)
+	}
+}
+
 func TestCharacterCardUsesOneMasterAssetAndStableNestedEntryIDs(t *testing.T) {
 	workspace := t.TempDir()
 	data := []byte(`{"spec":"chara_card_v2","data":{"name":"Aster","description":"Navigator","character_book":{"entries":[{"uid":101,"comment":"Port","content":"A busy port.","key":["port"]},{"uid":202,"comment":"Ship","content":"A fast ship.","key":["ship"]}]}}}`)

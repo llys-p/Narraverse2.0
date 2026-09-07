@@ -289,6 +289,30 @@ func filterMasterItemRefs(refs []MasterItemRef, oldIDs map[string]bool, legacy *
 	return active
 }
 
+func moveMasterItemToLegacy(refs []MasterItemRef, itemID string, legacy *[]MasterItemRef) []MasterItemRef {
+	active := make([]MasterItemRef, 0, len(refs))
+	for _, ref := range refs {
+		if ref.MasterItemID == itemID {
+			*legacy = append(*legacy, ref)
+			continue
+		}
+		active = append(active, ref)
+	}
+	return active
+}
+
+func moveMasterTranslationsToLegacy(refs []MasterTranslationRef, itemID string, legacy *[]MasterTranslationRef) []MasterTranslationRef {
+	active := make([]MasterTranslationRef, 0, len(refs))
+	for _, ref := range refs {
+		if ref.MasterItemID == itemID {
+			*legacy = append(*legacy, ref)
+			continue
+		}
+		active = append(active, ref)
+	}
+	return active
+}
+
 func moveLegacyTranslations(refs []MasterTranslationRef, oldIDs map[string]bool, legacy *[]MasterTranslationRef) []MasterTranslationRef {
 	active := make([]MasterTranslationRef, 0, len(refs))
 	for _, ref := range refs {

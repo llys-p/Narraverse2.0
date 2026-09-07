@@ -235,6 +235,30 @@ assert.strictEqual(custom.action.advancesTime, false);
 assert.strictEqual(custom.world.clock.period, world.clock.period);
 assert.ok(custom.world.actionLogs.some((log) => log.type === 'custom' && log.text === '我想看看窗外的雨'));
 
+let narrativeWorld = Store.createWorld({
+  rulesVersion: 'v1.5',
+  title: '自由叙事时间测试世界',
+  locations: [{ id: 'library', name: '图书馆' }],
+  player: { name: '林舟', location: 'library' },
+});
+const narrativeAction = Action.execute(narrativeWorld, '我靠在窗边听雨');
+assert.strictEqual(narrativeAction.ok, true);
+assert.strictEqual(narrativeAction.action.type, 'custom');
+assert.strictEqual(narrativeAction.action.advancesTime, true);
+assert.strictEqual(narrativeAction.world.clock.tick, 1);
+assert.strictEqual(narrativeAction.world.player.energy, 100 - Clock.ENERGY_COSTS.chat);
+
+for (let turn = 0; turn < 9; turn += 1) {
+  const result = Action.execute(narrativeWorld, `自由行动 ${turn + 1}`);
+  assert.strictEqual(result.ok, true);
+  narrativeWorld = result.world;
+}
+assert.strictEqual(narrativeWorld.clock.day, 2);
+assert.strictEqual(narrativeWorld.clock.period, 'morning');
+assert.strictEqual(narrativeWorld.clock.tick, 0);
+assert.strictEqual(narrativeWorld.player.energy, 100);
+assert.strictEqual(narrativeWorld.dailyLogs.length, 1);
+
 const invalid = Action.execute({
   ...world,
   player: { ...world.player, energy: 0 },

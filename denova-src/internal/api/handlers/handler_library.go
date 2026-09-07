@@ -71,6 +71,26 @@ func (h *Handlers) HandleLibraryAsset(ctx context.Context, c *app.RequestContext
 	writeJSON(c, consts.StatusOK, result)
 }
 
+// HandleLibraryAssetAvatar serves only the archived PNG belonging to a
+// character-card Master asset. JSON cards and remote avatar URLs remain
+// read-only metadata and are not fetched by Denova.
+func (h *Handlers) HandleLibraryAssetAvatar(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	data, err := book.NewMasterLibraryStore(h.app.Workspace()).GetAssetAvatar(strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			c.SetStatusCode(consts.StatusNotFound)
+			return
+		}
+		writeLibraryReadError(c, err)
+		return
+	}
+	c.Response.Header.Set("Cache-Control", "private, max-age=300")
+	c.Data(consts.StatusOK, "image/png", data)
+}
+
 func (h *Handlers) HandleLibraryAssetPipeline(ctx context.Context, c *app.RequestContext) {
 	if !h.requireWorkspace(c) {
 		return
@@ -199,6 +219,33 @@ func (h *Handlers) HandleLibraryAssetEntryCreate(ctx context.Context, c *app.Req
 	writeJSON(c, consts.StatusCreated, map[string]any{"item": item})
 }
 
+// HandleLibraryCharacterEntryCreate adds one human-authored entry to a
+// character card's editable directory.
+func (h *Handlers) HandleLibraryCharacterEntryCreate(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	var body struct {
+		ExpectedRevision string `json:"expected_revision"`
+		Name             string `json:"name"`
+		Content          string `json:"content"`
+	}
+	if err := c.BindJSON(&body); err != nil {
+		writeError(c, consts.StatusBadRequest, err.Error())
+		return
+	}
+	item, err := book.NewMasterLibraryStore(h.app.Workspace()).AddManualCharacterEntry(book.MasterManualCharacterEntryInput{
+		MasterItemID: strings.TrimSpace(c.Param("id")), ExpectedRevision: body.ExpectedRevision,
+		Name: body.Name, Content: body.Content,
+	})
+	if err != nil {
+		log.Printf("[api] 角色卡手动新增条目失败 asset_id=%q error=%v", strings.TrimSpace(c.Param("id")), err)
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusCreated, map[string]any{"item": item})
+}
+
 // HandleLibraryAssetRuntime returns the backend-only read projection that
 // joins Master translation versions with the live 8097 queue.
 func (h *Handlers) HandleLibraryAssetRuntime(ctx context.Context, c *app.RequestContext) {
@@ -211,6 +258,39 @@ func (h *Handlers) HandleLibraryAssetRuntime(ctx context.Context, c *app.Request
 		return
 	}
 	writeJSON(c, consts.StatusOK, result)
+}
+
+// HandleLibraryAssetStop stops only the selected Master asset's translation
+// work. The original source and any Adventure instance remain untouched.
+func (h *Handlers) HandleLibraryAssetStop(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	result, err := book.NewMasterLibraryStore(h.app.Workspace()).StopMasterAssetTranslation(strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusOK, result)
+}
+
+// HandleLibraryAssetRemove archives one Master asset from the active index.
+// Source files and existing Adventure instances are intentionally retained.
+func (h *Handlers) HandleLibraryAssetRemove(ctx context.Context, c *app.RequestContext) {
+	if !h.requireWorkspace(c) {
+		return
+	}
+	queueResult, archiveResult, err := book.NewMasterLibraryStore(h.app.Workspace()).RemoveMasterAsset(strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		writeLibraryMutationError(c, err)
+		return
+	}
+	writeJSON(c, consts.StatusOK, map[string]any{
+		"master_item_id":           archiveResult.MasterItemID,
+		"archived_at":              archiveResult.ArchivedAt,
+		"preserved_instance_count": archiveResult.PreservedInstanceCount,
+		"queue":                    queueResult,
+	})
 }
 
 // HandleLibraryAssetAdventureUsage answers whether the current Adventure uses

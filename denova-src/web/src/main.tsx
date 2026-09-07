@@ -13,42 +13,55 @@ import { installGlobalRuntimeLoggers, recordRuntimeLog, scheduleWhiteScreenCheck
 import { fetchSettings } from '@/features/settings/api'
 import { applyFontSettings, fontSettingsFromEffective } from '@/features/settings/font-variables'
 
-installGlobalRuntimeLoggers()
-
-const root = document.getElementById('root')
-if (!root) {
-  recordRuntimeLog({
-    type: 'startup',
-    message: '前端启动失败',
-    reason: 'root 节点不存在',
-  })
-  throw new Error('root 节点不存在')
+function redirectLocalhostToCanonicalLoopback(): boolean {
+  if (window.location.hostname.toLowerCase() !== 'localhost') return false
+  const canonical = new URL(window.location.href)
+  canonical.hostname = '127.0.0.1'
+  if (canonical.href === window.location.href) return false
+  window.location.replace(canonical.href)
+  return true
 }
 
-createRoot(root).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem themes={['light', 'dark']}>
-        <TooltipProvider>
-          <RuntimeErrorBoundary>
-            <App />
-            <Toaster richColors closeButton />
-          </RuntimeErrorBoundary>
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
-  </StrictMode>,
-)
+const isRedirectingToCanonicalOrigin = redirectLocalhostToCanonicalLoopback()
 
-scheduleWhiteScreenCheck(root)
-void bootstrapSettings()
+if (!isRedirectingToCanonicalOrigin) {
+  installGlobalRuntimeLoggers()
 
-async function bootstrapSettings() {
-  try {
-    const settings = await fetchSettings()
-    setConfiguredLocale(settings?.effective?.language)
-    applyFontSettings(fontSettingsFromEffective(settings?.effective))
-  } catch (error) {
-    console.warn('[startup] 预加载界面设置失败，使用本地缓存或浏览器默认值', error)
+  const root = document.getElementById('root')
+  if (!root) {
+    recordRuntimeLog({
+      type: 'startup',
+      message: '前端启动失败',
+      reason: 'root 节点不存在',
+    })
+    throw new Error('root 节点不存在')
+  }
+
+  createRoot(root).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem themes={['light', 'dark']}>
+          <TooltipProvider>
+            <RuntimeErrorBoundary>
+              <App />
+              <Toaster richColors closeButton />
+            </RuntimeErrorBoundary>
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </StrictMode>,
+  )
+
+  scheduleWhiteScreenCheck(root)
+  void bootstrapSettings()
+
+  async function bootstrapSettings() {
+    try {
+      const settings = await fetchSettings()
+      setConfiguredLocale(settings?.effective?.language)
+      applyFontSettings(fontSettingsFromEffective(settings?.effective))
+    } catch (error) {
+      console.warn('[startup] 预加载界面设置失败，使用本地缓存或浏览器默认值', error)
+    }
   }
 }

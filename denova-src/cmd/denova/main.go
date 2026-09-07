@@ -99,8 +99,10 @@ func main() {
 	srv := api.NewServerWithListener(application, port, listener)
 
 	// 打印启动信息
-	url := fmt.Sprintf("http://localhost:%s", port)
-	frontendURL := fmt.Sprintf("http://localhost:%s", frontendPort)
+	// Use one canonical loopback origin for local browser storage. Using
+	// localhost and 127.0.0.1 interchangeably creates separate browser stores.
+	url := fmt.Sprintf("http://127.0.0.1:%s", port)
+	frontendURL := fmt.Sprintf("http://127.0.0.1:%s", frontendPort)
 	fmt.Printf("\n  Denova AI 小说创作工具\n")
 	fmt.Printf("  ─────────────────────\n")
 	fmt.Printf("  后端服务: %s\n", url)

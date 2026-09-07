@@ -62,6 +62,51 @@
     }).slice(-6).reverse();
   }
 
+  var SOURCE_FIELD_LABELS = {
+    name: '名称',
+    appearance: '外貌',
+    personality: '性格',
+    scenario: '背景场景',
+    relationship: '初始关系',
+    notes: '备注',
+    character_note: '角色注记',
+    creator_notes: '创作者备注',
+    first_mes: '开场白',
+    system_prompt: '系统提示',
+    post_history_instructions: '历史后指令',
+    tags: '标签'
+  };
+
+  function sourceFieldText(value) {
+    if (Array.isArray(value)) return value.map(sourceFieldText).filter(Boolean).join('、');
+    if (value && typeof value === 'object') {
+      try { return JSON.stringify(value); } catch (error) { return ''; }
+    }
+    return String(value == null ? '' : value).trim();
+  }
+
+  function npcSourceHtml(world, npc, escape) {
+    var binding = Module4.World && typeof Module4.World.getNpcSourceBinding === 'function'
+      ? Module4.World.getNpcSourceBinding(world, npc.sourceRef)
+      : null;
+    if (!binding) return '<p class="module4-npc-source-missing">来源角色卡：未找到绑定信息</p>';
+    var snapshot = binding.snapshot && typeof binding.snapshot === 'object' ? binding.snapshot : {};
+    var fields = Object.keys(SOURCE_FIELD_LABELS);
+    var imported = fields.filter(function (field) { return !!sourceFieldText(snapshot[field]); });
+    return [
+      '<details class="module4-npc-source-details">',
+      '<summary><span>来源角色卡</span><strong>已导入 ' + imported.length + ' / ' + fields.length + ' 字段</strong></summary>',
+      '<p><span>' + escape(binding.migrated ? '旧存档迁移来源' : '来源已绑定') + '</span><code>' + escape(binding.sourceVersion || binding.sourceRef || npc.sourceRef) + '</code></p>',
+      '<dl>',
+      fields.map(function (field) {
+        var value = sourceFieldText(snapshot[field]);
+        return '<div class="' + (value ? '' : 'is-empty') + '"><dt>' + escape(SOURCE_FIELD_LABELS[field]) + '</dt><dd>' + escape(value || '未导入') + '</dd></div>';
+      }).join(''),
+      '</dl>',
+      '</details>'
+    ].join('');
+  }
+
   function recentDailyLogs(world) {
     return (Array.isArray(world && world.dailyLogs) ? world.dailyLogs : []).slice(-3).reverse();
   }
@@ -175,8 +220,13 @@
   }
 
   function timelineEntries(world) {
-    var actionLogs = Array.isArray(world && world.actionLogs) ? world.actionLogs.slice(-12) : [];
-    var narratives = Array.isArray(world && world.narrativeEntries) ? world.narrativeEntries.slice(-12) : [];
+    var day = Number(world && world.clock && world.clock.day) || 1;
+    var actionLogs = (Array.isArray(world && world.actionLogs) ? world.actionLogs : []).filter(function (log) {
+      return Number(log && log.day || 1) === day;
+    });
+    var narratives = (Array.isArray(world && world.narrativeEntries) ? world.narrativeEntries : []).filter(function (entry) {
+      return Number(entry && entry.day || 1) === day;
+    });
     var narrativeByAction = {};
     narratives.forEach(function (entry) {
       var actionId = String(entry && entry.actionId || '').trim();
@@ -188,27 +238,33 @@
     actionLogs.forEach(function (log, index) {
       var actionId = String(log && log.id || '').trim();
       var timestamp = Number(log && log.createdAt) || index;
-      entries.push({ kind: 'action', log: log, createdAt: timestamp, order: index * 3 });
+      var roundId = actionId || 'action-log-' + index;
+      entries.push({ kind: 'action', roundId: roundId, log: log, createdAt: timestamp, order: index * 3 });
       var responses = narrativeByAction[actionId] || [];
       if (responses.length) {
         responses.forEach(function (entry, responseIndex) {
-          entries.push({ kind: 'response', log: log, narrative: entry, createdAt: Number(entry.createdAt) || timestamp, order: index * 3 + responseIndex + 1 });
+          entries.push({ kind: 'response', roundId: roundId, log: log, narrative: entry, createdAt: Number(entry.createdAt) || timestamp, order: index * 3 + responseIndex + 1 });
         });
       } else if (String(log && log.type || '').trim() !== 'custom') {
-        entries.push({ kind: 'outcome', log: log, createdAt: timestamp, order: index * 3 + 1 });
+        entries.push({ kind: 'outcome', roundId: roundId, log: log, createdAt: timestamp, order: index * 3 + 1 });
       }
     });
     narratives.filter(function (entry) { return !String(entry && entry.actionId || '').trim() || !actionLogs.some(function (log) { return String(log && log.id || '').trim() === String(entry.actionId || '').trim(); }); }).forEach(function (entry, index) {
-      entries.push({ kind: 'response', narrative: entry, createdAt: Number(entry.createdAt) || index, order: actionLogs.length * 3 + index });
+      entries.push({ kind: 'response', roundId: 'narrative-' + index, narrative: entry, createdAt: Number(entry.createdAt) || index, order: actionLogs.length * 3 + index });
     });
     return entries.sort(function (left, right) {
       return left.createdAt - right.createdAt || left.order - right.order;
-    }).slice(-24);
+    });
   }
 
-  function timelineHtml(world, escape) {
-    var entries = timelineEntries(world);
-    if (!entries.length) return '<p class="module4-list-empty">这是故事的开始。读完上面的现场后，告诉世界你准备怎么做。</p>';
+  function timelineRoundIds(entries) {
+    return entries.reduce(function (ids, entry) {
+      if (ids.indexOf(entry.roundId) < 0) ids.push(entry.roundId);
+      return ids;
+    }, []);
+  }
+
+  function timelineEntriesHtml(entries, world, escape) {
     return entries.map(function (entry) {
       var log = entry.log || {};
       var narrative = entry.narrative;
@@ -222,6 +278,28 @@
       }
       return '<article class="module4-timeline-entry module4-timeline-entry--response"><div class="module4-timeline-entry__meta"><strong>现场</strong><span>' + escape(actionTime(log)) + '</span></div><p>' + escape(actionOutcome(world, log)) + '</p></article>';
     }).join('');
+  }
+
+  function timelineHtml(world, escape) {
+    var entries = timelineEntries(world);
+    if (!entries.length) {
+      var hasArchivedHistory = Array.isArray(world && world.actionLogs) && world.actionLogs.length > 0;
+      return '<p class="module4-list-empty">' + (hasArchivedHistory
+        ? '新的一天开始了。之前的内容已归入世界轨迹。'
+        : '这是故事的开始。读完上面的现场后，告诉世界你准备怎么做。') + '</p>';
+    }
+    var roundIds = timelineRoundIds(entries);
+    var recentRoundIds = roundIds.slice(-6);
+    var earlierRoundIds = roundIds.slice(0, -6);
+    var recentEntries = entries.filter(function (entry) { return recentRoundIds.indexOf(entry.roundId) >= 0; });
+    var earlierEntries = entries.filter(function (entry) { return earlierRoundIds.indexOf(entry.roundId) >= 0; });
+    var earlier = earlierEntries.length ? [
+      '<details class="module4-timeline-earlier">',
+      '<summary>今天较早的记录 <span>' + earlierRoundIds.length + ' 轮</span></summary>',
+      '<div class="module4-timeline-earlier__body">' + timelineEntriesHtml(earlierEntries, world, escape) + '</div>',
+      '</details>'
+    ].join('') : '';
+    return earlier + timelineEntriesHtml(recentEntries, world, escape);
   }
 
   function previewSlot(world, item, period) {
@@ -296,9 +374,10 @@
       }).join('');
       return [
         '<article class="module4-npc-card">',
-        '<div class="module4-npc-card__heading"><h3>' + escape(npc.name) + '</h3><span>Runtime</span></div>',
+        '<div class="module4-npc-card__heading"><h3>' + escape(npc.name) + '</h3><span>当前 Runtime</span></div>',
         '<div class="module4-npc-card__state"><span>心情：' + escape(moodLabel(npc.mood)) + '</span><span>关系：' + escape(npc.relation.stage) + ' · ' + npc.relation.value + '</span></div>',
         '<ul class="module4-npc-card__schedule">' + schedule + '</ul>',
+        npcSourceHtml(world, npc, escape),
         '</article>'
       ].join('');
     }).join('') : '<p class="module4-list-empty">当前世界还没有 NPC Runtime。</p>';
@@ -362,7 +441,7 @@
     var facts = recentFacts(world);
     var dailyLogs = recentDailyLogs(world);
     var timeline = timelineHtml(world, escape);
-    var timelineCount = timelineEntries(world).length;
+    var timelineCount = timelineRoundIds(timelineEntries(world)).length;
     var factsHtml = facts.length ? facts.map(function (fact) {
       var period = Module4.Clock.periodLabel(fact.period);
       return '<li><span>第 ' + escape(fact.day) + ' 天' + escape(period) + '</span><strong>' + escape(fact.summary) + '</strong></li>';
@@ -447,7 +526,7 @@
       '<p class="module4-world-detail__description"><span class="module4-description-mark" aria-hidden="true">✦</span>' + escape(world.description || '尚未填写世界说明') + '</p>',
       currentSceneHtml(world, currentLocation, escape),
       '<section class="module4-narrative-panel module4-story-log">',
-      '<div class="module4-section-heading"><div><span class="module4-kicker">世界记录</span><h2>刚刚发生</h2></div><span class="module4-count">' + timelineCount + ' 段</span></div>',
+      '<div class="module4-section-heading"><div><span class="module4-kicker">世界记录</span><h2>刚刚发生</h2></div><span class="module4-count">' + timelineCount + ' 轮</span></div>',
       '<div class="module4-timeline">' + timeline + '</div>',
       '</section>',
       '<section class="module4-main-action module4-action-dock" data-module4-action-form>',

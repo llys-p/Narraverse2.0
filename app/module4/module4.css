@@ -1090,6 +1090,89 @@ body[data-host="denova"] .module4-shell {
   white-space: nowrap;
 }
 
+.module4-npc-source-details,
+.module4-timeline-earlier {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, .1));
+}
+
+.module4-npc-source-details summary,
+.module4-timeline-earlier summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.module4-npc-source-details summary strong,
+.module4-timeline-earlier summary span {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-weight: 500;
+}
+
+.module4-npc-source-details > p {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+  font-size: 10px;
+}
+
+.module4-npc-source-details code {
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+
+.module4-npc-source-details dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.module4-npc-source-details dl > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.module4-npc-source-details dt,
+.module4-npc-source-details dd {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.module4-npc-source-details dt,
+.module4-npc-source-details .is-empty dd,
+.module4-npc-source-missing {
+  color: var(--text-muted, rgba(255, 255, 255, .52));
+}
+
+.module4-npc-source-details dd {
+  max-height: 8em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary, rgba(255, 255, 255, .74));
+}
+
+.module4-npc-source-missing {
+  margin: 12px 0 0;
+  font-size: 11px;
+}
+
+.module4-timeline-earlier {
+  margin: 0 0 18px;
+}
+
+.module4-timeline-earlier__body {
+  display: grid;
+  gap: 12px;
+  padding: 0 0 14px;
+}
+
 .module4-npc-source-form {
   justify-content: flex-start;
   margin-top: 14px;

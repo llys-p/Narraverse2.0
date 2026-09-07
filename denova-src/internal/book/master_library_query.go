@@ -38,7 +38,9 @@ type MasterAssetList struct {
 type MasterAssetSummary struct {
 	MasterItemID     string               `json:"master_item_id"`
 	Name             string               `json:"name"`
+	Tags             []string             `json:"tags,omitempty"`
 	Description      string               `json:"description,omitempty"`
+	AvatarURL        string               `json:"avatar_url,omitempty"`
 	NestedEntryCount int                  `json:"nested_entry_count"`
 	RecordKind       string               `json:"record_kind"`
 	SemanticType     string               `json:"semantic_type"`
@@ -227,12 +229,39 @@ func (s *MasterLibraryStore) buildAssetSummaryUnlocked(manifest MasterLibraryMan
 	source, revision, found := masterSourceAndRevision(manifest, item.SourceID, item.SourceRevision)
 	status := deriveMasterPipeline(s.workspace, item, source, revision, found, manifest)
 	return MasterAssetSummary{
-		MasterItemID: item.MasterItemID, Name: masterItemDisplayName(item), Description: masterItemDescription(item),
+		MasterItemID: item.MasterItemID, Name: masterItemDisplayName(item), Tags: masterItemTags(item), Description: masterItemDescription(item),
+		AvatarURL:        masterCharacterAvatarURL(item, revision, found),
 		NestedEntryCount: len(item.NestedEntries), RecordKind: item.RecordKind,
 		SemanticType: item.SemanticType, SourceID: item.SourceID, SourceName: source.Filename,
 		SourceRevision: item.SourceRevision, MasterRevision: item.Revision,
 		Availability: status.Availability, UsageCount: status.UsageCount, Pipeline: status,
 	}
+}
+
+func masterCharacterAvatarURL(item MasterItem, revision MasterSourceRevision, found bool) string {
+	if item.RecordKind != "character_template" || !found || !strings.EqualFold(filepath.Ext(revision.OriginalPath), ".png") {
+		return ""
+	}
+	// Master item IDs are generated UUIDs. Keeping this URL relative lets the
+	// browser use the current Denova origin without exposing the archive path.
+	return "/api/library/assets/" + item.MasterItemID + "/avatar"
+}
+
+func masterItemTags(item MasterItem) []string {
+	if item.RecordKind != "character_template" {
+		return nil
+	}
+	if field, found := item.Fields["character.tags"]; found {
+		if tags := materialStrings(field.ActiveText); len(tags) > 0 {
+			return appendUnique(nil, tags...)
+		}
+		if tags := materialStrings(field.SourceText); len(tags) > 0 {
+			return appendUnique(nil, tags...)
+		}
+	}
+	tags := appendUnique(nil, materialStrings(item.Original["tags"])...)
+	tags = appendUnique(tags, materialStrings(item.SourceSemantics["tags"])...)
+	return tags
 }
 
 func masterItemDescription(item MasterItem) string {
@@ -244,19 +273,16 @@ func masterItemDescription(item MasterItem) string {
 			}
 		}
 	}
-	for _, entry := range item.NestedEntries {
-		prefix := "lorebook.entries/"
-		if item.RecordKind == "character_template" {
-			prefix = "character_book.entries/"
-		}
-		if field, found := item.Fields[prefix+entry.EntryID+"/content"]; found {
-			if text := masterSummaryText(firstNonEmpty(field.ActiveText, field.SourceText)); text != "" {
-				return text
-			}
+	for _, key := range []string{"description"} {
+		if text := masterSummaryText(materialString(item.Original[key])); text != "" {
+			return text
 		}
 	}
-	for _, key := range []string{"description", "content"} {
-		if text := masterSummaryText(materialString(item.Original[key])); text != "" {
+	// Legacy single-record imports may only have a top-level content value.
+	// Once nested entries exist, never promote one of their bodies to the
+	// asset introduction: the introduction is an independent top-level field.
+	if len(item.NestedEntries) == 0 {
+		if text := masterSummaryText(materialString(item.Original["content"])); text != "" {
 			return text
 		}
 	}

@@ -490,6 +490,158 @@ func (s *MasterLibraryStore) LoadItem(masterItemID string) (MasterItem, error) {
 	return s.loadItemUnlocked(masterItemID)
 }
 
+// MasterAssetArchiveResult describes a safe removal from the active Master
+// index. The item, source archive, translation files, and Adventure data are
+// intentionally kept on disk and remain traceable through legacy indexes.
+type MasterAssetArchiveResult struct {
+	MasterItemID           string `json:"master_item_id"`
+	ArchivedAt             string `json:"archived_at"`
+	PreservedInstanceCount int    `json:"preserved_instance_count"`
+}
+
+type masterAssetArchiveRecord struct {
+	SchemaVersion          int    `json:"schema_version"`
+	MasterItemID           string `json:"master_item_id"`
+	SourceID               string `json:"source_id"`
+	SourceRevision         string `json:"source_revision"`
+	ArchivedAt             string `json:"archived_at"`
+	PreservedInstanceCount int    `json:"preserved_instance_count"`
+}
+
+// ArchiveMasterAsset removes one asset from the active Master index without
+// deleting its source, item, translation, transaction, or Adventure files.
+// Existing Adventure instances are moved to the legacy index so their data
+// remains preserved while the archived asset no longer appears as active.
+func (s *MasterLibraryStore) ArchiveMasterAsset(masterItemID string) (MasterAssetArchiveResult, error) {
+	masterItemID = strings.TrimSpace(masterItemID)
+	if masterItemID == "" {
+		return MasterAssetArchiveResult{}, errors.New("总库资产 ID 不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	manifest, err := s.loadManifestUnlocked()
+	if err != nil {
+		return MasterAssetArchiveResult{}, err
+	}
+	var itemRef MasterItemRef
+	found := false
+	for _, ref := range manifest.Items {
+		if ref.MasterItemID == masterItemID && ref.RecordKind != "worldbook_entry" {
+			itemRef = ref
+			found = true
+			break
+		}
+	}
+	if !found {
+		return MasterAssetArchiveResult{}, os.ErrNotExist
+	}
+	if _, err := s.loadItemUnlocked(masterItemID); err != nil {
+		return MasterAssetArchiveResult{}, err
+	}
+
+	activeItemIDs := make(map[string]bool, len(manifest.Items))
+	for _, ref := range manifest.Items {
+		if ref.MasterItemID != masterItemID {
+			activeItemIDs[ref.MasterItemID] = true
+		}
+	}
+	manifest.Items = moveMasterItemToLegacy(manifest.Items, masterItemID, &manifest.LegacyItems)
+	manifest.Translations = moveMasterTranslationsToLegacy(manifest.Translations, masterItemID, &manifest.LegacyTranslations)
+	instanceCount := 0
+	keptInstances := make([]MasterInstanceRef, 0, len(manifest.Instances))
+	for _, instance := range manifest.Instances {
+		if instance.MasterItemID == masterItemID {
+			manifest.LegacyInstances = append(manifest.LegacyInstances, instance)
+			instanceCount++
+			continue
+		}
+		keptInstances = append(keptInstances, instance)
+	}
+	manifest.Instances = keptInstances
+	keptImports := make([]MasterImportRef, 0, len(manifest.Imports))
+	for _, ref := range manifest.Imports {
+		transaction, loadErr := s.loadImportUnlocked(ref.Path)
+		containsAsset := false
+		containsOtherActiveAsset := false
+		if loadErr == nil {
+			for _, itemID := range transaction.ItemIDs {
+				if itemID == masterItemID {
+					containsAsset = true
+					continue
+				}
+				if activeItemIDs[itemID] {
+					containsOtherActiveAsset = true
+				}
+			}
+		}
+		if containsAsset && !containsOtherActiveAsset {
+			manifest.LegacyImports = append(manifest.LegacyImports, ref)
+			continue
+		}
+		keptImports = append(keptImports, ref)
+	}
+	manifest.Imports = keptImports
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	tombstone := masterAssetArchiveRecord{
+		SchemaVersion: masterSchemaVersion, MasterItemID: masterItemID,
+		SourceID: itemRef.SourceID, SourceRevision: itemRef.SourceRevision,
+		ArchivedAt: now, PreservedInstanceCount: instanceCount,
+	}
+	tombstonePath := filepath.ToSlash(filepath.Join(".narraverse", "master", "tombstones", masterItemID+".json"))
+	if err := s.writeJSONUnlocked(tombstonePath, tombstone); err != nil {
+		return MasterAssetArchiveResult{}, err
+	}
+	if err := s.saveManifestUnlocked(manifest); err != nil {
+		return MasterAssetArchiveResult{}, err
+	}
+	return MasterAssetArchiveResult{MasterItemID: masterItemID, ArchivedAt: now, PreservedInstanceCount: instanceCount}, nil
+}
+
+// GetAssetAvatar returns the archived PNG for a character card. The archive
+// path is resolved from the Master manifest, never from a client-supplied
+// filesystem path, so the endpoint cannot be used as a general file reader.
+func (s *MasterLibraryStore) GetAssetAvatar(masterItemID string) ([]byte, error) {
+	masterItemID = strings.TrimSpace(masterItemID)
+	if masterItemID == "" {
+		return nil, errors.New("总库资产 ID 不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	manifest, err := s.loadManifestUnlocked()
+	if err != nil {
+		return nil, err
+	}
+	item, err := s.loadItemUnlocked(masterItemID)
+	if err != nil {
+		return nil, err
+	}
+	if item.RecordKind != "character_template" {
+		return nil, os.ErrNotExist
+	}
+	_, revision, found := masterSourceAndRevision(manifest, item.SourceID, item.SourceRevision)
+	if !found || !strings.EqualFold(filepath.Ext(revision.OriginalPath), ".png") {
+		return nil, os.ErrNotExist
+	}
+	workspace, err := filepath.Abs(s.workspace)
+	if err != nil {
+		return nil, err
+	}
+	absPath, err := filepath.Abs(filepath.Join(workspace, filepath.FromSlash(revision.OriginalPath)))
+	if err != nil {
+		return nil, err
+	}
+	if absPath != workspace && !strings.HasPrefix(absPath, workspace+string(filepath.Separator)) {
+		return nil, errors.New("头像归档路径不在总库 workspace 范围内")
+	}
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 // UpdateMasterAssetDescription edits the human-facing introduction of a
 // lorebook directly in Master. It is metadata editing, not a translation
 // proposal, so it remains available even when the source had no description
@@ -513,13 +665,14 @@ func (s *MasterLibraryStore) UpdateMasterAssetDescription(masterItemID, descript
 	if item.RecordKind != "lorebook_template" {
 		return MasterItem{}, errors.New("只有设定书资产可以修改设定书介绍")
 	}
+	fieldPath, originalKey := "lorebook.description", "description"
 	if item.Fields == nil {
 		item.Fields = map[string]MasterField{}
 	}
 	if description == "" {
-		delete(item.Fields, "lorebook.description")
+		delete(item.Fields, fieldPath)
 	} else {
-		item.Fields["lorebook.description"] = MasterField{
+		item.Fields[fieldPath] = MasterField{
 			SourceText: description, SourceSHA256: masterHashString(description),
 			Risk: masterFieldRiskSafe, Required: false, NeedsTranslation: false,
 			ActiveText: description, ActiveKind: "human",
@@ -527,9 +680,9 @@ func (s *MasterLibraryStore) UpdateMasterAssetDescription(masterItemID, descript
 	}
 	item.Original = cloneMasterMap(item.Original)
 	if description == "" {
-		delete(item.Original, "description")
+		delete(item.Original, originalKey)
 	} else {
-		item.Original["description"] = description
+		item.Original[originalKey] = description
 	}
 	item.ActiveWorkingRevision = masterActiveWorkingRevision(item.Fields)
 	if err := s.saveItemUnlocked(&manifest, item); err != nil {

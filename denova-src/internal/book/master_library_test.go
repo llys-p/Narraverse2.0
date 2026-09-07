@@ -1,6 +1,7 @@
 package book
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,6 +48,57 @@ func TestMasterOnlyTransactionStopsAtReady(t *testing.T) {
 	}
 	if !store.TransactionTargetsAdventure(MasterImportTransaction{AdventureWorkspace: adventure}) {
 		t.Fatal("Adventure-bound transaction must keep its projection step")
+	}
+}
+
+func TestArchiveMasterAssetRemovesActiveIndexButPreservesData(t *testing.T) {
+	store, adventure := masterTestStore(t)
+	ingested, err := store.Ingest(MasterIngestInput{
+		Filename: "aiko.json", Data: []byte("aiko-source"), SourceKind: "user_upload",
+		AdventureWorkspace: adventure, Items: []MasterItemInput{masterTestItem("character", "Aiko")},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := ingested.Items[0]
+	instance := MasterInstanceRef{
+		InstanceID: "instance-aiko", ImportID: ingested.Transaction.ImportID,
+		MasterItemID: target.MasterItemID, AdventureKey: "adventure-a",
+		TargetLoreIDs: []string{"lore-aiko"}, LoadedRevision: target.Revision,
+	}
+	if _, err := store.MarkImportInstantiated(ingested.Transaction.ImportID, instance.TargetLoreIDs, []MasterInstanceRef{instance}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := store.ArchiveMasterAsset(target.MasterItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.MasterItemID != target.MasterItemID || result.PreservedInstanceCount != 1 {
+		t.Fatalf("archive result = %#v", result)
+	}
+	assets, err := store.ListAssets(MasterAssetQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assets.Total != 0 || len(assets.Assets) != 0 {
+		t.Fatalf("archived asset remains active: %#v", assets)
+	}
+	if _, err := store.GetAsset(target.MasterItemID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("archived asset detail error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(filepath.Join(store.Workspace(), filepath.FromSlash(masterItemRelPath(target.MasterItemID)))); err != nil {
+		t.Fatalf("master item file was removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(store.Workspace(), filepath.FromSlash(ingested.SourceRevision.OriginalPath))); err != nil {
+		t.Fatalf("source archive was removed: %v", err)
+	}
+	manifest, err := store.loadManifestUnlocked()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.LegacyItems) != 1 || len(manifest.LegacyInstances) != 1 || manifest.LegacyInstances[0].TargetLoreIDs[0] != "lore-aiko" {
+		t.Fatalf("archived records were not preserved: %#v", manifest)
 	}
 }
 

@@ -29,6 +29,7 @@ context.Module4 = {
   World: {
     listNpcs(world) { return Object.values(world.npcs); },
     listSourceCharacters() { return []; },
+    getNpcSourceBinding(world, sourceRef) { return (world.sourceBindings || {})[sourceRef] || null; },
   },
   UI: {
     Components: {
@@ -64,7 +65,7 @@ function makeWorld(currentDay, actionLogs = [], narrativeEntries = []) {
     id: 'ui-test-world',
     title: 'UI 测试世界',
     description: '用于验证 Preview 诊断显示。',
-    clock: { day: 1, period: 'morning' },
+    clock: { day: Number(currentDay.day) || 1, period: 'morning' },
     player: { name: '玩家', identity: '测试者', location: 'library', energy: 100, maxEnergy: 100 },
     locations: [{ id: 'library', name: '图书馆', description: '' }],
     npcs: {
@@ -75,6 +76,18 @@ function makeWorld(currentDay, actionLogs = [], narrativeEntries = []) {
         mood: 'neutral',
         relation: { stage: 'unknown', value: 0 },
         schedule: { morning: {}, afternoon: {}, evening: {} },
+      },
+    },
+    sourceBindings: {
+      'source:npc1': {
+        sourceRef: 'source:npc1',
+        sourceVersion: 'source:npc1@2',
+        snapshot: {
+          name: '测试 NPC',
+          personality: '谨慎而温柔',
+          appearance: '总是带着一本旧笔记。',
+          scenario: '',
+        },
       },
     },
     currentDay,
@@ -168,6 +181,10 @@ const managementHtml = render({
 assert.ok(managementHtml.includes('图书馆 · 查找档案'));
 assert.ok(managementHtml.includes('试玩检查'));
 assert.ok(managementHtml.includes('这些安排只属于当前世界'));
+assert.ok(managementHtml.includes('来源角色卡'));
+assert.ok(managementHtml.includes('source:npc1@2'));
+assert.ok(managementHtml.includes('谨慎而温柔'));
+assert.ok(managementHtml.includes('当前 Runtime'));
 
 const actionTraceHtml = render({
   day: 1,
@@ -243,6 +260,45 @@ const legacyCustomHtml = render({ day: 1, previewGenerated: false }, [{
 }]);
 assert.ok(legacyCustomHtml.includes('开始上课'));
 assert.strictEqual(legacyCustomHtml.includes('已记录自定义行动'), false);
+
+const foldedLogs = Array.from({ length: 8 }, (_, index) => ({
+  id: `fold-${index + 1}`,
+  day: 1,
+  period: 'morning',
+  type: 'custom',
+  text: `第 ${index + 1} 轮行动`,
+  createdAt: 200 + index * 2,
+}));
+const foldedNarratives = foldedLogs.map((log, index) => ({
+  actionId: log.id,
+  day: 1,
+  period: 'morning',
+  text: `第 ${index + 1} 轮回应`,
+  createdAt: 201 + index * 2,
+}));
+const foldedHtml = render({ day: 1, previewGenerated: false }, foldedLogs, false, foldedNarratives);
+assert.ok(foldedHtml.includes('今天较早的记录'));
+assert.ok(foldedHtml.includes('2 轮'));
+assert.ok(foldedHtml.includes('第 8 轮回应'));
+
+const archivedHtml = render({ day: 2, previewGenerated: false }, foldedLogs.concat([{
+  id: 'day-2-action',
+  day: 2,
+  period: 'morning',
+  type: 'custom',
+  text: '第二天的行动',
+  createdAt: 300,
+}]), false, foldedNarratives.concat([{
+  actionId: 'day-2-action',
+  day: 2,
+  period: 'morning',
+  text: '第二天的回应',
+  createdAt: 301,
+}]));
+assert.ok(archivedHtml.includes('第二天的回应'));
+assert.strictEqual(archivedHtml.includes('第 8 轮回应'), false);
+const newDayHtml = render({ day: 2, previewGenerated: false }, foldedLogs, false, foldedNarratives);
+assert.ok(newDayHtml.includes('新的一天开始了。之前的内容已归入世界轨迹。'));
 
 const retryHtml = render({ day: 1, previewGenerated: false }, [], false, [], '我想重试这句话');
 assert.ok(retryHtml.includes('value="我想重试这句话"'));

@@ -185,6 +185,16 @@ assert.strictEqual(custom.ok, true);
 assert.strictEqual(custom.action.type, 'custom');
 assert.strictEqual(custom.world.narrativeEntries.length, 1);
 assert.strictEqual(custom.message.includes('我还不能确定'), false);
+assert.strictEqual(custom.action.advancesTime, true);
+assert.strictEqual(custom.world.clock.tick, 1);
+assert.strictEqual(custom.world.player.energy, 95);
+
+const failedCustom = await Interaction.start(world, '我继续听雨', {
+  callLLM: async () => { throw new Error('simulated custom provider failure'); },
+});
+assert.strictEqual(failedCustom.ok, false);
+assert.deepStrictEqual(plain(failedCustom.world.clock), plain(world.clock));
+assert.strictEqual(failedCustom.world.player.energy, world.player.energy);
 
 const beforeMoveFailure = plain(world);
 const failedMove = await Interaction.start(world, {

@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, resolveTranslationJob, retryTranslationJob, startMasterAgent, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal } from '@/lib/api-client'
+import { addMasterCharacterEntry, addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, removeMasterAsset, resolveTranslationJob, retryTranslationJob, startMasterAgent, stopMasterAsset, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal } from '@/lib/api-client'
 import { LibraryView } from './LibraryView'
 
 vi.mock('@/components/Chat/ConfigManagerChat', () => ({
@@ -9,6 +9,7 @@ vi.mock('@/components/Chat/ConfigManagerChat', () => ({
 }))
 
 vi.mock('@/lib/api-client', () => ({
+  addMasterCharacterEntry: vi.fn(),
   addMasterLorebookEntry: vi.fn(),
   fetchMasterAsset: vi.fn(),
   fetchMasterAssetPipeline: vi.fn(),
@@ -23,6 +24,8 @@ vi.mock('@/lib/api-client', () => ({
   fetchMasterTranslationRuntime: vi.fn(),
   listMasterAssets: vi.fn(),
   instantiateMasterAsset: vi.fn(),
+  stopMasterAsset: vi.fn(),
+  removeMasterAsset: vi.fn(),
   resolveTranslationJob: vi.fn(),
   deleteTranslationJob: vi.fn(),
   retryTranslationJob: vi.fn(),
@@ -38,6 +41,7 @@ vi.mock('@/lib/api-client', () => ({
 const summary = {
   master_item_id: 'master-aiko',
   name: 'Aiko',
+  tags: ['Anime', 'Love'],
   description: 'A curious alchemist.',
   nested_entry_count: 1,
   record_kind: 'character_template',
@@ -69,8 +73,11 @@ describe('LibraryView', () => {
     vi.mocked(syncMasterAssetToAdventure).mockReset().mockResolvedValue({ result: { master_item_id: 'master-aiko', updated_lore_ids: ['lore-1'], skipped: false }, usage: { used: true, has_new_version: false } } as never)
     vi.mocked(updateMasterAssetDescription).mockReset().mockResolvedValue({ item: {} } as never)
     vi.mocked(updateMasterAssetFields).mockReset().mockResolvedValue({ item: {} } as never)
-    vi.mocked(addMasterLorebookEntry).mockReset().mockResolvedValue({ item: {} } as never)
+  vi.mocked(addMasterLorebookEntry).mockReset().mockResolvedValue({ item: {} } as never)
+    vi.mocked(addMasterCharacterEntry).mockReset().mockResolvedValue({ item: {} } as never)
     vi.mocked(instantiateMasterAsset).mockReset().mockResolvedValue({ item_ids: ['lore-1'], skipped_ids: [] } as never)
+    vi.mocked(stopMasterAsset).mockReset().mockResolvedValue({ master_item_id: 'master-aiko', stopped_fields: 1, cancelled_tasks: 1, deleted_tasks: 0, pending_tasks: 0, queue_available: true } as never)
+    vi.mocked(removeMasterAsset).mockReset().mockResolvedValue({ master_item_id: 'master-aiko', archived_at: '2026-09-07T00:00:00Z', preserved_instance_count: 0, queue: { master_item_id: 'master-aiko', stopped_fields: 0, cancelled_tasks: 0, deleted_tasks: 0, pending_tasks: 0, queue_available: true } } as never)
     vi.mocked(createLoreItem).mockReset().mockResolvedValue({ id: 'manual-lore-1' } as never)
     vi.mocked(fetchMasterTranslationRuntime).mockReset().mockResolvedValue({ fields: [], active_fields: 1, total_fields: 1, review_fields: 0, failed_fields: 0, queue_paused: false, runtime_available: true }).mockResolvedValue({ fields: [], active_fields: 1, total_fields: 1, review_fields: 0, failed_fields: 0, queue_paused: false, runtime_available: true })
     vi.mocked(resolveTranslationJob).mockReset()
@@ -90,6 +97,8 @@ describe('LibraryView', () => {
     render(<LibraryView />)
 
     await screen.findByText('A curious alchemist.')
+    expect(screen.getByText('动漫')).toBeInTheDocument()
+    expect(screen.getByText('恋爱')).toBeInTheDocument()
     expect(screen.getByText('1 个内部设定')).toBeInTheDocument()
     expect(screen.getAllByText('可以使用').length).toBeGreaterThan(0)
     expect(screen.queryByText('usable')).not.toBeInTheDocument()
@@ -102,11 +111,137 @@ describe('LibraryView', () => {
       expect(fetchMasterAssetTranslations).toHaveBeenCalledWith('master-aiko')
       expect(fetchMasterAssetUsages).toHaveBeenCalledWith('master-aiko')
     })
-    expect(screen.getByText('角色概览')).toBeInTheDocument()
+    expect(screen.getAllByText('角色概览').length).toBeGreaterThanOrEqual(2)
     expect(screen.queryByText('总库资产 ID')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: '技术信息' }))
     expect(screen.getByText('总库资产 ID')).toBeInTheDocument()
+  })
+
+  it('shows stop and remove actions for every character card', async () => {
+    const user = userEvent.setup()
+    render(<LibraryView />)
+
+    await screen.findByText('A curious alchemist.')
+    expect(screen.getByRole('button', { name: '停止' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '删除' }))
+    expect(screen.getByText('从总资料库移除角色卡？')).toBeInTheDocument()
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '删除' }))
+    await waitFor(() => expect(removeMasterAsset).toHaveBeenCalledWith('master-aiko'))
+  })
+
+  it('shows a character profile with current, original, and compare views', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAsset).mockResolvedValueOnce({
+      summary,
+      item: {
+        original: { name: 'Aiko' }, source_semantics: { tags: ['alchemist'] }, runtime_semantics: {}, nested_entries: [],
+        fields: {
+          'character.name': { source_text: 'Aiko', active_text: '爱子' },
+          'character.description': { source_text: 'A curious alchemist.', active_text: '好奇的炼金术士。' },
+          'character.personality': { source_text: 'Curious and brave.', active_text: '好奇而勇敢。' },
+        },
+      },
+      source: { filename: 'aiko.json' }, source_revision: { revision: 'src-r1', sha256: 'sha', imported_at: '2026-08-29T08:37:18Z' }, translations: [], usages: [],
+    } as never)
+
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    expect(await screen.findByText('人物档案')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '角色卡简介' })).not.toBeInTheDocument()
+    expect(screen.getByText('原文名称: Aiko')).toBeInTheDocument()
+    expect(screen.getByText('alchemist')).toBeInTheDocument()
+    expect(screen.getAllByText('好奇的炼金术士。').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: '原文' }))
+    expect(screen.getAllByText('A curious alchemist.').length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: '中英对照' }))
+    expect(screen.getAllByText('当前内容').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('原文').length).toBeGreaterThan(0)
+  })
+
+  it('provides the selected character editor directory with unknown placeholders and persistent new entries', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAsset).mockResolvedValueOnce({
+      summary,
+      item: { revision: 'master-r1', original: { name: 'Aiko' }, source_semantics: {}, runtime_semantics: {}, nested_entries: [], fields: { 'character.description': { active_text: '角色介绍' } } },
+      source: { filename: 'aiko.json' }, source_revision: { revision: 'src-r1', sha256: 'sha' }, translations: [], usages: [],
+    } as never)
+
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    expect(screen.getByRole('complementary', { name: '角色条目' })).toBeInTheDocument()
+    expect(screen.getAllByText('未知').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: '添加条目' }))
+    await user.type(screen.getByLabelText('条目标题'), '自定义字段')
+    await user.type(screen.getByLabelText('正文'), '这是角色卡的补充内容。')
+    await user.click(screen.getByRole('button', { name: '保存条目' }))
+
+    await waitFor(() => expect(addMasterCharacterEntry).toHaveBeenCalledWith('master-aiko', 'master-r1', { name: '自定义字段', content: '这是角色卡的补充内容。' }))
+  })
+
+  it('edits a character-book entry from the left directory through the Master human-edit API', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAsset).mockResolvedValueOnce({
+      summary,
+      item: { revision: 'master-r1', original: {}, source_semantics: {}, runtime_semantics: {}, nested_entries: [{ entry_id: 'entry-rule', original: { comment: '隐藏规则', content: '旧规则' } }], fields: { 'character_book.entries/entry-rule/comment': { active_text: '隐藏规则' }, 'character_book.entries/entry-rule/content': { active_text: '旧规则' } } },
+      source: { filename: 'aiko.json' }, source_revision: { revision: 'src-r1', sha256: 'sha' }, translations: [], usages: [],
+    } as never)
+
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    await user.click(screen.getByRole('button', { name: '隐藏规则' }))
+    await user.click(screen.getByRole('button', { name: '编辑条目' }))
+    const content = screen.getByLabelText('正文')
+    await user.clear(content)
+    await user.type(content, '新规则')
+    await user.click(screen.getByRole('button', { name: '保存条目' }))
+
+    await waitFor(() => expect(updateMasterAssetFields).toHaveBeenCalledWith('master-aiko', 'master-r1', { 'character_book.entries/entry-rule/content': '新规则' }))
+  })
+
+  it('keeps the complete人物档案文本 available instead of clipping the profile summary', async () => {
+    const user = userEvent.setup()
+    const completeProfile = '姓名：Aiko\n身体：金色长发、棕色眼睛\n喜好：Cosplay、摄影\n描述：完整角色档案末尾。'
+    vi.mocked(fetchMasterAsset).mockResolvedValueOnce({
+      summary,
+      item: {
+        original: { name: 'Aiko' }, source_semantics: {}, runtime_semantics: {}, nested_entries: [],
+        fields: { 'character.description': { active_text: completeProfile, source_text: completeProfile } },
+      },
+      source: { filename: 'aiko.json' }, source_revision: { revision: 'src-r1', sha256: 'sha', imported_at: '2026-08-29T08:37:18Z' }, translations: [], usages: [],
+    } as never)
+
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    const profileText = screen.getByText(/完整角色档案末尾/)
+    expect(profileText).toBeInTheDocument()
+    expect(profileText).not.toHaveClass('max-h-24')
+    expect(profileText).not.toHaveClass('overflow-hidden')
+  })
+
+  it('shows editable Chinese character tags without adding a character introduction', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAsset).mockResolvedValueOnce({
+      summary,
+       item: { revision: 'master-r1', original: { name: 'Aiko', tags: ['Anime', 'Love'] }, source_semantics: { tags: ['Anime', 'Love'] }, runtime_semantics: {}, nested_entries: [], fields: {} },
+      source: { filename: 'aiko.json' }, source_revision: { revision: 'src-r1', sha256: 'sha', imported_at: '2026-08-29T08:37:18Z' }, translations: [], usages: [],
+    } as never)
+
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    expect(screen.getByRole('heading', { name: '标签' })).toBeInTheDocument()
+    expect(screen.getByText('动漫')).toBeInTheDocument()
+    expect(screen.getByText('恋爱')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '编辑标签' }))
+    const input = screen.getByPlaceholderText('输入中文标签，用逗号或换行分隔')
+    expect(input).toHaveValue('动漫、恋爱')
+    await user.clear(input)
+    await user.type(input, '动漫、恋爱、炼金术士')
+    await user.click(screen.getByRole('button', { name: '保存标签' }))
+    await waitFor(() => expect(updateMasterAssetFields).toHaveBeenCalledWith('master-aiko', 'master-r1', { 'character.tags': '动漫\n恋爱\n炼金术士' }))
   })
 
   it('edits a lorebook introduction through the dedicated Master metadata API', async () => {
@@ -138,6 +273,28 @@ describe('LibraryView', () => {
     await user.click(screen.getByRole('button', { name: '保存介绍' }))
 
     await waitFor(() => expect(updateMasterAssetDescription).toHaveBeenCalledWith('master-world', '人工维护的介绍'))
+  })
+
+  it('does not show the first nested entry as the lorebook introduction', async () => {
+    const user = userEvent.setup()
+    const lorebookSummary = { ...summary, master_item_id: 'master-world-empty', name: '无简介设定', description: '', record_kind: 'lorebook_template', semantic_type: 'lorebook', nested_entry_count: 1, usage_count: 0, pipeline: { ...summary.pipeline, usage_count: 0 } }
+    vi.mocked(listMasterAssets).mockResolvedValue({ assets: [lorebookSummary], total: 1 } as never)
+    vi.mocked(fetchMasterAsset).mockResolvedValue({
+      summary: lorebookSummary,
+      item: {
+        original: { name: '无简介设定' }, source_semantics: {}, runtime_semantics: {},
+        nested_entries: [{ entry_id: 'entry-1', original: { comment: '第一条', content: '第一条正文' } }], fields: {},
+      },
+      source: { filename: 'world.json' }, source_revision: { revision: 'src-r1', sha256: 'sha', imported_at: '2026-08-29T08:37:18Z' }, translations: [], usages: [],
+    } as never)
+
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /无简介设定/ }))
+    const heading = await screen.findByRole('heading', { name: '设定书介绍' })
+    const introduction = heading.parentElement?.parentElement
+    expect(introduction).toHaveTextContent('暂无简介')
+    expect(introduction).not.toHaveTextContent('第一条正文')
+    expect(screen.getByText('第一条正文')).toBeInTheDocument()
   })
 
   it('creates a missing optional lorebook field through direct human save', async () => {

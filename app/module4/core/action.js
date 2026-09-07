@@ -553,6 +553,13 @@
     var next = normalizeWorld(world);
     var beforeWorld = clone(next);
     var actionDefinition = definition(action.type);
+    if (Module4.Clock.isV15(next) && action.type === 'custom') {
+      action = Object.assign({}, action, {
+        energyCost: clockCost('chat'),
+        advancesTime: true
+      });
+      actionDefinition = { advancesTime: true, clockType: 'chat' };
+    }
     if (action.type === 'unsupported') {
       return inputFailure(action, next, 'unsupported', action.reason || 'unsupported', '这个行动目前还没有对应的模块四能力。');
     }
@@ -649,7 +656,7 @@
       if (scheduleRewrite && scheduleRewrite.changed) next = scheduleRewrite.world;
     }
 
-    if (action.type === 'custom' && !judgment.required) {
+    if (action.type === 'custom' && !judgment.required && !Module4.Clock.isV15(next)) {
       return appendActionLog({
         ok: true,
         changed: false,

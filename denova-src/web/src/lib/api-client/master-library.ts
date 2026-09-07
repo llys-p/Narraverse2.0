@@ -45,7 +45,9 @@ export interface MasterPipelineStatus {
 export interface MasterAssetSummary {
   master_item_id: string
   name: string
+  tags?: string[]
   description?: string
+  avatar_url?: string
   nested_entry_count: number
   record_kind: string
   semantic_type: string
@@ -182,6 +184,31 @@ export function fetchMasterAsset(masterItemID: string): Promise<MasterAssetDetai
   return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}`)
 }
 
+export interface MasterAssetQueueOperationResult {
+  master_item_id: string
+  stopped_fields: number
+  cancelled_tasks: number
+  deleted_tasks: number
+  pending_tasks: number
+  queue_available: boolean
+  queue_error?: string
+}
+
+export function stopMasterAsset(masterItemID: string): Promise<MasterAssetQueueOperationResult> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/stop`, { method: 'POST' })
+}
+
+export interface MasterAssetRemovalResult {
+  master_item_id: string
+  archived_at: string
+  preserved_instance_count: number
+  queue: MasterAssetQueueOperationResult
+}
+
+export function removeMasterAsset(masterItemID: string): Promise<MasterAssetRemovalResult> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}`, { method: 'DELETE' })
+}
+
 export function fetchMasterAssetPipeline(masterItemID: string): Promise<MasterPipelineStatus> {
   return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/pipeline`)
 }
@@ -216,6 +243,14 @@ export function updateMasterAssetFields(masterItemID: string, expectedRevision: 
 
 export function addMasterLorebookEntry(masterItemID: string, expectedRevision: string, input: { name: string; content: string; keywords: string[]; secondary_keys: string[] }): Promise<{ item: Record<string, unknown> }> {
   return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_revision: expectedRevision, ...input }),
+  })
+}
+
+export function addMasterCharacterEntry(masterItemID: string, expectedRevision: string, input: { name: string; content: string }): Promise<{ item: Record<string, unknown> }> {
+  return requestJSON(`/api/library/assets/${encodeURIComponent(masterItemID)}/character-entries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ expected_revision: expectedRevision, ...input }),
