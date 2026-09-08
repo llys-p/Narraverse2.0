@@ -1,0 +1,1364 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>叙界 Narraverse · 世界工作区 Demo v3</title>
+<style>
+:root{
+  --canvas:#171614; --surface:#211f1b; --surface2:#292720; --surface3:#302d26;
+  --ink:#eee9df; --ink2:rgba(238,233,223,.74); --ink3:rgba(238,233,223,.5);
+  --copper:#c99b58; --copper-dim:#8a6a3a;
+  --green:#8fae8d; --red:#c77c72; --blue:#7d93a8; --violet:#9a87ab;
+  --line:rgba(238,233,223,.12); --line2:rgba(238,233,223,.22);
+  --radius:8px; --radius-s:6px;
+  --font:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--canvas);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.7}
+body{padding-top:52px;padding-left:168px;min-height:100vh}
+a{color:var(--copper);text-decoration:none}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#3a352c;border-radius:5px;border:2px solid var(--canvas)}
+::-webkit-scrollbar-track{background:transparent}
+@media (prefers-reduced-motion: reduce){*,*:before,*:after{animation-duration:.01ms !important;transition-duration:.01ms !important}}
+
+/* ---------- 顶栏 ---------- */
+#topbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:50;display:flex;align-items:center;gap:8px;padding:0 14px;background:rgba(23,22,20,.96);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:.5px;cursor:pointer;white-space:nowrap;margin-right:8px}
+.brand .moon{width:20px;height:20px;border-radius:50%;background:radial-gradient(circle at 62% 38%,#d9b98a,var(--copper) 55%,#5c4527);box-shadow:0 0 8px rgba(201,155,88,.35)}
+.brand small{color:var(--ink3);font-weight:400;font-size:11px;margin-left:2px}
+.seg{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:var(--radius-s);padding:4px 10px;cursor:pointer;background:var(--surface);white-space:nowrap;font-size:12px;color:var(--ink2)}
+.seg:hover{border-color:var(--line2)}
+.seg b{color:var(--ink);font-weight:600}
+.seg .k{color:var(--ink3)}
+#modeSeg b{color:var(--copper)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.badge{font-size:11.5px;border:1px solid rgba(201,155,88,.45);color:var(--copper);background:rgba(201,155,88,.08);padding:3px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.badge:hover{border-color:var(--copper)}
+.badge.green{border-color:rgba(143,174,141,.4);color:var(--green);background:rgba(143,174,141,.08);cursor:default}
+.ver-tag{font-size:11px;color:var(--ink3);font-family:ui-monospace,Consolas,monospace;white-space:nowrap}
+
+/* ---------- 左侧平台控制平面 ---------- */
+#rail{position:fixed;top:52px;bottom:0;left:0;width:168px;z-index:40;background:var(--surface);border-right:1px solid var(--line);padding:14px 10px;overflow-y:auto}
+.rail-cap{font-size:10.5px;color:var(--ink3);letter-spacing:2px;padding:0 8px 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.rail-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-s);color:var(--ink2);font-size:12.5px;cursor:pointer;border:1px solid transparent;margin-bottom:2px}
+.rail-item:hover{background:var(--surface2);color:var(--ink)}
+.rail-item.on{background:rgba(201,155,88,.1);border-color:rgba(201,155,88,.35);color:var(--copper);font-weight:600}
+.rail-item .ic{width:15px;height:15px}
+.rail-note{margin-top:12px;padding:8px;border:1px dashed var(--line2);border-radius:var(--radius-s);font-size:10.5px;color:var(--ink3);line-height:1.5}
+
+/* ---------- 工作区导航 ---------- */
+#wsNav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap;align-items:center}
+#wsNav a{color:var(--ink2);padding:7px 13px;font-size:13px;border-radius:var(--radius-s) var(--radius-s) 0 0;border-bottom:2px solid transparent}
+#wsNav a:hover{color:var(--ink);background:var(--surface2)}
+#wsNav a.on{color:var(--copper);border-bottom-color:var(--copper);background:rgba(201,155,88,.06);font-weight:600}
+#wsNav .mode-tag{margin-left:auto;font-size:11px;color:var(--ink3)}
+
+/* ---------- 通用组件 ---------- */
+#app{max-width:1120px;margin:0 auto;padding:0 20px 90px}
+.page-head{margin-bottom:18px}
+.page-head h1{font-size:21px;font-weight:600;letter-spacing:.4px}
+.page-head p{color:var(--ink2);font-size:13px;margin-top:2px}
+.cards{display:grid;gap:14px}
+.c2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.c3{grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.c4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:6px}
+.card .sub{color:var(--ink2);font-size:12px}
+.card .desc{color:var(--ink2);font-size:12.5px;margin-top:4px}
+.btn{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);color:var(--ink);border:1px solid var(--line2);border-radius:var(--radius-s);padding:7px 14px;font-size:13px;cursor:pointer;font-family:var(--font);transition:background .15s,border-color .15s}
+.btn:hover{border-color:var(--copper);color:var(--copper)}
+.btn.primary{background:var(--copper);border-color:var(--copper);color:#1a160f;font-weight:600}
+.btn.primary:hover{background:#d6a968;color:#1a160f}
+.btn.ghost{background:transparent;border-color:var(--line)}
+.btn.danger{color:var(--red);border-color:rgba(199,124,114,.4)}
+.btn.danger:hover{background:rgba(199,124,114,.08)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);color:var(--ink2);white-space:nowrap}
+.chip.copper{color:var(--copper);border-color:rgba(201,155,88,.4);background:rgba(201,155,88,.08)}
+.chip.green{color:var(--green);border-color:rgba(143,174,141,.4);background:rgba(143,174,141,.08)}
+.chip.red{color:var(--red);border-color:rgba(199,124,114,.4);background:rgba(199,124,114,.08)}
+.chip.blue{color:var(--blue);border-color:rgba(125,147,168,.4);background:rgba(125,147,168,.08)}
+.chip.violet{color:var(--violet);border-color:rgba(154,135,171,.4);background:rgba(154,135,171,.08)}
+.chip.gray{color:var(--ink3)}
+input[type=text],input[type=number],textarea,select{width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:var(--radius-s);color:var(--ink);padding:8px 10px;font-family:var(--font);font-size:13px;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--copper);box-shadow:0 0 0 2px rgba(201,155,88,.18)}
+textarea{resize:vertical;min-height:84px}
+label{display:block;font-size:12px;color:var(--ink2);margin:10px 0 4px}
+.field{margin-bottom:10px}
+.bar{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:3px;background:var(--copper)}
+.bar.green>i{background:var(--green)} .bar.red>i{background:var(--red)} .bar.blue>i{background:var(--blue)} .bar.violet>i{background:var(--violet)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-wrap:wrap}
+.tabs button{background:none;border:none;color:var(--ink2);padding:7px 12px;font-size:13px;cursor:pointer;border-bottom:2px solid transparent;font-family:var(--font)}
+.tabs button.on{color:var(--copper);border-bottom-color:var(--copper)}
+.stat-item{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);padding:6px 12px;font-size:12px;color:var(--ink2)}
+.stat-item b{color:var(--ink);font-weight:600;margin-left:2px}
+.feed-item{display:flex;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-s);background:var(--surface);animation:rise .25s ease-out}
+.feed-item+.feed-item{margin-top:8px}
+.feed-time{color:var(--ink3);font-size:11px;white-space:nowrap;padding-top:2px;min-width:90px}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.muted{color:var(--ink3)} .dim{color:var(--ink2)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.mt8{margin-top:8px}.mt14{margin-top:14px}.mt20{margin-top:20px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spread{justify-content:space-between}
+.flex1{flex:1}
+svg{display:block}
+.icon{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* 世界上下文条 */
+.ctxbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:9px 14px;font-size:12px;color:var(--ink2);margin-bottom:16px}
+.ctxbar .seg-hi{color:var(--copper);font-weight:600}
+.ctxbar .mono{color:var(--ink3)}
+
+/* 模式入口卡 */
+.mode-card{border:1px solid var(--line);border-radius:var(--radius);padding:16px;background:var(--surface);cursor:pointer;transition:border-color .15s}
+.mode-card:hover{border-color:var(--copper)}
+.mode-card .ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+.mode-card .cap{font-size:11.5px;color:var(--ink3);margin-top:6px}
+.mode-card .cap b{color:var(--ink2);font-weight:500}
+
+/* 事实 / 提案 */
+.fact-card{border:1px solid var(--line);border-radius:var(--radius-s);padding:11px 13px;background:var(--surface);margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
+.fact-card .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+.fact-card .ft{font-size:11px;color:var(--ink3)}
+.proposal-card{border:1px solid rgba(201,155,88,.4);border-left:3px solid var(--copper);border-radius:var(--radius-s);padding:13px;background:rgba(201,155,88,.05);margin-bottom:10px}
+.proposal-card .src{font-size:11px;color:var(--ink3)}
+.impact-line{font-size:12px;color:var(--ink2);margin-top:4px}
+.impact-line b{color:var(--copper);font-weight:600}
+
+/* 任务 */
+.task-row{border:1px solid var(--line);border-radius:var(--radius-s);padding:12px 14px;background:var(--surface);margin-bottom:8px}
+.task-row .st{width:64px;text-align:center;flex:none}
+.task-row .prog{height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;margin-top:6px}
+.task-row .prog>i{display:block;height:100%;background:var(--copper);border-radius:2px;transition:width .3s ease-out}
+
+/* 沙盒 */
+.sb-grid{display:grid;grid-template-columns:280px 1fr 260px;gap:14px;align-items:start}
+@media(max-width:1060px){.sb-grid{grid-template-columns:1fr}}
+.clock-box{text-align:center;padding:14px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.clock-box .era{font-size:11px;color:var(--copper);letter-spacing:2px}
+.clock-box .num{font-size:28px;font-weight:700}
+.clock-box .season{font-size:12px;color:var(--ink2);margin-top:2px}
+.impact-row{margin-bottom:12px}
+.impact-row .lab{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);margin-bottom:4px}
+.rule-slider{margin-bottom:13px}
+.rule-slider .lab{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);margin-bottom:2px}
+input[type=range]{width:100%;accent-color:var(--copper)}
+.sb-side-title{font-size:11.5px;color:var(--ink3);letter-spacing:1px;margin:16px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{text-align:left;color:var(--ink3);font-weight:400;padding:4px 6px;border-bottom:1px solid var(--line)}
+.tbl td{padding:5px 6px;border-bottom:1px solid var(--line);color:var(--ink2)}
+.tbl td:first-child{color:var(--ink)}
+.ev-type{font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid var(--line2);color:var(--ink2);flex:none;height:fit-content;margin-top:2px}
+.cand-card{border:1px solid var(--line2);border-radius:var(--radius-s);padding:12px;background:var(--surface);margin-bottom:10px;border-left:3px solid var(--copper)}
+.perm-hint{font-size:11.5px;color:var(--ink3);border:1px dashed var(--line2);border-radius:var(--radius-s);padding:8px 10px;margin-top:8px;line-height:1.6}
+.locked{opacity:.45;pointer-events:none}
+.rule-hist{font-size:11.5px;color:var(--ink3);border-top:1px dashed var(--line);margin-top:10px;padding-top:8px;max-height:110px;overflow-y:auto}
+
+/* 角色 / 双栏信息 */
+.avatar{width:52px;height:52px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:20px;color:#171614;font-weight:700}
+.avatar.lg{width:80px;height:80px;font-size:30px}
+.skill-tag{display:inline-block;font-size:11.5px;border:1px solid rgba(125,147,168,.4);color:var(--blue);background:rgba(125,147,168,.08);padding:2px 9px;border-radius:999px;margin:0 5px 5px 0}
+.item-tag{display:inline-block;font-size:11.5px;border:1px solid rgba(201,155,88,.4);color:var(--copper);background:rgba(201,155,88,.08);padding:2px 9px;border-radius:999px;margin:0 5px 5px 0}
+.ab-bar{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.ab-bar .nm{width:92px;font-size:12px;color:var(--ink2);flex:none}
+.ab-bar .bar{flex:1}
+.ab-bar .val{font-size:11.5px;color:var(--ink3);width:32px;text-align:right;font-family:ui-monospace,monospace}
+.tl{position:relative;padding-left:18px}
+.tl:before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--line2)}
+.tl-item{position:relative;padding:0 0 14px 8px}
+.tl-item:before{content:"";position:absolute;left:-17px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--canvas);border:2px solid var(--copper)}
+.tl-item.green:before{border-color:var(--green)} .tl-item.red:before{border-color:var(--red)} .tl-item.blue:before{border-color:var(--blue)} .tl-item.violet:before{border-color:var(--violet)}
+.tl-item .t{font-size:11.5px;color:var(--ink3);font-family:ui-monospace,Consolas,monospace}
+.tl-item .tt{font-weight:600;font-size:13.5px;margin:1px 0 2px}
+.tl-item .td{font-size:12.5px;color:var(--ink2)}
+
+/* 空状态 */
+.empty{border:1px dashed var(--line2);border-radius:var(--radius);padding:30px 18px;text-align:center;color:var(--ink3);font-size:12.5px}
+.empty .act{margin-top:12px}
+
+/* 抽屉 */
+#drawer{position:fixed;inset:0;z-index:60;display:none}
+#drawer.open{display:block}
+#drawer .mask{position:absolute;inset:0;background:rgba(0,0,0,.55)}
+#drawer .panel{position:absolute;top:0;right:0;bottom:0;width:min(560px,94vw);background:var(--surface);border-left:1px solid var(--line2);box-shadow:-12px 0 32px rgba(0,0,0,.4);padding:20px;overflow-y:auto;animation:slideIn .2s ease-out}
+@keyframes slideIn{from{transform:translateX(18px);opacity:.4}to{transform:none;opacity:1}}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.drawer-head h2{font-size:16px}
+
+/* 对话（叙界模拟） */
+.msg{display:flex;gap:10px;margin-bottom:12px}
+.msg .bub{max-width:78%;border-radius:10px;padding:10px 13px;font-size:13.5px;line-height:1.8}
+.msg.user{flex-direction:row-reverse}
+.msg.user .bub{background:var(--surface3);border:1px solid var(--line2)}
+.msg.npc .bub{background:var(--surface);border:1px solid var(--line)}
+.msg .who{font-size:11px;color:var(--ink3);margin-bottom:2px}
+.msg.npc .who{color:var(--green)}
+.msg.user .who{color:var(--copper);text-align:right}
+
+.foot{color:var(--ink3);font-size:11.5px;text-align:center;padding:24px 0 6px;border-top:1px solid var(--line);margin-top:44px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface3);border:1px solid var(--copper);color:var(--ink);padding:10px 18px;border-radius:var(--radius);font-size:13px;z-index:80;box-shadow:0 8px 24px rgba(0,0,0,.45);animation:rise .2s ease-out}
+.import-zone{border:2px dashed var(--line2);border-radius:var(--radius);padding:24px;text-align:center;color:var(--ink2);cursor:pointer;transition:border-color .15s}
+.import-zone:hover{border-color:var(--copper)}
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand" onclick="nav('#/overview')">
+    <span class="moon"></span>
+    <span>叙界 Narraverse<small>世界工作区 v3</small></span>
+  </div>
+  <div class="seg" onclick="openCp('book')" title="当前工作区 / 书籍（示例工程）"><span class="k">工作区</span><b id="segBook">《黑月挽歌》</b></div>
+  <div class="seg" onclick="toggleWorldMenu()" title="当前世界"><span class="k">世界</span><b id="segWorld">黑月大陆</b></div>
+  <div class="seg" id="modeSeg" onclick="nav('#/overview')" title="当前运行模式"><span class="k">模式</span><b id="segMode">世界工作区</b></div>
+  <div class="top-right">
+    <span class="badge" onclick="nav('#/facts')" id="propBadge">事实提案 1 待确认</span>
+    <span class="ver-tag">世界版本 r17</span>
+  </div>
+</header>
+
+<aside id="rail">
+  <div class="rail-cap">平台控制平面</div>
+  <div id="railItems"></div>
+  <div class="rail-note">这是正式平台的既有控制平面：版本 / 书籍 / 总资料库 / 方案预设 / Skills / Agents / 自动化 / 设置。Demo 仅展示入口与映射，不重建这些系统。</div>
+</aside>
+
+<nav id="wsNav">
+  <a href="#/overview" data-v="/overview">概览</a>
+  <a href="#/binding" data-v="/binding">资料绑定</a>
+  <a href="#/characters" data-v="/characters">角色</a>
+  <a href="#/timeline" data-v="/timeline">时间线</a>
+  <a href="#/facts" data-v="/facts">世界事实</a>
+  <a href="#/tasks" data-v="/tasks">任务与健康</a>
+  <span class="mode-tag" id="wsModeTag">世界工作区</span>
+</nav>
+
+<div id="drawer"></div>
+<main id="app"></main>
+<div class="foot">叙界 Narraverse · 世界工作区 Demo v3 · 全部数据为本地模拟；不读取、不输出 API Key；未写入任何真实资料库</div>
+
+<script>
+'use strict';
+/* =========================================================
+   叙界 Narraverse · 世界工作区 Demo v3
+   定位：世界工作区 = 世界的舞台、资料上下文与长期记忆
+       现有 Denova 侧栏（方案预设/Skills/Agents/写作/游戏/叙界/沙盒）= 平台控制平面
+   ========================================================= */
+
+/* ---------------- 图标 ---------------- */
+const IC={
+  home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/>',
+  git:'<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 16V8a4 4 0 0 1 4-4h4"/><path d="M16 8v6a2 2 0 0 1-2 2h-3"/>',
+  file:'<path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5"/>',
+  db:'<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5V12c0 1.7 3.6 3 8 3s8-1.3 8-3V5.5"/><path d="M4 12v6.5c0 1.7 3.6 3 8 3s8-1.3 8-3V12"/>',
+  layout:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  layers:'<path d="M12 3 3.5 8 12 13l8.5-5z"/><path d="M3.5 12.5 12 17.5l8.5-5"/><path d="M3.5 16.5 12 21.5l8.5-5"/>',
+  cpu:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/><rect x="9.5" y="9.5" width="5" height="5"/>',
+  zap:'<path d="M13 2 4 14h6l-1 8 9-12h-6z"/>',
+  wrench:'<path d="M14.5 6a4.5 4.5 0 0 0-6 6L3 17.5V21h3.5L12 15.5a4.5 4.5 0 0 0 6-6L14.5 12.5z"/>',
+  users:'<circle cx="9" cy="8" r="3.4"/><path d="M3.5 20c.7-3.4 2.8-5 5.5-5s4.8 1.6 5.5 5"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 15.2c2.6.3 4.3 1.9 5 4.8"/>',
+  pen:'<path d="M13.5 5.5 18.5 10.5 7.5 21.5H3V17z"/><path d="M11 8l5 5"/>',
+  gamepad:'<rect x="2.5" y="7" width="19" height="10.5" rx="3.5"/><path d="M7.5 10.5v4M5.5 12.5h4M16 11h.01M18.5 13.5h.01"/>',
+  eye:'<path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/>',
+  scroll:'<path d="M8 3h10a2 2 0 0 1 2 2v14H9"/><path d="M5.5 3.5A2 2 0 0 0 4 7v11a3 3 0 0 1 3-3H8"/><path d="M9 8h7M9 12h7"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  flag:'<path d="M5 21V4.5"/><path d="M5 5c4-2.4 7 1.6 14-.8V13c-7 2.4-10-1.6-14 .8"/>',
+  check:'<path d="M4 12.5 9.5 18 20 6.5"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  arrow:'<path d="M15 5l-7 7 7 7"/>',
+  box:'<path d="M21 8.2 12 3 3 8.2v7.6L12 21l9-5.2z"/><path d="M3.5 8.4 12 13l8.5-4.6M12 13v8"/>',
+  moon:'<path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z"/>',
+  spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/>'
+};
+function ic(name,size){size=size||16;return '<svg class="icon" width="'+size+'" height="'+size+'" viewBox="0 0 24 24" aria-hidden="true">'+IC[name]+'</svg>';}
+
+/* ---------------- 平台控制平面（既有系统，仅入口与映射） ---------------- */
+const CP=[
+  {k:'version', n:'版本管理', i:'git', mods:['本地 Git 版本','Diff 对比','恢复','变更账本 Undo/Redo'], note:'世界工作区的每次事实确认与资料绑定，可纳入版本快照。'},
+  {k:'book', n:'书籍管理', i:'file', mods:['书籍/工程列表','工作区切换','章节与版本'], note:'“当前工作区”概念来自这里：世界工作区挂在一个书籍/工程之下。'},
+  {k:'library', n:'总资料库', i:'db', mods:['角色卡（39 张）','世界观设定（50 份）','导入翻译流水线','/master-library'], note:'世界工作区的资料绑定从这里读取原始资产，绑定不修改原件。'},
+  {k:'presets', n:'方案预设', i:'layout', mods:['叙事风格','故事导演 Story Director','状态系统 Actor State','图像方案','互动开场预设'], note:'预设影响“如何讲述”，世界工作区提供“讲述什么”。两者不互相替代。'},
+  {k:'skills', n:'Skills', i:'layers', mods:['/continue /outline /rewrite','/novel-lite /novel-standard /novel-heavy','/lore /lore-init','/master-library'], note:'写作与资料类 Skill 直接消费世界上下文条中的已加载资料。'},
+  {k:'agents', n:'Agents', i:'cpu', mods:['写作 Agent','配置管理 Agent','游戏叙事 Agent','后台导演 Agent','图像 Agent','自动化 Agent','上下文压缩 Agent'], note:'Demo 不新建平行 Agent；任务与健康中心把任务映射到这些既有 Agent。'},
+  {k:'automation', n:'自动化', i:'zap', mods:['定时任务','Review','自动续写','自定义 Prompt 工作流'], note:'沙盒的“世界时钟推进”可对接自动化定时任务。'},
+  {k:'settings', n:'设置', i:'wrench', mods:['通用/写作/游戏','模型与 Agent 配置','远程访问','PWA'], note:'模型与权限配置仍由设置页管理，世界工作区不新增模型配置。'}
+];
+function railHtml(){
+  return CP.map(function(c){return '<div class="rail-item" data-cp="'+c.k+'" onclick="openCp(\''+c.k+'\')">'+ic(c.i,15)+'<span>'+c.n+'</span></div>';}).join('');
+}
+function openCp(k){
+  var c=CP.find(function(x){return x.k===k;});if(!c)return;
+  openDrawerHtml('<h2>'+c.n+' <span class="chip gray">平台控制平面</span></h2>',
+    '<p class="dim" style="font-size:12.5px">这是正式平台已存在的能力模块。Demo 仅展示入口与“世界工作区如何接入”，不重建、不替代、不模拟其内部实现。</p>'+
+    '<div class="divider"></div><div class="sb-side-title">模块</div>'+
+    c.mods.map(function(m){return '<div class="feed-item"><span class="chip copper">现有</span><span style="font-size:12.5px">'+m+'</span></div>';}).join('')+
+    '<div class="divider"></div><div class="sb-side-title">与世界工作区的关系</div>'+
+    '<p class="desc" style="font-size:12.5px">'+c.note+'</p>');
+}
+
+/* ---------------- 世界数据 ---------------- */
+const WORLDS=[
+  {id:'blackmoon', name:'黑月大陆', type:'黑暗幻想', era:'第三纪元 · 第 7 年 · 春季', ready:true},
+  {id:'nightisle', name:'永夜群岛', type:'海洋恐怖', era:'第二纪元 · 第 12 年 · 长夜', ready:false},
+  {id:'ashage', name:'灰烬纪元', type:'末世废土', era:'第四纪元 · 第 3 年 · 灰季', ready:false},
+  {id:'qingyun', name:'青云天阙', type:'东方仙侠', era:'第五纪元 · 第 31 年 · 云季', ready:false}
+];
+const CUR={world:'blackmoon', mode:'世界工作区', version:'r17'};
+function curWorld(){return WORLDS.find(function(w){return w.id===CUR.world;})||WORLDS[0];}
+
+/* 总资料库原始资产（模拟） */
+const LIBRARY={
+  cards:[
+    {id:'c-linye', n:'林夜', file:'林夜_角色卡.json', v:'v3.2', trans:'已翻译', tags:['亡灵法师','主角'], conflict:null, desc:'人类（死灵契约者）· 23 岁 · 灰烬之城贫民区出身；与黑月签订契约。', fields:['身份','外貌','性格','背景','基础技能','开场白','示例对白']},
+    {id:'c-ailin', n:'艾琳', file:'艾琳_角色卡.json', v:'v2.1', trans:'已翻译', tags:['秘术学徒','灵视'], conflict:null, desc:'人类（天生灵视）· 17 岁 · 黑森林边缘遗孤；被林夜救下。', fields:['身份','外貌','性格','背景','基础技能','开场白']},
+    {id:'c-dean', n:'莫里斯', file:'莫里斯_角色卡.json', v:'v1.8', trans:'待翻译 EN→CN', tags:['灰烬之塔院长','秘学'], conflict:null, desc:'人类（高龄法师）· 74 岁 · 灰烬之塔第十四任院长。', fields:['身份','外貌','性格','背景','基础技能']},
+    {id:'c-dragon', n:'摩洛克', file:'摩洛克_角色卡.json', v:'v4.0', trans:'已翻译', tags:['黑龙王','黑月'], conflict:'与《黑月之渊》设定条目存在重复描述', desc:'远古黑龙 · 黑月守望者 · 沉睡周期中。', fields:['身份','性格','背景','能力']},
+    {id:'c-kahn', n:'卡恩', file:'卡恩_角色卡.json', v:'v1.0', trans:'草稿', tags:['佣兵团长'], conflict:null, desc:'灰烬之城佣兵团长 · 草稿状态。', fields:['身份','背景']}
+  ],
+  books:[
+    {id:'b-world', n:'黑月大陆世界书', file:'黑月大陆_世界书.md', v:'v6.2', trans:'已翻译', tags:['世界规则','地理','历史'], desc:'12 条设定：世界规则 4 / 地理 4 / 历史 4；命中当前世界规则 4 条。'},
+    {id:'b-ashcity', n:'灰烬之城设定集', file:'灰烬之城_设定集.txt', v:'v3.0', trans:'已翻译', tags:['地点','风物'], desc:'6 个地点条目与 3 条历史事件。'},
+    {id:'b-factions', n:'黑月大陆势力关系册', file:'势力关系册.md', v:'v2.4', trans:'待翻译 EN→CN', tags:['势力'], desc:'6 个势力条目，待翻译。'},
+    {id:'b-bestiary', n:'黑月生物图鉴', file:'生物图鉴.md', v:'v1.5', trans:'已翻译', tags:['生物'], desc:'8 个生物条目，已归档。'}
+  ]
+};
+
+/* 当前世界的绑定与实例 */
+var WORLD={
+  meta:{name:'黑月大陆', type:'黑暗幻想', era:'第三纪元', time:'第 7 年 · 春季 · 第 12 日', version:'r17'},
+  rules:[
+    {n:'黑月契约', d:'与黑月签订契约者获得死灵权能，每满月献祭一段记忆。'},
+    {n:'亡灵规则', d:'亡灵无法说谎；契约之力不可违背。'},
+    {n:'魔力代价', d:'低魔高危机：魔法存在但代价沉重。'},
+    {n:'黑森林禁忌', d:'满月不得进入黑森林；灰烬之塔地下封印不得开启。'}
+  ],
+  bindings:[
+    {aid:'c-linye', kind:'card', status:'bound', boundAs:'林夜 · 世界主角实例', v:'v3.2', trans:'已翻译'},
+    {aid:'c-ailin', kind:'card', status:'bound', boundAs:'艾琳 · 秘术学徒实例', v:'v2.1', trans:'已翻译'},
+    {aid:'c-dean', kind:'card', status:'bound', boundAs:'莫里斯 · 灰烬之塔院长实例', v:'v1.8', trans:'待翻译 EN→CN'},
+    {aid:'c-dragon', kind:'card', status:'pending', boundAs:null, v:'v4.0', trans:'已翻译', issue:'与黑月之渊设定条目冲突'},
+    {aid:'c-kahn', kind:'card', status:'archived', boundAs:null, v:'v1.0', trans:'草稿'},
+    {aid:'b-world', kind:'book', status:'bound', boundAs:'世界规则与地理', v:'v6.2', trans:'已翻译'},
+    {aid:'b-ashcity', kind:'book', status:'bound', boundAs:'灰烬之城地点', v:'v3.0', trans:'已翻译'},
+    {aid:'b-factions', kind:'book', status:'pending', boundAs:null, v:'v2.4', trans:'待翻译 EN→CN'},
+    {aid:'b-bestiary', kind:'book', status:'archived', boundAs:null, v:'v1.5', trans:'已翻译'}
+  ],
+  chars:[
+    {cid:'c-linye', n:'林夜', initial:'夜', color:'#8fae8d', title:'亡灵法师 · 世界主角', race:'人类（死灵契约者）', age:'23',
+     world:{faction:'自由人（被影裔教团追猎）', location:'灰烬之城 · 城墙阴影', gear:['鸦羽法袍','七骨铃','黑曜匕首','契约之书'], growth:[['13 岁','签订黑月契约'],['16 岁','被莫里斯收留'],['22 岁','救下艾琳'],['23 岁','契约之书失窃，开始追查']], rel:[['艾琳','守护对象','珍视','green'],['莫里斯','导师','敬重','copper'],['摩洛克','契约者','警惕','red']], xp:'最近 3 天都在城门口观察商队'},
+     base:{appearance:'苍白面容，左眼在月圆之夜泛起磷火般的绿光。常穿鸦羽色长袍，腰间挂着七枚骨铃。', personality:'冷静克制，话很少，习惯先观察再行动。对死亡没有恐惧，却对“活着”抱有一种笨拙的珍视。', background:'出生于灰烬之城贫民区，13 岁时瘟疫夺走全家，濒死之际与“黑月”签订契约。', skills:['唤尸术','骨盾','灵魂低语','契约封印'], known:['知道契约代价是献祭记忆','不知道摩洛克为何选中自己']}},
+    {cid:'c-ailin', n:'艾琳', initial:'艾', color:'#c99b58', title:'秘术学徒 · 世界裂缝', race:'人类（天生灵视）', age:'17',
+     world:{faction:'灰烬之塔（学徒）', location:'灰烬之塔 · 塔顶', gear:['骨制护符','烧焦的魔法书','学徒法杖'], growth:[['6 岁','灵视第一次显现'],['16 岁','村庄被影裔抹去，被林夜救下'],['17 岁','进入灰烬之塔学习']], rel:[['林夜','守护者','信任','green'],['莫里斯','导师','敬重','copper']], xp:'最近在塔顶练习净化术，打翻了院长的墨水瓶'},
+     base:{appearance:'亚麻色长发，琥珀色眼睛，手腕戴着骨制护符。', personality:'温柔但固执，好奇心压过恐惧。', background:'黑森林边缘村庄的遗孤，村庄一夜之间被“影裔”抹去。', skills:['灵视','风刃','净化术'], known:['不知道林夜守护自己的原因']}},
+    {cid:'c-dean', n:'莫里斯', initial:'院', color:'#7d93a8', title:'灰烬之塔院长 · 秘学守护者', race:'人类（高龄法师）', age:'74',
+     world:{faction:'灰烬之塔', location:'灰烬之塔 · 地下书库', gear:['秘学徽章','旧法杖','单片镜'], growth:[['40 岁','从黑森林带回禁忌文献'],['58 岁','接任院长'],['67 岁','收留林夜']], rel:[['林夜','养子','爱护','green'],['艾琳','学生','期望','copper']], xp:'正在核对影裔教团线索图'},
+     base:{appearance:'银白长发，右眼戴单片镜，法袍缀满褪色的秘学徽章。', personality:'温和而谨慎，信奉“知识高于力量”。', background:'灰烬之塔第十四任院长，年轻时深入黑森林带回被诅咒的文献。', skills:['结界术','古代语解析','记忆封存'], known:['怀疑教团目标不止契约之书']}}
+  ],
+  factions:[
+    {id:'empire', n:'永夜帝国', pow:72, move:'向北扩张边境', stance:'扩张中', c:'copper'},
+    {id:'guild', n:'冒险者公会', pow:58, move:'发布黑森林悬赏', stance:'活跃', c:'green'},
+    {id:'cult', n:'影裔教团', pow:46, move:'暗中寻找契约之书', stance:'隐秘', c:'violet'},
+    {id:'trade', n:'灰烬商会', pow:41, move:'商队改道绕行', stance:'观望', c:'blue'},
+    {id:'tower', n:'灰烬之塔', pow:35, move:'结界充能中', stance:'防守', c:'green'},
+    {id:'city', n:'自由城邦', pow:30, move:'自治会议中', stance:'中立', c:''}
+  ],
+  regions:[
+    {id:'ashcity', n:'灰烬之城', dev:62, st:58, status:'平稳'},
+    {id:'blackforest', n:'黑森林', dev:30, st:45, status:'异常'},
+    {id:'northwall', n:'北境要塞', dev:48, st:52, status:'紧张'},
+    {id:'whiteharbor', n:'白港', dev:55, st:60, status:'繁荣'}
+  ]
+};
+
+/* 世界事实与提案 */
+var FACTS=[
+  {id:'f1', type:'confirmed', t:'林夜 13 岁时与黑月签订契约', tm:'史实 · 第 7 年', src:'世界历史'},
+  {id:'f2', type:'confirmed', t:'艾琳出生的村庄被影裔抹去', tm:'史实 · 第 7 年', src:'角色背景'},
+  {id:'f3', type:'confirmed', t:'林夜在黑森林边缘救下艾琳并立誓守护', tm:'第 7 年 · 春', src:'时间线'},
+  {id:'f4', type:'confirmed', t:'艾琳进入灰烬之塔成为学徒', tm:'第 7 年 · 春', src:'时间线'},
+  {id:'f5', type:'confirmed', t:'契约之书在永夜城大图书馆失窃', tm:'第 7 年 · 春', src:'事件记录'},
+  {id:'f6', type:'confirmed', t:'帝国宣布向北境要塞增兵', tm:'第 7 年 · 春', src:'势力动向'},
+  {id:'f7', type:'confirmed', t:'灰烬商会商队改道绕行黑森林', tm:'第 7 年 · 春', src:'势力动向'},
+  {id:'f8', type:'confirmed', t:'莫里斯发现影裔教团在灰烬之城留下标记', tm:'第 7 年 · 春', src:'事件记录'},
+  {id:'f9', type:'confirmed', t:'黑森林边缘村庄失踪 3 人', tm:'第 7 年 · 春', src:'事件记录'},
+  {id:'f10', type:'confirmed', t:'林夜击败黑森林狼王', tm:'第 6 年 · 秋', src:'时间线'},
+  {id:'f11', type:'confirmed', t:'灰烬之塔展开防御结界充能', tm:'第 7 年 · 春', src:'势力动向'},
+  {id:'f12', type:'confirmed', t:'摩洛克确认处于沉睡周期', tm:'第 7 年 · 春', src:'世界 Agent 校验'},
+  {id:'k1', type:'char-known', t:'林夜知道契约代价是满月献祭记忆', tm:'角色已知', src:'林夜实例'},
+  {id:'k2', type:'char-known', t:'艾琳不知道自己被林夜守护的原因', tm:'角色已知', src:'艾琳实例'},
+  {id:'p1', type:'player-known', t:'影裔畏光（玩家在战斗中观察得知）', tm:'玩家已知', src:'游戏模式'},
+  {id:'pl1', type:'plan', t:'莫里斯计划潜入影裔教团集会取证', tm:'未来计划', src:'莫里斯实例'},
+  {id:'r1', type:'rejected', t:'「摩洛克加入帝国」提案被拒绝', tm:'被拒绝', src:'剧情 Agent 提案 · 2026-09-07'}
+];
+var PROPOSALS=[
+  {id:'pr1', src:'剧情 Agent 提案', t:'林夜加入影裔教团', d:'剧情 Agent 在回合分析中提出：为了让林夜能接近契约之书，建议让他以“卧底”身份加入影裔教团。', impact:['林夜关系：与艾琳/莫里斯产生信任裂痕','影裔教团势力：影响力 +3','第三纪元时间线：新增“卧底线”'], evidence:['契约之书在教团手中（事实 f5）','林夜有潜行与伪装基础（角色卡）'], status:'pending'},
+  {id:'pr2', src:'沙盒推演提案', t:'黑森林出现远古遗迹', d:'沙盒推进中由事件候选生成：一支探索队在黑森林深处发现半埋的远古石环。', impact:['黑森林：稳定 −8','冒险者公会：影响力 +4','可能引出纪元二遗物'], evidence:['探索队悬赏已发布（事实 f9 相关）'], status:'pending'}
+];
+function confirmedCount(){return FACTS.filter(function(f){return f.type==='confirmed';}).length;}
+function pendingProposalCount(){return PROPOSALS.filter(function(p){return p.status==='pending';}).length;}
+
+/* 时间线 */
+var TIMELINE=[
+  {y:'纪元一', t:'诸神时代：神祇创造世界，摩洛克作为黑月守卫苏醒', tag:'史实'},
+  {y:'纪元二', t:'王国纷争：诸神陨落，人类混战三百年，初代王与摩洛克签订“长夜之约”', tag:'史实'},
+  {y:'纪元三 · 0 年', t:'黑月纪元年开启', tag:'史实'},
+  {y:'纪元三 · 93 年', t:'灰烬之城建成，帝国定都永夜城', tag:'史实'},
+  {y:'纪元三 · 487 年', t:'莫里斯院长出生', tag:'史实'},
+  {y:'纪元三 · 512 年', t:'林夜出生；次年瘟疫，签订黑月契约', tag:'已确认'},
+  {y:'纪元三 · 521 年', t:'艾琳出生', tag:'已确认'},
+  {y:'纪元三 · 537 年（第 7 年）', t:'艾琳村庄被抹去；林夜救下艾琳；契约之书失窃；帝国北扩', tag:'已确认'}
+];
+
+/* ---------------- 工具 ---------------- */
+function $(s){return document.querySelector(s);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
+function toast(msg){var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.style.opacity='0';t.style.transition='opacity .3s';},1800);setTimeout(function(){t.remove();},2300);}
+function nav(h){location.hash=h;}
+function pct(v){return Math.round(v*100)+'%';}
+function bar(v,color){return '<div class="bar '+(color||'')+'"><i style="width:'+Math.max(2,Math.min(100,v))+'%"></i></div>';}
+function factChip(t){return {confirmed:['green','已发生事实'],'char-known':['blue','角色已知'],'player-known':['copper','玩家已知'],plan:['violet','未来计划'],proposal:['copper','提案'],rejected:['gray','被拒绝']}[t]||['gray',t];}
+
+/* ---------------- 路由 ---------------- */
+const ROUTES={};
+function route(){
+  var h=location.hash.replace(/^#/,'')||'/overview';
+  var m=h.match(/^\/characters\/(\w+)/);
+  if(m&&ROUTES['/characters/:id']){render(ROUTES['/characters/:id'](m[1]));setNav('/characters');return;}
+  if(ROUTES[h]){render(ROUTES[h]());setNav(h);return;}
+  render(ROUTES['/overview']());setNav('/overview');
+}
+function setNav(h){
+  document.querySelectorAll('#wsNav a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-v')===h);});
+  var m={'/writing':'写作模式','/game':'结构化游戏','/narraverse':'叙界','/sandbox':'开放沙盒'}[h];
+  if(m){CUR.mode=m;$('#wsModeTag').textContent='当前模式：'+m;}else{CUR.mode='世界工作区';$('#wsModeTag').textContent='世界工作区';}
+  $('#segMode').textContent=CUR.mode;
+  $('#propBadge').textContent='事实提案 '+pendingProposalCount()+' 待确认';
+}
+function render(html){$('#app').innerHTML=html;window.scrollTo(0,0);}
+window.addEventListener('hashchange',route);
+
+/* 世界切换 */
+function toggleWorldMenu(){
+  openDrawerHtml('<h2>切换世界</h2>','<p class="dim" style="margin-bottom:10px">选择要进入的世界工作区。非「黑月大陆」的世界尚未初始化，可走资料绑定流程创建。</p>'+
+    WORLDS.map(function(w){return '<div class="feed-item" style="cursor:pointer" onclick="switchWorld(\''+w.id+'\')"><span class="chip '+(w.id===CUR.world?'green':'gray')+'">'+(w.id===CUR.world?'当前':'')+'</span><div style="flex:1"><b>'+w.name+'</b><div class="muted" style="font-size:11px">'+w.type+' · '+w.era+'</div></div></div>';}).join(''));
+}
+function switchWorld(id){
+  CUR.world=id;closeDrawer();
+  $('#segWorld').textContent=curWorld().name;
+  toast('已切换到「'+curWorld().name+'」');
+  nav('#/overview');
+}
+
+/* ---------------- 视图：世界工作区概览 ---------------- */
+ROUTES['/overview']=function(){
+  var w=curWorld();
+  if(!w.ready){
+    return '<div class="page-head"><h1>'+w.name+'</h1><p>'+w.type+' · '+w.era+'</p></div>'+
+    '<div class="empty"><div style="font-size:14px;color:var(--ink2)">这个世界的世界工作区尚未初始化</div>'+
+    '<div style="margin-top:6px">从一个空世界开始：绑定总资料库的角色卡与设定书，或导入设定资料。</div>'+
+    '<div class="act"><button class="btn primary" onclick="nav(\'#/binding\')">去资料绑定</button></div></div>';
+  }
+  var boundCards=WORLD.bindings.filter(function(b){return b.kind==='card'&&b.status==='bound';}).length;
+  var boundBooks=WORLD.bindings.filter(function(b){return b.kind==='book'&&b.status==='bound';}).length;
+  var pending=WORLD.bindings.filter(function(b){return b.status==='pending';}).length;
+  return '<div class="page-head"><h1>世界工作区概览</h1><p>'+w.name+' · '+w.type+' · '+w.era+' · 当前世界时间：'+WORLD.meta.time+'</p></div>'+
+
+  '<div class="cards c2">'+
+    '<div class="card"><h3>这个世界现在发生什么</h3>'+
+      '<div class="row mt8"><span class="chip copper">第三纪元 · 第 7 年 · 春季</span><span class="chip red">黑森林异变</span><span class="chip violet">帝国北扩</span></div>'+
+      '<p class="desc mt8"><b style="color:var(--copper)">近期事件：</b>契约之书在永夜城失窃；帝国军队抵达北境要塞；灰烬商会商队改道。</p>'+
+      '<div class="divider"></div>'+
+      '<div class="impact-row"><div class="lab"><span>帝国扩张</span><span>72%</span></div>'+bar(72)+'</div>'+
+      '<div class="impact-row"><div class="lab"><span>黑森林异常</span><span>65%</span></div>'+bar(65,'red')+'</div>'+
+      '<div class="impact-row"><div class="lab"><span>商路通畅</span><span>54%</span></div>'+bar(54,'blue')+'</div>'+
+    '</div>'+
+    '<div class="card"><h3>它使用了哪些资料与角色</h3>'+
+      '<p class="sub">总资料库资产 → 世界绑定 → 世界内实例</p>'+
+      '<div class="row mt8">'+
+        '<span class="chip green">'+boundBooks+' 份设定书已绑定</span>'+
+        '<span class="chip green">'+boundCards+' 张角色卡已绑定</span>'+
+        (pending?'<span class="chip red">'+pending+' 项待处理</span>':'')+
+      '</div>'+
+      '<div class="mt8">'+WORLD.bindings.filter(function(b){return b.status==='bound';}).map(function(b){return '<span class="chip '+(b.kind==='card'?'blue':'copper')+'">'+(b.kind==='card'?'角色':'设定')+' · '+b.boundAs+'</span>';}).join('')+'</div>'+
+      '<div class="mt14"><button class="btn sm" onclick="nav(\'#/binding\')">管理资料绑定</button></div>'+
+    '</div>'+
+  '</div>'+
+
+  '<div class="page-head mt20" style="margin-bottom:12px"><h1 style="font-size:17px">从哪里进入体验</h1><p>四个运行模式共用同一世界上下文；模式内产生的提案需要你确认才会成为世界事实。</p></div>'+
+  '<div class="cards c4">'+MODES.map(modeCard).join('')+'</div>'+
+
+  '<div class="page-head mt20" style="margin-bottom:12px"><h1 style="font-size:17px">有什么需要处理</h1></div>'+
+  '<div class="cards c3">'+
+    '<div class="card"><h3>任务与健康</h3><p class="desc">2 项任务需要关注：1 项等待确认，1 项失败待重试。</p><div class="mt14"><button class="btn sm" onclick="nav(\'#/tasks\')">查看任务中心</button></div></div>'+
+    '<div class="card"><h3>资料冲突</h3><p class="desc">摩洛克角色卡与《黑月之渊》设定条目存在重复描述，尚未绑定。</p><div class="mt14"><button class="btn sm" onclick="nav(\'#/binding\')">去处理</button></div></div>'+
+    '<div class="card"><h3>事实提案</h3><p class="desc">'+pendingProposalCount()+' 条提案待确认：林夜加入影裔教团 · 黑森林远古遗迹。</p><div class="mt14"><button class="btn sm primary" onclick="nav(\'#/facts\')">处理提案</button></div></div>'+
+  '</div>'+
+
+  '<div class="card mt20"><h3>平台控制平面跳转</h3><p class="sub">世界工作区不替代这些系统；它们负责“如何创作与运行”。</p>'+
+    '<div class="row mt8">'+
+      '<button class="btn sm" onclick="openCp(\'library\')">总资料库</button>'+
+      '<button class="btn sm" onclick="openCp(\'presets\')">方案预设</button>'+
+      '<button class="btn sm" onclick="openCp(\'skills\')">Skills</button>'+
+      '<button class="btn sm" onclick="openCp(\'agents\')">Agents</button>'+
+      '<button class="btn sm" onclick="openCp(\'automation\')">自动化</button>'+
+    '</div></div>';
+};
+
+/* 四个模式 */
+var MODES=[
+  {id:'writing', name:'写作模式', who:'作者', i:'pen', c:'copper', route:'#/writing',
+   desc:'以作者身份写作：规划章节、生成草稿与对白、修改故事。',
+   reads:'4 条世界规则 · 3 名角色档案 · '+confirmedCount()+' 条已确认事实 · 章节与版本',
+   caps:'写作 Agent · 叙事风格 · 章节与版本 · /outline /continue /rewrite · 小说流程 Skills',
+   prop:'章节关键事件经确认后进入时间线'},
+  {id:'game', name:'结构化游戏', who:'玩家', i:'gamepad', c:'green', route:'#/game',
+   desc:'以角色身份行动：当前场景、选择、检定、状态与装备实时变化。',
+   reads:'当前场景 · Actor State · 角色实例状态',
+   caps:'游戏叙事 Agent · 后台导演 Agent · Story Director · Actor State · 事件包 · 检定系统',
+   prop:'回合关键事件与角色状态变化经确认后更新世界'},
+  {id:'narraverse', name:'叙界 Narraverse', who:'对话式冒险', i:'scroll', c:'blue', route:'#/narraverse',
+   desc:'现有叙界对话式体验：角色卡与世界书驱动的自由冒险。',
+   reads:'角色卡 · 世界书 · 冒险实例',
+   caps:'现有叙界冒险 · 角色卡与世界书 · 对话式体验',
+   prop:'对话中产生的关键事实经确认后进入世界记录'},
+  {id:'sandbox', name:'开放沙盒', who:'观察者 / 导演 / 参与者', i:'eye', c:'violet', route:'#/sandbox',
+   desc:'世界自主运行：时钟推进、事件候选、影响预测、确认应用。',
+   reads:'世界时钟 · 规则参数 · 势力与地区状态',
+   caps:'Module4 世界时钟 · 日程 · 行动 · Facts · 日结与世界变化 · 自动化',
+   prop:'推进产生事件候选，经确认后形成事实或提案'}
+];
+function modeCard(m){
+  return '<div class="mode-card" onclick="nav(\''+m.route+'\')">'+
+    '<div class="ic" style="background:rgba(201,155,88,.1);color:var(--'+m.c+')">'+ic(m.i)+'</div>'+
+    '<h3>'+m.name+' <span class="chip '+(m.c||'gray')+'">'+m.who+'</span></h3>'+
+    '<p class="desc">'+m.desc+'</p>'+
+    '<div class="cap"><b>读取：</b>'+m.reads+'</div>'+
+    '<div class="cap"><b>使用：</b>'+m.caps+'</div>'+
+    '<div class="cap"><b>可能提案：</b>'+m.prop+'</div>'+
+  '</div>';
+}
+
+/* ---------------- 视图：资料绑定 ---------------- */
+var IMPORT_IDX=0;
+var IMPORT_FILES=[
+  ['林夜_角色卡.json','JSON · 角色卡','解析到 1 名角色：林夜；字段 7 项；缺失：无；冲突：无；译文：已翻译'],
+  ['黑月大陆_世界书.md','Markdown · 世界书','解析到 12 条设定；命中规则 4 条；译文：已翻译'],
+  ['势力关系册.md','Markdown · 设定书','解析到 6 个势力条目；译文：待翻译 EN→CN；冲突：与已绑定版本 v2.4 相同'],
+  ['未知来源_角色卡.json','JSON · 角色卡','解析到 1 名角色；缺失：开场白；冲突：姓名与「艾琳」重复']
+];
+ROUTES['/binding']=function(){
+  var w=curWorld();
+  if(!w.ready){
+    return '<div class="page-head"><h1>资料绑定</h1><p>把总资料库资产绑定到当前世界实例。</p></div>'+
+    '<div class="empty">该世界尚未绑定任何资料。<div class="act"><button class="btn primary" onclick="pickImport()">模拟选择文件并解析</button></div></div>'+
+    '<div id="impBox"></div>';
+  }
+  return '<div class="page-head"><h1>资料绑定</h1><p>总资料库原始资产 → 当前世界绑定 → 世界内角色 / 设定实例。绑定不会修改总资料库原件。</p></div>'+
+  '<div class="cards c2">'+
+    '<div class="card"><h3>模拟导入</h3><p class="sub">选择文件或总资料库资产 → 解析与字段预览 → 缺失项 / 冲突 / 译文状态 → 确认绑定</p>'+
+      '<div class="mt8"><div class="import-zone" onclick="pickImport()"><div style="font-size:24px;margin-bottom:4px">'+ic('box',24)+'</div><div>点击选择文件，或拖入角色卡 / 世界书 / 设定集</div><div class="muted" style="font-size:11.5px;margin-top:4px">JSON · TXT · Markdown</div></div></div>'+
+      '<div id="impBox"></div>'+
+    '</div>'+
+    '<div class="card"><h3>总资料库原始资产</h3><p class="sub">只读列表 · 来源于总资料库</p>'+
+      '<div class="sb-side-title" style="margin:10px 0 6px">角色卡（5）</div>'+
+      LIBRARY.cards.map(function(c){var b=WORLD.bindings.find(function(x){return x.aid===c.id;});return assetRow(c,b);}).join('')+
+      '<div class="sb-side-title" style="margin:12px 0 6px">设定书（4）</div>'+
+      LIBRARY.books.map(function(c){var b=WORLD.bindings.find(function(x){return x.aid===c.id;});return assetRow(c,b);}).join('')+
+    '</div>'+
+  '</div>'+
+  '<div class="card mt14"><h3>当前世界绑定摘要</h3><p class="sub">绑定状态：已绑定 / 待处理 / 已归档</p>'+
+    '<div class="grid mt8" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px">'+
+    WORLD.bindings.map(function(b){
+      var a=LIBRARY.cards.find(function(c){return c.id===b.aid;})||LIBRARY.books.find(function(c){return c.id===b.aid;});
+      var st=b.status==='bound'?['green','已绑定']:b.status==='pending'?['red','待处理']:['gray','已归档'];
+      return '<div class="feed-item"><div style="flex:1"><div class="row spread"><b style="font-size:12.5px">'+a.n+'</b><span class="chip '+st[0]+'">'+st[1]+'</span></div>'+
+        '<div class="muted" style="font-size:11px">'+(b.kind==='card'?'角色卡':'设定书')+' · '+b.v+(b.trans?(' · '+b.trans):'')+'</div>'+
+        (b.boundAs?'<div class="dim" style="font-size:11.5px">绑定为：'+b.boundAs+'</div>':'')+
+        (b.issue?'<div class="red" style="font-size:11.5px;color:var(--red)">'+b.issue+'</div>':'')+
+        '</div></div>';
+    }).join('')+'</div></div>';
+};
+function assetRow(a,b){
+  var st=b?b.status:'unbound';
+  var chip=st==='bound'?'<span class="chip green">已绑定</span>':st==='pending'?'<span class="chip red">待处理</span>':st==='archived'?'<span class="chip gray">已归档</span>':'<span class="chip blue">未绑定</span>';
+  return '<div class="feed-item" style="padding:8px 10px"><div style="flex:1"><div class="row spread"><b style="font-size:12.5px">'+a.n+'</b>'+chip+'</div>'+
+    '<div class="muted" style="font-size:11px">'+a.file+' · '+a.v+(a.trans?(' · '+a.trans):'')+'</div>'+
+    '<div class="dim" style="font-size:11.5px">'+a.desc+'</div>'+
+    (a.conflict?'<div style="font-size:11.5px;color:var(--red)">⚠ '+a.conflict+'</div>':'')+
+    '</div></div>';
+}
+function pickImport(){
+  var f=IMPORT_FILES[IMPORT_IDX%IMPORT_FILES.length];IMPORT_IDX++;
+  $('#impBox').innerHTML='<div class="feed-item mt8" style="border-color:rgba(201,155,88,.4)"><div style="flex:1"><div class="row spread"><b style="font-size:12.5px;color:var(--copper)">'+esc(f[0])+'</b><span class="chip">'+esc(f[1])+'</span></div>'+
+    '<div class="dim" style="font-size:12px;margin-top:4px">'+esc(f[2])+'</div>'+
+    '<div class="row mt8">'+
+      '<button class="btn sm primary" onclick="confirmBind()">确认绑定到世界（模拟）</button>'+
+      '<button class="btn sm" onclick="resetImport()">重新选择</button>'+
+    '</div></div></div>';
+  toast('已解析：'+f[0]+'（Demo 模拟，未写入总资料库）');
+}
+function resetImport(){$('#impBox').innerHTML='';}
+function confirmBind(){
+  $('#impBox').innerHTML='';
+  toast('已创建世界绑定（Demo 模拟：仅记录绑定关系，不修改总资料库原件）');
+  nav('#/binding');
+}
+
+/* ---------------- 视图：角色中心与角色档案 ---------------- */
+ROUTES['/characters']=function(){
+  var w=curWorld();
+  if(!w.ready){
+    return '<div class="page-head"><h1>角色</h1><p>角色实例来自总资料库角色卡的绑定。</p></div>'+
+    '<div class="empty">该世界还没有角色实例。<div class="act"><button class="btn primary" onclick="nav(\'#/binding\')">先去绑定角色卡</button></div></div>';
+  }
+  return '<div class="page-head"><h1>角色中心</h1><p>双层信息：原始角色资料来自总资料库；成长、关系、经历属于世界实例，不回写原角色卡。</p></div>'+
+  '<div class="cards c3">'+WORLD.chars.map(function(c){
+    return '<div class="card" style="cursor:pointer" onclick="nav(\'#/characters/'+c.cid.replace('c-','')+'\')">'+
+      '<div class="row"><div class="avatar" style="background:'+c.color+'">'+c.initial+'</div><div><h3 style="margin-bottom:0">'+c.n+'</h3><div class="muted" style="font-size:11.5px">'+c.title+'</div>'+
+      '<div class="row mt8" style="gap:4px"><span class="chip blue">原始卡 '+c.cid.replace('c-','')+'.json</span><span class="chip green">世界实例</span></div></div></div>'+
+      '<div class="desc mt8"><b style="color:var(--copper)">世界内状态：</b>'+c.world.faction+' · 位于 '+c.world.location+'</div>'+
+    '</div>';
+  }).join('')+'</div>'+
+  '<div class="card mt20" style="text-align:center;padding:20px"><div class="muted">更多可绑定角色</div><div class="row" style="justify-content:center;margin-top:8px">'+
+    '<span class="chip">佣兵团长 · 卡恩（草稿）</span><span class="chip red">摩洛克（冲突待处理）</span>'+
+  '</div></div>';
+};
+ROUTES['/characters/:id']=function(id){
+  var c=WORLD.chars.find(function(x){return x.cid==='c-'+id;});
+  if(!c)return ROUTES['/characters']();
+  return '<div class="page-head"><button class="btn sm ghost" onclick="nav(\'#/characters\')">← 返回角色中心</button></div>'+
+  '<div class="card mt14" style="padding:18px"><div class="row"><div class="avatar lg" style="background:'+c.color+'">'+c.initial+'</div>'+
+    '<div class="flex1"><div class="row"><h1>'+c.n+'</h1><span class="chip blue">原始角色资料</span><span class="chip green">世界内状态</span></div>'+
+    '<div class="dim" style="font-size:12px">'+c.race+' · '+c.age+' 岁 · 原始卡来源：总资料库（只读）</div></div></div></div>'+
+  '<div class="cards c2 mt14">'+
+    '<div class="card"><h3>原始角色资料</h3><p class="sub">来自总资料库角色卡 · 只读展示，不在此修改</p>'+
+      '<table class="tbl mt8"><tr><th>身份</th><td>'+c.title+'</td></tr><tr><th>种族</th><td>'+c.race+'</td></tr><tr><th>外貌</th><td>'+c.base.appearance+'</td></tr>'+
+      '<tr><th>性格</th><td>'+c.base.personality+'</td></tr><tr><th>背景</th><td>'+c.base.background+'</td></tr></table>'+
+      '<div class="sb-side-title" style="margin-top:10px">基础技能</div>'+c.base.skills.map(function(s){return '<span class="skill-tag">'+s+'</span>';}).join('')+
+    '</div>'+
+    '<div class="card"><h3>世界内角色状态</h3><p class="sub">属于世界实例：不回写总资料库原角色卡</p>'+
+      '<table class="tbl mt8"><tr><th>所属势力</th><td>'+c.world.faction+'</td></tr><tr><th>当前地点</th><td>'+c.world.location+'</td></tr>'+
+      '<tr><th>近期动态</th><td>'+c.world.xp+'</td></tr></table>'+
+      '<div class="sb-side-title" style="margin-top:10px">装备</div>'+c.world.gear.map(function(s){return '<span class="item-tag">'+s+'</span>';}).join('')+
+      '<div class="sb-side-title" style="margin-top:12px">成长路线</div><div class="tl">'+c.world.growth.map(function(g){return '<div class="tl-item"><div class="t">'+g[0]+'</div><div class="td">'+g[1]+'</div></div>';}).join('')+'</div>'+
+      '<div class="sb-side-title" style="margin-top:12px">关系</div>'+c.world.rel.map(function(r){return '<div class="feed-item" style="padding:7px 10px"><span class="chip '+(r[3]||'gray')+'">'+r[2]+'</span><div style="flex:1"><b style="font-size:12.5px">'+r[0]+'</b> · <span class="dim" style="font-size:11.5px">'+r[1]+'</span></div></div>';}).join('')+
+      '<div class="sb-side-title" style="margin-top:12px">角色已知信息</div>'+c.base.known.map(function(k){return '<div class="feed-item" style="padding:7px 10px"><span class="chip blue">已知</span><span style="font-size:12px">'+k+'</span></div>';}).join('')+
+    '</div>'+
+  '</div>';
+};
+
+/* =========================================================
+   抽屉与世界上下文
+   ========================================================= */
+function openDrawerHtml(titleHtml,bodyHtml){
+  $('#drawer').innerHTML='<div class="mask" onclick="closeDrawer()"></div><div class="panel"><div class="drawer-head"><div>'+titleHtml+'</div><button class="btn sm ghost" onclick="closeDrawer()">关闭</button></div>'+bodyHtml+'</div>';
+  $('#drawer').classList.add('open');
+}
+function closeDrawer(){$('#drawer').classList.remove('open');}
+function openWorldCtx(){
+  openDrawerHtml('<h2>世界上下文 <span class="chip copper">只读</span></h2>',
+    '<div class="sb-side-title">当前世界</div><p style="font-size:13px">'+WORLD.meta.name+' · '+WORLD.meta.type+' · '+WORLD.meta.era+' · '+WORLD.meta.time+' · 版本 '+CUR.version+'</p>'+
+    '<div class="sb-side-title">已加载规则（4）</div>'+WORLD.rules.map(function(r){return '<div class="feed-item"><span class="chip green">规则</span><div style="flex:1"><b style="font-size:12.5px">'+r.n+'</b><div class="dim" style="font-size:11.5px">'+r.d+'</div></div></div>';}).join('')+
+    '<div class="sb-side-title">已加载角色（3）</div>'+WORLD.chars.map(function(c){return '<div class="feed-item"><div class="avatar" style="width:28px;height:28px;font-size:12px;background:'+c.color+'">'+c.initial+'</div><div style="flex:1"><b style="font-size:12.5px">'+c.n+'</b><div class="muted" style="font-size:11px">'+c.world.faction+'</div></div></div>';}).join('')+
+    '<div class="sb-side-title">已确认事实</div><p class="dim" style="font-size:12px">'+confirmedCount()+' 条已确认事实 · '+pendingProposalCount()+' 条提案待确认（去「世界事实」处理）</p>');
+}
+
+/* 模式内统一世界上下文条 */
+function ctxbar(){
+  var w=curWorld();
+  return '<div class="ctxbar"><span>当前世界：<span class="seg-hi">'+w.name+'</span></span>'+
+    '<span>已加载：'+WORLD.rules.length+' 条规则 · '+WORLD.chars.length+' 名角色 · '+confirmedCount()+' 条已确认事实</span>'+
+    '<span class="mono">世界版本 '+CUR.version+'</span>'+
+    '<span style="flex:1"></span>'+
+    '<button class="btn sm ghost" onclick="openWorldCtx()">查看世界上下文</button>'+
+    '<button class="btn sm" onclick="nav(\'#/overview\')">返回世界工作区</button></div>';
+}
+
+/* =========================================================
+   视图：时间线
+   ========================================================= */
+ROUTES['/timeline']=function(){
+  var w=curWorld();
+  if(!w.ready)return emptyWorld('时间线');
+  return '<div class="page-head"><h1>时间线</h1><p>世界历史与已确认事实的时间线。提案需确认后才会进入。</p></div>'+
+  '<div class="cards c2">'+
+    '<div class="card"><h3>纪元时间线</h3><div class="tl mt8">'+TIMELINE.map(function(x){
+      var c=x.tag==='史实'?'blue':x.tag==='已确认'?'green':'copper';
+      return '<div class="tl-item '+c+'"><div class="t">'+esc(x.y)+'</div><div class="tt">'+esc(x.t)+'</div><div class="td"><span class="chip '+(c==='blue'?'blue':c==='green'?'green':'copper')+'">'+x.tag+'</span></div></div>';
+    }).join('')+'</div></div>'+
+    '<div><div class="card"><h3>世界势力状态</h3><p class="sub">世界工作区维护的运行状态（二级页）</p>'+
+      WORLD.factions.map(function(f){return '<div class="ab-bar mt8"><span class="nm">'+f.n+'</span>'+bar(f.pow,f.c)+'<span class="val">'+f.pow+'</span></div>';}).join('')+
+    '</div>'+
+    '<div class="card mt14"><h3>地区状态</h3>'+
+      WORLD.regions.map(function(r){return '<div class="ab-bar mt8"><span class="nm">'+r.n+'</span>'+bar(r.st,r.st<40?'red':r.st<55?'':'green')+'<span class="val">'+r.st+'</span><span class="chip '+(r.st<40?'red':r.st<55?'copper':'green')+'" style="margin-left:6px">'+r.status+'</span></div>';}).join('')+
+    '</div></div>'+
+  '</div>';
+};
+function emptyWorld(name){return '<div class="page-head"><h1>'+name+'</h1><p>'+curWorld().name+' 尚未初始化。</p></div><div class="empty">该世界还没有时间线与状态数据。<div class="act"><button class="btn primary" onclick="nav(\'#/binding\')">先去资料绑定</button></div></div>';}
+
+/* =========================================================
+   视图：世界事实与提案
+   ========================================================= */
+ROUTES['/facts']=function(){
+  var w=curWorld();
+  if(!w.ready)return emptyWorld('世界事实');
+  var pend=PROPOSALS.filter(function(p){return p.status==='pending';});
+  var rej=FACTS.filter(function(f){return f.type==='rejected';});
+  var pendingProps=PROPOSALS.filter(function(p){return p.status==='adopted';});
+  return '<div class="page-head"><h1>世界事实</h1><p>原则：模型建议不会自动写死世界。草稿 → 事实提案 → 你确认 → 已确认世界事实 → 时间线 / 角色 / 势力更新。</p></div>'+
+  '<div class="row" style="margin-bottom:14px">'+
+    '<span class="chip green">已发生 '+confirmedCount()+'</span>'+
+    '<span class="chip blue">角色已知 '+FACTS.filter(function(f){return f.type==='char-known';}).length+'</span>'+
+    '<span class="chip copper">玩家已知 '+FACTS.filter(function(f){return f.type==='player-known';}).length+'</span>'+
+    '<span class="chip violet">未来计划 '+FACTS.filter(function(f){return f.type==='plan';}).length+'</span>'+
+    '<span class="chip gray">被拒绝 '+rej.length+'</span>'+
+  '</div>'+
+  '<div class="card" style="border-color:rgba(201,155,88,.4)"><h3>待确认提案（'+pend.length+'）</h3><p class="sub">这些内容还“不是”世界事实，直到你确认。</p>'+
+    '<div class="mt8">'+(pend.length?pend.map(proposalCard).join(''):'<div class="empty" style="padding:14px">当前没有待确认提案。<button class="btn sm primary" style="margin-top:8px" onclick="genMockProposal()">模拟生成一条提案</button></div>')+'</div>'+
+  '</div>'+
+  '<div class="card mt14"><h3>已发生事实</h3>'+FACTS.filter(function(f){return f.type==='confirmed';}).map(factRow).join('')+'</div>'+
+  '<div class="cards c2 mt14">'+
+    '<div class="card"><h3>角色已知 / 玩家已知 / 未来计划</h3>'+FACTS.filter(function(f){return f.type!=='confirmed'&&f.type!=='rejected';}).map(factRow).join('')+'</div>'+
+    '<div class="card"><h3>已采纳提案</h3>'+(pendingProps.length?'':'<div class="empty" style="padding:14px">暂无已采纳提案。'+(pend.length?'去上面处理待确认提案。':'')+'</div>')+pendingProps.map(function(p){return '<div class="feed-item"><span class="chip green">已采纳</span><div style="flex:1"><b style="font-size:12.5px">'+p.t+'</b><div class="muted" style="font-size:11px">'+p.src+'</div></div></div>';}).join('')+'</div>'+
+  '</div>';
+};
+function factRow(f){
+  var c=factChip(f.type);
+  var col={green:'var(--green)',blue:'var(--blue)',copper:'var(--copper)',violet:'var(--violet)',gray:'#777'}[c[0]]||'#777';
+  return '<div class="fact-card"><span class="dot" style="background:'+col+'"></span><div style="flex:1"><div class="row spread"><b style="font-size:13px">'+esc(f.t)+'</b><span class="chip '+c[0]+'">'+c[1]+'</span></div><div class="ft">'+esc(f.tm)+' · '+esc(f.src)+'</div></div></div>';
+}
+function proposalCard(p){
+  return '<div class="proposal-card"><div class="row spread"><b style="font-size:13.5px">'+esc(p.t)+'</b><span class="chip copper">提案</span></div>'+
+    '<div class="src">'+esc(p.src)+'</div>'+
+    '<p class="desc" style="margin-top:6px">'+esc(p.d)+'</p>'+
+    '<div class="impact-line"><b>影响：</b>'+p.impact.map(esc).join('；')+'</div>'+
+    '<div class="mt8"><details style="font-size:12px;color:var(--ink2)"><summary style="cursor:pointer;color:var(--copper)">查看依据</summary>'+
+    '<div class="mt8">'+p.evidence.map(function(e){return '<div class="feed-item" style="padding:6px 9px;margin-top:4px"><span class="chip blue">依据</span><span style="font-size:12px">'+esc(e)+'</span></div>';}).join('')+'</div></details></div>'+
+    '<div class="row mt8"><button class="btn sm primary" onclick="adoptProposal(\''+p.id+'\')">'+ic('check',14)+' 采纳</button>'+
+    '<button class="btn sm danger" onclick="rejectProposal(\''+p.id+'\')">'+ic('x',14)+' 拒绝</button></div></div>';
+}
+function adoptProposal(id){
+  var p=PROPOSALS.find(function(x){return x.id===id;});if(!p)return;
+  p.status='adopted';
+  FACTS.unshift({id:'f'+Date.now(),type:'confirmed',t:p.t,tm:'第 7 年 · 春 · 已确认',src:p.src});
+  if(id==='pr1'){
+    var ly=WORLD.chars.find(function(c){return c.cid==='c-linye';});
+    if(ly)ly.world.faction='影裔教团（卧底）';
+    var cult=WORLD.factions.find(function(f){return f.id==='cult';});if(cult)cult.pow=Math.min(98,cult.pow+3);
+    TIMELINE.push({y:'第 7 年 · 春', t:'林夜以卧底身份加入影裔教团（已确认）', tag:'已确认'});
+  }
+  if(id==='pr2'){
+    var bf=WORLD.regions.find(function(r){return r.id==='blackforest';});if(bf)bf.st=Math.max(5,bf.st-8);
+    var g=WORLD.factions.find(function(f){return f.id==='guild';});if(g)g.pow=Math.min(98,g.pow+4);
+    TIMELINE.push({y:'第 7 年 · 春', t:'黑森林深处发现远古石环遗迹（已确认）', tag:'已确认'});
+  }
+  refreshBadge();nav('#/facts');
+  toast('已采纳：「'+p.t+'」成为已确认世界事实');
+}
+function rejectProposal(id){
+  var p=PROPOSALS.find(function(x){return x.id===id;});if(!p)return;
+  p.status='rejected';
+  FACTS.unshift({id:'f'+Date.now(),type:'rejected',t:'「'+p.t+'」提案被拒绝',tm:'被拒绝',src:p.src});
+  refreshBadge();nav('#/facts');
+  toast('已拒绝：「'+p.t+'」未进入世界历史');
+}
+var MOCK_PROPOSALS=[
+  {src:'剧情 Agent 提案', t:'黑森林狼王与影裔教团存在契约', d:'剧情 Agent 在设定一致性检查中提出：狼王的异常暴走可能源于教团的驯化实验。', impact:['黑森林：异变强度 +2','影裔教团：隐藏意图更新','林夜：新的调查线索'], evidence:['狼王袭击时间与教团标记出现时间重合','灰烬之城文献记载教团曾驯化暗影兽']},
+  {src:'后台导演提案', t:'艾琳的灵视与黑月之渊共鸣', d:'后台导演在回合分析中提出：艾琳的灵视在满月时与黑月之渊产生共鸣，可能是关键伏笔。', impact:['艾琳：成长路线新增分支','黑月之渊：状态变化','时间线：可能引出契约真相'], evidence:['艾琳灵视每次在满月增强','摩洛克契约与黑月之渊的设定关联']}
+];
+var MOCK_PI=0;
+function genMockProposal(){
+  var mp=MOCK_PROPOSALS[MOCK_PI%MOCK_PROPOSALS.length];MOCK_PI++;
+  PROPOSALS.push({id:'pr'+Date.now(),src:mp.src,t:mp.t,d:mp.d,impact:mp.impact,evidence:mp.evidence,status:'pending'});
+  refreshBadge();nav('#/facts');
+  toast('已生成提案（模拟）：'+mp.t);
+}
+function refreshBadge(){$('#propBadge').textContent='事实提案 '+pendingProposalCount()+' 待确认';}
+
+/* =========================================================
+   视图：任务与健康
+   ========================================================= */
+var TASKS=[
+  {id:'t1', name:'解析角色卡 · 林夜', src:'资料绑定 · 总资料库 + 配置管理 Agent', what:'读取角色卡 7 个字段并建立世界实例', impact:'林夜角色卡 → 世界实例', status:'done', result:'成功：12 字段映射完成', confirm:false},
+  {id:'t2', name:'检查设定冲突 · 摩洛克', src:'资料绑定 · /master-library', what:'比对摩洛克角色卡与《黑月之渊》条目', impact:'摩洛克角色卡 · 黑月之渊设定', status:'failed', result:'发现重复描述，已标记待处理', confirm:false},
+  {id:'t3', name:'写作 Agent 生成章节草稿', src:'写作模式 · 写作 Agent + /continue', what:'基于第 2 章大纲续写草稿', impact:'章节 · 时间线（可能产生提案）', status:'queued', result:null, confirm:true},
+  {id:'t4', name:'后台导演完成回合分析', src:'结构化游戏 · 后台导演 Agent + Story Director', what:'分析上一回合行动对势力的影响', impact:'势力状态 · Actor State', status:'stopped', result:'已停止：用户中止分析', confirm:false},
+  {id:'t5', name:'沙盒推进 7 天', src:'开放沙盒 · Module4 运行时 + 自动化', what:'推进世界时钟并生成事件候选', impact:'世界时钟 · 事件候选', status:'queued', result:null, confirm:false},
+  {id:'t6', name:'定时世界快照', src:'自动化 · 定时任务', what:'为世界工作区生成每日快照', impact:'世界版本 r17 → r18', status:'idle', result:null, confirm:false}
+];
+var TASK_RUN={};
+function taskChip(s){return {done:['green','已完成'],queued:['blue','排队中'],running:['copper','运行中'],waiting:['violet','等待确认'],failed:['red','失败'],stopped:['gray','已停止'],idle:['gray','待命']}[s]||['gray',s];}
+function taskRow(t){
+  var c=taskChip(t.status);
+  var prog=TASK_RUN[t.id]?TASK_RUN[t.id].p:0;
+  var act='';
+  if(t.status==='queued')act='<button class="btn sm" onclick="runTask(\''+t.id+'\')">启动</button>';
+  if(t.status==='running')act='<button class="btn sm danger" onclick="stopTask(\''+t.id+'\')">停止</button>';
+  if(t.status==='waiting'){
+    act='<button class="btn sm primary" onclick="confirmTask(\''+t.id+'\')">确认写入</button>'+
+        '<button class="btn sm" onclick="nav(\'#/facts\')">查看提案</button>'+
+        '<button class="btn sm danger" onclick="rejectTask(\''+t.id+'\')">拒绝</button>';
+  }
+  if(t.status==='failed')act='<button class="btn sm" onclick="retryTask(\''+t.id+'\')">重试</button><button class="btn sm danger" onclick="stopTask(\''+t.id+'\')">停止</button>';
+  if(t.status==='stopped'||t.status==='idle')act='<button class="btn sm" onclick="runTask(\''+t.id+'\')">启动</button>';
+  return '<div class="task-row" id="task-'+t.id+'"><div class="row spread"><div style="flex:1">'+
+    '<div class="row"><b style="font-size:13px">'+t.name+'</b><span class="chip '+c[0]+'" style="min-width:52px;justify-content:center">'+c[1]+'</span></div>'+
+    '<div class="muted" style="font-size:11px;margin-top:2px">'+t.src+'</div>'+
+    '<div class="dim" style="font-size:12px;margin-top:2px">处理：'+t.what+' · 影响：'+t.impact+'</div>'+
+    (t.status==='running'?'<div class="prog"><i style="width:'+prog+'%"></i></div>':'')+
+    (t.result?'<div style="font-size:12px;margin-top:4px;color:'+(t.status==='failed'?'var(--red)':'var(--ink2)')+'">结果：'+t.result+'</div>':'')+
+    '</div><div class="row">'+act+'</div></div></div>';
+}
+function runTask(id){
+  var t=TASKS.find(function(x){return x.id===id;});if(!t||t.status==='running')return;
+  if(t.status==='done'){toast('该任务已完成');return;}
+  t.status='running';t.result=null;
+  TASK_RUN[id]={p:0,timer:null};
+  renderAll();
+  TASK_RUN[id].timer=setInterval(function(){
+    TASK_RUN[id].p+=8+Math.random()*10;
+    var row=$('#task-'+id);
+    if(row){var pr=row.querySelector('.prog i');if(pr)pr.style.width=Math.min(100,TASK_RUN[id].p)+'%';}
+    if(TASK_RUN[id].p>=100){
+      clearInterval(TASK_RUN[id].timer);
+      if(t.confirm){t.status='waiting';t.result='草稿已生成，等待你确认是否进入时间线';}
+      else{t.status='done';t.result=id==='t5'?'候选已生成（去沙盒查看与应用）':'快照已写入世界版本 r18';if(id==='t6')CUR.version='r18';}
+      renderAll();toast('任务完成：'+t.name);
+    }
+  },160);
+}
+function stopTask(id){var t=TASKS.find(function(x){return x.id===id;});if(!t)return;if(TASK_RUN[id]&&TASK_RUN[id].timer)clearInterval(TASK_RUN[id].timer);t.status='stopped';t.result='已停止：用户中止';renderAll();toast('已停止：'+t.name);}
+function retryTask(id){var t=TASKS.find(function(x){return x.id===id;});if(!t)return;t.status='queued';t.result=null;renderAll();toast('已重新排队：'+t.name);}
+function rejectTask(id){var t=TASKS.find(function(x){return x.id===id;});if(!t)return;t.status='stopped';t.result='已拒绝：内容未写入时间线';renderAll();toast('已拒绝写入：'+t.name);}
+function confirmTask(id){
+  var t=TASKS.find(function(x){return x.id===id;});if(!t)return;
+  if(id==='t3'){
+    FACTS.unshift({id:'f'+Date.now(),type:'confirmed',t:'艾琳在烧焦魔法书中发现影裔教团信物',tm:'第 7 年 · 春 · 已确认',src:'写作模式 · 章节草稿'});
+    TIMELINE.push({y:'第 7 年 · 春', t:'艾琳发现教团信物（章节事件已确认）', tag:'已确认'});
+  }
+  t.status='done';t.result='已确认：内容写入世界时间线与事实';renderAll();refreshBadge();toast('已确认写入：「'+t.name+'」');
+}
+function runAllQueued(){TASKS.filter(function(t){return t.status==='queued'||t.status==='idle'||t.status==='stopped';}).forEach(function(t){runTask(t.id);});}
+function renderAll(){renderTasks();}
+ROUTES['/tasks']=function(){
+  return '<div class="page-head"><h1>任务与健康</h1><p>由现有平台模块产生的任务状态：待命 / 排队中 / 运行中 / 等待确认 / 已完成 / 失败 / 已停止。Demo 不虚构独立 Agent，来源模块均为正式平台既有能力。</p></div>'+
+  '<div class="row" style="margin-bottom:12px">'+
+    '<span class="chip green">已完成 '+TASKS.filter(function(t){return t.status==='done';}).length+'</span>'+
+    '<span class="chip blue">排队中 '+TASKS.filter(function(t){return t.status==='queued';}).length+'</span>'+
+    '<span class="chip copper">运行中 '+TASKS.filter(function(t){return t.status==='running';}).length+'</span>'+
+    '<span class="chip violet">等待确认 '+TASKS.filter(function(t){return t.status==='waiting';}).length+'</span>'+
+    '<span class="chip red">失败 '+TASKS.filter(function(t){return t.status==='failed';}).length+'</span>'+
+    '<span class="chip gray">已停止 '+TASKS.filter(function(t){return t.status==='stopped';}).length+'</span>'+
+  '</div>'+
+  '<div data-tasks>'+TASKS.map(function(t){return taskRow(t);}).join('')+'</div>'+
+  '<div class="card mt14"><h3>说明</h3><p class="desc">任务由来源模块产生：资料绑定、写作模式、结构化游戏、开放沙盒、自动化。点「启动」模拟一次排队 → 运行 → 完成 / 等待确认的流转（本地模拟，不调用真实 Agent）。</p>'+
+  '<div class="row mt8"><button class="btn sm primary" onclick="runAllQueued()">启动全部排队任务（模拟）</button></div></div>';
+};
+/* 渲染任务区（供 runTask 等调用） */
+function renderTasks(){
+  var box=document.querySelector('#app [data-tasks]');
+  if(box){box.innerHTML=TASKS.map(function(t){return taskRow(t);}).join('');}
+}
+
+/* =========================================================
+   写作模式（现有写作工作台能力，不重建）
+   ========================================================= */
+var WR_DRAFT='第二章 · 黑森林的呼吸（草稿）\n林夜在城门口数完了第十一辆绕行商队。风从黑森林的方向吹来，带着潮气与某种腐烂的甜味。\n“今晚别出城。”守门人低声说。\n林夜没回答。他腰间七枚骨铃轻轻响了一声——那是亡灵在附近经过的声音。\n城北的烟囱里，升起一股不自然的黑烟。';
+var WR_STREAM=false;
+ROUTES['/writing']=function(){
+  if(!curWorld().ready)return emptyWorld('写作模式');
+  return ctxbar()+
+  '<div class="page-head"><h1>写作模式</h1><p>以作者身份写作。正文能力来自现有写作工作台（写作 Agent / 章节与版本 / 小说流程 Skills），世界工作区只提供上下文与事实确认。</p></div>'+
+  '<div class="grid" style="grid-template-columns:220px 1fr 230px;align-items:start">'+
+    '<div><div class="sb-side-title">章节</div>'+
+      '<div class="feed-item"><div style="flex:1"><b style="font-size:12.5px">第一章 · 灰烬之城</b><div class="muted" style="font-size:11px">已完成 · 版本 v12</div></div></div>'+
+      '<div class="feed-item mt8" style="border-color:rgba(201,155,88,.4)"><div style="flex:1"><b style="font-size:12.5px">第二章 · 黑森林的呼吸</b><div class="muted" style="font-size:11px">草稿 · 由写作 Agent 生成</div></div></div>'+
+      '<div class="sb-side-title" style="margin-top:14px">方案预设（现有）</div>'+
+      '<div class="card" style="padding:11px"><div class="dim" style="font-size:12px">叙事风格：夜间史诗<br>故事导演：默认<br>小说流程 Skills：/outline /continue /rewrite /novel-standard</div></div>'+
+    '</div>'+
+    '<div><div class="row spread" style="margin-bottom:8px"><b>第二章 · 黑森林的呼吸</b>'+
+      '<div class="row">'+
+        '<button class="btn sm" onclick="wrStream(\'续写\')" title="由写作 Agent + /continue 处理">'+ic('pen')+' 续写</button>'+
+        '<button class="btn sm" onclick="wrStream(\'对白\')">'+ic('users')+' 生成对白</button>'+
+      '</div></div>'+
+      '<div class="editor" id="wrEditor" style="white-space:pre-wrap;min-height:240px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;font-size:15px;line-height:1.9">'+esc(WR_DRAFT)+'<span class="caret" id="wrCaret"></span></div>'+
+      '<div class="muted" style="font-size:11.5px;margin-top:6px">续写与对白由现有写作 Agent 处理（Demo 模拟输出）。</div>'+
+      '<div class="row mt14"><button class="btn sm primary" onclick="writingProposal()">'+ic('flag',14)+' 生成章节事实提案</button>'+
+      '<span class="muted" style="font-size:11.5px">章节中的关键事件不直接进世界，先成为提案</span></div>'+
+    '</div>'+
+    '<div><div class="sb-side-title">写作 Agent 协作（现有）</div>'+
+      '<div class="card" style="padding:11px;font-size:12px;color:var(--ink2)"><span class="chip blue">写作 Agent</span><div class="mt8">已加载世界上下文：4 条规则 · 3 名角色 · '+confirmedCount()+' 条已确认事实。</div>'+
+      '<div class="mt8"><span class="chip">/continue</span><span class="chip">/outline</span><span class="chip">/rewrite</span><span class="chip">/novel-standard</span></div></div>'+
+      '<div class="sb-side-title" style="margin-top:14px">可能产生的提案</div>'+
+      '<div class="card" style="padding:11px;font-size:12px;color:var(--ink2)">草稿中的关键事件（如艾琳发现信物）会成为事实提案，需你在「世界事实」确认后才进入时间线。</div>'+
+    '</div>'+
+  '</div>';
+};
+function wrStream(kind){
+  if(WR_STREAM)return;WR_STREAM=true;
+  var text=kind==='续写'?'\n他把守门人的话在心里放了两遍。第七次了——第七次有人提醒他别出城。这说明黑森林里的东西，已经学会让人类替它传话。\n“有趣。”他说。\n身后传来踩碎枯叶的声音。他转身，看见一双琥珀色的眼睛在巷口一闪而过。':'\n（黑森林边缘 · 深夜）\n艾琳：“你每次碰骨铃，声音都不一样。”\n林夜：“因为它们在数。”\n艾琳：“数什么？”\n林夜：“数我们还能撑几个满月。”\n（沉默片刻）\n艾琳：“那我尽量活得久一点。”';
+  var out='',i=0;
+  var t=setInterval(function(){
+    out+=text.charAt(i);i++;
+    $('#wrEditor').innerHTML=esc(WR_DRAFT)+'\n<span style="color:var(--copper)">'+esc(out)+'</span><span class="caret"></span>';
+    var ed=$('#wrEditor');if(ed)ed.scrollTop=ed.scrollHeight;
+    if(i>=text.length){clearInterval(t);WR_STREAM=false;toast(kind+'完成（写作 Agent · 模拟）');}
+  },14);
+}
+function writingProposal(){
+  PROPOSALS.push({id:'pr'+Date.now(),src:'写作模式 · 写作 Agent 提案',t:'第二章草稿事件：艾琳在塔顶发现教团信物',d:'写作 Agent 在章节草稿中埋入关键事件：艾琳打翻墨水瓶时发现烧焦魔法书中夹着一枚影裔教团信物。',impact:['艾琳：新调查线索','影裔教团：暴露程度 +1','时间线：待确认进入'],evidence:['艾琳在灰烬之塔学习（事实 f4）','烧焦魔法书来自被抹去的村庄'],status:'pending'});
+  refreshBadge();toast('已生成章节事实提案（模拟）');
+}
+
+/* =========================================================
+   结构化游戏（现有游戏叙事 Agent + 后台导演 + Story Director）
+   ========================================================= */
+var GM={hp:76,mp:34,en:80,scene:'s1',log:[]};
+var GSCENES={
+  s1:{t:'灰烬之城 · 雨夜',n:'你在契约之书失窃当晚被召到灰烬之塔。院长把一枚黑月徽章推到你面前：“林夜失踪了，艾琳也不见了。”窗外城北升起不自然的黑烟。',opts:[['接过徽章，前往城北黑烟源头','+1 线索',null],['先找艾琳的室友打听去向','+1 线索',null],['检查塔内失窃现场','-10 精力',null]]},
+  s2:{t:'城北 · 废弃染坊',n:'黑烟来自一间废弃染坊。地上画着巨大的黑月仪式阵，阵中央躺着一枚被啃了一半的骨制护符——是艾琳的。',opts:[['触碰仪式阵读取残留影像','-15 魔力',null],['通知灰烬之塔带队追踪','+12 精力',null]]},
+  s3:{t:'黑森林边缘 · 黄昏',n:'艾琳跪在枯井边，琥珀色眼睛泛着黑光。枯井深处传来指甲刮过石壁的声音。',opts:[['冲上去拉住艾琳','-20 生命',null],['用骨铃唤醒她（耗全部魔力）','魔力清零 · 唤醒',null]]},
+  s4:{t:'终局 · 黑月升起',n:'（演示结局）满月穿透云层，契约之书自行翻开。黑袍人扭曲成影裔本体。林夜睁开眼：“契约第二条——亡灵，不向影裔低头。”',opts:[['与林夜并肩击退影裔','结局 · 黑月同盟',null],['牺牲魔力分离艾琳与影裔','结局 · 灵视者之愿',null]]}
+};
+ROUTES['/game']=function(){
+  if(!curWorld().ready)return emptyWorld('结构化游戏');
+  GM.scene='s1';GM.hp=76;GM.mp=34;GM.en=80;GM.log=[];
+  return ctxbar()+gameBody();
+};
+function gameBody(){
+  var s=GSCENES[GM.scene];
+  if(!s)return ctxbar()+'<div class="page-head"><h1>结构化游戏</h1></div><div class="scene-nar" style="border:1px solid var(--copper);text-align:center;padding:36px"><div style="font-size:18px;font-weight:600">结局达成</div><p class="dim mt8">Demo 分支演示结束。</p><button class="btn primary mt14" onclick="nav(\'#/game\')">重新开始</button></div>';
+  return '<div class="page-head"><h1>结构化游戏</h1><p>以角色身份行动。叙事与裁定由现有游戏叙事 Agent / 后台导演 Agent / Story Director 处理（Demo 模拟）。</p></div>'+
+  '<div class="grid" style="grid-template-columns:1fr 230px;align-items:start">'+
+    '<div><div class="scene-nar" style="border-left:3px solid var(--copper);background:var(--surface);padding:16px 18px;border-radius:0 var(--radius) var(--radius) 0"><div class="muted" style="font-size:11.5px;margin-bottom:6px">'+s.t+'</div>'+s.n+'</div>'+
+      '<div class="sb-side-title" style="margin-top:14px">你的选择</div>'+
+      s.opts.map(function(o,i){return '<div class="choice" style="border:1px solid var(--line);border-radius:var(--radius-s);padding:11px 14px;margin-top:8px;cursor:pointer;background:var(--surface)" onclick="gmChoice('+i+')">'+o[0]+'<span class="fx" style="font-size:11px;color:var(--green);display:block;margin-top:2px">'+o[1]+'</span></div>';}).join('')+
+      '<div class="sb-side-title" style="margin-top:16px">后台导演 · 回合分析（现有）</div>'+
+      '<div class="feed-item"><span class="chip violet">后台导演</span><div style="flex:1;font-size:12px;color:var(--ink2)">本回合读取：Actor State 生命/魔力/精力 + 当前场景 + 世界事实。裁定：'+(GM.log[GM.log.length-1]||'等待第一次行动。')+'</div></div>'+
+      '<div class="mt14"><button class="btn sm primary" onclick="gameProposal()">'+ic('flag',14)+' 生成回合事实提案</button></div>'+
+    '</div>'+
+    '<div><div class="sb-side-title">Actor State（现有）</div>'+
+      '<div class="stat-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<div class="stat-box" style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 10px"><div class="k" style="font-size:11px;color:var(--ink3)">生命</div><div class="v" style="font-size:17px;font-weight:700;color:var(--red)">'+GM.hp+'</div></div>'+
+        '<div class="stat-box" style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 10px"><div class="k" style="font-size:11px;color:var(--ink3)">魔力</div><div class="v" style="font-size:17px;font-weight:700;color:var(--blue)">'+GM.mp+'</div></div>'+
+        '<div class="stat-box" style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 10px"><div class="k" style="font-size:11px;color:var(--ink3)">精力</div><div class="v" style="font-size:17px;font-weight:700;color:var(--green)">'+GM.en+'</div></div>'+
+        '<div class="stat-box" style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-s);padding:8px 10px"><div class="k" style="font-size:11px;color:var(--ink3)">场景</div><div class="v" style="font-size:13px;font-weight:600">'+GM.scene+'</div></div>'+
+      '</div>'+
+      '<div class="sb-side-title">装备 / 技能（世界实例）</div><div class="dim" style="font-size:12px">鸦羽法袍 · 七骨铃 · 唤尸术 · 灵魂低语</div>'+
+      '<div class="sb-side-title">已加载世界上下文</div><div class="dim" style="font-size:12px">角色：林夜 / 艾琳 / 莫里斯<br>事实：'+confirmedCount()+' 条已确认<br>版本 '+CUR.version+'</div>'+
+    '</div>'+
+  '</div>';
+}
+function gmChoice(i){
+  var s=GSCENES[GM.scene];var o=s.opts[i];
+  GM.log.push(s.t+' → '+o[0]);
+  if(o[1].indexOf('结局')>=0){GM.scene=null;}
+  else{var keys=Object.keys(GSCENES);var idx=keys.indexOf(GM.scene);GM.scene=keys[Math.min(idx+1,keys.length-1)];}
+  render(gameBody());
+  toast('已行动：'+o[0]);
+}
+function gameProposal(){
+  PROPOSALS.push({id:'pr'+Date.now(),src:'结构化游戏 · 后台导演提案',t:'回合事件：黑森林边缘发现影裔足迹',d:'后台导演在回合分析中提出：现场足迹呈“无影”特征，建议将「影裔活跃于黑森林边缘」列入世界事实。',impact:['黑森林：异常强度 +2','冒险者公会：悬赏升级','时间线：待确认进入'],evidence:['线索：影裔畏光（玩家已知）','影裔教团标记（事实 f8）'],status:'pending'});
+  refreshBadge();toast('已生成回合事实提案（模拟）');
+}
+
+/* =========================================================
+   叙界 Narraverse（现有叙界对话式体验，不重建）
+   ========================================================= */
+var NV=[
+  ['npc','林夜','你身上的气息……不像城里的人。黑森林最近不欢迎生面孔。'],
+  ['user','我','我是来找契约之书的线索的。听说它失窃那晚，有人见过影裔。'],
+  ['npc','林夜','（他沉默了一会儿，骨铃轻轻响了一声）“那晚我就在大图书馆。影裔拿走的，是假的。”']
+];
+ROUTES['/narraverse']=function(){
+  if(!curWorld().ready)return emptyWorld('叙界 Narraverse');
+  return ctxbar()+
+  '<div class="page-head"><h1>叙界 Narraverse</h1><p>现有叙界的对话式冒险体验。角色卡与世界书由世界工作区提供，对话内容由叙界既有运行时生成（Demo 模拟）。</p></div>'+
+  '<div class="grid" style="grid-template-columns:1fr 250px;align-items:start">'+
+    '<div class="card"><h3>对话 · 黑森林边缘</h3>'+
+      '<div class="mt8" id="nvBox">'+NV.map(function(m){return msgHtml(m);}).join('')+'</div>'+
+      '<div class="row mt14"><input type="text" id="nvInput" placeholder="输入你的行动或对话……" style="flex:1" onkeydown="if(event.key===\'Enter\')nvSend()">'+
+      '<button class="btn primary" onclick="nvSend()">发送</button></div>'+
+      '<div class="row mt14"><button class="btn sm" onclick="nvProposal()">'+ic('flag',14)+' 生成对话事实提案</button>'+
+      '<span class="muted" style="font-size:11.5px">对话中的关键事实不直接进世界</span></div>'+
+    '</div>'+
+    '<div><div class="sb-side-title">已加载（世界上下文）</div>'+
+      '<div class="card" style="padding:11px;font-size:12px;color:var(--ink2)">'+
+      '<div><span class="chip blue">林夜 · 角色卡</span></div>'+
+      '<div class="mt8"><span class="chip copper">黑月大陆世界书</span></div>'+
+      '<div class="mt8"><span class="chip green">'+confirmedCount()+' 条已确认事实</span></div>'+
+      '<div class="mt8 dim">对话由叙界既有运行时驱动，世界工作区不重写叙界。</div></div>'+
+      '<div class="sb-side-title" style="margin-top:14px">可能产生的提案</div>'+
+      '<div class="card" style="padding:11px;font-size:12px;color:var(--ink2)">对话中确认的关键信息（如“影裔拿走的是假书”）会成为提案，经你确认后进入世界事实。</div>'+
+    '</div>'+
+  '</div>';
+};
+function msgHtml(m){
+  var cls=m[0]==='user'?'user':'npc';
+  return '<div class="msg '+cls+'"><div style="max-width:78%"><div class="who">'+(m[0]==='user'?'你':m[1])+'</div><div class="bub">'+esc(m[2])+'</div></div></div>';
+}
+var NV_REPLY=[
+  ['npc','林夜','假书的事，我只告诉过院长。你最好告诉我，你是谁的人。'],
+  ['npc','林夜','（骨铃响了两声）“有人来了。今天先到这里。”'],
+  ['npc','林夜','黑森林边缘的雾开始变浓了。满月之前，别再靠近。']
+];
+var NV_I=0;
+function nvSend(){
+  var v=$('#nvInput').value.trim();if(!v)return;
+  NV.push(['user','我',v]);$('#nvInput').value='';
+  var r=NV_REPLY[NV_I%NV_REPLY.length];NV_I++;NV.push(r);
+  render(ROUTES['/narraverse']());
+  var box=$('#nvBox');if(box)box.scrollTop=box.scrollHeight;
+}
+function nvProposal(){
+  PROPOSALS.push({id:'pr'+Date.now(),src:'叙界 · 对话提案',t:'对话事实：影裔教团盗走的契约之书是赝品',d:'叙界对话中林夜透露：大图书馆失窃的契约之书是假的，真本另有下落。',impact:['林夜：信任线索更新','影裔教团：目的存疑','时间线：待确认进入'],evidence:['对话由叙界运行时生成','与事实 f5（书失窃）衔接'],status:'pending'});
+  refreshBadge();toast('已生成对话事实提案（模拟）');
+}
+
+/* =========================================================
+   开放沙盒（Module4 运行时能力映射，不重建）
+   ========================================================= */
+var SB={
+  year:7, season:0, day:12, status:'idle', phase:0, timer:null,
+  identity:'director',
+  rules:{magic:.35, imperial:.6, forest:.5, trade:.7},
+  defaults:{magic:.35, imperial:.6, forest:.5, trade:.7},
+  ruleHist:[],
+  factions:WORLD.factions.map(function(f){return {id:f.id,n:f.n,pow:f.pow,move:f.move,stance:f.stance,c:f.c};}),
+  regions:WORLD.regions.map(function(r){return {id:r.id,n:r.n,dev:r.dev,st:r.st,status:r.status};}),
+  feed:[], candidates:[], myChars:[], ripple:null
+};
+var SB_POOL={
+  '势力':[
+    ['帝国发布北境动员令','永夜帝国宣布向北境要塞增兵三个军团，自由城邦自治会议连夜召开。'],
+    ['灰烬商会调整商路','商会宣布绕行黑森林的新路线，白港码头新增三艘护卫舰。'],
+    ['影裔教团留下标记','教团在永夜城与灰烬之城多处城门刻下黑月符号。']],
+  '城市':[
+    ['白港迎来黑雾','海面出现不明黑雾，商会船只延误，码头工人聚集抗议。'],
+    ['灰烬之城颁布宵禁','城门提前两小时关闭，夜间的街道只剩下巡夜人。']],
+  '冒险':[
+    ['探索队发现遗迹','一支冒险队在黑森林深处发现半埋的远古石环。'],
+    ['商队遭遇袭击','绕行商队在西侧丘陵遇袭，幸存者称袭击者是“没有影子的东西”。']],
+  '异变':[
+    ['黑森林边界扩张','黑森林的树在一夜之间向外推进数米，边缘猎户连夜撤离。']],
+  '日常':[
+    ['艾琳学会了新咒语','她在塔里四处试验，走廊多了几处焦痕。'],
+    ['林夜在酒馆沉默喝酒','有人听见他低声说：“黑月今年醒得比往年早。”']]
+};
+function sbSeason(){return ['春','夏','秋','冬'][SB.season];}
+function sbTime(){return '第 '+SB.year+' 年 · '+sbSeason()+' · 第 '+SB.day+' 日';}
+function sbInitFeed(){
+  if(SB.feed.length)return;
+  SB.feed=[
+    {type:'势力',t:'帝国发布北境动员令',d:'永夜帝国宣布向北境要塞增兵三个军团。',tm:sbTime()},
+    {type:'冒险',t:'冒险者公会发布黑森林悬赏',d:'连续三名斥候在黑森林边缘失踪。',tm:sbTime()},
+    {type:'日常',t:'艾琳在塔顶练习净化术',d:'打翻了院长最贵的墨水瓶，正在手忙脚乱收拾。',tm:sbTime()}
+  ];
+}
+function sbGenCandidates(days){
+  var n=Math.min(3,1+Math.floor(days/3));
+  var out=[];
+  var types=['势力','城市','冒险','异变','日常'];
+  for(var i=0;i<n;i++){
+    var w=[];types.forEach(function(t){w.push(t==='异变'?(0.6+(SB.rules.forest>.6?1.2:0)+(SB.rules.magic>.6?0.8:0)):t==='势力'?1+SB.rules.imperial*0.6:1);});
+    var tot=w.reduce(function(a,b){return a+b;},0);var r=Math.random()*tot;var ti=0;
+    for(var k=0;k<w.length;k++){r-=w[k];if(r<=0){ti=k;break;}}
+    var type=types[ti];
+    var pool=SB_POOL[type];
+    var ev=pool[Math.floor(Math.random()*pool.length)];
+    var f=SB.factions[Math.floor(Math.random()*SB.factions.length)];
+    var rg=SB.regions[Math.floor(Math.random()*SB.regions.length)];
+    var fd=Math.round(Math.random()*6+1),rd=Math.round(Math.random()*6+2);
+    out.push({type:type,t:ev[0],d:ev[1],impact:{who:rg.n+' 的巡夜人最先发现异常。',factions:[{n:f.n,delta:fd}],regions:[{n:rg.n,delta:-rd}]}});
+  }
+  return out;
+}
+ROUTES['/sandbox']=function(){
+  if(!curWorld().ready)return emptyWorld('开放沙盒');
+  sbInitFeed();
+  return ctxbar()+
+  '<div class="page-head"><h1>开放沙盒</h1><p>世界自主运行的推演：推进时间 → 生成事件候选 → 展示影响预测 → 你确认应用 → 更新世界状态。能力映射到 Module4 世界时钟与自动化（Demo 模拟）。</p></div>'+
+  '<div class="sb-grid">'+
+    '<div>'+
+      '<div class="clock-box"><div class="era">第三纪元 · 黑月大陆</div>'+
+        '<div class="num">'+SB.year+'<span style="font-size:14px;color:var(--ink2)"> 年</span></div>'+
+        '<div class="season" id="sbSeason">'+sbSeason()+'季 · 第 '+SB.day+' 日</div>'+
+        '<div class="row mt14" style="justify-content:center">'+
+          '<button class="btn sm" onclick="sbTick(1)">推进 1 天</button>'+
+          '<button class="btn sm" onclick="sbTick(7)">推进 7 天</button>'+
+          '<button class="btn sm" onclick="sbTick(90)">推进 1 季</button>'+
+        '</div>'+
+        '<div class="row mt8" style="justify-content:center" id="sbRunCtl"></div>'+
+      '</div>'+
+      '<div class="sb-side-title">身份</div>'+
+      '<div class="card" style="padding:12px"><div class="row" style="gap:4px">'+
+        '<button class="btn sm '+(SB.identity==='observer'?'primary':'')+'" id="sbId0" onclick="sbIdentity(\'observer\')">观察者</button>'+
+        '<button class="btn sm '+(SB.identity==='director'?'primary':'')+'" id="sbId1" onclick="sbIdentity(\'director\')">世界导演</button>'+
+        '<button class="btn sm '+(SB.identity==='character'?'primary':'')+'" id="sbId2" onclick="sbIdentity(\'character\')">新角色</button>'+
+      '</div><div class="perm-hint" id="sbPerm">'+sbPermText()+'</div></div>'+
+      '<div class="sb-side-title">① 事件介入</div>'+
+      '<div class="card '+(SB.identity==='director'?'':'locked')+'" style="padding:12px">'+
+        '<div class="row" style="gap:6px"><select id="sbEvType" style="flex:1"><option value="发现">发现 / 遗迹</option><option value="天灾">天灾 / 灾害</option><option value="战争">战争 / 冲突</option></select>'+
+        '<select id="sbEvRegion" style="flex:1">'+SB.regions.map(function(r){return '<option>'+r.n+'</option>';}).join('')+'</select></div>'+
+        '<input type="text" class="mt8" id="sbEvDesc" placeholder="描述事件，如：黑森林出现远古遗迹">'+
+        '<button class="btn sm mt8" style="width:100%" onclick="sbAddEvent()">注入事件（先成提案）</button>'+
+      '</div>'+
+      '<div class="sb-side-title">② 角色介入</div>'+
+      '<div class="card '+(SB.identity==='observer'?'locked':'')+'" style="padding:12px">'+
+        '<input type="text" id="sbCharName" placeholder="角色名（如：旅行者·烬）">'+
+        '<div class="row mt8" style="gap:6px"><select id="sbCharRace" style="flex:1"><option>人类</option><option>精灵</option><option>矮人</option></select>'+
+        '<select id="sbCharCls" style="flex:1"><option>旅行者</option><option>佣兵</option><option>医师</option></select></div>'+
+        '<button class="btn sm mt8" style="width:100%" onclick="sbCreateChar()">以新角色进入世界</button>'+
+        '<div class="muted" style="font-size:10.5px;margin-top:6px">成为世界实例，不改写总资料库原始角色卡</div>'+
+      '</div>'+
+      '<div class="sb-side-title">③ 规则调整</div>'+
+      '<div class="card '+(SB.identity==='director'?'':'locked')+'" style="padding:12px">'+
+        sbRuleSlider('magic','魔法出现概率','影响异变与法术类事件权重')+
+        sbRuleSlider('imperial','帝国扩张速度','影响势力事件权重与帝国动向')+
+        sbRuleSlider('forest','黑森林异变强度','影响异变事件权重与地区稳定')+
+        sbRuleSlider('trade','商路通畅度','影响城市/商会事件')+
+        '<div class="row mt8"><button class="btn sm" onclick="sbResetRules()">恢复默认</button>'+
+        '<span class="muted" style="font-size:10.5px">调整会记入修改历史</span></div>'+
+        '<div class="rule-hist" id="sbRuleHist">'+SB.ruleHist.map(function(h){return '<div>'+h.tm+' · '+h.k+' → '+pct(h.v)+'</div>';}).join('')+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<div>'+
+      '<div class="sb-side-title">世界事件流 <span class="muted" id="sbClock">'+sbTime()+'</span></div>'+
+      '<div id="sbFeed">'+SB.feed.map(sbFeedItem).join('')+'</div>'+
+      '<div id="sbCands"></div>'+
+      '<div id="sbRipple"></div>'+
+    '</div>'+
+    '<div>'+
+      '<div class="sb-side-title">世界影响</div>'+
+      '<div class="card" style="padding:14px">'+
+        '<div class="impact-row"><div class="lab"><span>帝国扩张</span><span>'+Math.round(SB.rules.imperial*100)+'%</span></div>'+bar(SB.rules.imperial*100)+'</div>'+
+        '<div class="impact-row"><div class="lab"><span>黑森林异常</span><span>'+Math.round(SB.rules.forest*100)+'%</span></div>'+bar(SB.rules.forest*100,'red')+'</div>'+
+        '<div class="impact-row"><div class="lab"><span>商路通畅</span><span>'+Math.round(SB.rules.trade*100)+'%</span></div>'+bar(SB.rules.trade*100,'blue')+'</div>'+
+      '</div>'+
+      '<div class="sb-side-title">势力状态</div><div id="sbFactions"></div>'+
+      '<div class="sb-side-title">地区状态</div><div id="sbRegions"></div>'+
+      '<div class="sb-side-title">我的角色</div><div id="sbMine">'+(SB.myChars.length?'':'<div class="empty" style="padding:14px">尚未创建角色（需「新角色」身份）。</div>')+'</div>'+
+    '</div>'+
+  '</div>';
+};
+function sbRuleSlider(k,n,hint){
+  return '<div class="rule-slider"><div class="lab"><span title="'+hint+'">'+n+'</span><span id="v'+k+'">'+pct(SB.rules[k])+'</span></div>'+
+  '<input type="range" min="0" max="1" step=".05" value="'+SB.rules[k]+'" title="'+hint+'" oninput="sbRule(\''+k+'\',this.value)"></div>';
+}
+function sbPermText(){
+  return {observer:'观察者权限：可推进时间并查看事件候选与影响预测；不可注入事件、调整规则或创建角色。',
+          director:'世界导演权限：可注入事件、调整规则、创建角色，并看到完整影响预测。',
+          character:'新角色权限：可创建角色进入世界并推进时间；注入事件与调整规则需切换为导演。'}[SB.identity];
+}
+function sbIdentity(id){
+  SB.identity=id;
+  ['observer','director','character'].forEach(function(x,i){
+    var b=$('#sbId'+i);if(b)b.className='btn sm'+(x===id?' primary':'');
+  });
+  var p=$('#sbPerm');if(p)p.innerHTML=sbPermText();
+  render(ROUTES['/sandbox']());
+  toast('身份切换：'+{observer:'观察者',director:'世界导演',character:'新角色'}[id]);
+}
+function sbFeedItem(e){
+  var col={势力:'copper',城市:'blue',冒险:'green',异变:'red',日常:'gray'}[e.type]||'gray';
+  return '<div class="feed-item"><span class="ev-type chip '+col+'">'+e.type+'</span><div style="flex:1"><div class="row spread"><b style="font-size:13px">'+esc(e.t)+'</b><span class="feed-time">'+esc(e.tm)+'</span></div><div style="font-size:12.5px;color:var(--ink2)">'+esc(e.d)+'</div></div></div>';
+}
+function sbTick(days){
+  if(SB.status==='running'||SB.status==='paused'||SB.status==='review'){toast('请先完成或停止当前推演');return;}
+  SB.day+=days;
+  while(SB.day>90){SB.day-=90;SB.season=(SB.season+1)%4;if(SB.season===0)SB.year++;}
+  SB.status='running';SB.phase=0;SB.candidates=[];
+  var ctl=$('#sbRunCtl');
+  ctl.innerHTML='<button class="btn sm danger" onclick="sbStop()">停止</button><button class="btn sm" onclick="sbPause()">暂停</button><span class="muted" style="font-size:11px">正在生成事件候选…</span>';
+  sbStep();
+}
+function sbStep(){
+  if(SB.status==='paused')return;
+  var total=Math.min(3,1+Math.floor((SB.day%90||SB.day)/15))+1;
+  var gens=[1,2,3].slice(0,total-1);
+  var cand=sbGenCandidates(7);
+  SB.candidates=cand;
+  SB.phase++;
+  if(SB.phase>=total||SB.phase>=3){
+    SB.status='review';
+    renderCands();
+    var ctl=$('#sbRunCtl');if(ctl)ctl.innerHTML='';
+    toast('候选已生成，请确认应用或丢弃');
+  }else{
+    var ctl=$('#sbRunCtl');
+    if(ctl)ctl.innerHTML='<button class="btn sm danger" onclick="sbStop()">停止</button><button class="btn sm" onclick="sbPause()">暂停</button><span class="muted" style="font-size:11px">正在生成事件候选…</span>';
+    SB.timer=setTimeout(sbStep,600);
+  }
+}
+function sbPause(){if(SB.status!=='running')return;SB.status='paused';clearTimeout(SB.timer);var ctl=$('#sbRunCtl');if(ctl)ctl.innerHTML='<button class="btn sm primary" onclick="sbResume()">继续</button><button class="btn sm danger" onclick="sbStop()">停止</button>';toast('已暂停生成');}
+function sbResume(){if(SB.status!=='paused')return;SB.status='running';var ctl=$('#sbRunCtl');if(ctl)ctl.innerHTML='<button class="btn sm danger" onclick="sbStop()">停止</button><span class="muted" style="font-size:11px">继续生成…</span>';sbStep();}
+function sbStop(){clearTimeout(SB.timer);SB.status='idle';SB.candidates=[];var ctl=$('#sbRunCtl');if(ctl)ctl.innerHTML='';var c=$('#sbCands');if(c)c.innerHTML='';toast('已停止推演');}
+function renderCands(){
+  var c=$('#sbCands');
+  if(!c)return;
+  c.innerHTML='<div class="sb-side-title" style="margin-top:6px">事件候选（等待确认）</div>'+
+    SB.candidates.map(function(cd,i){
+      return '<div class="cand-card"><div class="row spread"><b style="font-size:13px">'+esc(cd.t)+'</b><span class="chip '+(cd.type==='异变'?'red':cd.type==='势力'?'copper':cd.type==='城市'?'blue':cd.type==='冒险'?'green':'gray')+'">'+cd.type+'</span></div>'+
+      '<div class="dim" style="font-size:12px;margin-top:2px">'+esc(cd.d)+'</div>'+
+      '<div class="impact-line mt8"><b>影响预测：</b></div>'+
+      '<div class="impact-line">· 谁响应：'+esc(cd.impact.who)+'</div>'+
+      '<div class="impact-line">· 势力变化：'+cd.impact.factions.map(function(f){return f.n+' '+(f.delta>=0?'+':'')+f.delta;}).join('，')+'</div>'+
+      '<div class="impact-line">· 地区受影响：'+cd.impact.regions.map(function(r){return r.n+' −'+r.delta;}).join('，')+'</div>'+
+      '</div>';
+    }).join('')+
+    '<div class="row mt8"><button class="btn sm primary" onclick="sbApply()">应用候选（确认写入世界）</button>'+
+    '<button class="btn sm" onclick="sbDiscard()">丢弃</button>'+
+    '<button class="btn sm" onclick="sbRegen()">重新生成</button></div>';
+}
+function sbApply(){
+  if(SB.status!=='review')return;
+  SB.candidates.forEach(function(cd){
+    SB.feed.unshift({type:cd.type,t:cd.t,d:cd.d,tm:sbTime()});
+    cd.impact.factions.forEach(function(f){var x=SB.factions.find(function(y){return y.id===f.id||y.n===f.n;});if(x)x.pow=Math.max(8,Math.min(98,x.pow+f.delta));});
+    cd.impact.regions.forEach(function(r){var x=SB.regions.find(function(y){return y.n===r.n;});if(x)x.st=Math.max(5,Math.min(95,x.st-r.delta));});
+    FACTS.unshift({id:'f'+Date.now()+Math.random(),type:'confirmed',t:cd.t,tm:sbTime()+' · 已确认',src:'开放沙盒 · 事件候选'});
+    TIMELINE.push({y:'第 '+SB.year+' 年 · '+sbSeason(),t:cd.t+'（沙盒已确认）',tag:'已确认'});
+  });
+  SB.candidates=[];SB.status='idle';
+  var c=$('#sbCands');if(c)c.innerHTML='';
+  var f=$('#sbFeed');if(f)f.innerHTML=SB.feed.slice(0,20).map(sbFeedItem).join('');
+  sbRenderSide();refreshBadge();
+  toast('已应用：'+'事件写入世界事实与时间线（'+'待确认提案由导演级事件另行生成'+'）');
+}
+function sbDiscard(){SB.candidates=[];SB.status='idle';var c=$('#sbCands');if(c)c.innerHTML='';toast('已丢弃候选');}
+function sbRegen(){if(SB.status!=='review')return;SB.status='running';SB.phase=0;var ctl=$('#sbRunCtl');if(ctl)ctl.innerHTML='<button class="btn sm danger" onclick="sbStop()">停止</button>';sbStep();}
+function sbRule(k,v){
+  SB.rules[k]=parseFloat(v);
+  var el=$('#v'+k);if(el)el.textContent=pct(SB.rules[k]);
+  SB.ruleHist.unshift({tm:sbTime(),k:{magic:'魔法概率',imperial:'帝国扩张',forest:'黑森林异变',trade:'商路通畅'}[k],v:SB.rules[k]});
+  var h=$('#sbRuleHist');if(h)h.innerHTML=SB.ruleHist.slice(0,8).map(function(x){return '<div>'+x.tm+' · '+x.k+' → '+pct(x.v)+'</div>';}).join('');
+  if(SB.ruleHist.length>8)SB.ruleHist.length=8;
+  toast('规则已调整：'+{magic:'魔法概率',imperial:'帝国扩张',forest:'黑森林异变',trade:'商路通畅'}[k]+' → '+pct(SB.rules[k]));
+}
+function sbResetRules(){
+  SB.rules={magic:SB.defaults.magic,imperial:SB.defaults.imperial,forest:SB.defaults.forest,trade:SB.defaults.trade};
+  render(ROUTES['/sandbox']());
+  toast('规则已恢复默认');
+}
+function sbAddEvent(){
+  if(SB.identity!=='director'){toast('观察者 / 新角色身份无权注入事件');return;}
+  var type=$('#sbEvType').value,reg=$('#sbEvRegion').value,desc=($('#sbEvDesc').value||'').trim();
+  if(!desc){toast('请描述事件');return;}
+  var rEl=$('#sbRipple');
+  rEl.innerHTML='<div class="proposal-card mt8"><div class="row spread"><b style="color:var(--copper)">事件注入推演 · '+esc(desc)+'</b></div>'+
+    '<div class="impact-line"><b>谁响应：</b>'+reg+' 的巡夜人最先发现异常，现场留有爪痕与黑色灰烬。</div>'+
+    '<div class="impact-line"><b>势力变化：</b>冒险者公会发布悬赏（影响力 +4）；影裔教团暗中派出人手（+2）；灰烬商会冻结相关商路（−3）。</div>'+
+    '<div class="impact-line"><b>地区受影响：</b>'+reg+' 稳定 −8；周边冒险者聚集。</div>'+
+    '<div class="muted mt8" style="font-size:11.5px">该事件已转为事实提案，需在「世界事实」中确认才写入时间线。</div></div>';
+  PROPOSALS.push({id:'pr'+Date.now(),src:'开放沙盒 · 事件注入提案',t:'事件：'+desc,tag:'target:'+reg,d:desc,impact:[reg+'：稳定 −8','冒险者公会：影响力 +4','影裔教团：暗中行动'],evidence:['导演在沙盒中注入该事件','世界规则权重已考虑'],status:'pending'});
+  SB.feed.unshift({type:'冒险',t:'事件注入：'+desc,d:'目标：'+reg+'。世界开始响应。',tm:sbTime()});
+  var f=$('#sbFeed');if(f)f.innerHTML=SB.feed.slice(0,20).map(sbFeedItem).join('');
+  refreshBadge();$('#sbEvDesc').value='';
+  toast('事件已注入为提案（待确认）');
+}
+function sbCreateChar(){
+  if(SB.identity!=='character'&&SB.identity!=='director'){toast('需「新角色」或「导演」身份创建角色');return;}
+  var name=($('#sbCharName').value||'').trim();if(!name){toast('请输入角色名');return;}
+  var m={name:name,race:$('#sbCharRace').value,cls:$('#sbCharCls').value};
+  SB.myChars.unshift(m);
+  SB.feed.unshift({type:'冒险',t:name+' 以'+m.race+'·'+m.cls+'身份进入黑月大陆',d:'成为世界实例：可在沙盒中行动观察，但不改写总资料库原始角色卡。',tm:sbTime()});
+  var f=$('#sbFeed');if(f)f.innerHTML=SB.feed.slice(0,20).map(sbFeedItem).join('');
+  var mEl=$('#sbMine');if(mEl)mEl.innerHTML=SB.myChars.map(function(x){return '<div class="feed-item"><div class="avatar" style="width:28px;height:28px;font-size:12px;background:var(--violet)">'+x.name.charAt(0)+'</div><div style="flex:1"><b style="font-size:12.5px">'+x.name+'</b><div class="muted" style="font-size:11px">'+x.race+' · '+x.cls+' · 世界实例</div></div></div>';}).join('');
+  $('#sbCharName').value='';
+  toast('已以「'+name+'」进入世界（世界实例）');
+}
+function sbRenderSide(){
+  var f=$('#sbFactions');if(f)f.innerHTML=SB.factions.map(function(x){return '<div class="feed-item" style="padding:7px 10px"><div style="flex:1"><div class="row spread"><b style="font-size:12px">'+x.n+'</b><span class="muted" style="font-size:10.5px">'+x.move+'</span></div><div class="ab-bar" style="margin-top:3px"><span class="nm" style="width:auto;font-size:10.5px">'+x.stance+'</span>'+bar(x.pow,x.c)+'<span class="val">'+x.pow+'</span></div></div></div>';}).join('');
+  var r=$('#sbRegions');if(r)r.innerHTML=SB.regions.map(function(x){return '<div class="feed-item" style="padding:7px 10px"><div style="flex:1"><div class="row spread"><b style="font-size:12px">'+x.n+'</b><span class="chip '+(x.st<40?'red':x.st<55?'copper':'green')+'">'+x.status+'</span></div><div class="ab-bar" style="margin-top:3px"><span class="nm" style="width:auto;font-size:10.5px">稳定</span>'+bar(x.st)+'<span class="val">'+x.st+'</span></div></div></div>';}).join('');
+  var cl=$('#sbClock');if(cl)cl.textContent=sbTime();
+}
+
+/* ---------------- 冒烟自测（?smoke=1 时自动运行，仅用于验证） ---------------- */
+function waitUntil(fn,timeout){
+  return new Promise(function(res){
+    var t0=Date.now();
+    (function poll(){
+      if(fn()){res(true);return;}
+      if(Date.now()-t0>timeout){res(false);return;}
+      setTimeout(poll,150);
+    })();
+  });
+}
+function smokeRun(){
+  var out=[],steps=[];
+  function push(label,fn){steps.push([label,fn]);}
+  push('OVERVIEW',function(){location.hash='#/overview';route();return $('#app').innerHTML.indexOf('世界工作区概览')>=0;});
+  push('CP_PRESETS',function(){openCp('presets');var ok=$('#drawer').classList.contains('open')&&$('#drawer').innerHTML.indexOf('方案预设')>=0;closeDrawer();return ok;});
+  push('BINDING_PARSE',function(){location.hash='#/binding';route();pickImport();return $('#impBox').innerHTML.indexOf('确认绑定到世界')>=0;});
+  push('CHAR_LAYERS',function(){location.hash='#/characters/linye';route();var h=$('#app').innerHTML;return h.indexOf('原始角色资料')>=0&&h.indexOf('世界内角色状态')>=0;});
+  push('ADOPT',function(){var c0=confirmedCount();adoptProposal('pr2');return confirmedCount()===c0+1;});
+  push('REJECT',function(){var r0=FACTS.filter(function(f){return f.type==='rejected';}).length;rejectProposal('pr1');return FACTS.filter(function(f){return f.type==='rejected';}).length===r0+1;});
+  push('WRITE_PROP',function(){var p0=pendingProposalCount();writingProposal();return pendingProposalCount()>p0;});
+  push('GAME_MOVE',function(){location.hash='#/game';route();gmChoice(0);return GM.scene!=='s1';});
+  push('NARRA_MSG',function(){location.hash='#/narraverse';route();$('#nvInput').value='我想知道契约之书的下落';nvSend();return NV.length>=4;});
+  push('SB_TICK_REVIEW',function(){
+    location.hash='#/sandbox';route();
+    if(!$('#sbRunCtl')){throw new Error('no #sbRunCtl; app='+($('#app')?$('#app').innerHTML.length:0)+' head='+($('#app')?$('#app').innerHTML.slice(0,120).replace(/<[^>]+>/g,''):''));}
+    sbTick(7);
+    return waitUntil(function(){return SB.status!=='running'&&SB.status!=='paused';},4000).then(function(){return SB.status==='review'&&SB.candidates.length>0;});
+  });
+  push('SB_APPLY',function(){
+    var f0=confirmedCount();sbApply();
+    return waitUntil(function(){return SB.status==='idle';},500).then(function(){return confirmedCount()>f0;});
+  });
+  push('SB_PERM_OBSERVER',function(){
+    sbIdentity('observer');var c0=pendingProposalCount();sbAddEvent();return pendingProposalCount()===c0;
+  });
+  push('SB_CHAR',function(){
+    sbIdentity('character');
+    if(!$('#sbCharName')){throw new Error('no #sbCharName after sbIdentity; app='+($('#app')?$('#app').innerHTML.length:0));}
+    $('#sbCharName').value='测试旅人';sbCreateChar();return SB.myChars.length>0;
+  });
+  push('SB_RULE',function(){
+    sbIdentity('director');sbRule('magic',0.9);return Math.abs(SB.rules.magic-0.9)<0.001&&SB.ruleHist.length>0;
+  });
+  push('TASK_T5_DONE',function(){
+    runTask('t5');
+    return waitUntil(function(){var t=TASKS.find(function(x){return x.id==='t5';});return t.status==='done'||t.status==='stopped';},5000).then(function(){return TASKS.find(function(t){return t.id==='t5';}).status==='done';});
+  });
+  push('TASK_T3_WAITING',function(){
+    runTask('t3');
+    return waitUntil(function(){var t=TASKS.find(function(x){return x.id==='t3';});return t.status==='waiting';},5000).then(function(){return TASKS.find(function(t){return t.id==='t3';}).status==='waiting';});
+  });
+  push('TASK_CONFIRM',function(){
+    var c0=confirmedCount();confirmTask('t3');return confirmedCount()===c0+1;
+  });
+  var i=0;
+  function next(){
+    if(i>=steps.length){printSmoke(out);return;}
+    var s=steps[i++];
+    try{
+      var r=s[1]();
+      if(r&&r.then){r.then(function(v){out.push(s[0]+':'+(v?'OK':'FAIL'));next();},function(e){out.push(s[0]+':ERR '+e.message);next();});}
+      else{out.push(s[0]+':'+(r?'OK':'FAIL'));next();}
+    }catch(e){out.push(s[0]+':ERR '+e.message);next();}
+  }
+  next();
+}
+function printSmoke(out){
+  var pre=document.createElement('pre');pre.id='smokeResult';
+  pre.textContent='SMOKE\n'+out.join('\n');
+  document.body.appendChild(pre);
+}
+if(location.search.indexOf('smoke=1')>=0){setTimeout(smokeRun,300);}
+
+/* ---------------- 启动 ---------------- */
+$('#railItems').innerHTML=railHtml();
+$('#segWorld').textContent=curWorld().name;
+$('#segBook').textContent='《黑月挽歌》';
+$('#segMode').textContent='世界工作区';
+$('#propBadge').textContent='事实提案 '+pendingProposalCount()+' 待确认';
+route();
+</script>
