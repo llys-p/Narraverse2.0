@@ -7,7 +7,7 @@ type BottomPanel = 'versions' | 'problems' | null
  * 它们各自占据主内容区，并作为共享页面（设置/书库/技能等）关闭后的返回目标。
  * books / library / skills / agents / automations 为共享/菜单模式。
  */
-export type WorkspaceMode = 'ide' | 'interactive' | 'narraverse' | 'books' | 'library' | 'skills' | 'agents' | 'automations'
+export type WorkspaceMode = 'ide' | 'interactive' | 'narraverse' | 'books' | 'worlds' | 'library' | 'skills' | 'agents' | 'automations'
 /** 内容模式：写作、游戏、叙界三选一的顶层导航目标。 */
 export type ContentMode = 'ide' | 'interactive' | 'narraverse'
 
@@ -36,7 +36,7 @@ function readInitialRightPanel(): RightPanel {
 }
 
 function isWorkspaceMode(value: unknown): value is WorkspaceMode {
-  return value === 'ide' || value === 'interactive' || value === 'narraverse' || value === 'books' || value === 'library' || value === 'skills' || value === 'agents' || value === 'automations'
+  return value === 'ide' || value === 'interactive' || value === 'narraverse' || value === 'books' || value === 'worlds' || value === 'library' || value === 'skills' || value === 'agents' || value === 'automations'
 }
 
 function isRightPanel(value: unknown): value is RightPanel {

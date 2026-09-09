@@ -38,6 +38,7 @@ import messages from './en-US/messages'
 import onboarding from './en-US/onboarding'
 import changes from './en-US/changes'
 import library from './en-US/library'
+import worldWorkspace from './en-US/worldWorkspace'
 
 const enUS = {
   ...common,
@@ -80,6 +81,7 @@ const enUS = {
   ...onboarding,
   ...changes,
   ...library,
+  ...worldWorkspace,
 } as const
 
 export default enUS

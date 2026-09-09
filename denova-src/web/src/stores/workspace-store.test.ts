@@ -68,6 +68,18 @@ describe('useWorkspaceStore narraverse (Denova 第三模式)', () => {
     expect(window.localStorage.getItem('nova:content-mode')).toBe('narraverse')
   })
 
+  it('worlds is a shared workspace mode and never overwrites the content mode', () => {
+    useWorkspaceStore.getState().setMode('ide')
+    expect(window.localStorage.getItem('nova:content-mode')).toBe('ide')
+
+    useWorkspaceStore.getState().setMode('worlds')
+
+    expect(useWorkspaceStore.getState().mode).toBe('worlds')
+    expect(window.localStorage.getItem('nova:mode')).toBe('worlds')
+    // worlds 不是内容模式，不得覆盖 nova:content-mode（关闭后仍回到写作）
+    expect(window.localStorage.getItem('nova:content-mode')).toBe('ide')
+  })
+
   it('does not persist the ?mode=narraverse deep link over the user’s last mode', async () => {
     // 用户上次真实模式为写作
     window.localStorage.setItem('nova:mode', 'ide')

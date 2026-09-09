@@ -106,7 +106,7 @@ function App() {
   const workspaceAutoRefreshEnabled = mode === 'ide' && !settingsOpen && (rightPanel === 'ai' || rightPanel === null)
 
   useEffect(() => {
-    if (mode === 'books' || mode === 'library' || mode === 'skills' || mode === 'agents' || mode === 'automations') return
+    if (mode === 'books' || mode === 'worlds' || mode === 'library' || mode === 'skills' || mode === 'agents' || mode === 'automations') return
     const contentMode = mode === 'interactive' ? 'interactive' : mode === 'narraverse' ? 'narraverse' : 'ide'
     booksReturnModeRef.current = contentMode
     setBooksReturnMode(contentMode)
@@ -327,7 +327,7 @@ function App() {
     setActiveTabKey(null)
     clearSelectedFile()
     // 写作和游戏依赖当前书籍；叙界是自包含内容模式，无书籍时也必须可直接进入。
-    if (mode !== 'books' && mode !== 'narraverse') setMode('books')
+    if (mode !== 'books' && mode !== 'narraverse' && mode !== 'worlds') setMode('books')
   }, [clearSelectedFile, mode, setMode, workspace, workspaceLoaded])
 
   useEffect(() => {
@@ -602,7 +602,7 @@ function App() {
 
   const handleSetMode = useCallback((nextMode: WorkspaceMode) => {
     if (nextMode !== 'narraverse') setNarraverseModule4Open(false)
-    if (nextMode === 'books' || nextMode === 'library' || nextMode === 'skills' || nextMode === 'agents' || nextMode === 'automations') {
+    if (nextMode === 'books' || nextMode === 'worlds' || nextMode === 'library' || nextMode === 'skills' || nextMode === 'agents' || nextMode === 'automations') {
       const returnMode = mode === 'ide' || mode === 'interactive' || mode === 'narraverse' ? mode : booksReturnModeRef.current
       booksReturnModeRef.current = returnMode
       setBooksReturnMode(returnMode)

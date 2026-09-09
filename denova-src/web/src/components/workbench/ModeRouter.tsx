@@ -39,11 +39,12 @@ const AgentsView = lazy(() => import('@/features/agents/AgentsView').then((modul
 const AutomationsView = lazy(() => import('@/features/automations/AutomationsView').then((module) => ({ default: module.AutomationsView })))
 const SkillsView = lazy(() => import('@/features/skills/SkillsView').then((module) => ({ default: module.SkillsView })))
 const LibraryView = lazy(() => import('@/features/library/LibraryView').then((module) => ({ default: module.LibraryView })))
+const WorldWorkspace = lazy(() => import('@/features/world-workspace/WorldWorkspace').then((module) => ({ default: module.WorldWorkspace })))
 const SettingsView = lazy(() => import('@/features/settings/SettingsView').then((module) => ({ default: module.SettingsView })))
 // 叙界以持久 iframe 嵌入工作区，模式切换只改变可见性、不卸载。
 // 直接导入（非 lazy）：iframe 必须只创建一次，避免被 Suspense 重建导致状态丢失。
 import { NarraverseWorkspace } from '@/features/narraverse/NarraverseWorkspace'
-type MainRouteId = 'settings' | 'skills' | 'agents' | 'automations' | 'library' | 'books' | 'interactive' | 'narraverse' | 'versions' | 'ide-lore' | 'ide-teller' | 'ide-writing'
+type MainRouteId = 'settings' | 'skills' | 'agents' | 'automations' | 'library' | 'books' | 'worlds' | 'interactive' | 'narraverse' | 'versions' | 'ide-lore' | 'ide-teller' | 'ide-writing'
 type PlanningDocumentIcon = 'ideas' | 'outline' | 'plan' | 'creator' | 'progress' | 'characterState'
 
 interface ModeRouterProps {
@@ -507,6 +508,8 @@ export function ModeRouter(props: ModeRouterProps) {
             ? 'library'
             : mode === 'books'
             ? 'books'
+            : mode === 'worlds'
+            ? 'worlds'
             : versionsVisible
               ? 'versions'
               : mode === 'interactive'
@@ -752,6 +755,17 @@ export function ModeRouter(props: ModeRouterProps) {
       {mountedRoutes.has('library') && (
         <MainRouteLayer visible={visibleMainRoute === 'library'}>
           <LibraryView workspace={workspace} onClose={() => onSetMode(booksReturnMode)} />
+        </MainRouteLayer>
+      )}
+      {mountedRoutes.has('worlds') && (
+        <MainRouteLayer visible={visibleMainRoute === 'worlds'}>
+          <WorldWorkspace
+            onClose={() => onSetMode(booksReturnMode)}
+            onSetMode={onSetMode}
+            onQuickSwitchBook={onQuickSwitchBook}
+            onOpenModule4={onOpenModule4}
+            onCloseModule4={onCloseModule4}
+          />
         </MainRouteLayer>
       )}
       {mountedRoutes.has('agents') && (

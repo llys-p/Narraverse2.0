@@ -95,6 +95,12 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.POST("/books/sort-mode", apiHandlers.HandleBookSortMode)
 		api.GET("/books/info", apiHandlers.HandleBookInfo)
 		api.PUT("/books/info", apiHandlers.HandleUpdateBookInfo)
+		// World Workspace：世界工作区（跨书，存储于全局数据目录 worlds/）。
+		api.GET("/worlds", apiHandlers.HandleWorldList)
+		api.POST("/worlds", apiHandlers.HandleWorldCreate)
+		api.GET("/worlds/:id", apiHandlers.HandleWorldGet)
+		api.PUT("/worlds/:id", apiHandlers.HandleWorldReplace)
+		api.POST("/worlds/:id/archive", apiHandlers.HandleWorldArchive)
 		api.GET("/lore/items", apiHandlers.HandleLoreItems)
 		api.POST("/lore/items", apiHandlers.HandleLoreItemCreate)
 		api.PATCH("/lore/items/:id", apiHandlers.HandleLoreItemUpdate)

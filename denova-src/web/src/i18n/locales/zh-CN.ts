@@ -38,6 +38,7 @@ import messages from './zh-CN/messages'
 import onboarding from './zh-CN/onboarding'
 import changes from './zh-CN/changes'
 import library from './zh-CN/library'
+import worldWorkspace from './zh-CN/worldWorkspace'
 
 const zhCN = {
   ...common,
@@ -80,6 +81,7 @@ const zhCN = {
   ...onboarding,
   ...changes,
   ...library,
+  ...worldWorkspace,
 } as const
 
 export default zhCN
