@@ -19,13 +19,20 @@ import { TimelineSection } from '../components/sections/TimelineSection'
 import { classifyTargetValidity, type TargetLoadState, type TargetValidity } from '../binding-health'
 import { characterDisplayName, getBinding, worldStats } from '../selectors'
 import { characterFromBinding, emptyCharacter } from '../world-factory'
-import { removeWorldEntity } from '../world-ops'
+import { findDraftIssue, removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
 import type { WorkspaceMode } from '@/stores/workspace-store'
 import type { World, WorldAssetBinding, WorldCharacter, WorldFaction, WorldLocation, WorldTimelineEntry } from '../types'
 
 type Section = 'overview' | 'setting' | 'characters' | 'locations' | 'factions' | 'history'
 type LoadState = 'loading' | 'error' | 'notfound' | 'ready'
+
+/** 草稿问题类别映射到控制台分区，便于保存前定位到首个空实体。 */
+function issueToSection(kind: 'character' | 'location' | 'faction' | 'timeline'): Section {
+  if (kind === 'character') return 'characters'
+  if (kind === 'timeline') return 'history'
+  return `${kind}s` as Section
+}
 
 interface WorldConsolePageProps {
   worldId: string
@@ -86,6 +93,13 @@ export function WorldConsolePage({
 
   const save = useCallback(async () => {
     if (!draft || saving) return
+    // 保存前先拦截空名/空标题实体（后端必然 400）：定位到对应分区并提示，不发请求。
+    const issue = findDraftIssue(draft)
+    if (issue) {
+      setSection(issueToSection(issue.kind))
+      toast.error(t(`worldWorkspace.console.draftInvalid.${issue.kind}`))
+      return
+    }
     setSaving(true)
     setConflict(false)
     try {
@@ -109,11 +123,12 @@ export function WorldConsolePage({
     await load()
   }, [load, t])
 
-  // 离开当前控制台（返回列表/打开角色/进入运行模式/关闭）前的未保存保护：统一确认，取消则留在本页。
+  // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
+  const confirmLeave = useCallback(() => !dirty || window.confirm(t('worldWorkspace.unsavedLeave')), [dirty, t])
   const guardLeave = useCallback((fn: () => void) => {
-    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return
+    if (!confirmLeave()) return
     fn()
-  }, [dirty, t])
+  }, [confirmLeave])
 
   const boundMasterIds = useMemo(() => new Set((draft?.bindings ?? []).map((b) => b.masterItemId)), [draft])
 
@@ -144,15 +159,6 @@ export function WorldConsolePage({
   }
 
   const removeCharacter = (id: string) => confirmRemove('character', id)
-
-  // 进入运行模式同样要先过未保存保护；快速切书是异步的，取消时返回 false 让 ModeEntries 留在本页。
-  const guardedSetMode = (mode: WorkspaceMode) => guardLeave(() => onSetMode(mode))
-  const guardedQuickSwitchBook = async (path: string) => {
-    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return false
-    return onQuickSwitchBook(path)
-  }
-  const guardedOpenModule4 = () => guardLeave(() => onOpenModule4?.())
-  const guardedCloseModule4 = () => guardLeave(() => onCloseModule4?.())
 
   const tabs: { key: Section; icon: typeof Globe2; label: string }[] = [
     { key: 'overview', icon: Globe2, label: t('worldWorkspace.console.overview') },
@@ -205,8 +211,8 @@ export function WorldConsolePage({
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
             {section === 'overview' && <Overview world={draft} t={t} books={books} stories={stories}
-              booksLoad={booksLoad} storiesLoad={storiesLoad} mutate={mutate}
-              onSetMode={guardedSetMode} onQuickSwitchBook={guardedQuickSwitchBook} onOpenModule4={guardedOpenModule4} onCloseModule4={guardedCloseModule4} />}
+              booksLoad={booksLoad} storiesLoad={storiesLoad} mutate={mutate} confirmLeave={confirmLeave}
+              onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />}
 
             {section === 'setting' && <SettingEditor world={draft} mutate={mutate} t={t} />}
 
@@ -268,7 +274,7 @@ export function WorldConsolePage({
 type Mutator = (fn: (w: World) => World) => void
 type TFn = (k: string, o?: Record<string, unknown>) => string
 
-function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, onSetMode, onQuickSwitchBook, onOpenModule4, onCloseModule4 }: {
+function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, confirmLeave, onSetMode, onQuickSwitchBook, onOpenModule4, onCloseModule4 }: {
   world: World
   t: TFn
   books: BookRecord[]
@@ -276,6 +282,7 @@ function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, on
   booksLoad: TargetLoadState
   storiesLoad: TargetLoadState
   mutate: Mutator
+  confirmLeave: () => boolean
   onSetMode: (mode: WorkspaceMode) => void
   onQuickSwitchBook: (path: string) => Promise<boolean>
   onOpenModule4?: () => void
@@ -334,7 +341,7 @@ function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, on
         </label>
       </div>
 
-      <ModeEntries world={world} onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />
+      <ModeEntries world={world} confirmLeave={confirmLeave} onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />
     </div>
   )
 }

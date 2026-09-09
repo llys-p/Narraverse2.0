@@ -151,6 +151,9 @@ describe('CharacterProfile 显式刷新', () => {
     await user.click(screen.getByRole('button', { name: '刷新资料摘要' }))
     await waitFor(() => expect(screen.getByText('原件已不存在')).toBeInTheDocument())
     expect(mocks.toast.error).toHaveBeenCalledWith('原件已不存在，已保留世界内资料')
+    // 先做一处世界内编辑使草稿变脏（无改动时保存按钮禁用），再保存验证绑定未被失败刷新改动
+    const note = screen.getByDisplayValue('世界内备注不变')
+    await user.clear(note); await user.type(note, '改后的备注')
     await user.click(screen.getByRole('button', { name: '保存' }))
     const [, , sent] = mocks.updateWorld.mock.calls[0]
     // 绑定保留，仍是旧快照
@@ -180,6 +183,8 @@ describe('CharacterProfile 显式刷新', () => {
     await user.click(screen.getByRole('button', { name: '刷新资料摘要' }))
     await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith('暂时无法检查，未改动资料'))
     expect(mocks.toast.success).not.toHaveBeenCalled()
+    const note2 = screen.getByDisplayValue('世界内备注不变')
+    await user.clear(note2); await user.type(note2, '改后的备注')
     await user.click(screen.getByRole('button', { name: '保存' }))
     const [, , sent] = mocks.updateWorld.mock.calls[0]
     expect(sent.bindings[0]).toMatchObject({ nameSnapshot: '旧名', masterRevision: 'sha256:old' })
@@ -244,7 +249,9 @@ describe('CharacterProfile 冲突重新加载', () => {
     renderProfile()
     await screen.findByText('原件正文')
     mocks.updateWorld.mockRejectedValueOnce(new mocks.MockAPIError(409))
-
+    // 先编辑使草稿变脏，保存按钮才可用
+    const nameInput = screen.getByDisplayValue('世界内角色名')
+    await user.type(nameInput, 'x')
     await user.click(screen.getByRole('button', { name: '保存' }))
     const reloadBtn = await screen.findByRole('button', { name: '重新加载' })
 
@@ -313,5 +320,29 @@ describe('CharacterProfile 未保存（dirty）保护', () => {
     expect(noSpy).not.toHaveBeenCalled()
     expect(onBack).toHaveBeenCalled()
     noSpy.mockRestore()
+  })
+})
+
+describe('CharacterProfile 保存按钮契约（B5）', () => {
+  it('无未保存修改时保存按钮禁用，不发空转 PUT', async () => {
+    mocks.fetchMasterAsset.mockResolvedValue(detail())
+    renderProfile()
+    await screen.findByText('原件正文')
+    expect(screen.getByRole('button', { name: /保存/ })).toBeDisabled()
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('清空角色名后（dirty）保存被拦截：提示命名、不发 PUT', async () => {
+    const user = userEvent.setup()
+    mocks.fetchMasterAsset.mockResolvedValue(detail())
+    renderProfile()
+    await screen.findByText('原件正文')
+    const nameInput = screen.getByDisplayValue('世界内角色名')
+    await user.clear(nameInput)
+    const saveBtn = screen.getByRole('button', { name: /保存/ })
+    await waitFor(() => expect(saveBtn).not.toBeDisabled())
+    await user.click(saveBtn)
+    expect(mocks.toast.error).toHaveBeenCalledWith('存在未命名角色，请先填写角色名再保存')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
   })
 })

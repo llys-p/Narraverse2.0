@@ -17,11 +17,6 @@ export function worldStats(world: World) {
   }
 }
 
-/** 头像按 masterItemId 构造 URL，不持久化 avatarUrl。 */
-export function masterAvatarURL(masterItemId: string): string {
-  return `/api/library/assets/${encodeURIComponent(masterItemId)}/avatar`
-}
-
 /** 角色显示名：优先世界内 displayName，其次绑定快照名。 */
 export function characterDisplayName(world: World, character: WorldCharacter): string {
   if (character.displayName.trim()) return character.displayName

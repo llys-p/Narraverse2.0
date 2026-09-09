@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { characterDisplayName, getBinding, masterAvatarURL, worldStats } from '../selectors'
+import { characterDisplayName, getBinding, worldStats } from '../selectors'
 import type { World } from '../types'
 
 function fixtureWorld(): World {
@@ -32,10 +32,6 @@ describe('world selectors', () => {
     expect(worldStats(fixtureWorld())).toEqual({
       characterCount: 2, locationCount: 1, factionCount: 1, timelineCount: 1, bindingCount: 1,
     })
-  })
-
-  it('builds avatar url from masterItemId without persisting it', () => {
-    expect(masterAvatarURL('master/a b')).toBe('/api/library/assets/master%2Fa%20b/avatar')
   })
 
   it('falls back to binding snapshot name only when displayName empty', () => {

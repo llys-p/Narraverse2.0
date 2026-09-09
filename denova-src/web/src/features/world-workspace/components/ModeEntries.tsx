@@ -9,6 +9,9 @@ import type { World } from '../types'
 
 interface ModeEntriesProps {
   world: World
+  /** 统一的“离开世界页”preflight：由控制台根据 dirty 决定是否弹确认；返回 false 表示用户取消，整个操作必须无副作用中止。 */
+  confirmLeave: () => boolean
+  /** 以下均为原始回调（不再各自带确认），副作用只允许在 confirmLeave 通过后发生。 */
   onSetMode: (mode: WorkspaceMode) => void
   onQuickSwitchBook: (path: string) => Promise<boolean>
   onOpenModule4?: () => void
@@ -17,40 +20,51 @@ interface ModeEntriesProps {
 
 type Pending = 'writing' | 'game' | null
 
-export function ModeEntries({ world, onSetMode, onQuickSwitchBook, onOpenModule4, onCloseModule4 }: ModeEntriesProps) {
+export function ModeEntries({ world, confirmLeave, onSetMode, onQuickSwitchBook, onOpenModule4, onCloseModule4 }: ModeEntriesProps) {
   const { t } = useTranslation()
   const [pending, setPending] = useState<Pending>(null)
 
   const enterWriting = async () => {
     if (!world.primaryBookPath) { toast.error(t('worldWorkspace.modes.noPrimaryBook')); return }
+    // 统一 preflight：一次确认；取消则不切书、不切模式、无任何副作用。
+    if (!confirmLeave()) return
     setPending('writing')
-    // 必须先成功切换主书，再离开世界页；失败则留在原页。
-    const ok = await onQuickSwitchBook(world.primaryBookPath)
-    if (ok) { onSetMode('ide'); return }
-    setPending(null)
-    toast.error(t('worldWorkspace.modes.switchBookFailed'))
+    try {
+      // 必须先成功切换主书，再离开世界页；失败则留在原页。
+      const ok = await onQuickSwitchBook(world.primaryBookPath)
+      if (ok) { onSetMode('ide'); return }
+      toast.error(t('worldWorkspace.modes.switchBookFailed'))
+    } finally {
+      // worlds 层为 hidden 保活而非卸载，必须复位 pending，否则返回后卡片永久转圈。
+      setPending(null)
+    }
   }
 
   const enterGame = async () => {
     if (!world.primaryInteractiveStoryId) { toast.error(t('worldWorkspace.modes.noPrimaryStory')); return }
+    // 选择故事是服务端 POST 副作用，必须在确认离开之后才发起。
+    if (!confirmLeave()) return
     setPending('game')
     try {
       await selectInteractiveStory(world.primaryInteractiveStoryId)
       onSetMode('interactive')
     } catch {
-      setPending(null)
       toast.error(t('worldWorkspace.modes.loadStoryFailed'))
+    } finally {
+      setPending(null)
     }
   }
 
   const enterNarraverse = () => {
-    // 叙界是独立入口，进入前确保关闭 Module4 叠层。
+    // 单次确认通过后再关闭 Module4 叠层并切换，避免双重确认。
+    if (!confirmLeave()) return
     onCloseModule4?.()
     onSetMode('narraverse')
   }
 
   const enterSandbox = () => {
     // Module4 现有协议不支持携带世界/冒险 id，这里仅打开沙盒。
+    if (!confirmLeave()) return
     onOpenModule4?.()
   }
 

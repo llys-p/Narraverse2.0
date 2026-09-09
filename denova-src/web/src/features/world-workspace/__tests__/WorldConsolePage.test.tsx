@@ -153,6 +153,25 @@ describe('WorldConsolePage 冲突重新加载', () => {
   })
 })
 
+describe('WorldConsolePage 保存前草稿校验（B1）', () => {
+  it('存在空名称地点时保存被前端拦截：不发 updateWorld 并提示', async () => {
+    const user = userEvent.setup()
+    const broken = worldFixture()
+    broken.locations = [{ id: 'lEmpty', name: '   ' }]
+    mocks.getWorld.mockResolvedValue({ world: broken, revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([{ path: '/other-book.md', name: '另一本书' }])
+    mocks.getStories.mockResolvedValue({ stories: [{ id: 'other-story', title: '另一故事' }] })
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} />)
+    const bookSelect = (await screen.findByText('主书（写作模式）')).closest('label')!.querySelector('select')!
+    await waitFor(() => expect(within(bookSelect).getByText('另一本书')).toBeInTheDocument())
+    await user.selectOptions(bookSelect, '/other-book.md') // 制造 dirty 以显示保存按钮
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+    expect(mocks.toast.error).toHaveBeenCalledWith('存在未命名地点，请先填写地点名称再保存')
+  })
+})
+
 describe('WorldConsolePage 手动新建与未保存保护', () => {
   it('手动新建角色带可保存默认名，不产生空名称', async () => {
     const user = userEvent.setup()

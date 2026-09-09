@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { pruneOrphanBindings, referencedBindingIds, removeWorldEntity } from '../world-ops'
-import type { World, WorldAssetBinding } from '../types'
+import { findDraftIssue, pruneOrphanBindings, referencedBindingIds, removeWorldEntity } from '../world-ops'
+import type { World, WorldAssetBinding, WorldSemanticType } from '../types'
 
-function binding(bindingId: string, master = `m-${bindingId}`): WorldAssetBinding {
+function binding(bindingId: string, master = `m-${bindingId}`, semantic: WorldSemanticType = 'character'): WorldAssetBinding {
   return {
-    bindingId, masterItemId: master, recordKind: 'character_template',
-    semanticType: 'character', nameSnapshot: bindingId, tagsSnapshot: [], boundAt: '',
+    bindingId, masterItemId: master,
+    recordKind: semantic === 'character' ? 'character_template' : 'lorebook_template',
+    semanticType: semantic, nameSnapshot: bindingId, tagsSnapshot: [], boundAt: '',
   }
 }
 
@@ -98,5 +99,55 @@ describe('removeWorldEntity', () => {
     const snapshot = JSON.stringify(w)
     removeWorldEntity(w, 'character', 'c1')
     expect(JSON.stringify(w)).toBe(snapshot)
+  })
+
+  it('M2：世界级自由绑定（world/rule/item/other/lorebook）在删除任意实体后仍保留', () => {
+    const w = baseWorld()
+    w.bindings = [
+      ...w.bindings,
+      binding('bworld', 'mw', 'world'),
+      binding('brule', 'mr', 'rule'),
+      binding('bitem', 'mi', 'item'),
+      binding('bother', 'mo', 'other'),
+    ]
+    // 删除角色 c1（其独占的实体作用域绑定 b1 被清），世界级绑定一个都不能少
+    const out = removeWorldEntity(w, 'character', 'c1')
+    for (const id of ['bworld', 'brule', 'bitem', 'bother']) {
+      expect(out.bindings.some((b) => b.bindingId === id), `世界级绑定 ${id} 不应被清理`).toBe(true)
+    }
+    expect(out.bindings.some((b) => b.bindingId === 'b1')).toBe(false)
+  })
+
+  it('M2：实体作用域绑定（location/faction）失去全部引用时仍被清理', () => {
+    const w = baseWorld()
+    // 一个语义为 location 但没有任何地点引用的绑定 → 仍属 orphan，应清理
+    w.bindings = [...w.bindings, binding('blocOrphan', 'mlo', 'location')]
+    const out = pruneOrphanBindings(w)
+    expect(out.bindings.some((b) => b.bindingId === 'blocOrphan')).toBe(false)
+    // 被地点 l1 引用的 bloc 保留
+    expect(out.bindings.some((b) => b.bindingId === 'bloc')).toBe(true)
+  })
+})
+
+describe('findDraftIssue 保存前校验', () => {
+  it('全部非空时返回 null', () => {
+    expect(findDraftIssue(baseWorld())).toBeNull()
+  })
+  it('按 角色→地点→势力→时间线 顺序返回第一个空名/空标题实体', () => {
+    const w = baseWorld()
+    w.characters = [...w.characters, { id: 'cEmpty', displayName: '   ' }]
+    expect(findDraftIssue(w)).toEqual({ kind: 'character', id: 'cEmpty' })
+
+    const w2 = baseWorld()
+    w2.locations = [...w2.locations, { id: 'lEmpty', name: '' }]
+    expect(findDraftIssue(w2)).toEqual({ kind: 'location', id: 'lEmpty' })
+
+    const w3 = baseWorld()
+    w3.factions = [...w3.factions, { id: 'fEmpty', name: '' }]
+    expect(findDraftIssue(w3)).toEqual({ kind: 'faction', id: 'fEmpty' })
+
+    const w4 = baseWorld()
+    w4.timeline = [{ id: 'tEmpty', order: 1, title: '' }]
+    expect(findDraftIssue(w4)).toEqual({ kind: 'timeline', id: 'tEmpty' })
   })
 })

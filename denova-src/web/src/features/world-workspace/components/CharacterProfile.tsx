@@ -130,6 +130,9 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
 
   const save = async () => {
     if (!world || saving) return
+    // 无未保存修改不发空转 PUT；角色名清空会被后端 400，前端先拦住并提示。
+    if (!dirty) return
+    if (!character?.displayName.trim()) { toast.error(t('worldWorkspace.console.draftInvalid.character')); return }
     setSaving(true)
     setConflict(false)
     try {
@@ -166,7 +169,7 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
       icon={UserRound}
       title={character?.displayName || t('worldWorkspace.characters')}
       leadingContent={<Button variant="ghost" size="icon-sm" onClick={requestBack} aria-label={t('worldWorkspace.character.back')}><ArrowLeft /></Button>}
-      actions={<Button size="sm" disabled={state !== 'ready' || saving || !character} onClick={() => void save()} data-icon="inline-start">
+      actions={<Button size="sm" disabled={state !== 'ready' || saving || !character || !dirty} onClick={() => void save()} data-icon="inline-start">
         {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}{t('worldWorkspace.save')}
       </Button>}
     >
