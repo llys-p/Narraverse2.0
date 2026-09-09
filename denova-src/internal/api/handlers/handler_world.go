@@ -123,7 +123,8 @@ func (h *Handlers) HandleWorldCreate(ctx context.Context, c *app.RequestContext)
 func (h *Handlers) HandleWorldGet(ctx context.Context, c *app.RequestContext) {
 	w, rev, err := h.app.GetWorld(ctx, c.Param("id"))
 	if err != nil {
-		writeError(c, worldErrorStatus(err), err.Error())
+		// 统一世界错误脱敏策略：损坏文件等内部错误不得把 err.Error()（可能含本机路径）直接回给客户端。
+		writeWorldError(c, err)
 		return
 	}
 	writeJSON(c, consts.StatusOK, map[string]interface{}{"world": w, "revision": rev})

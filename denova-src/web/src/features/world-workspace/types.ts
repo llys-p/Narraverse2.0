@@ -10,6 +10,8 @@ export type WorldSemanticType =
 export type CharacterRole = 'protagonist' | 'major' | 'minor' | 'npc'
 export type WorldStatus = 'active' | 'archived'
 export type TimelineCategory = 'canon' | 'planned'
+/** 可被删除并做级联解引用的世界实体类型。 */
+export type WorldEntityKind = 'character' | 'location' | 'faction'
 
 export interface WorldSetting {
   rules: string[]

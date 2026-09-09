@@ -10,6 +10,8 @@ interface FactionSectionProps {
   world: World
   onChange: (factions: WorldFaction[]) => void
   readOnly?: boolean
+  /** 提供时删除走该回调（控制台用于级联解除引用并清理 orphan 绑定）；否则仅本地过滤。 */
+  onRemove?: (id: string) => void
 }
 
 function clampScore(value: number): number {
@@ -17,7 +19,7 @@ function clampScore(value: number): number {
   return Math.max(0, Math.min(100, value))
 }
 
-export function FactionSection({ world, onChange, readOnly = false }: FactionSectionProps) {
+export function FactionSection({ world, onChange, readOnly = false, onRemove }: FactionSectionProps) {
   const { t } = useTranslation()
   const update = (id: string, patch: Partial<WorldFaction>) =>
     onChange(world.factions.map((f) => (f.id === id ? { ...f, ...patch } : f)))
@@ -46,7 +48,7 @@ export function FactionSection({ world, onChange, readOnly = false }: FactionSec
               />
               {!readOnly && (
                 <Button variant="ghost" size="icon-sm" aria-label="remove"
-                  onClick={() => onChange(world.factions.filter((f) => f.id !== faction.id))}><Trash2 /></Button>
+                  onClick={() => (onRemove ? onRemove(faction.id) : onChange(world.factions.filter((f) => f.id !== faction.id)))}><Trash2 /></Button>
               )}
             </div>
             {bound ? <span className="text-[11px] text-[var(--nova-text-muted)]">↳ {bound.nameSnapshot}</span> : null}

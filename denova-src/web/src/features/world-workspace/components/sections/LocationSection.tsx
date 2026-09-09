@@ -10,9 +10,11 @@ interface LocationSectionProps {
   world: World
   onChange: (locations: WorldLocation[]) => void
   readOnly?: boolean
+  /** 提供时删除走该回调（控制台用于级联解除引用并清理 orphan 绑定）；否则仅本地过滤。 */
+  onRemove?: (id: string) => void
 }
 
-export function LocationSection({ world, onChange, readOnly = false }: LocationSectionProps) {
+export function LocationSection({ world, onChange, readOnly = false, onRemove }: LocationSectionProps) {
   const { t } = useTranslation()
   const update = (id: string, patch: Partial<WorldLocation>) =>
     onChange(world.locations.map((l) => (l.id === id ? { ...l, ...patch } : l)))
@@ -41,7 +43,7 @@ export function LocationSection({ world, onChange, readOnly = false }: LocationS
               />
               {!readOnly && (
                 <Button variant="ghost" size="icon-sm" aria-label="remove"
-                  onClick={() => onChange(world.locations.filter((l) => l.id !== loc.id))}><Trash2 /></Button>
+                  onClick={() => (onRemove ? onRemove(loc.id) : onChange(world.locations.filter((l) => l.id !== loc.id)))}><Trash2 /></Button>
               )}
             </div>
             {bound ? <span className="text-[11px] text-[var(--nova-text-muted)]">↳ {bound.nameSnapshot}</span> : null}

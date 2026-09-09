@@ -71,16 +71,19 @@ function renderConsole() {
   mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
   mocks.getBooks.mockResolvedValue([{ path: '/other-book.md', name: '另一本书' }])
   mocks.getStories.mockResolvedValue({ stories: [{ id: 'other-story', title: '另一故事' }] })
-  return render(
+  const onOpenCharacter = vi.fn()
+  const onBack = vi.fn()
+  const view = render(
     <WorldConsolePage
       worldId="w1"
-      onBack={vi.fn()}
-      onOpenCharacter={vi.fn()}
+      onBack={onBack}
+      onOpenCharacter={onOpenCharacter}
       onWorldChanged={vi.fn()}
       onSetMode={vi.fn()}
       onQuickSwitchBook={vi.fn(async () => true)}
     />,
   )
+  return { view, onOpenCharacter, onBack }
 }
 
 beforeEach(() => vi.clearAllMocks())
@@ -146,6 +149,35 @@ describe('WorldConsolePage 冲突重新加载', () => {
     const ok = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await user.click(screen.getByRole('button', { name: '重新加载' }))
     await waitFor(() => expect(mocks.getWorld).toHaveBeenCalledTimes(2))
+    ok.mockRestore()
+  })
+})
+
+describe('WorldConsolePage 手动新建与未保存保护', () => {
+  it('手动新建角色带可保存默认名，不产生空名称', async () => {
+    const user = userEvent.setup()
+    renderConsole()
+    await user.click(await screen.findByRole('button', { name: '角色' }))
+    await user.click(screen.getByRole('button', { name: '手动新建' }))
+    // 新角色使用默认名“新角色”，后端不会因空 displayName 拒绝
+    expect(await screen.findByText('新角色')).toBeInTheDocument()
+  })
+
+  it('有未保存修改时打开角色需确认：取消不跳转，确认才打开', async () => {
+    const user = userEvent.setup()
+    const { onOpenCharacter } = renderConsole()
+    await user.click(await screen.findByRole('button', { name: '角色' }))
+    await user.click(screen.getByRole('button', { name: '手动新建' }))
+    const card = await screen.findByText('新角色')
+
+    const cancel = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await user.click(card)
+    expect(onOpenCharacter).not.toHaveBeenCalled()
+    cancel.mockRestore()
+
+    const ok = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await user.click(card)
+    expect(onOpenCharacter).toHaveBeenCalledTimes(1)
     ok.mockRestore()
   })
 })

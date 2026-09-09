@@ -173,6 +173,13 @@ const worldWorkspace = {
   'worldWorkspace.bindingHealth.refreshUnavailable': '暂时无法检查，未改动资料',
   'worldWorkspace.bindingHealth.reload': '重新加载',
   'worldWorkspace.bindingHealth.reloadConfirm': '重新加载会放弃当前尚未保存的修改，确定继续吗？',
+  'worldWorkspace.bindingHealth.refreshedLocal': '已更新本地资料摘要，保存后才会生效',
+
+  'worldWorkspace.unsavedLeave': '有尚未保存的修改，离开将丢弃这些改动，确定继续吗？',
+  'worldWorkspace.console.newCharacterDefault': '新角色',
+  'worldWorkspace.console.deleteConfirm': '删除该项会同时解除其它条目对它的引用，并清理不再使用的绑定，确定删除吗？',
+  'worldWorkspace.character.backToList': '返回控制台',
+  'worldWorkspace.character.missingOrUnsaved': '未找到该角色：它可能尚未保存（需先在控制台保存世界）或已被删除。',
 
   'worldWorkspace.targetValidity.checking': '检查中…',
   'worldWorkspace.targetValidity.enterable': '可进入',

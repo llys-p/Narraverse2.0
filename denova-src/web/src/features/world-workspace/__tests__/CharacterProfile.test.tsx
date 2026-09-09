@@ -88,9 +88,10 @@ function worldFixture(): World {
   }
 }
 
-function renderProfile(characterId = 'c1', world = worldFixture()) {
+function renderProfile(characterId = 'c1', world = worldFixture(), onBack = vi.fn()) {
   mocks.getWorld.mockResolvedValue({ world, revision: 'sha256:rev1' })
-  return render(<CharacterProfile worldId="w1" characterId={characterId} onBack={vi.fn()} />)
+  const view = render(<CharacterProfile worldId="w1" characterId={characterId} onBack={onBack} />)
+  return { view, onBack }
 }
 
 beforeEach(() => {
@@ -122,7 +123,7 @@ describe('CharacterProfile 显式刷新', () => {
     mocks.fetchMasterAsset.mockClear()
 
     await user.click(screen.getByRole('button', { name: '刷新资料摘要' }))
-    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('资料摘要已刷新'))
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('已更新本地资料摘要，保存后才会生效'))
     // 刷新本身不发 PUT
     expect(mocks.updateWorld).not.toHaveBeenCalled()
     // 世界内 displayName/worldNote 仍在，未被刷新覆盖
@@ -258,5 +259,59 @@ describe('CharacterProfile 冲突重新加载', () => {
     fireEvent.click(screen.getByRole('button', { name: '重新加载' }))
     await waitFor(() => expect(mocks.getWorld).toHaveBeenCalledTimes(2))
     confirmOk.mockRestore()
+  })
+})
+
+describe('CharacterProfile 未保存（dirty）保护', () => {
+  it('未编辑时返回不提示；编辑后返回需确认，取消留下、确认才离开', async () => {
+    const user = userEvent.setup()
+    mocks.fetchMasterAsset.mockResolvedValue(detail())
+    const { onBack } = renderProfile()
+    await screen.findByText('原件正文')
+
+    // 干净状态直接返回
+    const back = screen.getByLabelText('返回控制台')
+    const cleanConfirm = vi.spyOn(window, 'confirm')
+    await user.click(back)
+    expect(cleanConfirm).not.toHaveBeenCalled()
+    expect(onBack).toHaveBeenCalledTimes(1)
+    cleanConfirm.mockRestore()
+
+    // 编辑后变 dirty
+    const nameInput = screen.getByDisplayValue('世界内角色名')
+    await user.clear(nameInput)
+    await user.type(nameInput, '改过的名字')
+    const cancel = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await user.click(screen.getByLabelText('返回控制台'))
+    expect(cancel).toHaveBeenCalled()
+    expect(onBack).toHaveBeenCalledTimes(1) // 未增加
+    cancel.mockRestore()
+
+    const ok = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await user.click(screen.getByLabelText('返回控制台'))
+    expect(onBack).toHaveBeenCalledTimes(2)
+    ok.mockRestore()
+  })
+
+  it('显式刷新成功后置 dirty，保存成功后清除 dirty，再返回不提示', async () => {
+    const user = userEvent.setup()
+    mocks.fetchMasterAsset.mockResolvedValue(detail())
+    const { onBack } = renderProfile()
+    await screen.findByText('原件正文')
+    await user.click(screen.getByRole('button', { name: '刷新资料摘要' }))
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalled())
+    // 刷新即 dirty，返回需确认
+    const spy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await user.click(screen.getByLabelText('返回控制台'))
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+    // 保存后 dirty 清除
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+    const noSpy = vi.spyOn(window, 'confirm')
+    await user.click(screen.getByLabelText('返回控制台'))
+    expect(noSpy).not.toHaveBeenCalled()
+    expect(onBack).toHaveBeenCalled()
+    noSpy.mockRestore()
   })
 })

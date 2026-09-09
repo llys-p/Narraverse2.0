@@ -28,6 +28,8 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
   const [revision, setRevision] = useState('')
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState(false)
+  // 世界内编辑或显式刷新都会产生尚未保存的本地改动；返回前需要确认。
+  const [dirty, setDirty] = useState(false)
   const [source, setSource] = useState<MasterAssetDetail | null>(null)
   const [sourceError, setSourceError] = useState(false)
   const [check, setCheck] = useState<BindingCheckOutcome>({ phase: 'idle' })
@@ -43,6 +45,7 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
       const env = await getWorld(worldId)
       setWorld(env.world)
       setRevision(env.revision)
+      setDirty(false)
       setState('ready')
     } catch {
       setState('error')
@@ -81,7 +84,10 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
             masterRevision: currentRevision,
           })
           : prev)
-        toast.success(t('worldWorkspace.bindingHealth.refreshed'))
+        // 刷新只改本地草稿，必须保存后才持久化；明确置脏，文案不声称已保存。
+        setDirty(true)
+        setConflict(false)
+        toast.success(t('worldWorkspace.bindingHealth.refreshedLocal'))
       }
     } catch (err) {
       if (seq !== inspectSeq.current) return
@@ -118,6 +124,7 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
   const patchCharacter = (patch: Partial<WorldCharacter>) => {
     if (!world || !character) return
     setConflict(false)
+    setDirty(true)
     setWorld({ ...world, characters: world.characters.map((c) => (c.id === character.id ? { ...c, ...patch } : c)) })
   }
 
@@ -129,6 +136,7 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
       const res = await updateWorld(worldId, revision, world)
       setWorld(res.world)
       setRevision(res.revision)
+      setDirty(false)
       toast.success(t('worldWorkspace.saved'))
     } catch (err) {
       if (err instanceof APIError && err.status === 409) setConflict(true)
@@ -145,13 +153,19 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
     setCheckNonce((n) => n + 1)
   }
 
+  // 离开（返回控制台）前的未保存保护。
+  const requestBack = () => {
+    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return
+    onBack()
+  }
+
   const inputCls = 'h-8 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2.5 text-sm outline-none focus:border-[var(--nova-ring)]'
 
   return (
     <FeaturePageShell
       icon={UserRound}
       title={character?.displayName || t('worldWorkspace.characters')}
-      leadingContent={<Button variant="ghost" size="icon-sm" onClick={onBack} aria-label={t('worldWorkspace.character.back')}><ArrowLeft /></Button>}
+      leadingContent={<Button variant="ghost" size="icon-sm" onClick={requestBack} aria-label={t('worldWorkspace.character.back')}><ArrowLeft /></Button>}
       actions={<Button size="sm" disabled={state !== 'ready' || saving || !character} onClick={() => void save()} data-icon="inline-start">
         {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}{t('worldWorkspace.save')}
       </Button>}
@@ -174,15 +188,20 @@ export function CharacterProfile({ worldId, characterId, onBack }: CharacterProf
         </div>
       )}
       {state === 'ready' && !character && (
-        <div className="flex flex-1 items-center justify-center text-sm text-[var(--nova-text-muted)]">{t('worldWorkspace.console.notFound')}</div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-[var(--nova-text-muted)]">
+          <span>{t('worldWorkspace.character.missingOrUnsaved')}</span>
+          <Button variant="outline" size="xs" onClick={requestBack}>{t('worldWorkspace.character.backToList')}</Button>
+        </div>
       )}
       {state === 'ready' && world && character && (
         <div className="grid h-full min-h-0 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[1fr_320px]">
           <section className="flex flex-col gap-3">
             <div className="flex items-center gap-3">
-              {binding
-                ? <BindingAvatar masterItemId={binding.masterItemId} className="size-14 rounded-[var(--radius-lg)]" />
-                : <BindingAvatar masterItemId={undefined} className="size-14 rounded-[var(--radius-lg)]" />}
+              <BindingAvatar
+                masterItemId={binding?.masterItemId}
+                avatarUrl={source?.summary.avatar_url}
+                className="size-14 rounded-[var(--radius-lg)]"
+              />
               <label className="flex flex-1 flex-col gap-1 text-xs text-[var(--nova-text-muted)]">
                 {t('worldWorkspace.character.displayName')}
                 <input className={inputCls} value={character.displayName} maxLength={100} onChange={(e) => patchCharacter({ displayName: e.target.value })} />

@@ -61,6 +61,7 @@ export function BindingPicker({ open, onClose, boundMasterIds, onBind, recordKin
   const loadFirstPage = useCallback(async () => {
     const seq = ++requestSeq.current
     setState('loading')
+    setLoadingMore(false)
     try {
       const res = await listMasterAssets({ query: debouncedQuery, recordKind, semanticType, availability: 'usable', limit: PAGE_SIZE, offset: 0 })
       if (seq !== requestSeq.current) return
@@ -78,9 +79,13 @@ export function BindingPicker({ open, onClose, boundMasterIds, onBind, recordKin
   }, [open, loadFirstPage])
 
   const loadMore = async () => {
+    // 记录本次分页所属的“搜索代”；新搜索会令 requestSeq 自增，等待期间发起的旧分页结果不得混入。
+    const gen = requestSeq.current
+    const offset = assets.length
     setLoadingMore(true)
     try {
-      const res = await listMasterAssets({ query: debouncedQuery, recordKind, semanticType, availability: 'usable', limit: PAGE_SIZE, offset: assets.length })
+      const res = await listMasterAssets({ query: debouncedQuery, recordKind, semanticType, availability: 'usable', limit: PAGE_SIZE, offset })
+      if (gen !== requestSeq.current) return
       setAssets((prev) => {
         const known = new Set(prev.map((a) => a.master_item_id))
         return [...prev, ...(res.assets ?? []).filter((a) => !known.has(a.master_item_id))]
@@ -89,7 +94,7 @@ export function BindingPicker({ open, onClose, boundMasterIds, onBind, recordKin
     } catch {
       // 分页失败保留已加载内容，仅恢复按钮可点。
     } finally {
-      setLoadingMore(false)
+      if (gen === requestSeq.current) setLoadingMore(false)
     }
   }
 
@@ -138,7 +143,7 @@ export function BindingPicker({ open, onClose, boundMasterIds, onBind, recordKin
                 const bound = boundMasterIds.has(asset.master_item_id)
                 return (
                   <li key={asset.master_item_id} className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--nova-border)] px-2 py-1.5">
-                    <BindingAvatar masterItemId={asset.master_item_id} className="size-8 rounded-[var(--radius-md)]" />
+                    <BindingAvatar masterItemId={asset.master_item_id} avatarUrl={asset.avatar_url} className="size-8 rounded-[var(--radius-md)]" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-xs font-medium">{asset.name}</div>
                       <div className="truncate text-[11px] text-[var(--nova-text-muted)]">

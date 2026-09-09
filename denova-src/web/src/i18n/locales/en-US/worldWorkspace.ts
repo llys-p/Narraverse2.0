@@ -173,6 +173,13 @@ const worldWorkspace = {
   'worldWorkspace.bindingHealth.refreshUnavailable': 'Cannot check now; nothing was changed',
   'worldWorkspace.bindingHealth.reload': 'Reload',
   'worldWorkspace.bindingHealth.reloadConfirm': 'Reloading discards unsaved changes. Continue?',
+  'worldWorkspace.bindingHealth.refreshedLocal': 'Local summary updated; save to persist',
+
+  'worldWorkspace.unsavedLeave': 'You have unsaved changes. Leaving will discard them. Continue?',
+  'worldWorkspace.console.newCharacterDefault': 'New character',
+  'worldWorkspace.console.deleteConfirm': 'Deleting this item also removes references to it and cleans up unused bindings. Delete?',
+  'worldWorkspace.character.backToList': 'Back to console',
+  'worldWorkspace.character.missingOrUnsaved': 'Character not found: it may not be saved yet (save the world in the console first) or was deleted.',
 
   'worldWorkspace.targetValidity.checking': 'Checking…',
   'worldWorkspace.targetValidity.enterable': 'Available',

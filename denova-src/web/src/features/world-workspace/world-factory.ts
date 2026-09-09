@@ -19,8 +19,8 @@ export function characterFromBinding(binding: WorldAssetBinding): WorldCharacter
   return { id: newClientId(), bindingId: binding.bindingId, displayName: binding.nameSnapshot }
 }
 
-export function emptyCharacter(): WorldCharacter {
-  return { id: newClientId(), displayName: '' }
+export function emptyCharacter(displayName = ''): WorldCharacter {
+  return { id: newClientId(), displayName }
 }
 
 export function emptyLocation(): WorldLocation {

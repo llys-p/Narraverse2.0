@@ -19,6 +19,7 @@ import { TimelineSection } from '../components/sections/TimelineSection'
 import { classifyTargetValidity, type TargetLoadState, type TargetValidity } from '../binding-health'
 import { characterDisplayName, getBinding, worldStats } from '../selectors'
 import { characterFromBinding, emptyCharacter } from '../world-factory'
+import { removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
 import type { WorkspaceMode } from '@/stores/workspace-store'
 import type { World, WorldAssetBinding, WorldCharacter, WorldFaction, WorldLocation, WorldTimelineEntry } from '../types'
@@ -108,9 +109,29 @@ export function WorldConsolePage({
     await load()
   }, [load, t])
 
+  // 离开当前控制台（返回列表/打开角色/进入运行模式/关闭）前的未保存保护：统一确认，取消则留在本页。
+  const guardLeave = useCallback((fn: () => void) => {
+    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return
+    fn()
+  }, [dirty, t])
+
   const boundMasterIds = useMemo(() => new Set((draft?.bindings ?? []).map((b) => b.masterItemId)), [draft])
 
-  const addManualCharacter = () => mutate((w) => ({ ...w, characters: [...w.characters, emptyCharacter()] }))
+  // 手动新建必须带可保存的非空默认名（后端要求 displayName 非空），重名时追加序号。
+  const addManualCharacter = () => mutate((w) => {
+    const base = t('worldWorkspace.console.newCharacterDefault')
+    const taken = new Set(w.characters.map((c) => c.displayName.trim()))
+    let name = base
+    let n = 2
+    while (taken.has(name)) name = `${base} ${n++}`
+    return { ...w, characters: [...w.characters, emptyCharacter(name)] }
+  })
+
+  // 删除实体走纯函数级联：解除其它实体引用并清理 orphan binding，保证草稿仍可被后端接受。
+  const confirmRemove = (kind: 'character' | 'location' | 'faction', id: string) => {
+    if (!window.confirm(t('worldWorkspace.console.deleteConfirm'))) return
+    mutate((w) => removeWorldEntity(w, kind, id))
+  }
 
   const bindCharacter = (binding: WorldAssetBinding) => {
     mutate((w) => {
@@ -122,7 +143,16 @@ export function WorldConsolePage({
     setSection('characters')
   }
 
-  const removeCharacter = (id: string) => mutate((w) => ({ ...w, characters: w.characters.filter((c) => c.id !== id) }))
+  const removeCharacter = (id: string) => confirmRemove('character', id)
+
+  // 进入运行模式同样要先过未保存保护；快速切书是异步的，取消时返回 false 让 ModeEntries 留在本页。
+  const guardedSetMode = (mode: WorkspaceMode) => guardLeave(() => onSetMode(mode))
+  const guardedQuickSwitchBook = async (path: string) => {
+    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return false
+    return onQuickSwitchBook(path)
+  }
+  const guardedOpenModule4 = () => guardLeave(() => onOpenModule4?.())
+  const guardedCloseModule4 = () => guardLeave(() => onCloseModule4?.())
 
   const tabs: { key: Section; icon: typeof Globe2; label: string }[] = [
     { key: 'overview', icon: Globe2, label: t('worldWorkspace.console.overview') },
@@ -137,11 +167,11 @@ export function WorldConsolePage({
     <FeaturePageShell
       icon={Globe2}
       title={draft?.name ?? t('worldWorkspace.title')}
-      leadingContent={<Button variant="ghost" size="icon-sm" onClick={onBack} aria-label={t('worldWorkspace.console.backToList')}><ArrowLeft /></Button>}
+      leadingContent={<Button variant="ghost" size="icon-sm" onClick={() => guardLeave(onBack)} aria-label={t('worldWorkspace.console.backToList')}><ArrowLeft /></Button>}
       actions={dirty ? <Button size="sm" disabled={saving || state !== 'ready'} onClick={() => void save()} data-icon="inline-start">
         {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}{t('worldWorkspace.save')}
       </Button> : undefined}
-      onClose={onBack}
+      onClose={() => guardLeave(onBack)}
       error={state === 'error' ? t('worldWorkspace.console.getError') : null}
     >
       {state === 'loading' && (
@@ -176,7 +206,7 @@ export function WorldConsolePage({
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
             {section === 'overview' && <Overview world={draft} t={t} books={books} stories={stories}
               booksLoad={booksLoad} storiesLoad={storiesLoad} mutate={mutate}
-              onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />}
+              onSetMode={guardedSetMode} onQuickSwitchBook={guardedQuickSwitchBook} onOpenModule4={guardedOpenModule4} onCloseModule4={guardedCloseModule4} />}
 
             {section === 'setting' && <SettingEditor world={draft} mutate={mutate} t={t} />}
 
@@ -195,7 +225,7 @@ export function WorldConsolePage({
                       return (
                         <li key={c.id} className="group flex items-center gap-2 rounded-[var(--radius-lg)] border border-[var(--nova-border)] p-2">
                           <BindingAvatar masterItemId={binding?.masterItemId} className="size-10 rounded-[var(--radius-md)]" />
-                          <button type="button" className="min-w-0 flex-1 text-left" onClick={() => onOpenCharacter(c.id)}>
+                          <button type="button" className="min-w-0 flex-1 text-left" onClick={() => guardLeave(() => onOpenCharacter(c.id))}>
                             <span className="block truncate text-sm font-medium">{characterDisplayName(draft, c) || t('worldWorkspace.empty')}</span>
                             {c.role ? <span className="block text-[11px] text-[var(--nova-text-muted)]">{t(`worldWorkspace.role.${c.role}`)}</span> : null}
                           </button>
@@ -209,10 +239,12 @@ export function WorldConsolePage({
             )}
 
             {section === 'locations' && (
-              <LocationSection world={draft} onChange={(locations: WorldLocation[]) => mutate((w) => ({ ...w, locations }))} />
+              <LocationSection world={draft} onChange={(locations: WorldLocation[]) => mutate((w) => ({ ...w, locations }))}
+                onRemove={(id) => confirmRemove('location', id)} />
             )}
             {section === 'factions' && (
-              <FactionSection world={draft} onChange={(factions: WorldFaction[]) => mutate((w) => ({ ...w, factions }))} />
+              <FactionSection world={draft} onChange={(factions: WorldFaction[]) => mutate((w) => ({ ...w, factions }))}
+                onRemove={(id) => confirmRemove('faction', id)} />
             )}
             {section === 'history' && (
               <TimelineSection world={draft} onChange={(timeline: WorldTimelineEntry[]) => mutate((w) => ({ ...w, timeline }))} />
