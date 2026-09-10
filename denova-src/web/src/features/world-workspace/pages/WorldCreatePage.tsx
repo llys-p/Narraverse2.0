@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { getBooks, type BookRecord } from '@/lib/api-client'
 import { getInteractiveStories } from '@/features/interactive/api'
 import { cn } from '@/lib/utils'
-import { BindingPicker } from '../components/BindingPicker'
+import { BindingPicker, WORLD_CREATE_BINDING_SEMANTIC_TYPES } from '../components/BindingPicker'
 import { createWorld } from '../world-api'
 import { characterFromBinding } from '../world-factory'
 import type { WorldAssetBinding, WorldCharacter, WorldCreateInput } from '../types'
@@ -217,7 +217,7 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
         </div>
       </div>
 
-      <BindingPicker open={pickerOpen} onClose={() => setPickerOpen(false)} boundMasterIds={boundMasterIds} onBind={(binding) => {
+      <BindingPicker open={pickerOpen} onClose={() => setPickerOpen(false)} boundMasterIds={boundMasterIds} allowedSemanticTypes={WORLD_CREATE_BINDING_SEMANTIC_TYPES} onBind={(binding) => {
         setBindings((prev) => [...prev, binding])
         if (binding.recordKind === 'character_template' && binding.semanticType === 'character') {
           setCharacters((prev) => [...prev, characterFromBinding(binding)])

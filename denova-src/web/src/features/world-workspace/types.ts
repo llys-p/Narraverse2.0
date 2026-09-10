@@ -3,6 +3,14 @@
 
 export type BindingRecordKind = 'character_template' | 'lorebook_template'
 
+/**
+ * 绑定生命周期策略（Phase 2B.1）：
+ * - entity：挂在角色/地点/势力上，失去最后实体引用即清理；
+ * - world：属于整个世界，零实体引用也保留，只能在“世界资料”显式移除。
+ * 旧绑定没有该字段，运行时按 semanticType 推导，不回写直到下次成功保存。
+ */
+export type BindingScope = 'entity' | 'world'
+
 // 复用既有 lore 语义分类词表（internal/book/lore.go）。
 export type WorldSemanticType =
   | 'character' | 'world' | 'location' | 'faction' | 'rule' | 'item' | 'other'
@@ -28,6 +36,8 @@ export interface WorldAssetBinding {
   tagsSnapshot: string[]
   /** 绑定时总资料库条目的内容哈希；旧世界可能缺省，语义为“尚未检查”。 */
   masterRevision?: string
+  /** 生命周期策略；旧绑定缺省时由 bindingScopeOf 按 semanticType 推导。 */
+  scope?: BindingScope
   boundAt: string
 }
 

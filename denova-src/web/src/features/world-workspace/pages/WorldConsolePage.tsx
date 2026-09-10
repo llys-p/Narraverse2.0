@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft, Globe2, History as HistoryIcon, Loader2, MapPin, Plus, RotateCcw, Save, Settings2, Shield, Sparkles, UserRound, Users, X,
+  ArrowLeft, BookMarked, Globe2, History as HistoryIcon, Loader2, MapPin, Plus, RotateCcw, Save, Settings2, Shield, Sparkles, UserRound, Users, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -10,21 +10,24 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { APIError, getBooks, type BookRecord } from '@/lib/api-client'
 import { getInteractiveStories } from '@/features/interactive/api'
 import { cn } from '@/lib/utils'
-import { BindingPicker } from '../components/BindingPicker'
+import { BindingPicker, WORLD_MATERIAL_SEMANTIC_TYPES } from '../components/BindingPicker'
 import { BindingAvatar } from '../components/BindingAvatar'
 import { ModeEntries } from '../components/ModeEntries'
 import { LocationSection } from '../components/sections/LocationSection'
 import { FactionSection } from '../components/sections/FactionSection'
 import { TimelineSection } from '../components/sections/TimelineSection'
+import { WorldMaterialsSection } from '../components/sections/WorldMaterialsSection'
 import { classifyTargetValidity, type TargetLoadState, type TargetValidity } from '../binding-health'
 import { characterDisplayName, getBinding, worldStats } from '../selectors'
-import { characterFromBinding, emptyCharacter } from '../world-factory'
-import { findDraftIssue, removeWorldEntity } from '../world-ops'
+import { characterFromBinding, emptyCharacter, factionFromBinding, locationFromBinding } from '../world-factory'
+import { addWorldBinding, findDraftIssue, removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
 import type { WorkspaceMode } from '@/stores/workspace-store'
 import type { World, WorldAssetBinding, WorldCharacter, WorldFaction, WorldLocation, WorldTimelineEntry } from '../types'
 
-type Section = 'overview' | 'setting' | 'characters' | 'locations' | 'factions' | 'history'
+type Section = 'overview' | 'setting' | 'characters' | 'locations' | 'factions' | 'materials' | 'history'
+/** 当前打开的总资料库选择器：角色/地点/势力单选绑定，世界资料多选批量绑定。 */
+type PickerKind = 'none' | 'character' | 'location' | 'faction' | 'materials'
 type LoadState = 'loading' | 'error' | 'notfound' | 'ready'
 
 /** 草稿问题类别映射到控制台分区，便于保存前定位到首个空实体。 */
@@ -56,7 +59,7 @@ export function WorldConsolePage({
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [conflict, setConflict] = useState(false)
-  const [pickerOpen, setPickerOpen] = useState(false)
+  const [picker, setPicker] = useState<PickerKind>('none')
   const [books, setBooks] = useState<BookRecord[]>([])
   const [stories, setStories] = useState<{ id: string; title: string }[]>([])
   const [booksLoad, setBooksLoad] = useState<TargetLoadState>('loading')
@@ -148,14 +151,41 @@ export function WorldConsolePage({
     mutate((w) => removeWorldEntity(w, kind, id))
   }
 
+  // 绑定角色：加 entity 作用域绑定并同步建独立角色实例（F-03）。
   const bindCharacter = (binding: WorldAssetBinding) => {
     mutate((w) => {
-      const bindings = w.bindings.some((b) => b.bindingId === binding.bindingId) ? w.bindings : [...w.bindings, binding]
+      const withBinding = addWorldBinding(w, binding)
       const character: WorldCharacter = characterFromBinding(binding)
-      return { ...w, bindings, characters: [...w.characters, character] }
+      return { ...withBinding, characters: [...withBinding.characters, character] }
     })
-    setPickerOpen(false)
+    setPicker('none')
     setSection('characters')
+  }
+
+  // 绑定地点/势力：只接受对应语义的顶层资产（Picker 已过滤），加 entity 绑定 + 一个实体实例。
+  const bindLocation = (binding: WorldAssetBinding) => {
+    mutate((w) => {
+      const withBinding = addWorldBinding(w, binding)
+      return { ...withBinding, locations: [...withBinding.locations, locationFromBinding(binding)] }
+    })
+    setPicker('none')
+    setSection('locations')
+  }
+
+  const bindFaction = (binding: WorldAssetBinding) => {
+    mutate((w) => {
+      const withBinding = addWorldBinding(w, binding)
+      return { ...withBinding, factions: [...withBinding.factions, factionFromBinding(binding)] }
+    })
+    setPicker('none')
+    setSection('factions')
+  }
+
+  // 批量绑定世界资料：均为 world 作用域，逐条去重后加入，不创建任何实体。
+  const bindMaterials = (bindings: WorldAssetBinding[]) => {
+    mutate((w) => bindings.reduce((acc, b) => addWorldBinding(acc, b), w))
+    setPicker('none')
+    setSection('materials')
   }
 
   const removeCharacter = (id: string) => confirmRemove('character', id)
@@ -166,6 +196,7 @@ export function WorldConsolePage({
     { key: 'characters', icon: Users, label: t('worldWorkspace.characters') },
     { key: 'locations', icon: MapPin, label: t('worldWorkspace.locations') },
     { key: 'factions', icon: Shield, label: t('worldWorkspace.factions') },
+    { key: 'materials', icon: BookMarked, label: t('worldWorkspace.console.materials') },
     { key: 'history', icon: HistoryIcon, label: t('worldWorkspace.timeline') },
   ]
 
@@ -219,7 +250,7 @@ export function WorldConsolePage({
             {section === 'characters' && (
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
-                  <Button variant="outline" size="xs" data-icon="inline-start" onClick={() => setPickerOpen(true)}><Sparkles className="size-3.5" />{t('worldWorkspace.console.bindAsset')}</Button>
+                  <Button variant="outline" size="xs" data-icon="inline-start" onClick={() => setPicker('character')}><Sparkles className="size-3.5" />{t('worldWorkspace.console.bindAsset')}</Button>
                   <Button variant="outline" size="xs" data-icon="inline-start" onClick={addManualCharacter}><Plus className="size-3.5" />{t('worldWorkspace.console.manualCreate')}</Button>
                 </div>
                 {draft.characters.length === 0 ? (
@@ -245,12 +276,30 @@ export function WorldConsolePage({
             )}
 
             {section === 'locations' && (
-              <LocationSection world={draft} onChange={(locations: WorldLocation[]) => mutate((w) => ({ ...w, locations }))}
-                onRemove={(id) => confirmRemove('location', id)} />
+              <div className="mx-auto flex max-w-2xl flex-col gap-2">
+                <Button variant="outline" size="xs" className="self-start" data-icon="inline-start" onClick={() => setPicker('location')}>
+                  <Sparkles className="size-3.5" />{t('worldWorkspace.console.bindLocation')}
+                </Button>
+                <LocationSection world={draft} onChange={(locations: WorldLocation[]) => mutate((w) => ({ ...w, locations }))}
+                  onRemove={(id) => confirmRemove('location', id)} />
+              </div>
             )}
             {section === 'factions' && (
-              <FactionSection world={draft} onChange={(factions: WorldFaction[]) => mutate((w) => ({ ...w, factions }))}
-                onRemove={(id) => confirmRemove('faction', id)} />
+              <div className="mx-auto flex max-w-2xl flex-col gap-2">
+                <Button variant="outline" size="xs" className="self-start" data-icon="inline-start" onClick={() => setPicker('faction')}>
+                  <Sparkles className="size-3.5" />{t('worldWorkspace.console.bindFaction')}
+                </Button>
+                <FactionSection world={draft} onChange={(factions: WorldFaction[]) => mutate((w) => ({ ...w, factions }))}
+                  onRemove={(id) => confirmRemove('faction', id)} />
+              </div>
+            )}
+            {section === 'materials' && (
+              <div className="mx-auto flex max-w-2xl flex-col gap-2">
+                <Button variant="outline" size="xs" className="self-start" data-icon="inline-start" onClick={() => setPicker('materials')}>
+                  <Plus className="size-3.5" />{t('worldWorkspace.console.bindMaterial')}
+                </Button>
+                <WorldMaterialsSection world={draft} mutate={mutate} />
+              </div>
             )}
             {section === 'history' && (
               <TimelineSection world={draft} onChange={(timeline: WorldTimelineEntry[]) => mutate((w) => ({ ...w, timeline }))} />
@@ -259,13 +308,37 @@ export function WorldConsolePage({
         </div>
       )}
 
+      {/* 角色：仅角色卡/角色模板；地点/势力：对应语义顶层资产；世界资料：全部可用资料、多选、world 作用域。 */}
       <BindingPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
+        open={picker === 'character'}
+        onClose={() => setPicker('none')}
         boundMasterIds={boundMasterIds}
         recordKind="character_template"
         semanticType="character"
         onBind={bindCharacter}
+      />
+      <BindingPicker
+        open={picker === 'location'}
+        onClose={() => setPicker('none')}
+        boundMasterIds={boundMasterIds}
+        semanticType="location"
+        onBind={bindLocation}
+      />
+      <BindingPicker
+        open={picker === 'faction'}
+        onClose={() => setPicker('none')}
+        boundMasterIds={boundMasterIds}
+        semanticType="faction"
+        onBind={bindFaction}
+      />
+      <BindingPicker
+        open={picker === 'materials'}
+        onClose={() => setPicker('none')}
+        boundMasterIds={boundMasterIds}
+        allowedSemanticTypes={WORLD_MATERIAL_SEMANTIC_TYPES}
+        multi
+        onBind={() => { /* 多选走 onBindMany；单选回调不会在 multi 模式触发 */ }}
+        onBindMany={bindMaterials}
       />
     </FeaturePageShell>
   )

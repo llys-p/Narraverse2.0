@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { findDraftIssue, pruneOrphanBindings, referencedBindingIds, removeWorldEntity } from '../world-ops'
-import type { World, WorldAssetBinding, WorldSemanticType } from '../types'
+import {
+  addWorldBinding, bindingScopeOf, findDraftIssue, pruneOrphanBindings, referencedBindingIds,
+  removeWorldBinding, removeWorldEntity, worldScopedBindings,
+} from '../world-ops'
+import type { BindingScope, World, WorldAssetBinding, WorldSemanticType } from '../types'
 
-function binding(bindingId: string, master = `m-${bindingId}`, semantic: WorldSemanticType = 'character'): WorldAssetBinding {
+function binding(
+  bindingId: string,
+  master = `m-${bindingId}`,
+  semantic: WorldSemanticType = 'character',
+  scope?: BindingScope,
+): WorldAssetBinding {
   return {
     bindingId, masterItemId: master,
     recordKind: semantic === 'character' ? 'character_template' : 'lorebook_template',
-    semanticType: semantic, nameSnapshot: bindingId, tagsSnapshot: [], boundAt: '',
+    semanticType: semantic, nameSnapshot: bindingId, tagsSnapshot: [], scope, boundAt: '',
   }
 }
 
@@ -126,6 +134,81 @@ describe('removeWorldEntity', () => {
     expect(out.bindings.some((b) => b.bindingId === 'blocOrphan')).toBe(false)
     // 被地点 l1 引用的 bloc 保留
     expect(out.bindings.some((b) => b.bindingId === 'bloc')).toBe(true)
+  })
+})
+
+describe('bindingScopeOf 生命周期策略推导', () => {
+  it('显式 scope 优先于语义', () => {
+    expect(bindingScopeOf(binding('a', 'm', 'character', 'world'))).toBe('world')
+    expect(bindingScopeOf(binding('b', 'm', 'rule', 'entity'))).toBe('entity')
+  })
+  it('旧绑定无 scope 时按语义推导', () => {
+    expect(bindingScopeOf(binding('a', 'm', 'character'))).toBe('entity')
+    expect(bindingScopeOf(binding('b', 'm', 'location'))).toBe('entity')
+    expect(bindingScopeOf(binding('c', 'm', 'faction'))).toBe('entity')
+    for (const s of ['world', 'rule', 'item', 'other'] as WorldSemanticType[]) {
+      expect(bindingScopeOf(binding('d', 'm', s))).toBe('world')
+    }
+  })
+})
+
+describe('pruneOrphanBindings 以 scope 为准', () => {
+  it('显式 world 作用域、即便语义是 character 且零引用也保留', () => {
+    const w = baseWorld()
+    w.bindings = [...w.bindings, binding('bKeep', 'mk', 'character', 'world')]
+    const out = pruneOrphanBindings(w)
+    expect(out.bindings.some((b) => b.bindingId === 'bKeep')).toBe(true)
+  })
+  it('显式 entity 作用域、即便语义是 rule、零引用也清理', () => {
+    const w = baseWorld()
+    w.bindings = [...w.bindings, binding('bDrop', 'md', 'rule', 'entity')]
+    const out = pruneOrphanBindings(w)
+    expect(out.bindings.some((b) => b.bindingId === 'bDrop')).toBe(false)
+  })
+})
+
+describe('worldScopedBindings', () => {
+  it('只返回 world 作用域绑定（含旧数据语义推导）', () => {
+    const w = baseWorld()
+    w.bindings = [...w.bindings, binding('bw', 'mw', 'rule'), binding('bw2', 'mw2', 'world', 'world')]
+    const ids = worldScopedBindings(w).map((b) => b.bindingId).sort()
+    expect(ids).toEqual(['bw', 'bw2'])
+  })
+})
+
+describe('addWorldBinding 唯一契约', () => {
+  it('同一 masterItemId 不重复添加，返回原世界', () => {
+    const w = baseWorld()
+    const dup = binding('newId', 'm-b1', 'rule', 'world') // masterItemId 与既有 b1 相同
+    expect(addWorldBinding(w, dup)).toBe(w)
+  })
+  it('新 masterItemId 追加到末尾', () => {
+    const w = baseWorld()
+    const fresh = binding('bn', 'm-fresh', 'rule', 'world')
+    const out = addWorldBinding(w, fresh)
+    expect(out.bindings.some((b) => b.bindingId === 'bn')).toBe(true)
+    expect(w.bindings).toHaveLength(4) // 入参不变
+  })
+})
+
+describe('removeWorldBinding 显式移除', () => {
+  it('移除 world 绑定，不触碰实体', () => {
+    const w = baseWorld()
+    w.bindings = [...w.bindings, binding('bw', 'mw', 'rule', 'world')]
+    const out = removeWorldBinding(w, 'bw')
+    expect(out.bindings.some((b) => b.bindingId === 'bw')).toBe(false)
+    expect(out.characters).toHaveLength(2)
+  })
+  it('移除被实体引用的绑定时同步解除引用，避免悬空 bindingId', () => {
+    const out = removeWorldBinding(baseWorld(), 'b1')
+    expect(out.bindings.some((b) => b.bindingId === 'b1')).toBe(false)
+    expect(out.characters.find((c) => c.id === 'c1')?.bindingId).toBeUndefined()
+    // 其它角色绑定保留
+    expect(out.characters.find((c) => c.id === 'c2')?.bindingId).toBe('b2')
+  })
+  it('绑定不存在时返回原引用', () => {
+    const w = baseWorld()
+    expect(removeWorldBinding(w, 'nope')).toBe(w)
   })
 })
 

@@ -18,6 +18,18 @@ const (
 	LorebookTemplate  BindingRecordKind = "lorebook_template"
 )
 
+// BindingScope 是绑定的生命周期策略（Phase 2B.1）。
+//   - ScopeEntity：实体作用域，至少被一个角色/地点/势力引用才应持久化，失去最后引用即清理；
+//   - ScopeWorld：世界作用域，属于整个世界，零实体引用也保留，只能由用户在“世界资料”显式移除。
+//
+// 空串仅用于兼容 2B.1 之前的旧世界：读取时按 SemanticType 推导，不回写、不判损坏。
+type BindingScope string
+
+const (
+	ScopeEntity BindingScope = "entity"
+	ScopeWorld  BindingScope = "world"
+)
+
 // SemanticType 复用既有 lore 语义分类词表（internal/book/lore.go）。
 type SemanticType string
 
@@ -75,7 +87,9 @@ type AssetBinding struct {
 	// MasterRevision 记录绑定时总资料库条目的内容哈希（sha256:...）。
 	// 可选：Phase 2A 之前的旧世界没有该字段，反序列化为空串，语义为“尚未检查”，不算损坏。
 	MasterRevision string `json:"masterRevision,omitempty"`
-	BoundAt        string `json:"boundAt"`
+	// Scope 生命周期策略；旧世界缺省时按 SemanticType 推导（character/location/faction=entity，其余=world）。
+	Scope   BindingScope `json:"scope,omitempty"`
+	BoundAt string       `json:"boundAt"`
 }
 
 // Relationship 是角色之间的世界内关系标注。

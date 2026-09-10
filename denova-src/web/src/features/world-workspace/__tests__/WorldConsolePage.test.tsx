@@ -32,7 +32,12 @@ vi.mock('@/lib/api-client', () => ({
 }))
 vi.mock('@/features/interactive/api', () => ({ getInteractiveStories: mocks.getStories }))
 vi.mock('../components/ModeEntries', () => ({ ModeEntries: () => <div data-testid="mode-entries" /> }))
-vi.mock('../components/BindingPicker', () => ({ BindingPicker: () => null }))
+vi.mock('../components/BindingPicker', () => ({
+  WORLD_MATERIAL_SEMANTIC_TYPES: ['world', 'rule', 'item', 'other'],
+  BindingPicker: ({ open, semanticType, multi, allowedSemanticTypes }: { open: boolean; semanticType?: string; multi?: boolean; allowedSemanticTypes?: readonly string[] }) => (
+    open ? <div data-testid="picker" data-semantic={semanticType ?? ''} data-multi={multi ? '1' : '0'} data-allowed={allowedSemanticTypes?.join(',') ?? ''} /> : null
+  ),
+}))
 vi.mock('../components/sections/LocationSection', () => ({ LocationSection: () => <div /> }))
 vi.mock('../components/sections/FactionSection', () => ({ FactionSection: () => <div /> }))
 vi.mock('../components/sections/TimelineSection', () => ({ TimelineSection: () => <div /> }))
@@ -169,6 +174,127 @@ describe('WorldConsolePage 保存前草稿校验（B1）', () => {
     await user.click(await screen.findByRole('button', { name: '保存' }))
     expect(mocks.updateWorld).not.toHaveBeenCalled()
     expect(mocks.toast.error).toHaveBeenCalledWith('存在未命名地点，请先填写地点名称再保存')
+  })
+})
+
+describe('WorldConsolePage 地点/势力/世界资料绑定入口', () => {
+  it('三个绑定入口分别打开 location / faction / 多选 world 选择器', async () => {
+    const user = userEvent.setup()
+    renderConsole()
+    await screen.findByText('主书（写作模式）')
+
+    await user.click(screen.getByRole('button', { name: '地点' }))
+    await user.click(screen.getByRole('button', { name: '从总资料库绑定地点' }))
+    let picker = await screen.findByTestId('picker')
+    expect(picker.getAttribute('data-semantic')).toBe('location')
+    expect(picker.getAttribute('data-multi')).toBe('0')
+
+    await user.click(screen.getByRole('button', { name: '势力' }))
+    await user.click(screen.getByRole('button', { name: '从总资料库绑定势力' }))
+    picker = await screen.findByTestId('picker')
+    expect(picker.getAttribute('data-semantic')).toBe('faction')
+
+    await user.click(screen.getByRole('button', { name: '世界资料' }))
+    await user.click(screen.getByRole('button', { name: '添加世界资料' }))
+    picker = await screen.findByTestId('picker')
+    expect(picker.getAttribute('data-multi')).toBe('1')
+    expect(picker.getAttribute('data-allowed')).toBe('world,rule,item,other')
+  })
+
+  it('世界资料为空时显示空状态，且加载分区不发资产详情请求', async () => {
+    const user = userEvent.setup()
+    renderConsole()
+    await user.click(await screen.findByRole('button', { name: '世界资料' }))
+    expect(await screen.findByText(/还没有世界资料/)).toBeInTheDocument()
+    expect(mocks.fetchMasterAsset).not.toHaveBeenCalled()
+  })
+})
+
+function worldWithMaterial(): World {
+  const w = worldFixture()
+  w.bindings = [...w.bindings, {
+    bindingId: 'bw', masterItemId: 'm-rule', recordKind: 'lorebook_template',
+    semanticType: 'rule', nameSnapshot: '旧规则名', tagsSnapshot: ['旧标签'],
+    masterRevision: 'sha256:old', scope: 'world', boundAt: '',
+  }]
+  return w
+}
+
+describe('WorldConsolePage 世界资料刷新（按需、不自动、保存才落库）', () => {
+  it('刷新成功只更新本地三字段，保存时才 PUT，且不触碰角色', async () => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldWithMaterial(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    mocks.fetchMasterAsset.mockResolvedValue({
+      summary: { name: '新规则名', tags: ['新标签'], master_revision: 'sha256:new' },
+    })
+    mocks.updateWorld.mockImplementation(async (_id: string, _rev: string, world: World) => ({ world, revision: 'sha256:r2' }))
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} />)
+
+    await user.click(await screen.findByRole('button', { name: '世界资料' }))
+    expect(await screen.findByText('旧规则名')).toBeInTheDocument()
+    expect(mocks.fetchMasterAsset).not.toHaveBeenCalled() // 进入分区不自动检查
+
+    await user.click(screen.getByRole('button', { name: '刷新资料摘要' }))
+    await waitFor(() => expect(screen.getByText('新规则名')).toBeInTheDocument())
+    expect(mocks.updateWorld).not.toHaveBeenCalled() // 刷新本身不落库
+
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+    const saved: World = mocks.updateWorld.mock.calls[0][2]
+    const mat = saved.bindings.find((b) => b.bindingId === 'bw')!
+    expect(mat.nameSnapshot).toBe('新规则名')
+    expect(mat.tagsSnapshot).toEqual(['新标签'])
+    expect(mat.masterRevision).toBe('sha256:new')
+    // 角色绑定与角色实例未被刷新触碰
+    expect(saved.characters[0].displayName).toBe('角色一')
+  })
+
+  it.each([
+    ['404', 404, '原件已不存在，已保留世界内资料'],
+    ['5xx', 500, '暂时无法检查，未改动资料'],
+  ])('刷新失败 %s：提示且绑定保持不变、不发 PUT', async (_label, status, msg) => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldWithMaterial(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    mocks.fetchMasterAsset.mockRejectedValue(new mocks.MockAPIError(status))
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} />)
+    await user.click(await screen.findByRole('button', { name: '世界资料' }))
+    await screen.findByText('旧规则名')
+    await user.click(screen.getByRole('button', { name: '刷新资料摘要' }))
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(msg))
+    expect(screen.getByText('旧规则名')).toBeInTheDocument()
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('移除世界资料需确认：取消保留，确认后从草稿删除（不删总库），保存才落库', async () => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldWithMaterial(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    mocks.updateWorld.mockImplementation(async (_id: string, _rev: string, world: World) => ({ world, revision: 'sha256:r2' }))
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} />)
+    await user.click(await screen.findByRole('button', { name: '世界资料' }))
+    await screen.findByText('旧规则名')
+
+    const cancel = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    expect(screen.getByText('旧规则名')).toBeInTheDocument()
+    cancel.mockRestore()
+
+    const ok = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: '移除' }))
+    ok.mockRestore()
+    await waitFor(() => expect(screen.queryByText('旧规则名')).toBeNull())
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+    const saved: World = mocks.updateWorld.mock.calls[0][2]
+    expect(saved.bindings.some((b) => b.bindingId === 'bw')).toBe(false)
   })
 })
 

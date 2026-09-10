@@ -86,6 +86,21 @@ func validSemanticType(t SemanticType) bool {
 	return false
 }
 
+// effectiveBindingScope 返回绑定的生命周期策略：显式 scope 优先；
+// 旧绑定缺省 scope 时按语义推导——character/location/faction 挂实体=entity，其余属于世界=world。
+// 该推导只用于校验与运行时，读取时不回写磁盘。
+func effectiveBindingScope(b AssetBinding) BindingScope {
+	if b.Scope == ScopeEntity || b.Scope == ScopeWorld {
+		return b.Scope
+	}
+	switch b.SemanticType {
+	case SemanticCharacter, SemanticLocation, SemanticFaction:
+		return ScopeEntity
+	default:
+		return ScopeWorld
+	}
+}
+
 func validRole(r CharacterRole) bool {
 	switch r {
 	case "", RoleProtagonist, RoleMajor, RoleMinor, RoleNPC:
@@ -179,6 +194,7 @@ func validateWorld(w *World) error {
 		return fieldError("bindings", "绑定数量不能超过 %d", maxBindings)
 	}
 	bindingByID := make(map[string]AssetBinding, len(w.Bindings))
+	masterItemSeen := make(map[string]int, len(w.Bindings))
 	for i := range w.Bindings {
 		b := &w.Bindings[i]
 		field := fmt.Sprintf("bindings[%d]", i)
@@ -189,6 +205,15 @@ func validateWorld(w *World) error {
 			return fieldError(field+".bindingId", "bindingId 重复：%s", b.BindingID)
 		}
 		bindingByID[b.BindingID] = *b
+		// 一个世界内同一总库条目只允许一个绑定（共享同一 bindingId），重复 masterItemId 直接拒绝。
+		if prev, dup := masterItemSeen[b.MasterItemID]; dup {
+			return fieldError(field+".masterItemId", "与 bindings[%d] 指向同一总库条目", prev)
+		}
+		masterItemSeen[b.MasterItemID] = i
+		// scope 仅允许空（旧数据，读取时按 semanticType 推导）/entity/world，其它值判非法。
+		if b.Scope != "" && b.Scope != ScopeEntity && b.Scope != ScopeWorld {
+			return fieldError(field+".scope", "枚举值非法")
+		}
 		// masterRevision 允许空串（旧世界=尚未检查）；非空仅做长度上限校验。
 		if err := checkLen(field+".masterRevision", b.MasterRevision, maxMasterRev); err != nil {
 			return err
@@ -246,8 +271,13 @@ func validateWorld(w *World) error {
 			return fieldError(field+".tags", "标签数量不能超过 %d", maxTags)
 		}
 		if loc.BindingID != "" {
-			if _, ok := bindingByID[loc.BindingID]; !ok {
+			b, ok := bindingByID[loc.BindingID]
+			if !ok {
 				return fieldError(field+".bindingId", "引用了不存在的绑定：%s", loc.BindingID)
+			}
+			// 地点只能绑定语义为 location 的顶层资产，禁止把 lore/设定伪装成地点。
+			if b.SemanticType != SemanticLocation {
+				return fieldError(field+".bindingId", "地点只能绑定 location 语义资产：%s", loc.BindingID)
 			}
 		}
 	}
@@ -287,8 +317,13 @@ func validateWorld(w *World) error {
 			}
 		}
 		if f.BindingID != "" {
-			if _, ok := bindingByID[f.BindingID]; !ok {
+			b, ok := bindingByID[f.BindingID]
+			if !ok {
 				return fieldError(field+".bindingId", "引用了不存在的绑定：%s", f.BindingID)
+			}
+			// 势力只能绑定语义为 faction 的顶层资产。
+			if b.SemanticType != SemanticFaction {
+				return fieldError(field+".bindingId", "势力只能绑定 faction 语义资产：%s", f.BindingID)
 			}
 		}
 	}
@@ -366,6 +401,32 @@ func validateWorld(w *World) error {
 			}
 			if err := checkLen(field+".label", rel.Label, maxRelationLbl); err != nil {
 				return err
+			}
+		}
+	}
+
+	// 实体作用域绑定必须至少被一个角色/地点/势力引用；世界作用域绑定允许零引用。
+	referenced := make(map[string]struct{})
+	for i := range w.Characters {
+		if id := w.Characters[i].BindingID; id != "" {
+			referenced[id] = struct{}{}
+		}
+	}
+	for i := range w.Locations {
+		if id := w.Locations[i].BindingID; id != "" {
+			referenced[id] = struct{}{}
+		}
+	}
+	for i := range w.Factions {
+		if id := w.Factions[i].BindingID; id != "" {
+			referenced[id] = struct{}{}
+		}
+	}
+	for i := range w.Bindings {
+		b := &w.Bindings[i]
+		if effectiveBindingScope(*b) == ScopeEntity {
+			if _, ok := referenced[b.BindingID]; !ok {
+				return fieldError(fmt.Sprintf("bindings[%d].scope", i), "实体作用域绑定缺少实体引用：%s", b.BindingID)
 			}
 		}
 	}

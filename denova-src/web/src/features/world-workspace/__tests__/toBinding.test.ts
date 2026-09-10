@@ -44,4 +44,13 @@ describe('toBinding 记录绑定基线版本', () => {
     expect(toBinding(asset({ semantic_type: 'weird' })).semanticType).toBe('other')
     expect(toBinding(asset({ record_kind: 'lorebook_template' })).recordKind).toBe('lorebook_template')
   })
+
+  it('新绑定显式写入 scope：character/location/faction=entity，其余=world（必测，不依赖旧数据推导）', () => {
+    expect(toBinding(asset({ semantic_type: 'character' })).scope).toBe('entity')
+    expect(toBinding(asset({ semantic_type: 'location', record_kind: 'lorebook_template' })).scope).toBe('entity')
+    expect(toBinding(asset({ semantic_type: 'faction', record_kind: 'lorebook_template' })).scope).toBe('entity')
+    expect(toBinding(asset({ semantic_type: 'rule', record_kind: 'lorebook_template' })).scope).toBe('world')
+    expect(toBinding(asset({ semantic_type: 'world', record_kind: 'lorebook_template' })).scope).toBe('world')
+    expect(toBinding(asset({ semantic_type: 'weird' })).scope).toBe('world')
+  })
 })

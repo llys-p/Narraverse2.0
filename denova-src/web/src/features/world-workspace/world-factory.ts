@@ -19,6 +19,16 @@ export function characterFromBinding(binding: WorldAssetBinding): WorldCharacter
   return { id: newClientId(), bindingId: binding.bindingId, displayName: binding.nameSnapshot }
 }
 
+/** location 顶层资产绑定进入世界时生成地点实例，名称取薄快照，标签同步一次。 */
+export function locationFromBinding(binding: WorldAssetBinding): WorldLocation {
+  return { id: newClientId(), bindingId: binding.bindingId, name: binding.nameSnapshot, description: '', tags: [...binding.tagsSnapshot] }
+}
+
+/** faction 顶层资产绑定进入世界时生成势力实例。 */
+export function factionFromBinding(binding: WorldAssetBinding): WorldFaction {
+  return { id: newClientId(), bindingId: binding.bindingId, name: binding.nameSnapshot, description: '' }
+}
+
 export function emptyCharacter(displayName = ''): WorldCharacter {
   return { id: newClientId(), displayName }
 }
