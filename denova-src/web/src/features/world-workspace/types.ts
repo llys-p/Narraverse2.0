@@ -175,3 +175,140 @@ export type WorldView =
   | { name: 'create' }
   | { name: 'console'; id: string }
   | { name: 'character'; id: string; characterId: string }
+
+// ---------------------------------------------------------------------------
+// Phase 2B.2：创建向导 AI 结构提案（会话草稿，不持久化）
+// ---------------------------------------------------------------------------
+
+export type ProposalConfidence = 'low' | 'medium' | 'high'
+
+/** 服务端盖章的来源引用；模型只能引用短 id。 */
+export interface ProposalSourceRef {
+  id: string
+  kind: 'master_field' | 'user_snippet'
+  masterItemId?: string
+  masterRevision?: string
+  fieldPath?: string
+  snippetId?: string
+  label: string
+}
+
+export interface ProposedBase {
+  proposalItemId: string
+  sourceRefIds: string[]
+  confidence: ProposalConfidence
+  reason?: string
+}
+
+/** 绑定候选（服务端确定性投影，模型禁止生成）。 */
+export interface ProposedBindingCandidate {
+  bindingCandidateId: string
+  recordKind: BindingRecordKind
+  semanticType: WorldSemanticType
+  masterItemId: string
+  nameSnapshot: string
+  tagsSnapshot: string[]
+  masterRevision: string
+  scope: BindingScope
+}
+
+export interface ProposedRule extends ProposedBase {
+  text: string
+}
+
+export interface ProposedWorldSetting extends ProposedBase {
+  tone?: string
+  rules: ProposedRule[]
+}
+
+export interface ProposedCharacter extends ProposedBase {
+  displayName: string
+  role?: CharacterRole
+  worldNote?: string
+}
+
+export interface ProposedLocation extends ProposedBase {
+  name: string
+  description?: string
+  tags?: string[]
+}
+
+export interface ProposedFaction extends ProposedBase {
+  name: string
+  description?: string
+}
+
+/** 服务端增强后的最终提案。2B.2 第一版无 timeline 字段。 */
+export interface StructureProposal {
+  schemaVersion: number
+  sourceRefs: ProposalSourceRef[]
+  bindingCandidates: ProposedBindingCandidate[]
+  setting?: ProposedWorldSetting
+  characters: ProposedCharacter[]
+  locations: ProposedLocation[]
+  factions: ProposedFaction[]
+  generatedAt: string
+}
+
+/** 分析请求：只含资产 id + 期望 revision + 字段路径 + 用户片段。 */
+export interface WorldStructureAnalysisSource {
+  masterItemId: string
+  expectedMasterRevision: string
+  fieldPaths: string[]
+}
+
+export interface WorldStructureAnalysisSnippet {
+  snippetId: string
+  label?: string
+  text: string
+}
+
+export interface WorldStructureAnalysisRequest {
+  sources: WorldStructureAnalysisSource[]
+  snippets: WorldStructureAnalysisSnippet[]
+}
+
+export interface ProposalEnvelope {
+  proposal: StructureProposal
+}
+
+// 用户确认产物（会话内存）：edits 只承载世界可编辑字段，不含证据字段。
+export type ProposalItemDecision = 'adopt' | 'discard'
+
+export interface WorldEditableCharacter {
+  displayName?: string
+  role?: CharacterRole
+  worldNote?: string
+}
+
+export interface WorldEditableLocation {
+  name?: string
+  description?: string
+  tags?: string[]
+}
+
+export interface WorldEditableFaction {
+  name?: string
+  description?: string
+}
+
+export interface WorldEditableRule {
+  text?: string
+}
+
+export type WorldEditableItem =
+  | WorldEditableCharacter
+  | WorldEditableLocation
+  | WorldEditableFaction
+  | WorldEditableRule
+
+export interface ProposalChoices {
+  /** key = proposalItemId；未列出的项默认 discard。 */
+  decisions: Record<string, ProposalItemDecision>
+  /** 引用 bindingCandidates[].bindingCandidateId。 */
+  adoptedBindingCandidateIds: string[]
+  /** key = proposalItemId；仅世界可编辑字段。 */
+  edits: Record<string, WorldEditableItem>
+  /** 仅可编辑世界设定字段（tone）；rules 作为独立提案项采纳/编辑。 */
+  settingOverride?: { tone?: string }
+}

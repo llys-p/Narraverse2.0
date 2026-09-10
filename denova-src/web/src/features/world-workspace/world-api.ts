@@ -1,10 +1,12 @@
 import { jsonHeaders, requestJSON } from '@/lib/api-client'
 import type {
+  ProposalEnvelope,
   World,
   WorldCreateInput,
   WorldEnvelope,
   WorldListEnvelope,
   WorldStatus,
+  WorldStructureAnalysisRequest,
 } from './types'
 
 function encode(id: string): string {
@@ -54,5 +56,14 @@ export function archiveWorld(
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify({ archived, expected_revision: expectedRevision }),
+  })
+}
+
+/** POST /api/world-proposals —— 创建向导受控 AI 结构分析（前端不得直调 /api/model/chat）。 */
+export function analyzeWorldStructure(input: WorldStructureAnalysisRequest): Promise<ProposalEnvelope> {
+  return requestJSON<ProposalEnvelope>('/api/world-proposals', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
   })
 }

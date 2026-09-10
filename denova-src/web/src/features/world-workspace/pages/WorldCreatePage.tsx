@@ -7,9 +7,11 @@ import { getBooks, type BookRecord } from '@/lib/api-client'
 import { getInteractiveStories } from '@/features/interactive/api'
 import { cn } from '@/lib/utils'
 import { BindingPicker, WORLD_CREATE_BINDING_SEMANTIC_TYPES } from '../components/BindingPicker'
+import { AiStructureAnalyzer } from '../components/AiStructureAnalyzer'
 import { createWorld } from '../world-api'
 import { characterFromBinding } from '../world-factory'
-import type { WorldAssetBinding, WorldCharacter, WorldCreateInput } from '../types'
+import type { ProposalBaseInput } from '../world-proposal'
+import type { WorldAssetBinding, WorldCharacter, WorldCreateInput, WorldFaction, WorldLocation } from '../types'
 
 const TOTAL_STEPS = 4
 // 克制的纯色色板（不使用紫蓝渐变/霓虹）。
@@ -32,7 +34,10 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
   const [rules, setRules] = useState<string[]>([''])
   const [bindings, setBindings] = useState<WorldAssetBinding[]>([])
   const [characters, setCharacters] = useState<WorldCharacter[]>([])
+  const [locations, setLocations] = useState<WorldLocation[]>([])
+  const [factions, setFactions] = useState<WorldFaction[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const [books, setBooks] = useState<BookRecord[]>([])
   const [stories, setStories] = useState<{ id: string; title: string }[]>([])
   const [primaryBookPath, setPrimaryBookPath] = useState('')
@@ -59,6 +64,26 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
   const cleanRules = rules.map((r) => r.trim()).filter(Boolean)
   const canAdvanceStep1 = name.trim().length > 0
 
+  const aiBase: ProposalBaseInput = {
+    name: name.trim(),
+    tagline: tagline.trim() || undefined,
+    genre: genre.trim() || undefined,
+    summary: summary.trim() || undefined,
+    coverColor,
+    primaryBookPath: primaryBookPath || undefined,
+    primaryInteractiveStoryId: primaryStoryId || undefined,
+  }
+
+  const applyProposal = (input: WorldCreateInput) => {
+    setBindings(input.bindings ?? [])
+    setCharacters(input.characters ?? [])
+    setLocations(input.locations ?? [])
+    setFactions(input.factions ?? [])
+    setTone(input.worldSetting?.tone ?? '')
+    setRules(input.worldSetting?.rules.length ? input.worldSetting.rules : [''])
+    setAiOpen(false)
+  }
+
   const submit = async () => {
     if (submitting) return // 重复提交保护
     if (!name.trim()) { setStep(1); return }
@@ -73,6 +98,8 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
       worldSetting: { rules: cleanRules, tone: tone.trim() || undefined },
       bindings,
       characters,
+      locations,
+      factions,
       primaryBookPath: primaryBookPath || undefined,
       primaryInteractiveStoryId: primaryStoryId || undefined,
     }
@@ -151,9 +178,14 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
         {step === 3 && (
           <section className="flex flex-col gap-3">
             <Field label={t('worldWorkspace.create.bindings')} hint={t('worldWorkspace.create.bindingsHint')}>
-              <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} data-icon="inline-start">
-                <Sparkles />{t('worldWorkspace.console.bindAsset')}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} data-icon="inline-start">
+                  <Sparkles />{t('worldWorkspace.console.bindAsset')}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setAiOpen(true)} data-icon="inline-start">
+                  <Sparkles />{t('worldWorkspace.aiAnalyzer.title')}
+                </Button>
+              </div>
               {bindings.length > 0 && (
                 <ul className="mt-2 flex flex-col gap-1">
                   {bindings.map((b) => (
@@ -223,6 +255,7 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
           setCharacters((prev) => [...prev, characterFromBinding(binding)])
         }
       }} />
+      <AiStructureAnalyzer open={aiOpen} base={aiBase} onClose={() => setAiOpen(false)} onApply={applyProposal} />
     </FeaturePageShell>
   )
 }
