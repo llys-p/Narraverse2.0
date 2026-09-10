@@ -105,3 +105,108 @@ POST /api/world-proposals
 **是，准备进入 Codex 复审与真实 executable 验收。** 后端受控入口、严格解码、字段白名单、预算、严格解析、服务端增强、错误码区分；前端 `proposalToWorldCreateInput` 确定性转换、ProposalChoices（adopt/discard/编辑）、创建向导 AI 分析步骤、失败降级与手动路径均已落地，且 tsc/vitest/go test/go vet/go build/i18n/vite build 全绿（仅仓库既有符号链接测试失败）。
 
 未开始 2B.3，未实现任何禁止项（Timeline、既有世界合并、Agent、长期记忆、自动世界模拟、Canon、Module3/4 接入）。
+
+---
+
+## 6. 修复任务 A：前端 AI 结构提案稳定性（2026-09-10 13:40）
+
+仅修复前端稳定性，未触碰后端 token 预算、Proposal schema、绑定逻辑。
+
+### 修改文件
+
+| 文件 | 变更 |
+| --- | --- |
+| `web/src/features/world-workspace/components/AiStructureAnalyzer.tsx` | 修改：①修正 Hook 顺序（原 `if (!open) return null` 位于 `useMemo` 之前，条件 return 后仍有 Hook）；②新增 `requestSeq`（请求代）+ `AbortController` 生命周期；③关闭弹窗清理未确认 proposal |
+| `web/src/features/world-workspace/world-api.ts` | 修改：`analyzeWorldStructure(input, signal?)` 增加可选 `AbortSignal`，透传给 `requestJSON`→`fetch` |
+| `web/src/features/world-workspace/__tests__/AiStructureAnalyzer.test.tsx` | 新增：4 个稳定性测试 |
+
+### 修复要点
+
+1. **Hook 顺序**：把 `selectedCount` 的 `useMemo` 上移到全部 Hook 区；新增的 `resetProposal`（`useCallback`）与三个 `useEffect`（资料加载 / 关闭清理 / 卸载中止）也全部位于提前 return 之前。现所有 Hook（40–122 行）均在 `if (!open) return null`（179 行）之前。
+2. **请求生命周期**：每次 `analyze()` 自增 `requestSeq` 并 `abort()` 上一个 `AbortController`，把新 `signal` 传给 `analyzeWorldStructure`；响应返回后先判 `seq !== requestSeq.current` 即丢弃；`catch` 同样按请求代丢弃并忽略 `AbortError`；`finally` 仅在仍为当前请求时复位 `analyzing`。关闭弹窗与组件卸载都会自增请求代并中止在途请求，旧响应不可能覆盖新状态。
+3. **关闭清理**：`open` 变为 false 时调用 `resetProposal()`——中止在途请求、清空 `proposal/decisions/adoptedBindingIds/edits/toneOverride/error/analyzing`；「重新分析」按钮复用同一函数。清理只作用于弹窗内部状态，父组件 `WorldCreatePage` 的手动创建流程（bindings/characters/locations/factions/name 等）不受影响，且关闭不调用 `onApply`。
+
+### 测试结果
+
+| 门禁 | 结果 |
+| --- | --- |
+| `vitest run src/features/world-workspace/__tests__/AiStructureAnalyzer.test.tsx` | 4/4 通过 |
+| `vitest run src/features/world-workspace` | 13 文件 / 103 测试通过（原 12/99） |
+| `tsc --noEmit` | 通过 |
+
+新增测试：①关闭后可重新打开（覆盖原 Hook 顺序错误）；②关闭未确认 proposal 清理临时状态且不触发 `onApply`；③关闭使在途请求失效、旧响应不写回 proposal；④关闭中止在途请求（断言 `AbortSignal.aborted === true`）。
+
+---
+
+## 7. 修复任务 B：Proposal 应用语义（2026-09-10 13:50）
+
+只修前端应用语义，未修改 AI 输入契约（请求 schema / 字段白名单 / 预算均未动）。
+
+### 修改文件
+
+| 文件 | 变更 |
+| --- | --- |
+| `web/src/features/world-workspace/world-proposal.ts` | ①新增 `mergeProposalIntoDraft`（合并策略）+ `CreateDraft`/`EMPTY_CREATE_DRAFT`；②`proposalToWorldCreateInput` 增加 **setting 采纳门控**；③实体绑定改为**唯一 Master 来源**才自动绑定 |
+| `web/src/features/world-workspace/pages/WorldCreatePage.tsx` | `applyProposal` 由「整体覆盖」改为调用 `mergeProposalIntoDraft` 合并 |
+| `web/src/features/world-workspace/__tests__/world-proposal.test.ts` | 新增 6 例、改写 1 例（原 `settingOverride` 旧语义与新门控冲突） |
+| `web/src/features/world-workspace/__tests__/WorldCreatePage.test.tsx` | 新增：创建向导集成测试（手动角色 + AI 角色同时存在） |
+
+### 修复要点
+
+1. **不覆盖用户已有草稿（合并策略）**：`mergeProposalIntoDraft(draft, input)` 保留用户输入、AI 结果只做增量。
+   - binding 按 `masterItemId` 去重（一世界一 masterItemId 一 binding）；**重复时复用既有 bindingId 并重映射 AI 实体的 bindingId**，避免悬空引用导致后端 400；
+   - 实体按 `bindingId|名称` 去重后追加，用户已有实体一律保留；
+   - `tone` 仅在用户未填写时采用 AI 值；`rules` 取并集（用户已有优先 + 去重）；用户未填规则时丢弃空占位行；
+   - 重复应用同一 AI 结果不产生重复实体。
+2. **setting 采纳门控**：只有 `setting` 提案项被采纳时，才写 `tone`/`rules`；**未采纳 setting 时 `worldSetting` 整体为 undefined**（`settingOverride` 一并不生效），采纳后 `settingOverride.tone` 才可覆盖 AI 基调，且 rules 仍逐条按采纳门控。
+3. **多 source 实体绑定**：实体自动绑定要求其 `sourceRefIds` 解析出的 **distinct masterItemId 恰好为 1**；多个来源综合出的实体（或仅来自用户片段）不生成 `bindingId`，其绑定的实体作用域候选因无实体引用也一并不发出。
+
+### 测试结果
+
+| 门禁 | 结果 |
+| --- | --- |
+| `vitest run src/features/world-workspace` | **14 文件 / 113 测试通过**（任务 A 后为 13/103） |
+| `tsc --noEmit` | 通过 |
+
+新增/更新用例：手动角色+AI角色同时存在（合并）、AI 与用户绑定同一 masterItemId 不重复建 binding 且重映射、tone 用户优先与 rules 并集去重、空占位规则行丢弃、重复应用不产生重复实体、未采纳 setting 不写 tone/rules（含 override 不生效）、采纳 setting 时 override 生效、唯一来源生成 binding、多来源不自动绑定、创建向导端到端「手动 + AI 角色共存」提交载荷断言。
+
+---
+
+## 8. 修复任务 C：服务端 AI Proposal 契约（2026-09-10 14:05）
+
+### 修改文件
+
+| 文件 | 变更 |
+| --- | --- |
+| `denova-src/internal/app/world_proposal.go` | ①冻结输入预算公式（`effectiveProposalInputBudget`）；②`enhanceStructureProposal` 补齐输出字段长度/数量校验；③新增 `denova/config` 依赖以解析上下文窗口 |
+| `denova-src/internal/app/world_proposal_test.go` | 新增：预算公式边界 8 例、输出长度/数量限制 11 例（含「恰好等于上限必须通过」） |
+| `denova-src/internal/api/handlers/handler_world_proposal_test.go` | **新增**：真实 handler 路径测试 4 例 + Master Library 夹具构造器（不调用真实模型） |
+| 上述 4 个 Go 文件 | `gofmt -w` 格式化（此前 `gofmt -l` 提示的 3 个文件即本轮新增文件） |
+
+### 修复要点
+
+1. **输入预算（冻结公式）**：`effectiveBudget = min(16000, contextWindowTokens - 6144)`；`< 2048` 时**在调用模型前**直接拒绝（`input_too_large` 413）。`contextWindowTokens` 取自 `config.ResolveAgentModel(cfg, AgentKindInteractiveStory).ContextWindowTokens`（模块固定 `narraverse`）。token 估算仍用 `EstimateContextTokens` 同口径，**与 effectiveBudget 比较**而非固定 16000。
+2. **ModelStructureProposal 输出限制**（`enhanceStructureProposal` 阶段，全部走 `invalid_model_output` 422，**禁止静默截断**）：
+   - 名称（角色 `displayName` / 地点 `name` / 势力 `name`）≤100 字；
+   - 描述（地点/势力 `description`）≤4,000 字；角色 `worldNote` ≤4,000 字；
+   - `setting.tone` ≤200 字；每条 `rule.text` ≤2,000 字；
+   - 地点 `tags` ≤50 个，单个 tag ≤100 字；
+   - 数量上限沿用：规则 ≤30、角色 ≤20、地点 ≤30、势力 ≤20、提案项总数 ≤60。
+3. **真实 handler 路径测试**（`internal/api/handlers/handler_world_proposal_test.go`）：
+   - 夹具：临时目录内构造最小可用 Master Library（`master-library-manifest.json` + `.narraverse/master/items/<id>.json` + `originals/<id>.json` 原件归档，保证 availability=usable）；
+   - 模型：`httptest` 假 OpenAI-compatible 上游返回固定 `chat.completion`（**不调用真实模型**），并统计上游调用次数；
+   - 覆盖：①请求 → mock 模型 → 严格解析 → 增强 → 返回 Proposal（断言 `schemaVersion/generatedAt/sourceRefs/bindingCandidates/characters` 等盖章字段与上游恰好调用 1 次）；②严格解码拒绝未知字段与尾随 JSON（400 `invalid_request`）；③模型未配置 → `not_configured`；④上下文窗口 8191（预算 2047 < 2048）→ `input_too_large` 且**模型调用次数为 0**。
+
+### 测试结果
+
+| 门禁 | 结果 |
+| --- | --- |
+| `go test ./internal/app`（proposal 相关 10 个测试函数） | 全部 PASS |
+| `go test ./internal/api/handlers` | 全部 PASS（含新增 4 个 handler 路径测试） |
+| `go test ./internal/world` | PASS |
+| `go test ./internal/app`（整包） | 仅既有 Windows 符号链接测试 `TestActiveAutomationReservationAtomicallyAttachesConcurrentCaller` 失败（与本轮无关） |
+| `go vet ./internal/app ./internal/api/handlers ./internal/world` | 通过 |
+| `go build ./cmd/denova` | 通过 |
+| `gofmt -l`（本轮 4 个文件） | 无输出（已格式化） |
+
+> 附注：`gofmt -l internal/` 全仓仍有大量既有未格式化文件（`internal/agent/*` 等），属仓库历史债，未在本轮扩大范围处理。

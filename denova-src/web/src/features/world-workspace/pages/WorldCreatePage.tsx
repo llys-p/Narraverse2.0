@@ -11,6 +11,7 @@ import { AiStructureAnalyzer } from '../components/AiStructureAnalyzer'
 import { createWorld } from '../world-api'
 import { characterFromBinding } from '../world-factory'
 import type { ProposalBaseInput } from '../world-proposal'
+import { mergeProposalIntoDraft } from '../world-proposal'
 import type { WorldAssetBinding, WorldCharacter, WorldCreateInput, WorldFaction, WorldLocation } from '../types'
 
 const TOTAL_STEPS = 4
@@ -75,12 +76,14 @@ export function WorldCreatePage({ onCancel, onCreated }: WorldCreatePageProps) {
   }
 
   const applyProposal = (input: WorldCreateInput) => {
-    setBindings(input.bindings ?? [])
-    setCharacters(input.characters ?? [])
-    setLocations(input.locations ?? [])
-    setFactions(input.factions ?? [])
-    setTone(input.worldSetting?.tone ?? '')
-    setRules(input.worldSetting?.rules.length ? input.worldSetting.rules : [''])
+    // 合并而非覆盖：保留用户已填写的绑定/实体/tone/rules，AI 结果只做增量。
+    const merged = mergeProposalIntoDraft({ bindings, characters, locations, factions, tone, rules }, input)
+    setBindings(merged.bindings)
+    setCharacters(merged.characters)
+    setLocations(merged.locations)
+    setFactions(merged.factions)
+    setTone(merged.tone)
+    setRules(merged.rules)
     setAiOpen(false)
   }
 

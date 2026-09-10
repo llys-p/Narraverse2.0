@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
 
+	"denova/config"
 	"denova/internal/agent"
 	"denova/internal/book"
 )
@@ -41,7 +42,7 @@ const (
 
 // WorldStructureAnalysisRequest 是分析请求；请求体只含 id/字段路径/用户片段。
 type WorldStructureAnalysisRequest struct {
-	Sources []WorldProposalSource `json:"sources"`
+	Sources  []WorldProposalSource  `json:"sources"`
 	Snippets []WorldProposalSnippet `json:"snippets"`
 }
 
@@ -128,14 +129,14 @@ type ProposedFaction struct {
 
 // StructureProposal 是服务端增强后的最终提案（会话草稿，不持久化）。
 type StructureProposal struct {
-	SchemaVersion    int                       `json:"schemaVersion"`
-	SourceRefs       []ProposalSourceRef       `json:"sourceRefs"`
+	SchemaVersion     int                        `json:"schemaVersion"`
+	SourceRefs        []ProposalSourceRef        `json:"sourceRefs"`
 	BindingCandidates []ProposedBindingCandidate `json:"bindingCandidates"`
-	Setting          *ProposedWorldSetting     `json:"setting,omitempty"`
-	Characters       []ProposedCharacter       `json:"characters"`
-	Locations        []ProposedLocation        `json:"locations"`
-	Factions         []ProposedFaction         `json:"factions"`
-	GeneratedAt      string                    `json:"generatedAt"`
+	Setting           *ProposedWorldSetting      `json:"setting,omitempty"`
+	Characters        []ProposedCharacter        `json:"characters"`
+	Locations         []ProposedLocation         `json:"locations"`
+	Factions          []ProposedFaction          `json:"factions"`
+	GeneratedAt       string                     `json:"generatedAt"`
 }
 
 // ---------------------------------------------------------------------------
@@ -174,13 +175,39 @@ const (
 	proposalOutputTokens      = 4096
 	proposalModelTimeout      = 120 * time.Second
 
+	// 协议/安全余量：effectiveBudget = min(16000, contextWindowTokens - 6144)。
+	proposalProtocolReserveTokens = 6144
+	proposalMinInputBudget        = 2048
+
 	proposalMaxRules      = 30
 	proposalMaxCharacters = 20
 	proposalMaxLocations  = 30
 	proposalMaxFactions   = 20
 	proposalMaxItemsTotal = 60
 	proposalMaxReason     = 500
+
+	// 模型输出字段长度上限（World 契约同口径；超出即 invalid_model_output，禁止静默截断）。
+	proposalMaxName        = 100
+	proposalMaxDescription = 4000
+	proposalMaxNote        = 4000
+	proposalMaxTone        = 200
+	proposalMaxRuleItem    = 2000
+	proposalMaxTags        = 50
+	proposalMaxTagItem     = 100
 )
+
+// effectiveProposalInputBudget 计算第一版输入 token 预算：
+// min(16000, contextWindowTokens-6144)；不足 2048 时 ok=false（拒绝请求）。
+func effectiveProposalInputBudget(contextWindowTokens int) (budget int, ok bool) {
+	budget = contextWindowTokens - proposalProtocolReserveTokens
+	if budget > proposalMaxInputTokens {
+		budget = proposalMaxInputTokens
+	}
+	if budget < proposalMinInputBudget {
+		return 0, false
+	}
+	return budget, true
+}
 
 // proposalSystemPrompt 是固定系统指令：资料一律视为引用内容，只允许返回单个 JSON 对象。
 const proposalSystemPrompt = `你是世界结构提取器。用户会给你一批“来源资料”，每条带一个短 id（形如 s0、u1）。
@@ -297,7 +324,7 @@ type modelProposedFaction struct {
 }
 
 type modelStructureProposal struct {
-	Setting    *modelProposedSetting   `json:"setting,omitempty"`
+	Setting    *modelProposedSetting    `json:"setting,omitempty"`
 	Characters []modelProposedCharacter `json:"characters"`
 	Locations  []modelProposedLocation  `json:"locations"`
 	Factions   []modelProposedFaction   `json:"factions"`
@@ -437,13 +464,23 @@ func (a *App) AnalyzeWorldStructure(ctx context.Context, req WorldStructureAnaly
 	}
 	userContent := b.String()
 
-	// 输入 token 预算：复用 EstimateContextTokens 同口径，硬上限 16000。
+	// 输入 token 预算：effectiveBudget = min(16000, contextWindowTokens - 6144)；
+	// 复用 EstimateContextTokens 同口径，不足 2048 直接拒绝。
+	cfg, cfgErr := a.modelConfigSnapshot()
+	if cfgErr != nil {
+		return StructureProposal{}, proposalErrorRaw("not_configured", 400, "无法读取 Denova 共享模型配置。")
+	}
+	resolved := config.ResolveAgentModel(cfg, config.AgentKindInteractiveStory)
+	budget, budgetOK := effectiveProposalInputBudget(resolved.ContextWindowTokens)
+	if !budgetOK {
+		return StructureProposal{}, proposalError("input_too_large", 413, "共享模型上下文窗口过小（%d tokens），不足以完成资料分析", resolved.ContextWindowTokens)
+	}
 	messages := []*schema.Message{
 		{Role: schema.System, Content: proposalSystemPrompt},
 		{Role: schema.User, Content: userContent},
 	}
-	if est := agent.EstimateContextTokens(messages, nil); est > proposalMaxInputTokens {
-		return StructureProposal{}, proposalError("input_too_large", 413, "资料输入超出 token 预算（估算 %d）", est)
+	if est := agent.EstimateContextTokens(messages, nil); est > budget {
+		return StructureProposal{}, proposalError("input_too_large", 413, "资料输入超出 token 预算（估算 %d，上限 %d）", est, budget)
 	}
 
 	// 120 秒硬超时。
@@ -582,6 +619,14 @@ func enhanceStructureProposal(model *modelStructureProposal, refs []ProposalSour
 		}
 	}
 
+	// 输出字段长度校验：超出即 invalid_model_output，禁止静默截断。
+	checkLen := func(what, value string, max int) error {
+		if runeCount(value) > max {
+			return proposalError("invalid_model_output", 422, "%s 超过 %d 字。", what, max)
+		}
+		return nil
+	}
+
 	out := StructureProposal{SchemaVersion: 1, SourceRefs: refs, BindingCandidates: []ProposedBindingCandidate{}, Characters: []ProposedCharacter{}, Locations: []ProposedLocation{}, Factions: []ProposedFaction{}, GeneratedAt: time.Now().UTC().Format(time.RFC3339)}
 
 	if model.Setting != nil {
@@ -591,6 +636,9 @@ func enhanceStructureProposal(model *modelStructureProposal, refs []ProposalSour
 		if len(model.Setting.Rules) > proposalMaxRules {
 			return StructureProposal{}, proposalError("invalid_model_output", 422, "规则数量超过 %d。", proposalMaxRules)
 		}
+		if err := checkLen("setting.tone", strings.TrimSpace(model.Setting.Tone), proposalMaxTone); err != nil {
+			return StructureProposal{}, err
+		}
 		items++
 		setting := &ProposedWorldSetting{ProposedBase: base(model.Setting.modelProposalBase), Tone: strings.TrimSpace(model.Setting.Tone), Rules: []ProposedRule{}}
 		for _, r := range model.Setting.Rules {
@@ -599,6 +647,9 @@ func enhanceStructureProposal(model *modelStructureProposal, refs []ProposalSour
 			}
 			if strings.TrimSpace(r.Text) == "" {
 				return StructureProposal{}, proposalError("invalid_model_output", 422, "rule 文本不能为空。")
+			}
+			if err := checkLen("rule.text", strings.TrimSpace(r.Text), proposalMaxRuleItem); err != nil {
+				return StructureProposal{}, err
 			}
 			items++
 			setting.Rules = append(setting.Rules, ProposedRule{ProposedBase: base(r.modelProposalBase), Text: strings.TrimSpace(r.Text)})
@@ -619,6 +670,12 @@ func enhanceStructureProposal(model *modelStructureProposal, refs []ProposalSour
 		if c.Role != "" && c.Role != "protagonist" && c.Role != "major" && c.Role != "minor" && c.Role != "npc" {
 			return StructureProposal{}, proposalError("invalid_model_output", 422, "角色 role 非法：%s", c.Role)
 		}
+		if err := checkLen("character.displayName", strings.TrimSpace(c.DisplayName), proposalMaxName); err != nil {
+			return StructureProposal{}, err
+		}
+		if err := checkLen("character.worldNote", strings.TrimSpace(c.WorldNote), proposalMaxNote); err != nil {
+			return StructureProposal{}, err
+		}
 		items++
 		out.Characters = append(out.Characters, ProposedCharacter{ProposedBase: base(c.modelProposalBase), DisplayName: strings.TrimSpace(c.DisplayName), Role: c.Role, WorldNote: strings.TrimSpace(c.WorldNote)})
 	}
@@ -633,6 +690,20 @@ func enhanceStructureProposal(model *modelStructureProposal, refs []ProposalSour
 		if strings.TrimSpace(l.Name) == "" {
 			return StructureProposal{}, proposalError("invalid_model_output", 422, "地点缺少 name。")
 		}
+		if err := checkLen("location.name", strings.TrimSpace(l.Name), proposalMaxName); err != nil {
+			return StructureProposal{}, err
+		}
+		if err := checkLen("location.description", strings.TrimSpace(l.Description), proposalMaxDescription); err != nil {
+			return StructureProposal{}, err
+		}
+		if len(l.Tags) > proposalMaxTags {
+			return StructureProposal{}, proposalError("invalid_model_output", 422, "地点标签数量超过 %d。", proposalMaxTags)
+		}
+		for i, tag := range l.Tags {
+			if err := checkLen(fmt.Sprintf("location.tags[%d]", i), tag, proposalMaxTagItem); err != nil {
+				return StructureProposal{}, err
+			}
+		}
 		items++
 		out.Locations = append(out.Locations, ProposedLocation{ProposedBase: base(l.modelProposalBase), Name: strings.TrimSpace(l.Name), Description: strings.TrimSpace(l.Description), Tags: l.Tags})
 	}
@@ -646,6 +717,12 @@ func enhanceStructureProposal(model *modelStructureProposal, refs []ProposalSour
 		}
 		if strings.TrimSpace(f.Name) == "" {
 			return StructureProposal{}, proposalError("invalid_model_output", 422, "势力缺少 name。")
+		}
+		if err := checkLen("faction.name", strings.TrimSpace(f.Name), proposalMaxName); err != nil {
+			return StructureProposal{}, err
+		}
+		if err := checkLen("faction.description", strings.TrimSpace(f.Description), proposalMaxDescription); err != nil {
+			return StructureProposal{}, err
 		}
 		items++
 		out.Factions = append(out.Factions, ProposedFaction{ProposedBase: base(f.modelProposalBase), Name: strings.TrimSpace(f.Name), Description: strings.TrimSpace(f.Description)})

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Loader2, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -51,6 +51,26 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
   const [edits, setEdits] = useState<Record<string, Record<string, unknown>>>({})
   const [toneOverride, setToneOverride] = useState<string | undefined>(undefined)
 
+  // 请求代与中止器：关闭弹窗/组件卸载/重新分析时令在途请求失效，旧响应不得覆盖新状态。
+  const requestSeq = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const selectedCount = useMemo(() => Object.values(selected).filter((s) => s.size > 0).length, [selected])
+
+  // 清理未确认的临时 proposal（只影响本弹窗内部状态，不触碰父组件的手动创建流程）。
+  const resetProposal = useCallback(() => {
+    requestSeq.current += 1
+    abortRef.current?.abort()
+    abortRef.current = null
+    setAnalyzing(false)
+    setProposal(null)
+    setDecisions({})
+    setAdoptedBindingIds([])
+    setEdits({})
+    setToneOverride(undefined)
+    setError(null)
+  }, [])
+
   useEffect(() => {
     if (!open) return
     setState('loading')
@@ -60,6 +80,18 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
       .then(() => setState('ready'))
       .catch(() => setState('error'))
   }, [open])
+
+  // 关闭弹窗：失效在途请求并清理未确认 proposal。
+  useEffect(() => {
+    if (open) return
+    resetProposal()
+  }, [open, resetProposal])
+
+  // 组件卸载：失效并中止在途请求。
+  useEffect(() => () => {
+    requestSeq.current += 1
+    abortRef.current?.abort()
+  }, [])
 
   const toggleAsset = (asset: MasterAssetSummary) => {
     setSelected((prev) => {
@@ -88,6 +120,10 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
   }
 
   const analyze = useCallback(async () => {
+    const seq = ++requestSeq.current
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     setError(null)
     setAnalyzing(true)
     setProposal(null)
@@ -102,7 +138,11 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
         setError(t('worldWorkspace.aiAnalyzer.noSources'))
         return
       }
-      const res = await analyzeWorldStructure({ sources, snippets: snippets.map((s) => ({ snippetId: s.snippetId, label: s.label.trim() || undefined, text: s.text })) })
+      const res = await analyzeWorldStructure(
+        { sources, snippets: snippets.map((s) => ({ snippetId: s.snippetId, label: s.label.trim() || undefined, text: s.text })) },
+        controller.signal,
+      )
+      if (seq !== requestSeq.current) return // 旧请求已失效：不得覆盖新状态
       const p = res.proposal
       setProposal(p)
       const initDecisions: Record<string, ProposalItemDecision> = {}
@@ -113,9 +153,11 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
       setEdits({})
       setToneOverride(undefined)
     } catch (err) {
+      if (seq !== requestSeq.current) return
+      if (err instanceof DOMException && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : t('worldWorkspace.aiAnalyzer.error'))
     } finally {
-      setAnalyzing(false)
+      if (seq === requestSeq.current) setAnalyzing(false)
     }
   }, [selected, snippets, assets, t])
 
@@ -135,8 +177,6 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
   }
 
   if (!open) return null
-
-  const selectedCount = useMemo(() => Object.values(selected).filter((s) => s.size > 0).length, [selected])
 
   const inputCls = 'h-8 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2.5 text-sm outline-none focus:border-[var(--nova-ring)]'
 
@@ -213,7 +253,7 @@ export function AiStructureAnalyzer({ open, base, onClose, onApply }: AiStructur
             </Button>
           ) : (
             <>
-              <Button variant="outline" size="sm" onClick={() => { setProposal(null); setDecisions({}); setEdits({}) }}>{t('worldWorkspace.aiAnalyzer.reanalyze')}</Button>
+              <Button variant="outline" size="sm" onClick={resetProposal}>{t('worldWorkspace.aiAnalyzer.reanalyze')}</Button>
               <Button size="sm" onClick={apply} data-icon="inline-start"><Check className="size-3.5" />{t('worldWorkspace.aiAnalyzer.apply')}</Button>
             </>
           )}

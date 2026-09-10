@@ -60,10 +60,14 @@ export function archiveWorld(
 }
 
 /** POST /api/world-proposals —— 创建向导受控 AI 结构分析（前端不得直调 /api/model/chat）。 */
-export function analyzeWorldStructure(input: WorldStructureAnalysisRequest): Promise<ProposalEnvelope> {
+export function analyzeWorldStructure(
+  input: WorldStructureAnalysisRequest,
+  signal?: AbortSignal,
+): Promise<ProposalEnvelope> {
   return requestJSON<ProposalEnvelope>('/api/world-proposals', {
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
+    signal,
   })
 }
