@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"testing"
+	"time"
 
 	"denova/internal/agent"
 )
@@ -47,5 +48,33 @@ func TestActiveInteractiveTaskForScopesRecoveryToCurrentStoryBranchAndWorkspace(
 	service.app.mu.Unlock()
 	if otherTask, _ := service.ActiveInteractiveTaskFor("story-1", "branch-1"); otherTask != nil {
 		t.Fatalf("different workspace recovered task %s", otherTask.ID())
+	}
+}
+
+func TestBindAndStartActiveInteractiveTaskStartsOnlyAfterPublication(t *testing.T) {
+	workspace := t.TempDir()
+	a := &App{workspace: workspace}
+	service := &InteractiveAppService{app: a}
+	task := newPendingTask()
+	published := make(chan bool, 1)
+
+	if !service.bindAndStartActiveInteractiveTask(task, InteractiveTaskInfo{
+		Workspace: workspace,
+		StoryID:   "story-1",
+		BranchID:  "main",
+	}, func(ctx context.Context, running *Task, _ func(agent.Event)) {
+		got, _ := service.ActiveInteractiveTaskFor("story-1", "main")
+		published <- got == running && running.Status() == TaskRunning
+	}) {
+		t.Fatal("pending task should be atomically published and started")
+	}
+
+	select {
+	case ok := <-published:
+		if !ok {
+			t.Fatal("runner observed a missing or non-running active task")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("runner did not start")
 	}
 }

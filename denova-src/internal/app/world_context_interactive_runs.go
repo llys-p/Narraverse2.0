@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"denova/internal/worldcontext"
 )
 
 const (
@@ -80,6 +82,16 @@ type interactiveRunRegistryConfig struct {
 type interactiveRunSweepResult struct {
 	RunsExpired int
 	Contexts    []interactiveRunContextRef
+}
+
+// interactiveTaskRunBinding is transient orchestration metadata. It is not
+// stored in Task, events, World files, or story persistence.
+type interactiveTaskRunBinding struct {
+	runID    interactiveRunID
+	storyID  string
+	branchID string
+	created  bool
+	tracked  bool
 }
 
 // interactiveRunRegistry contains only process-local relationship indexes.
@@ -299,6 +311,40 @@ func (r *interactiveRunRegistry) markTaskTerminal(storyID, branchID, taskID stri
 	return true
 }
 
+func (r *interactiveRunRegistry) detachContext(runID interactiveRunID) (interactiveRunContextRef, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	record, ok := r.runs[runID]
+	if !ok || record.runContextID == "" {
+		return interactiveRunContextRef{}, false
+	}
+	return takeInteractiveRunContextLocked(record), true
+}
+
+// detachTask rolls back a Task association that never started or was never
+// committed. It removes both the forward index and the run's reverse sets.
+func (r *interactiveRunRegistry) detachTask(runID interactiveRunID, storyID, branchID, taskID string) bool {
+	key := interactiveTaskRunKey{
+		storyID: strings.TrimSpace(storyID), branchID: strings.TrimSpace(branchID), taskID: strings.TrimSpace(taskID),
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	indexedRunID, ok := r.taskRuns[key]
+	if !ok || indexedRunID != runID {
+		return false
+	}
+	record := r.runs[runID]
+	if record == nil {
+		delete(r.taskRuns, key)
+		return true
+	}
+	delete(r.taskRuns, key)
+	delete(record.meta.taskIDs, key.taskID)
+	delete(record.meta.activeTaskIDs, key.taskID)
+	record.meta.lastUsedAt = r.cfg.Now()
+	return true
+}
+
 // detachStoryContexts transfers cleanup ownership to the caller while retaining
 // task/turn mappings until run TTL expiry.
 func (r *interactiveRunRegistry) detachStoryContexts(storyID string) []interactiveRunContextRef {
@@ -321,6 +367,26 @@ func (r *interactiveRunRegistry) destroy(runID interactiveRunID) (interactiveRun
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.destroyLocked(runID)
+}
+
+// reclaimOldestTerminal removes one least-recently-used run that has no active
+// Task. The returned context ref gives the caller sole release responsibility.
+func (r *interactiveRunRegistry) reclaimOldestTerminal() (interactiveRunContextRef, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var victim *interactiveRunRecord
+	for _, record := range r.runs {
+		if len(record.meta.activeTaskIDs) != 0 {
+			continue
+		}
+		if victim == nil || record.meta.lastUsedAt.Before(victim.meta.lastUsedAt) {
+			victim = record
+		}
+	}
+	if victim == nil {
+		return interactiveRunContextRef{}, false
+	}
+	return r.destroyLocked(victim.id)
 }
 
 func (r *interactiveRunRegistry) destroyLocked(runID interactiveRunID) (interactiveRunContextRef, bool) {
@@ -419,4 +485,126 @@ func newInteractiveRunID() (interactiveRunID, error) {
 		return "", err
 	}
 	return interactiveRunID(base64.RawURLEncoding.EncodeToString(random)), nil
+}
+
+// prepareInteractiveTaskRun resolves one turn-level InteractiveRun and indexes
+// the pending Task before it may start. A normal turn always creates a new run;
+// regenerate only reuses an exact persisted-turn mapping and never guesses.
+func (s *WorldContextService) prepareInteractiveTaskRun(storyID, branchID, regenerateFromTurnID, taskID string) (interactiveTaskRunBinding, error) {
+	storyID, branchID = strings.TrimSpace(storyID), strings.TrimSpace(branchID)
+	regenerateFromTurnID, taskID = strings.TrimSpace(regenerateFromTurnID), strings.TrimSpace(taskID)
+	if s == nil || s.interactiveRuns == nil || storyID == "" || branchID == "" || taskID == "" {
+		return interactiveTaskRunBinding{}, errInteractiveRunInvalid
+	}
+
+	created := false
+	var runID interactiveRunID
+	if regenerateFromTurnID != "" {
+		runID, _ = s.interactiveRuns.findByPersistedTurn(storyID, branchID, regenerateFromTurnID)
+	}
+	if runID == "" {
+		record, err := s.createInteractiveRunWithReclaim(storyID, branchID)
+		if err != nil {
+			return interactiveTaskRunBinding{}, err
+		}
+		runID, created = record.id, true
+	} else {
+		s.refreshInteractiveRunContext(runID)
+	}
+
+	binding := interactiveTaskRunBinding{
+		runID: runID, storyID: storyID, branchID: branchID, created: created,
+	}
+	if err := s.interactiveRuns.attachTask(runID, storyID, branchID, taskID); err != nil {
+		if created {
+			s.destroyInteractiveRun(runID)
+		}
+		return interactiveTaskRunBinding{}, err
+	}
+	binding.tracked = true
+	return binding, nil
+}
+
+func (s *WorldContextService) createInteractiveRunWithReclaim(storyID, branchID string) (*interactiveRunRecord, error) {
+	record, err := s.interactiveRuns.create(storyID, branchID)
+	if !errors.Is(err, errInteractiveRunCapacity) {
+		return record, err
+	}
+	s.releaseInteractiveRunContexts(s.interactiveRuns.sweep().Contexts)
+	record, err = s.interactiveRuns.create(storyID, branchID)
+	if !errors.Is(err, errInteractiveRunCapacity) {
+		return record, err
+	}
+	if ref, reclaimed := s.interactiveRuns.reclaimOldestTerminal(); reclaimed {
+		s.releaseInteractiveRunContext(ref)
+		return s.interactiveRuns.create(storyID, branchID)
+	}
+	return nil, err
+}
+
+func (s *WorldContextService) refreshInteractiveRunContext(runID interactiveRunID) {
+	if s.registry == nil {
+		return
+	}
+	record, ok := s.interactiveRuns.snapshot(runID)
+	if !ok || record.runContextID == "" {
+		return
+	}
+	if current, err := s.registry.Reuse(worldcontext.ConsumerGame, record.scopeKey, ""); err == nil && current.ID() == record.runContextID {
+		return
+	}
+	if ref, detached := s.interactiveRuns.detachContext(runID); detached {
+		s.releaseInteractiveRunContext(ref)
+	}
+}
+
+func (s *WorldContextService) recordInteractiveTurnPersisted(binding interactiveTaskRunBinding, taskID, turnID string) error {
+	if !binding.tracked {
+		return nil
+	}
+	_, err := s.interactiveRuns.recordTurnPersisted(binding.storyID, binding.branchID, taskID, turnID)
+	return err
+}
+
+func (s *WorldContextService) markInteractiveTaskTerminal(binding interactiveTaskRunBinding, taskID string) bool {
+	return binding.tracked && s != nil && s.interactiveRuns != nil &&
+		s.interactiveRuns.markTaskTerminal(binding.storyID, binding.branchID, taskID)
+}
+
+func (s *WorldContextService) rollbackInteractiveTaskRun(binding interactiveTaskRunBinding, taskID string) {
+	if !binding.tracked || s == nil || s.interactiveRuns == nil {
+		return
+	}
+	s.interactiveRuns.detachTask(binding.runID, binding.storyID, binding.branchID, taskID)
+	if binding.created {
+		s.destroyInteractiveRun(binding.runID)
+	}
+}
+
+func (s *WorldContextService) destroyInteractiveRun(runID interactiveRunID) bool {
+	if s == nil || s.interactiveRuns == nil {
+		return false
+	}
+	ref, destroyed := s.interactiveRuns.destroy(runID)
+	if destroyed {
+		s.releaseInteractiveRunContext(ref)
+	}
+	return destroyed
+}
+
+func (s *WorldContextService) releaseInteractiveRunContexts(refs []interactiveRunContextRef) {
+	for _, ref := range refs {
+		s.releaseInteractiveRunContext(ref)
+	}
+}
+
+func (s *WorldContextService) releaseInteractiveRunContext(ref interactiveRunContextRef) bool {
+	if s == nil || s.registry == nil || ref.empty() {
+		return false
+	}
+	current, err := s.registry.GetByID(ref.runContextID, worldcontext.ConsumerGame)
+	if err != nil || current.ScopeKey() != ref.scopeKey {
+		return false
+	}
+	return s.registry.Destroy(worldcontext.ConsumerGame, ref.scopeKey)
 }

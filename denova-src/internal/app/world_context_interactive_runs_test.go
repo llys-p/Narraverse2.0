@@ -263,6 +263,39 @@ func TestInteractiveRunRegistry_RejectsInvalidIdentityAndConcurrentActiveTask(t 
 	}
 }
 
+func TestInteractiveRunRegistry_DetachTaskAndReclaimOldestTerminal(t *testing.T) {
+	r, advance := newInteractiveRunTestRegistry()
+	first, _ := r.create("story-1", "main")
+	if err := r.bindContext(first.id, "context-first", first.scopeKey); err != nil {
+		t.Fatalf("bind first context: %v", err)
+	}
+	if err := r.attachTask(first.id, "story-1", "main", "task-first"); err != nil {
+		t.Fatalf("attach first task: %v", err)
+	}
+	if !r.detachTask(first.id, "story-1", "main", "task-first") {
+		t.Fatal("rollback should detach pending task from both indexes")
+	}
+	if _, ok := r.findByTask("story-1", "main", "task-first"); ok {
+		t.Fatal("detached task must not remain indexed")
+	}
+
+	advance(time.Minute)
+	second, _ := r.create("story-2", "main")
+	if err := r.attachTask(second.id, "story-2", "main", "task-second"); err != nil {
+		t.Fatalf("attach second task: %v", err)
+	}
+	ref, reclaimed := r.reclaimOldestTerminal()
+	if !reclaimed || ref.runContextID != "context-first" {
+		t.Fatalf("capacity reclaim should choose oldest non-active run: reclaimed=%v ref=%#v", reclaimed, ref)
+	}
+	if _, ok := r.snapshot(first.id); ok {
+		t.Fatal("reclaimed run must be removed")
+	}
+	if _, ok := r.snapshot(second.id); !ok {
+		t.Fatal("active run must not be reclaimed")
+	}
+}
+
 func itoaForInteractiveRunTest(n int) string {
 	if n == 0 {
 		return "0"

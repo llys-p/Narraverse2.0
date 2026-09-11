@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Phase 3.0B 将 InteractiveRun 身份接入现有游戏 Task 流程：普通回合创建新 run，regenerate 只按已持久化 turn 复用原 run，Task 在索引完成后才启动，真实持久化成功后再登记 TurnIndex；现有 HTTP/SSE 协议与游戏模型调用保持不变。
+- Phase 3.0B connects InteractiveRun identity to the existing game Task flow: normal turns create a new run, regenerate reuses a run only through an indexed persisted turn, Tasks start only after indexing, and TurnIndex is recorded only after persistence is verified. Existing HTTP/SSE contracts and game model calls remain unchanged.
 - Phase 3.0B 新增独立的 InteractiveRun 进程内注册表：一回合可顺序关联 initial/regenerate 等多个 Task 执行尝试，并以 story/branch 隔离的 TaskIndex 与持久化 TurnIndex 确定归属；TTL、detach 与 destroy 只交出一次 runContext 清理所有权，不保存 World 或剧情副本。
 - Phase 3.0B adds a separate in-memory InteractiveRun registry: one turn can own sequential initial/regenerate Task attempts, with story/branch-scoped Task and persisted-Turn indexes providing deterministic ownership. TTL, detach, and destroy transfer run-context cleanup ownership exactly once without storing World or narrative copies.
 - Phase 3.0B 新增 runContext 原子 scope 迁移原语：在不改变 ID、最终模型字节、sourceRef 或 ProjectionBody 引用计数的前提下，将 analysis pending 绑定安全迁移到 InteractiveRun scope，并拒绝跨 consumer、指纹不匹配和目标冲突。

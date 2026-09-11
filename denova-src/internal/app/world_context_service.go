@@ -21,6 +21,7 @@ type WorldContextService struct {
 	app             *App
 	registry        *worldcontext.Registry
 	analysisHandles *analysisHandleRegistry
+	interactiveRuns *interactiveRunRegistry
 }
 
 func newWorldContextService(a *App) *WorldContextService {
@@ -29,6 +30,7 @@ func newWorldContextService(a *App) *WorldContextService {
 		app:             a,
 		registry:        registry,
 		analysisHandles: newAnalysisHandleRegistry(registry, analysisHandleConfig{}),
+		interactiveRuns: newInteractiveRunRegistry(interactiveRunRegistryConfig{}),
 	}
 }
 

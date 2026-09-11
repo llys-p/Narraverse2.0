@@ -35,7 +35,7 @@ type App struct {
 	activeTask             *Task
 	masterAgentTasks       map[string]*Task
 	masterRecoveryCancel   context.CancelFunc
-	activeInteractiveRun   *interactiveTaskRun
+	activeInteractiveTask  *interactiveActiveTaskBinding
 	activeLoreImageTask    *Task
 	activeAutomationTasks  map[string]*Task
 	activeAutomationRuns   map[string]automationRunState

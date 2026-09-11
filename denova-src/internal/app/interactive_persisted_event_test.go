@@ -38,9 +38,12 @@ func TestEmitInteractiveTurnPersistedUsesCurrentSnapshot(t *testing.T) {
 	}
 
 	var events []agent.Event
-	emitInteractiveTurnPersisted(store, story.ID, conversation, func(event agent.Event) {
+	result := emitInteractiveTurnPersisted(store, story.ID, conversation, func(event agent.Event) {
 		events = append(events, event)
 	})
+	if !result.persisted || result.turnID != turn.ID || result.branchID != "main" || result.snapshot == nil {
+		t.Fatalf("persisted result mismatch: %#v", result)
+	}
 
 	if len(events) != 1 {
 		t.Fatalf("event count = %d, want 1", len(events))
@@ -100,9 +103,12 @@ func TestEmitInteractiveTurnPersistedSkipsWhenNoTurnWasPersisted(t *testing.T) {
 	conversation := newInteractiveConversation(store, t.TempDir(), workspace, story.ID, "main", "继续前进", 800, nil)
 
 	var events []agent.Event
-	emitInteractiveTurnPersisted(store, story.ID, conversation, func(event agent.Event) {
+	result := emitInteractiveTurnPersisted(store, story.ID, conversation, func(event agent.Event) {
 		events = append(events, event)
 	})
+	if result.persisted || result.snapshot != nil || result.turnID != "" {
+		t.Fatalf("missing turn must return an empty result: %#v", result)
+	}
 
 	if len(events) != 0 {
 		t.Fatalf("event count = %d, want 0", len(events))

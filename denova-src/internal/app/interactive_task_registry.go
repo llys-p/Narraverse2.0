@@ -14,7 +14,7 @@ type InteractiveTaskInfo struct {
 	RegenerateFromTurnID string
 }
 
-type interactiveTaskRun struct {
+type interactiveActiveTaskBinding struct {
 	task *Task
 	info InteractiveTaskInfo
 }
@@ -23,11 +23,7 @@ func (s *InteractiveAppService) bindActiveInteractiveTask(task *Task, info Inter
 	if s == nil || s.app == nil || task == nil {
 		return false
 	}
-	info.TaskID = task.ID()
-	info.Workspace = strings.TrimSpace(info.Workspace)
-	info.StoryID = strings.TrimSpace(info.StoryID)
-	info.BranchID = strings.TrimSpace(info.BranchID)
-	info.RegenerateFromTurnID = strings.TrimSpace(info.RegenerateFromTurnID)
+	info = normalizedInteractiveTaskInfo(task, info)
 
 	a := s.app
 	a.mu.Lock()
@@ -35,8 +31,40 @@ func (s *InteractiveAppService) bindActiveInteractiveTask(task *Task, info Inter
 	if info.Workspace == "" || a.workspace != info.Workspace {
 		return false
 	}
-	a.activeInteractiveRun = &interactiveTaskRun{task: task, info: info}
+	a.activeInteractiveTask = &interactiveActiveTaskBinding{task: task, info: info}
 	return true
+}
+
+// bindAndStartActiveInteractiveTask publishes a pending Task and starts it in
+// the same App lock interval. Readers can therefore observe either the old
+// binding or a running new Task, never a published pending half-state.
+func (s *InteractiveAppService) bindAndStartActiveInteractiveTask(task *Task, info InteractiveTaskInfo, run TaskRunFunc) bool {
+	if s == nil || s.app == nil || task == nil || run == nil {
+		return false
+	}
+	info = normalizedInteractiveTaskInfo(task, info)
+	a := s.app
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if info.Workspace == "" || a.workspace != info.Workspace {
+		return false
+	}
+	previous := a.activeInteractiveTask
+	a.activeInteractiveTask = &interactiveActiveTaskBinding{task: task, info: info}
+	if task.start(run) {
+		return true
+	}
+	a.activeInteractiveTask = previous
+	return false
+}
+
+func normalizedInteractiveTaskInfo(task *Task, info InteractiveTaskInfo) InteractiveTaskInfo {
+	info.TaskID = task.ID()
+	info.Workspace = strings.TrimSpace(info.Workspace)
+	info.StoryID = strings.TrimSpace(info.StoryID)
+	info.BranchID = strings.TrimSpace(info.BranchID)
+	info.RegenerateFromTurnID = strings.TrimSpace(info.RegenerateFromTurnID)
+	return info
 }
 
 // ActiveInteractiveTaskFor returns the reconnectable task only when the
@@ -54,7 +82,7 @@ func (s *InteractiveAppService) ActiveInteractiveTaskFor(storyID, branchID strin
 	a := s.app
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	run := a.activeInteractiveRun
+	run := a.activeInteractiveTask
 	if run == nil || run.task == nil || run.info.Workspace == "" || run.info.Workspace != a.workspace {
 		return nil, InteractiveTaskInfo{}
 	}

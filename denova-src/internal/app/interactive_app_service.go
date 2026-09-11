@@ -754,9 +754,9 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 		log.Printf("[interactive-agent-task] 未选择 workspace，无法启动任务")
 		return nil
 	}
-	if a.activeInteractiveRun != nil && a.activeInteractiveRun.task != nil && a.activeInteractiveRun.task.Status() == TaskRunning {
-		log.Printf("[interactive-agent-task] replace running task id=%s", a.activeInteractiveRun.task.ID())
-		a.activeInteractiveRun.task.Abort()
+	if a.activeInteractiveTask != nil && a.activeInteractiveTask.task != nil && a.activeInteractiveTask.task.Status() == TaskRunning {
+		log.Printf("[interactive-agent-task] replace running task id=%s", a.activeInteractiveTask.task.ID())
+		a.activeInteractiveTask.task.Abort()
 	}
 
 	store := a.interactive
@@ -824,7 +824,16 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 		StyleRules:  styleRules,
 		Locale:      locale,
 	}
-	task := NewTask(func(ctx context.Context, task *Task, emit func(agent.Event)) {
+	task := newPendingTask()
+	worldContexts := a.worldContext()
+	runBinding, runErr := worldContexts.prepareInteractiveTaskRun(storyID, storyCtx.Snapshot.BranchID, rewindTurnID, task.ID())
+	if runErr != nil {
+		// InteractiveRun is derived coordination state. Failure must not make the
+		// existing game path depend on World Context; continue as an untracked run.
+		log.Printf("[interactive-agent-task] interactive run unavailable; continue untracked task_id=%s err=%v", task.ID(), runErr)
+	}
+	runTask := func(ctx context.Context, task *Task, emit func(agent.Event)) {
+		defer worldContexts.markInteractiveTaskTerminal(runBinding, task.ID())
 		log.Printf("[interactive-agent-task] run begin id=%s story_id=%s branch_id=%s rewind_turn_id=%s message_len=%d style_scenes=%d", task.ID(), storyID, branchID, rewindTurnID, len(message), len(styleScenes))
 		if strings.TrimSpace(rewindTurnID) != "" {
 			if err := store.RewindToTurnParent(storyID, interactive.RewindTurnRequest{BranchID: branchID, TurnID: rewindTurnID}); err != nil {
@@ -878,9 +887,14 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 		interactiveEmit := func(event agent.Event) {
 			if event.Type == "done" && !persistedEmitted && ctx.Err() == nil {
 				persistedEmitted = true
-				persistedSnapshot := emitInteractiveTurnPersisted(store, storyID, conversation, emit)
+				persisted := emitInteractiveTurnPersisted(store, storyID, conversation, emit)
+				if persisted.persisted {
+					if err := worldContexts.recordInteractiveTurnPersisted(runBinding, task.ID(), persisted.turnID); err != nil {
+						log.Printf("[interactive-agent-task] index persisted turn failed task_id=%s err=%v", task.ID(), err)
+					}
+				}
 				if turn, _, ok := conversation.LastTurnForState(); ok {
-					scheduleMaintenance(turn, persistedSnapshot)
+					scheduleMaintenance(turn, persisted.snapshot)
 				}
 			}
 			emit(event)
@@ -905,40 +919,55 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 			scheduleMaintenance(turn, nil)
 		}
 		log.Printf("[interactive-agent-task] run end id=%s status=%s", task.ID(), task.Status())
-	})
+	}
 
-	if !s.bindActiveInteractiveTask(task, InteractiveTaskInfo{
+	if !s.bindAndStartActiveInteractiveTask(task, InteractiveTaskInfo{
 		Workspace:            workspace,
 		StoryID:              storyID,
 		BranchID:             storyCtx.Snapshot.BranchID,
 		Message:              message,
 		RegenerateFromTurnID: rewindTurnID,
-	}) {
-		log.Printf("[interactive-agent-task] skip active task binding after workspace changed id=%s workspace=%s story_id=%s branch_id=%s", task.ID(), workspace, storyID, storyCtx.Snapshot.BranchID)
+	}, runTask) {
+		task.discard()
+		worldContexts.rollbackInteractiveTaskRun(runBinding, task.ID())
+		log.Printf("[interactive-agent-task] discard task before start after workspace changed id=%s workspace=%s story_id=%s branch_id=%s", task.ID(), workspace, storyID, storyCtx.Snapshot.BranchID)
+		return nil
 	}
 
 	return task
 }
 
-func emitInteractiveTurnPersisted(store *interactive.Store, storyID string, conversation *interactiveConversation, emit func(agent.Event)) *interactive.Snapshot {
+type interactivePersistedTurnResult struct {
+	snapshot  *interactive.Snapshot
+	turnID    string
+	branchID  string
+	persisted bool
+}
+
+func emitInteractiveTurnPersisted(store *interactive.Store, storyID string, conversation *interactiveConversation, emit func(agent.Event)) interactivePersistedTurnResult {
 	if store == nil || conversation == nil || emit == nil {
-		return nil
+		return interactivePersistedTurnResult{}
 	}
 	turn, _, ok := conversation.LastTurnForState()
 	if !ok || strings.TrimSpace(turn.ID) == "" {
-		return nil
+		return interactivePersistedTurnResult{}
 	}
 	snapshot, err := store.Snapshot(storyID, turn.BranchID)
 	if err != nil {
 		log.Printf("[interactive-agent-task] load persisted turn snapshot failed story_id=%s branch_id=%s turn_id=%s err=%v", storyID, turn.BranchID, turn.ID, err)
-		return nil
+		return interactivePersistedTurnResult{}
 	}
-	persistedTurn := turn
+	var persistedTurn interactive.TurnEvent
+	found := false
 	for _, snapshotTurn := range snapshot.Turns {
 		if snapshotTurn.ID == turn.ID {
 			persistedTurn = snapshotTurn
+			found = true
 			break
 		}
+	}
+	if !found {
+		return interactivePersistedTurnResult{}
 	}
 	event := InteractiveTurnPersistedEvent{
 		StoryID:                  storyID,
@@ -953,7 +982,9 @@ func emitInteractiveTurnPersisted(store *interactive.Store, storyID string, conv
 	}
 	emit(agent.Event{Type: "interactive_turn_persisted", Data: event})
 	log.Printf("[interactive-agent-task] emitted persisted turn story_id=%s branch_id=%s turn_id=%s", storyID, snapshot.BranchID, persistedTurn.ID)
-	return &snapshot
+	return interactivePersistedTurnResult{
+		snapshot: &snapshot, turnID: persistedTurn.ID, branchID: snapshot.BranchID, persisted: true,
+	}
 }
 
 func (a *App) InteractiveTellers() ([]interactive.Teller, error) {
