@@ -18,14 +18,17 @@ import (
 
 // WorldContextService 装配 World 只读快照与进程内运行上下文。
 type WorldContextService struct {
-	app      *App
-	registry *worldcontext.Registry
+	app             *App
+	registry        *worldcontext.Registry
+	analysisHandles *analysisHandleRegistry
 }
 
 func newWorldContextService(a *App) *WorldContextService {
+	registry := worldcontext.NewRegistry()
 	return &WorldContextService{
-		app:      a,
-		registry: worldcontext.NewRegistry(),
+		app:             a,
+		registry:        registry,
+		analysisHandles: newAnalysisHandleRegistry(registry, analysisHandleConfig{}),
 	}
 }
 
