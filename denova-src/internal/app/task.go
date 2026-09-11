@@ -16,6 +16,9 @@ import (
 type TaskStatus string
 
 const (
+	// TaskPending 表示已分配 ID 与可取消上下文、但尚未启动执行 goroutine 的任务
+	//（Phase 3.0B P3：供“分配 Task ID → 绑定 runContext/决定降级 → 启动”原子顺序使用）。
+	TaskPending TaskStatus = "pending"
 	TaskRunning TaskStatus = "running"
 	TaskDone    TaskStatus = "done"
 	TaskAborted TaskStatus = "aborted"
@@ -34,18 +37,47 @@ type Task struct {
 	finished  bool
 	events    []agent.Event
 	subs      []chan agent.Event
+	ctx       context.Context
 	cancel    context.CancelFunc
 }
 
-// NewTask 创建并启动后台任务。run 函数在独立 goroutine 中执行。
-func NewTask(run func(ctx context.Context, task *Task, emit func(agent.Event))) *Task {
+// TaskRunFunc 是任务执行体；启动后在独立 goroutine 中运行，emit 用于推送事件。
+type TaskRunFunc func(ctx context.Context, task *Task, emit func(agent.Event))
+
+// NewTask 创建并启动后台任务（保持既有“创建即启动”语义，现有所有调用者无需改动）。
+func NewTask(run TaskRunFunc) *Task {
+	t := newPendingTask()
+	// NewTask 路径下任务必然处于 pending，start 一定成功；忽略返回值以保持旧签名。
+	_ = t.start(run)
+	return t
+}
+
+// newPendingTask 只分配 Task ID 与可取消上下文：状态为 pending，
+// 不启动 goroutine、不置 running、不打 task_start。供世界上下文“先分配身份、
+// 绑定 runContext/决定降级，再启动”的原子顺序使用。
+func newPendingTask() *Task {
 	ctx, cancel := context.WithCancel(context.Background())
-	t := &Task{
+	return &Task{
 		id:        strconv.FormatUint(taskSeq.Add(1), 10),
 		startedAt: time.Now(),
-		status:    TaskRunning,
+		status:    TaskPending,
 		cancel:    cancel,
+		ctx:       ctx,
 	}
+}
+
+// start 将 pending 任务原子转为 running 并启动执行 goroutine；只在 pending 态成功一次，
+// 已启动或已废弃的任务返回 false，绝不重复启动。
+func (t *Task) start(run TaskRunFunc) bool {
+	t.mu.Lock()
+	if t.status != TaskPending {
+		t.mu.Unlock()
+		return false
+	}
+	t.status = TaskRunning
+	ctx := t.ctx
+	t.mu.Unlock()
+
 	observability.Info("agent-task", "task_start", slog.String("task_id", t.id))
 	go func() {
 		defer func() {
@@ -57,7 +89,28 @@ func NewTask(run func(ctx context.Context, task *Task, emit func(agent.Event))) 
 		}()
 		run(ctx, t, t.emit)
 	}()
-	return t
+	return true
+}
+
+// discard 释放一个从未启动的 pending 任务：不执行 run、不产生任何模型回调，
+// 并取消其上下文、终结订阅，避免残留“可订阅的半成品运行身份”。
+// 已启动或已终结的任务返回 false。
+func (t *Task) discard() bool {
+	t.mu.Lock()
+	if t.status != TaskPending {
+		t.mu.Unlock()
+		return false
+	}
+	t.status = TaskAborted
+	t.finished = true
+	for _, ch := range t.subs {
+		close(ch)
+	}
+	t.subs = nil
+	t.mu.Unlock()
+	observability.Info("agent-task", "task_discard", slog.String("task_id", t.id))
+	t.cancel()
+	return true
 }
 
 // emit 缓冲事件并广播给所有订阅者。
@@ -111,6 +164,7 @@ func (t *Task) Subscribe() ([]agent.Event, <-chan agent.Event) {
 	snapshot := make([]agent.Event, len(t.events))
 	copy(snapshot, t.events)
 
+	// pending（尚未启动）与已终结任务都不提供 live 订阅：pending 期间不允许残留可订阅的半成品身份。
 	if t.status != TaskRunning {
 		ch := make(chan agent.Event)
 		close(ch)
@@ -137,10 +191,18 @@ func (t *Task) Unsubscribe(ch <-chan agent.Event) {
 	}
 }
 
-// Abort 取消任务执行。
+// Abort 取消任务执行；若任务仍处于 pending（从未启动），一并终结以避免残留半成品身份。
 func (t *Task) Abort() {
 	t.mu.Lock()
+	neverStarted := t.status == TaskPending
 	t.status = TaskAborted
+	if neverStarted {
+		t.finished = true
+		for _, ch := range t.subs {
+			close(ch)
+		}
+		t.subs = nil
+	}
 	t.mu.Unlock()
 	observability.Warn("agent-task", "task_abort", slog.String("task_id", t.id))
 	t.cancel()
