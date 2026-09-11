@@ -173,6 +173,9 @@ func (s *Store) Create(ctx context.Context, in CreateInput) (World, string, erro
 	w := newWorldFromInput(in)
 	normalizeWorld(&w)
 	w.Status = StatusActive
+	if err := normalizeNewTimelineCategories(&w); err != nil {
+		return World{}, "", err
+	}
 	if err := validateWorld(&w); err != nil {
 		return World{}, "", err
 	}
@@ -240,6 +243,9 @@ func (s *Store) Replace(ctx context.Context, id, expected string, incoming World
 		if err := validateStoredWorld(&current, id); err != nil {
 			return nil, fmt.Errorf("世界文件已损坏，拒绝覆盖：%w", err)
 		}
+		if err := reconcileTimelineCategories(&current, &incoming); err != nil {
+			return nil, err
+		}
 		incoming.CreatedAt = current.CreatedAt // 创建时间以磁盘为准
 		if incoming.CreatedAt == "" {
 			incoming.CreatedAt = nowStamp()
@@ -252,6 +258,47 @@ func (s *Store) Replace(ctx context.Context, id, expected string, incoming World
 		return World{}, "", err
 	}
 	return final, res.Revision, nil
+}
+
+func normalizeNewTimelineCategories(w *World) error {
+	for i := range w.Timeline {
+		if w.Timeline[i].Category == "" {
+			w.Timeline[i].setTimelineCategory(TimelineBackground)
+			continue
+		}
+		if !isWritableTimelineCategory(w.Timeline[i].Category) {
+			return fieldError(fmt.Sprintf("timeline[%d].category", i), "新建时间线只能使用 background、historical 或 planned")
+		}
+	}
+	return nil
+}
+
+func reconcileTimelineCategories(current, incoming *World) error {
+	currentByID := make(map[string]TimelineEntry, len(current.Timeline))
+	for _, entry := range current.Timeline {
+		currentByID[entry.ID] = entry
+	}
+	for i := range incoming.Timeline {
+		entry := &incoming.Timeline[i]
+		previous, exists := currentByID[entry.ID]
+		if !exists {
+			if entry.Category == "" {
+				entry.setTimelineCategory(TimelineBackground)
+				continue
+			}
+			if !isWritableTimelineCategory(entry.Category) {
+				return fieldError(fmt.Sprintf("timeline[%d].category", i), "新建时间线只能使用 background、historical 或 planned")
+			}
+			continue
+		}
+		if timelineCategoryWireEqual(previous, *entry) {
+			continue
+		}
+		if !isWritableTimelineCategory(entry.Category) {
+			return fieldError(fmt.Sprintf("timeline[%d].category", i), "修改时间线只能使用 background、historical 或 planned")
+		}
+	}
+	return nil
 }
 
 // Archive 归档或恢复（撤销），同样走 CAS。

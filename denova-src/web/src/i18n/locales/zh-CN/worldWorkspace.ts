@@ -165,8 +165,11 @@ const worldWorkspace = {
   'worldWorkspace.timeline.era': '时代/纪年',
   'worldWorkspace.timeline.title': '事件标题',
   'worldWorkspace.timeline.description': '描述',
-  'worldWorkspace.timeline.category.canon': '正史',
+  'worldWorkspace.timeline.category.background': '背景',
+  'worldWorkspace.timeline.category.historical': '历史',
   'worldWorkspace.timeline.category.planned': '规划中',
+  'worldWorkspace.timeline.category.legacyCanon': '旧数据：canon',
+  'worldWorkspace.timeline.category.legacyUnknown': '旧数据：未知分类',
 
   'worldWorkspace.bindingPicker.title': '绑定总资料库资产',
   'worldWorkspace.bindingPicker.search': '搜索资产名称或来源',

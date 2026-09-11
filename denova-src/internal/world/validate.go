@@ -34,6 +34,7 @@ const (
 	maxCustomVal   = 2000
 	maxEraLabel    = 100
 	maxTitle       = 200
+	maxCategory    = 100
 	maxMasterItem  = 200
 	maxMasterRev   = 100
 )
@@ -104,14 +105,6 @@ func effectiveBindingScope(b AssetBinding) BindingScope {
 func validRole(r CharacterRole) bool {
 	switch r {
 	case "", RoleProtagonist, RoleMajor, RoleMinor, RoleNPC:
-		return true
-	}
-	return false
-}
-
-func validTimelineCategory(c TimelineCategory) bool {
-	switch c {
-	case "", TimelineCanon, TimelinePlanned:
 		return true
 	}
 	return false
@@ -457,8 +450,8 @@ func validateWorld(w *World) error {
 		if err := checkLen(field+".description", t.Description, maxDescription); err != nil {
 			return err
 		}
-		if !validTimelineCategory(t.Category) {
-			return fieldError(field+".category", "枚举值非法")
+		if err := checkLen(field+".category", string(t.Category), maxCategory); err != nil {
+			return err
 		}
 	}
 	return nil

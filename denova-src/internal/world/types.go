@@ -61,14 +61,6 @@ const (
 	StatusArchived WorldStatus = "archived"
 )
 
-// TimelineCategory 区分背景正典与计划伏笔。
-type TimelineCategory string
-
-const (
-	TimelineCanon   TimelineCategory = "canon"
-	TimelinePlanned TimelineCategory = "planned"
-)
-
 // WorldSetting 是世界规则与基调（背景，不是运行时规则引擎）。
 type WorldSetting struct {
 	Rules []string `json:"rules"`
@@ -134,12 +126,13 @@ type Faction struct {
 
 // TimelineEntry 是背景历史时间线条目。
 type TimelineEntry struct {
-	ID          string           `json:"id"`
-	Order       int              `json:"order"`
-	EraLabel    string           `json:"eraLabel,omitempty"`
-	Title       string           `json:"title"`
-	Description string           `json:"description,omitempty"`
-	Category    TimelineCategory `json:"category,omitempty"`
+	ID            string           `json:"id"`
+	Order         int              `json:"order"`
+	EraLabel      string           `json:"eraLabel,omitempty"`
+	Title         string           `json:"title"`
+	Description   string           `json:"description,omitempty"`
+	Category      TimelineCategory `json:"category,omitempty"`
+	categoryState timelineCategoryRawState
 }
 
 // World 是世界主体。Revision 不存于此结构，而在 HTTP 信封 {world,revision}。

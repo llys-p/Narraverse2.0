@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { emptyTimelineEntry } from '../../world-factory'
+import { normalizeTimelineCategory, timelineCategoryWarning } from '../../timeline-category'
 import type { TimelineCategory, World, WorldTimelineEntry } from '../../types'
 
 interface TimelineSectionProps {
@@ -64,13 +65,21 @@ export function TimelineSection({ world, onChange, readOnly = false }: TimelineS
             />
             <select
               className={`${inputCls} w-24`}
-              value={entry.category ?? 'canon'}
+              value={normalizeTimelineCategory(entry.category)}
               disabled={readOnly}
               onChange={(e) => update(entry.id, { category: e.target.value as TimelineCategory })}
             >
-              <option value="canon">{t('worldWorkspace.timeline.category.canon')}</option>
+              <option value="background">{t('worldWorkspace.timeline.category.background')}</option>
+              <option value="historical">{t('worldWorkspace.timeline.category.historical')}</option>
               <option value="planned">{t('worldWorkspace.timeline.category.planned')}</option>
             </select>
+            {timelineCategoryWarning(entry.category) && (
+              <span className="text-[10px] text-[var(--nova-text-muted)]">
+                {timelineCategoryWarning(entry.category) === 'canon'
+                  ? t('worldWorkspace.timeline.category.legacyCanon')
+                  : t('worldWorkspace.timeline.category.legacyUnknown')}
+              </span>
+            )}
             {!readOnly && (
               <span className="flex items-center">
                 <Button variant="ghost" size="icon-xs" disabled={index === 0} aria-label="up" onClick={() => move(index, -1)}><ArrowUp /></Button>

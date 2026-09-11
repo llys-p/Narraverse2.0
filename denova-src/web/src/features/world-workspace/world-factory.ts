@@ -42,7 +42,7 @@ export function emptyFaction(): WorldFaction {
 }
 
 export function emptyTimelineEntry(order: number): WorldTimelineEntry {
-  return { id: newClientId(), order, title: '', category: 'canon' }
+  return { id: newClientId(), order, title: '', category: 'background' }
 }
 
 /** 供测试用：稳定的空世界草稿结构（创建走 CreateInput，不生成 id/时间）。 */

@@ -165,8 +165,11 @@ const worldWorkspace = {
   'worldWorkspace.timeline.era': 'Era',
   'worldWorkspace.timeline.title': 'Event title',
   'worldWorkspace.timeline.description': 'Description',
-  'worldWorkspace.timeline.category.canon': 'Canon',
+  'worldWorkspace.timeline.category.background': 'Background',
+  'worldWorkspace.timeline.category.historical': 'Historical',
   'worldWorkspace.timeline.category.planned': 'Planned',
+  'worldWorkspace.timeline.category.legacyCanon': 'Legacy: canon',
+  'worldWorkspace.timeline.category.legacyUnknown': 'Legacy: unknown category',
 
   'worldWorkspace.bindingPicker.title': 'Bind master library asset',
   'worldWorkspace.bindingPicker.search': 'Search asset name or source',
