@@ -52,7 +52,10 @@ type App struct {
 	automationApp  *AutomationAppService
 	skillsApp      *SkillsAppService
 	imageApp       *ImageAppService
-	servicesOnce   sync.Once
+	// worldContextSvc 仅持有进程内派生状态（Snapshot 投影 / runContext Registry），
+	// 不进入 config、workspace 或任务事件等任何持久结构；App 重建即为空、不自动恢复。
+	worldContextSvc *WorldContextService
+	servicesOnce    sync.Once
 
 	mu sync.RWMutex
 }
@@ -140,6 +143,7 @@ func (a *App) ensureServices() {
 		a.automationApp = &AutomationAppService{app: a}
 		a.skillsApp = &SkillsAppService{app: a}
 		a.imageApp = &ImageAppService{app: a}
+		a.worldContextSvc = newWorldContextService(a)
 	})
 }
 
@@ -181,6 +185,12 @@ func (a *App) automation() *AutomationAppService {
 func (a *App) skills() *SkillsAppService {
 	a.ensureServices()
 	return a.skillsApp
+}
+
+// worldContext 返回进程内世界上下文装配服务；仅内存派生状态，App 重建即清空。
+func (a *App) worldContext() *WorldContextService {
+	a.ensureServices()
+	return a.worldContextSvc
 }
 
 func (a *App) applyRuntime(runtime *runtimeState) {
