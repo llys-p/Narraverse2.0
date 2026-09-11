@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Phase 3.0B 新增 runContext 原子 scope 迁移原语：在不改变 ID、最终模型字节、sourceRef 或 ProjectionBody 引用计数的前提下，将 analysis pending 绑定安全迁移到 InteractiveRun scope，并拒绝跨 consumer、指纹不匹配和目标冲突。
+- Phase 3.0B adds atomic run-context scope migration, moving an analysis-pending binding into an InteractiveRun scope without changing its ID, final model bytes, source refs, or ProjectionBody reference count while rejecting cross-consumer, fingerprint-mismatch, and occupied-target moves.
 - Phase 3.0B 新增仅驻留进程内存的 analysisHandle 生命周期基础：同一分析上下文幂等签发短期句柄，以原子 claim/consume 保证单次消费，并让取消、过期与失败回滚通过唯一清理责任安全释放 pending runContext；本阶段不接 HTTP、模型、前端或互动运行时。
 - Phase 3.0B adds an in-memory-only analysis-handle lifecycle foundation: short-lived handles are issued idempotently per analysis context, atomic claim/consume guarantees single use, and cancellation, expiry, and failed claims release pending run contexts through one cleanup owner. This phase does not connect HTTP, models, frontend code, or the interactive runtime.
 - Denova 返回“叙界”模式时会通知嵌入应用拉取工程增量；与一键启动的本地同步桥配合，新建冒险可在叙界与 Denova 之间同步设定、章节与 lore，旧冒险不会自动迁移。

@@ -491,6 +491,61 @@ func (r *Registry) GetByID(id string, consumer Consumer) (*RunContext, error) {
 	return rc, nil
 }
 
+// MoveScopeByID 将既有 runContext 从一个服务端 scope 原子迁移到另一个 scope。
+// 该操作只移动二级索引并更新 RunContext.scopeKey；不会重新投影、重新随机化，
+// 也不会获取或释放 ProjectionBody 引用。已完成的同一迁移可安全重试。
+func (r *Registry) MoveScopeByID(
+	consumer Consumer,
+	runContextID string,
+	expectedFromScope string,
+	targetScope string,
+	expectedFingerprint string,
+) (*RunContext, error) {
+	if consumer != ConsumerWriting && consumer != ConsumerGame {
+		return nil, domainError(ErrConsumerNotTrusted, "consumer", "当前阶段只允许 writing/game")
+	}
+	if runContextID == "" || expectedFromScope == "" || targetScope == "" || expectedFingerprint == "" {
+		return nil, domainError(ErrInvalidRequest, "scopeMove", "runContextId、原 scope、目标 scope 与 fingerprint 均不能为空")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.cfg.Now()
+	r.sweepLocked(now)
+
+	currentKey, ok := r.byID[runContextID]
+	if !ok {
+		return nil, domainError(ErrContextUnavailable, "runContextId", "未知或已失效的 runContext")
+	}
+	if currentKey.consumer != consumer {
+		return nil, domainError(ErrConsumerNotTrusted, "consumer", "不得跨 consumer 迁移 runContext")
+	}
+	rc := r.runs[currentKey]
+	if rc == nil || rc.id != runContextID {
+		return nil, domainError(ErrContextUnavailable, "runContextId", "runContext 索引已失效")
+	}
+	if !constantEqual(rc.fingerprint, expectedFingerprint) {
+		return nil, domainError(ErrContextRefMismatch, "contextFingerprint", "迁移 Ref 与绑定不一致")
+	}
+
+	targetKey := scopeKey{consumer: consumer, scope: targetScope}
+	if currentKey == targetKey {
+		return rc, nil
+	}
+	if currentKey.scope != expectedFromScope {
+		return nil, domainError(ErrContextRefMismatch, "scopeKey", "runContext 当前 scope 与预期原 scope 不一致")
+	}
+	if existing, occupied := r.runs[targetKey]; occupied && existing.id != runContextID {
+		return nil, domainError(ErrContextRefMismatch, "targetScope", "目标 scope 已绑定其它 runContext")
+	}
+
+	delete(r.runs, currentKey)
+	rc.scopeKey = targetScope
+	r.runs[targetKey] = rc
+	r.byID[runContextID] = targetKey
+	return rc, nil
+}
+
 // Destroy 对应 destroy：解绑 scope 并释放 body 引用；返回是否找到并释放。
 func (r *Registry) Destroy(consumer Consumer, scope string) bool {
 	r.mu.Lock()

@@ -250,6 +250,120 @@ func TestGetByID_CrossConsumerAndUnknown(t *testing.T) {
 	}
 }
 
+func TestMoveScopeByID_PreservesRunAndBodyReference(t *testing.T) {
+	clk, _, _ := fakeClock()
+	r := NewRegistryWithConfig(RegistryConfig{Now: clk})
+	rc, _ := bindRun(t, r, "analysis:pending", Selection{CharacterIDs: []string{"c1", "c2"}})
+
+	idBefore := rc.ID()
+	bytesBefore := rc.ModelViewBytes()
+	refsBefore := rc.SourceRefTable()
+	fingerprint := rc.Fingerprint()
+	refCountBefore, _ := r.bodyRefCount(fingerprint)
+
+	moved, err := r.MoveScopeByID(
+		ConsumerWriting,
+		idBefore,
+		"analysis:pending",
+		"interactive:run-1",
+		fingerprint,
+	)
+	if err != nil {
+		t.Fatalf("MoveScopeByID 失败: %v", err)
+	}
+	if moved.ID() != idBefore {
+		t.Fatalf("move 必须保留 runContext ID，before=%s after=%s", idBefore, moved.ID())
+	}
+	if moved.ScopeKey() != "interactive:run-1" {
+		t.Fatalf("move 后 scope 错误: %s", moved.ScopeKey())
+	}
+	if !bytes.Equal(moved.ModelViewBytes(), bytesBefore) {
+		t.Fatal("move 必须逐字节保留最终 ModelView")
+	}
+	if !mapsEqual(moved.SourceRefTable(), refsBefore) {
+		t.Fatal("move 必须保留 sourceRefTable")
+	}
+	if got, _ := r.bodyRefCount(fingerprint); got != refCountBefore {
+		t.Fatalf("move 不得改变 body refCount，before=%d after=%d", refCountBefore, got)
+	}
+	if _, err := r.Reuse(ConsumerWriting, "analysis:pending", fingerprint); CodeOf(err) != ErrContextUnavailable {
+		t.Fatalf("旧 scope 必须解除，got %v", err)
+	}
+	if got, err := r.Reuse(ConsumerWriting, "interactive:run-1", fingerprint); err != nil || got.ID() != idBefore {
+		t.Fatalf("新 scope 必须复用原 run，got id=%v err=%v", idOf(got), err)
+	}
+}
+
+func TestMoveScopeByID_IdempotentRetryDoesNotChangeRefCount(t *testing.T) {
+	clk, _, _ := fakeClock()
+	r := NewRegistryWithConfig(RegistryConfig{Now: clk})
+	rc, _ := bindRun(t, r, "analysis:pending", Selection{CharacterIDs: []string{"c1"}})
+	fingerprint := rc.Fingerprint()
+
+	if _, err := r.MoveScopeByID(ConsumerWriting, rc.ID(), "analysis:pending", "interactive:run-1", fingerprint); err != nil {
+		t.Fatalf("首次 move 失败: %v", err)
+	}
+	firstBytes := rc.ModelViewBytes()
+	if got, err := r.MoveScopeByID(ConsumerWriting, rc.ID(), "analysis:pending", "interactive:run-1", fingerprint); err != nil || got.ID() != rc.ID() {
+		t.Fatalf("同一 move 重试应幂等成功，got id=%v err=%v", idOf(got), err)
+	}
+	if !bytes.Equal(rc.ModelViewBytes(), firstBytes) {
+		t.Fatal("幂等重试不得重新物化最终 ModelView")
+	}
+	if got, _ := r.bodyRefCount(fingerprint); got != 1 {
+		t.Fatalf("幂等重试不得重复计 refCount，got %d", got)
+	}
+}
+
+func TestMoveScopeByID_ValidationFailuresAreAtomic(t *testing.T) {
+	clk, _, _ := fakeClock()
+	r := NewRegistryWithConfig(RegistryConfig{Now: clk})
+	source, _ := bindRun(t, r, "analysis:pending", Selection{CharacterIDs: []string{"c1"}})
+	target, _ := bindRun(t, r, "interactive:occupied", Selection{CharacterIDs: []string{"c2"}})
+	sourceBytes := source.ModelViewBytes()
+	sourceFP := source.Fingerprint()
+	targetFP := target.Fingerprint()
+
+	cases := []struct {
+		name     string
+		consumer Consumer
+		id       string
+		from     string
+		to       string
+		fp       string
+		wantCode ErrorCode
+	}{
+		{name: "cross consumer", consumer: ConsumerGame, id: source.ID(), from: "analysis:pending", to: "interactive:new", fp: sourceFP, wantCode: ErrConsumerNotTrusted},
+		{name: "unknown id", consumer: ConsumerWriting, id: "missing", from: "analysis:pending", to: "interactive:new", fp: sourceFP, wantCode: ErrContextUnavailable},
+		{name: "wrong source", consumer: ConsumerWriting, id: source.ID(), from: "analysis:other", to: "interactive:new", fp: sourceFP, wantCode: ErrContextRefMismatch},
+		{name: "wrong fingerprint", consumer: ConsumerWriting, id: source.ID(), from: "analysis:pending", to: "interactive:new", fp: targetFP, wantCode: ErrContextRefMismatch},
+		{name: "occupied target", consumer: ConsumerWriting, id: source.ID(), from: "analysis:pending", to: "interactive:occupied", fp: sourceFP, wantCode: ErrContextRefMismatch},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := r.MoveScopeByID(tc.consumer, tc.id, tc.from, tc.to, tc.fp); CodeOf(err) != tc.wantCode {
+				t.Fatalf("want %s, got %v", tc.wantCode, err)
+			}
+			if got, err := r.Reuse(ConsumerWriting, "analysis:pending", sourceFP); err != nil || got.ID() != source.ID() {
+				t.Fatalf("失败后源绑定必须完整，got id=%v err=%v", idOf(got), err)
+			}
+			if got, err := r.Reuse(ConsumerWriting, "interactive:occupied", targetFP); err != nil || got.ID() != target.ID() {
+				t.Fatalf("失败后目标绑定必须完整，got id=%v err=%v", idOf(got), err)
+			}
+			if !bytes.Equal(source.ModelViewBytes(), sourceBytes) {
+				t.Fatal("失败不得改变源 ModelView 字节")
+			}
+			if got, _ := r.bodyRefCount(sourceFP); got != 1 {
+				t.Fatalf("失败不得改变源 refCount，got %d", got)
+			}
+			if got, _ := r.bodyRefCount(targetFP); got != 1 {
+				t.Fatalf("失败不得改变目标 refCount，got %d", got)
+			}
+		})
+	}
+}
+
 func TestBind_RejectsUntrustedConsumerAndEmptyScope(t *testing.T) {
 	r := NewRegistry()
 	snap := testSnap(t, Selection{})
@@ -403,6 +517,13 @@ func mapsEqual(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func idOf(rc *RunContext) string {
+	if rc == nil {
+		return ""
+	}
+	return rc.ID()
 }
 
 // itoa 避免在测试里再引 strconv 的轻量整数转字符串。
