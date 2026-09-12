@@ -2,7 +2,14 @@
 
 > Status: Architecture baseline after repository review.
 >
-> Purpose: Separate current implementation, frozen design, and future planning. This document is not a claim that every planned module exists.
+> Purpose: Separate implemented capability, frozen design, and future planning. This document is not a claim that every planned module exists.
+
+## Status Classification
+
+- Implemented: verified in repository code.
+- Frozen Design: approved architecture direction, not necessarily implemented.
+- Future Plan: possible later expansion.
+- Not Approved: excluded until separately reviewed.
 
 ## 1. Architecture Layers
 
@@ -21,8 +28,8 @@ Derived Runtime Layer
 WorldContext
  ├── Selection
  ├── Snapshot
- ├── Projection
- ├── Model/UI projections
+ ├── UI Projection
+ ├── Model Projection
  └── RunContext references
 
 Execution Layer
@@ -39,28 +46,11 @@ Preview UI
 Editors
 ```
 
-## 2. Current Implemented Architecture
+## 2. World and Binding Truth Boundary
 
-### World
+World is the persistent truth of the world-definition domain.
 
-World is the persistent source of truth.
-
-It owns:
-
-- world identity
-- characters
-- locations
-- factions
-- timeline entries
-- bindings to external/master assets
-
-It does not own:
-
-- AI execution state
-- conversation runtime state
-- temporary context projections
-
-### Binding Model
+It is not the universal storage layer for all project knowledge. Master Library, books, and Knowledge Workspace keep their own truth domains.
 
 ```text
 Master Library Asset
@@ -69,83 +59,126 @@ Master Library Asset
 AssetBinding
         |
         v
-World Entity
+World
 ```
 
 Binding is a relationship, not a copied master record.
 
-World-specific notes and runtime state must remain separated from master assets.
-
-## 3. WorldContext Architecture
+Binding scopes:
 
 ```text
-World
-  |
-  v
-Selection
-  |
-  v
-Snapshot
-  |
-  +---- UI Projection
-  |
-  +---- Model Projection
-  |
-  v
-RunContext
+Binding
+ ├── entity scope
+ │     └── connected to concrete world entity
+ │
+ └── world scope
+       └── valid without entity reference
 ```
-
-WorldContext is derived state.
 
 Rules:
 
-- no independent persistence
+- masterRevision is not a live health state.
+- Binding is not a second version system.
+- Runtime state is not stored in Binding.
+
+## 3. WorldContext Architecture
+
+WorldContext is derived runtime state.
+
+Preview path:
+
+```text
+World
+ |
+Snapshot
+ |
+UI Projection
+```
+
+Preview does:
+
+- generate UI-readable information
+- show selection and closure information
+
+Preview does not:
+
+- create RunContext
+- occupy Registry
+- generate ModelView
+- persist state
+
+Runtime path:
+
+```text
+World
+ |
+Snapshot
+ |
+Selection
+ |
+Projection
+ |
+RunContext
+ |
+InteractiveRun
+ |
+Task
+```
+
+Rules:
+
 - no World replacement
-- no direct model ownership
+- no independent persistence
 - no story state storage
 
 ## 4. Runtime Architecture
+
+InteractiveRun is a turn-level runtime identity, not an entire story lifetime.
 
 ```text
 InteractiveRun
  |
  +-- Task A
- |
  +-- Task B (regenerate)
- |
  +-- Task C
 ```
 
 Definitions:
 
-- InteractiveRun represents a logical runtime lineage.
-- Task represents one execution attempt.
-- Regenerate creates another Task under the same InteractiveRun.
+- Task = one execution attempt.
+- InteractiveRun = logical lineage for related execution attempts.
+
+Lifecycle:
+
+- New turn creates a new InteractiveRun.
+- Regenerate reuses InteractiveRun only when persisted TurnIndex mapping exists.
+- Missing runtime mapping creates a new Run.
+- TurnIndex is written only after successful persistence.
+- Registry state is not restored after restart.
 
 ## 5. Current Phase Position
 
 Implemented:
 
-- World data foundation
-- World binding foundation
-- WorldContext domain core
-- Context registry
-- Analysis handle lifecycle
-- InteractiveRun foundation
-- World Console context preview foundation
+- World data foundation.
+- World binding foundation.
+- WorldContext domain core.
+- Context registry.
+- Analysis handle lifecycle.
+- InteractiveRun foundation.
+- World Console context preview foundation.
 
-Planned:
+Frozen Design:
 
-- richer World Console management
-- runtime context consumption
-- knowledge workspace
-- advanced relationship visualization
+- Runtime context consumption.
+- Four experience modes reading World context without rewriting World.
 
-## 6. Future Extension Boundaries
+Not yet implemented:
 
-Knowledge systems, book analysis, Obsidian integration and relationship graphs belong above Master Library / Knowledge Workspace.
+- Full World Console integration.
+- Complete writing/game/Narraverse/Module4 context injection.
 
-Future direction:
+## 6. Knowledge and Graph Boundaries
 
 ```text
 Book
@@ -163,27 +196,35 @@ Binding
 World
 ```
 
-Restrictions:
+Knowledge systems remain separate from World.
 
-- Knowledge is not World truth.
-- Graphs are projections, not source data.
-- Notes must not automatically overwrite World.
+Future references use:
+
+```text
+sourceKind
+sourceId
+sourceRevision
+locator
+```
+
+Rules:
+
+- Graphs are projections, not truth.
+- Obsidian notes are references, not World storage.
+- No automatic full vault scanning.
+- AI analysis cannot directly become World fact.
 
 ## 7. Architectural Invariants
 
-Must preserve:
-
-1. World is the single persistent truth.
-2. Runtime state is separated from world definition.
+1. World is the single persistent truth of world definitions.
+2. Runtime state is separated from world definitions.
 3. UI projections are not databases.
-4. AI proposals require controlled input and human confirmation.
-5. Different modes share world context but do not create incompatible world models.
+4. AI proposals require controlled input and confirmation.
+5. Different modes consume context without creating incompatible world models.
 
-## 8. Review Rule
-
-Future architecture reviews must distinguish:
+Future reviews must distinguish:
 
 - Implemented
-- Frozen design
+- Frozen Design
 - Planned
-- Not approved
+- Not Approved
