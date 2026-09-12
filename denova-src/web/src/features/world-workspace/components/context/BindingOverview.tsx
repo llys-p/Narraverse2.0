@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Database, Loader2, Search } from 'lucide-react'
+import { Database, Loader2, Search, Unlink } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { APIError, fetchMasterAsset } from '@/lib/api-client'
@@ -7,9 +7,15 @@ import { classifyBindingHealth, type BindingCheckOutcome } from '../../binding-h
 import { bindingStoredStatus, bindingUsages } from '../../binding-observability'
 import type { World, WorldAssetBinding } from '../../types'
 import { BindingHealthBadge } from '../BindingHealthBadge'
+import { BindingRemovalImpact } from './BindingRemovalImpact'
 
 interface BindingOverviewProps {
   world: World
+  /**
+   * Phase 3.1C2b：移除入口，由 WorldContextPanel 提供并最终落到 WorldConsolePage.mutate。
+   * 刻意保持可选：未接入时不显示移除按钮，避免给没有草稿变更路径的调用方造出无法生效的入口。
+   */
+  onRemoveBinding?: (bindingId: string) => void
 }
 
 interface BindingCheckRecord {
@@ -28,9 +34,11 @@ function bindingIdentity(worldId: string, binding: WorldAssetBinding): string {
  * 才请求该 Master 详情。联网结果仅保留在本组件会话内，不修改 World、不刷新摘要、
  * 不批量检查，也不写入浏览器存储。
  */
-export function BindingOverview({ world }: BindingOverviewProps) {
+export function BindingOverview({ world, onRemoveBinding }: BindingOverviewProps) {
   const { t } = useTranslation()
   const [checks, setChecks] = useState<Record<string, BindingCheckRecord>>({})
+  // 当前待确认移除的 bindingId；同一时刻只允许一个，避免多行影响预览互相干扰。
+  const [pendingRemovalId, setPendingRemovalId] = useState<string | null>(null)
   const requestByBinding = useRef(new Map<string, number>())
   const nextRequest = useRef(0)
   const mounted = useRef(true)
@@ -47,6 +55,8 @@ export function BindingOverview({ world }: BindingOverviewProps) {
   useEffect(() => {
     requestByBinding.current.clear()
     setChecks({})
+    // 换世界后上一世界的待确认移除必须作废，避免对新世界执行过期移除。
+    setPendingRemovalId(null)
   }, [world.id])
 
   const inspect = async (binding: WorldAssetBinding) => {
@@ -153,7 +163,7 @@ export function BindingOverview({ world }: BindingOverviewProps) {
                   )}
                 </div>
 
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -165,7 +175,34 @@ export function BindingOverview({ world }: BindingOverviewProps) {
                     {checking ? <Loader2 className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
                     {t('worldWorkspace.context.bindingOverview.check')}
                   </Button>
+                  {/* C2b：移除入口带 Unlink 而非垃圾桶图标 —— 这里只解除绑定关系，不删除任何资料。 */}
+                  {onRemoveBinding ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      data-testid={`binding-remove-${binding.bindingId}`}
+                      aria-label={t('worldWorkspace.context.bindingRemoval.removeAria', { name: binding.nameSnapshot })}
+                      onClick={() => setPendingRemovalId(binding.bindingId)}
+                    >
+                      <Unlink className="size-3.5" />
+                      {t('worldWorkspace.context.bindingRemoval.remove')}
+                    </Button>
+                  ) : null}
                 </div>
+
+                {/* 影响预览即唯一确认界面：确认后先收起再回调，绝不叠加 window.confirm。 */}
+                {onRemoveBinding && pendingRemovalId === binding.bindingId ? (
+                  <BindingRemovalImpact
+                    world={world}
+                    bindingId={binding.bindingId}
+                    onCancel={() => setPendingRemovalId(null)}
+                    onConfirm={(id) => {
+                      setPendingRemovalId(null)
+                      onRemoveBinding(id)
+                    }}
+                  />
+                ) : null}
               </li>
             )
           })}

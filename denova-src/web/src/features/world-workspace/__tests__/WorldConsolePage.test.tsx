@@ -96,6 +96,40 @@ function renderConsole() {
   return { view, onOpenCharacter, onBack }
 }
 
+/** C2b：一个被多角色/地点/势力共享的 entity binding，用于验证移除影响与解除引用。 */
+function sharedBindingWorld(): World {
+  return {
+    id: 'w1', schemaVersion: 1, name: '控制台世界', status: 'active',
+    bindings: [{
+      bindingId: 'b1', masterItemId: 'm1', recordKind: 'character_template',
+      semanticType: 'character', nameSnapshot: '共享角色原件', tagsSnapshot: [], masterRevision: 'sha256:o', boundAt: '',
+    }],
+    characters: [
+      { id: 'c1', bindingId: 'b1', displayName: '角色甲' },
+      { id: 'c2', bindingId: 'b1', displayName: '角色乙' },
+    ],
+    locations: [{ id: 'l1', bindingId: 'b1', name: '地点甲' }],
+    factions: [{ id: 'f1', bindingId: 'b1', name: '势力甲' }],
+    timeline: [], createdAt: '', updatedAt: '',
+  }
+}
+
+function renderConsoleWith(world: World) {
+  mocks.getWorld.mockResolvedValue({ world, revision: 'sha256:r1' })
+  mocks.getBooks.mockResolvedValue([])
+  mocks.getStories.mockResolvedValue({ stories: [] })
+  return render(
+    <WorldConsolePage
+      worldId="w1"
+      onBack={vi.fn()}
+      onOpenCharacter={vi.fn()}
+      onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()}
+      onQuickSwitchBook={vi.fn(async () => true)}
+    />,
+  )
+}
+
 beforeEach(() => vi.clearAllMocks())
 
 describe('WorldConsolePage 入口有效性', () => {
@@ -473,5 +507,71 @@ describe('WorldConsolePage Context 分区（B3）', () => {
     await openContextTab(user)
     expect(setItem).not.toHaveBeenCalled()
     expect(mocks.fetchMasterAsset).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorldConsolePage 移除 Binding 闭环 C2b', () => {
+  it('确认后移除绑定并解除全部实体引用；只改草稿置 dirty，保存前零 PUT', async () => {
+    const user = userEvent.setup()
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    // 影响预览是唯一确认界面：不得再叠加 window.confirm
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderConsoleWith(sharedBindingWorld())
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+
+    await user.click(await screen.findByRole('button', { name: '移除：共享角色原件' }))
+    const panel = screen.getByTestId('binding-removal-impact')
+    expect(within(panel).getByTestId('binding-removal-detached-characters').textContent).toContain('角色乙')
+    expect(within(panel).getByTestId('binding-removal-detached-locations').textContent).toContain('地点甲')
+    expect(within(panel).getByTestId('binding-removal-detached-factions').textContent).toContain('势力甲')
+    expect(panel).toHaveTextContent('总资料库原件不会被删除')
+
+    await user.click(screen.getByTestId('binding-removal-confirm'))
+
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: '保存' })).toBeInTheDocument()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(setItem).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
+  it('保存后才调用现有 PUT；提交内容已解除全部引用且未删除任何实体', async () => {
+    const user = userEvent.setup()
+    renderConsoleWith(sharedBindingWorld())
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(await screen.findByRole('button', { name: '移除：共享角色原件' }))
+    await user.click(screen.getByTestId('binding-removal-confirm'))
+
+    mocks.updateWorld.mockResolvedValue({ world: sharedBindingWorld(), revision: 'sha256:r2' })
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+    const submitted = mocks.updateWorld.mock.calls[0][2] as World
+    expect(submitted.bindings).toHaveLength(0)
+    expect(submitted.characters.every((c) => c.bindingId === undefined)).toBe(true)
+    expect(submitted.locations.every((l) => l.bindingId === undefined)).toBe(true)
+    expect(submitted.factions.every((f) => f.bindingId === undefined)).toBe(true)
+    // 只解除绑定，绝不删除实体本身
+    expect(submitted.characters).toHaveLength(2)
+    expect(submitted.locations).toHaveLength(1)
+    expect(submitted.factions).toHaveLength(1)
+  })
+
+  it('取消：零修改、零 PUT、dirty 不变，且不叠加二次确认', async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderConsoleWith(sharedBindingWorld())
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+
+    await user.click(await screen.findByRole('button', { name: '移除：共享角色原件' }))
+    await user.click(screen.getByTestId('binding-removal-cancel'))
+
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '保存' })).toBeNull()
+    expect(screen.queryByTestId('binding-removal-impact')).toBeNull()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    // 取消后绑定仍在列表中，未被改动
+    expect(screen.getByTestId('binding-overview-b1')).toBeInTheDocument()
+    confirmSpy.mockRestore()
   })
 })

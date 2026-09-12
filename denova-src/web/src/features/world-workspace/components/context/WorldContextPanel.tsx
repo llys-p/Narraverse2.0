@@ -38,6 +38,13 @@ interface WorldContextPanelProps {
   onSelectionChange: (selection: Selection) => void
   onGenerate: () => void
   onJumpSection: (section: WorldConsoleSectionId) => void
+  /**
+   * Phase 3.1C2b：移除 Binding 的唯一出口，由 WorldConsolePage 落到 mutate。
+   * 本组件不做任何确认或世界修改，只把 BindingOverview 的决定向上转交。
+   * 保持可选是受 C2b 白名单所限（既有 WorldContextPanel 测试不在白名单内）；
+   * 未提供时 BindingOverview 不显示移除入口，控制台真实链路必须提供。
+   */
+  onRemoveBinding?: (bindingId: string) => void
 }
 
 export function WorldContextPanel({
@@ -52,6 +59,7 @@ export function WorldContextPanel({
   onSelectionChange,
   onGenerate,
   onJumpSection,
+  onRemoveBinding,
 }: WorldContextPanelProps) {
   const { t } = useTranslation()
   const loading = state === 'loading'
@@ -69,7 +77,7 @@ export function WorldContextPanel({
         onChange={onSelectionChange}
       />
 
-      <BindingOverview world={world} />
+      <BindingOverview world={world} onRemoveBinding={onRemoveBinding} />
 
       {dirty ? (
         <p data-testid="context-blocked-dirty" className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-300">

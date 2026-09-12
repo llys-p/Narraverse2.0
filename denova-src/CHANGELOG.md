@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Phase 3.1C2b 在绑定总览新增 Binding 移除影响预览：点击“移除”后先展示只读影响（绑定名称、entity/world 作用域、将解除绑定的角色/地点/势力、无实体影响时的明确状态、world scope 零引用仍说明它属于世界级资料、以及“总资料库原件不会被删除”），该预览本身即唯一确认界面，不再叠加 `window.confirm`。影响数据复用 `bindingRemovalImpact`，实际移除复用 `removeWorldBinding`，未建立第二套扫描或删除逻辑。确认只经 `BindingOverview → WorldContextPanel → WorldConsolePage.mutate` 修改当前草稿并置 dirty，保存前不发送 PUT；取消时 World 引用与内容、dirty 均不变，不调用 Master API、不写浏览器存储。全链路统一使用“移除/Remove”而非“删除/Delete”，不删除角色/地点/势力实体与总资料库原件。
+- Phase 3.1C2b adds a binding removal impact preview to the binding overview: clicking "Remove" first shows a read-only impact (binding name, entity/world scope, characters/locations/factions that will be unbound, an explicit state when no entity is affected, a note that world-scope bindings remain world-level material even with zero references, and "The Master library source is not deleted"). This preview is the single confirmation surface and no `window.confirm` is layered on top. Impact data reuses `bindingRemovalImpact` and the actual removal reuses `removeWorldBinding`; no second scanning or deletion logic was introduced. Confirming flows only through `BindingOverview → WorldContextPanel → WorldConsolePage.mutate`, editing the current draft and marking it dirty without sending a PUT until save; cancelling leaves World references, content, and dirty state untouched, calls no Master API, and writes no browser storage. The whole flow uses "Remove" rather than "Delete": no character/location/faction entity and no Master library source is deleted.
 - Phase 3.1C2a 在世界上下文分区新增绑定来源与健康总览：展示 entity/world 作用域及角色、地点、势力的全部真实引用；初始区分“尚未检查”与“已记录基线但本会话尚未联网”，仅在用户检查单项时读取对应 Master 原件并显示 latest/stale/missing/unavailable。检查结果只存在当前组件会话，不修改 World、不刷新摘要、不批量请求。
 - Phase 3.1C2a adds a binding-source and health overview to the World Context section. It displays entity/world scope and all actual character, location, and faction references; distinguishes unchecked bindings from recorded baselines that have not been checked in the current session; and reads a Master source only when the user checks that item, showing latest/stale/missing/unavailable. Results stay in component memory and never modify the World, refresh snapshots, or trigger batch requests.
 - Phase 3.1C1 第二版审查收紧 Binding 派生结果的 TypeScript 只读边界：引用组与 binding 视图不再暴露可变类型，避免派生结果成为修改 World 的旁路；未新增运行时存储或 API。
@@ -38,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.1C2b 第二版修复：Binding 在影响预览期间失效时不再把内部 `bindingId` 或伪造的 entity scope 显示给用户；移除确认区补充 `alertdialog` 语义与可访问名称，保持确认禁用且不执行过期移除。
+- Phase 3.1C2b second-pass fix: when a binding disappears while its impact preview is open, the UI no longer exposes the internal `bindingId` or labels the missing binding with a fabricated entity scope. The removal confirmation surface now has `alertdialog` semantics and an accessible name while confirmation remains disabled and stale removal cannot run.
 - Phase 3.1B 第二版修复：选择内容或目标模式变化后立即将旧 Context Preview 标记为 stale；补齐跨分区对象总量 60 项的前端预检，避免明知会被后端拒绝仍发送请求；闭包目标缺失时使用中性文案，不渲染内部实体 ID。
 - Phase 3.1B second-pass fixes: changing the selection or target consumer now immediately marks the old Context Preview stale; the client also prechecks the 60-item cross-section limit so known-invalid requests are not sent; missing closure targets use neutral labels instead of rendering internal entity IDs.
 - Context Preview 在草稿或保存版本变化时会使在途请求失效，避免迟到响应误标为最新；刷新失败始终显示错误与重试。只读结果不展示内部实体 ID，正确包含基调与规则，时间线仅显示入选数量。

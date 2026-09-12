@@ -232,6 +232,20 @@ const worldWorkspace = {
   'worldWorkspace.context.bindingOverview.check': 'Check source',
   'worldWorkspace.context.bindingOverview.checkAria': 'Check source: {{name}}',
 
+  // Phase 3.1C2b: binding removal impact preview (the single confirmation surface — no extra window.confirm).
+  // Uses "Remove", never "Delete": this only unlinks the World from the source.
+  // It never deletes character/location/faction entities and never deletes the Master library source.
+  'worldWorkspace.context.bindingRemoval.title': 'Removal impact',
+  'worldWorkspace.context.bindingRemoval.remove': 'Remove',
+  'worldWorkspace.context.bindingRemoval.removeAria': 'Remove: {{name}}',
+  'worldWorkspace.context.bindingRemoval.confirm': 'Confirm removal',
+  'worldWorkspace.context.bindingRemoval.detachedCharacters': 'Characters to unbind',
+  'worldWorkspace.context.bindingRemoval.detachedLocations': 'Locations to unbind',
+  'worldWorkspace.context.bindingRemoval.detachedFactions': 'Factions to unbind',
+  'worldWorkspace.context.bindingRemoval.masterKept': 'The Master library source is not deleted',
+  'worldWorkspace.context.bindingRemoval.noImpact': 'No entities are affected',
+  'worldWorkspace.context.bindingRemoval.missing': 'This binding no longer exists, removal cannot continue',
+
   'worldWorkspace.unsavedLeave': 'You have unsaved changes. Leaving will discard them. Continue?',
   'worldWorkspace.console.newCharacterDefault': 'New character',
   'worldWorkspace.console.deleteConfirm': 'Deleting this item also removes references to it and cleans up unused bindings. Delete?',

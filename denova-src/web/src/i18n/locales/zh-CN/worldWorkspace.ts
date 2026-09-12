@@ -232,6 +232,20 @@ const worldWorkspace = {
   'worldWorkspace.context.bindingOverview.check': '检查原件',
   'worldWorkspace.context.bindingOverview.checkAria': '检查原件：{{name}}',
 
+  // Phase 3.1C2b：Binding 移除影响预览（唯一确认界面，不再叠加 window.confirm）。
+  // 统一用「移除」而非「删除」：这里只解除 World 与资料的绑定关系，
+  // 绝不删除角色/地点/势力实体，也绝不删除总资料库原件。
+  'worldWorkspace.context.bindingRemoval.title': '移除影响',
+  'worldWorkspace.context.bindingRemoval.remove': '移除',
+  'worldWorkspace.context.bindingRemoval.removeAria': '移除：{{name}}',
+  'worldWorkspace.context.bindingRemoval.confirm': '确认移除',
+  'worldWorkspace.context.bindingRemoval.detachedCharacters': '将解除绑定的角色',
+  'worldWorkspace.context.bindingRemoval.detachedLocations': '将解除绑定的地点',
+  'worldWorkspace.context.bindingRemoval.detachedFactions': '将解除绑定的势力',
+  'worldWorkspace.context.bindingRemoval.masterKept': '总资料库原件不会被删除',
+  'worldWorkspace.context.bindingRemoval.noImpact': '没有实体受影响',
+  'worldWorkspace.context.bindingRemoval.missing': '该绑定已不存在，无法继续移除',
+
   'worldWorkspace.unsavedLeave': '有尚未保存的修改，离开将丢弃这些改动，确定继续吗？',
   'worldWorkspace.console.newCharacterDefault': '新角色',
   'worldWorkspace.console.deleteConfirm': '删除该项会同时解除其它条目对它的引用，并清理不再使用的绑定，确定删除吗？',

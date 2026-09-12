@@ -20,7 +20,7 @@ import { WorldMaterialsSection } from '../components/sections/WorldMaterialsSect
 import { classifyTargetValidity, type TargetLoadState, type TargetValidity } from '../binding-health'
 import { characterDisplayName, getBinding, worldStats } from '../selectors'
 import { characterFromBinding, emptyCharacter, factionFromBinding, locationFromBinding } from '../world-factory'
-import { addWorldBinding, findDraftIssue, removeWorldEntity } from '../world-ops'
+import { addWorldBinding, findDraftIssue, removeWorldBinding, removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
 import { useWorldContextPreview } from '../use-world-context-preview'
 import { WorldContextPanel } from '../components/context/WorldContextPanel'
@@ -252,6 +252,12 @@ export function WorldConsolePage({
     setSection('materials')
   }
 
+  // 移除 Binding：确认已在影响预览里完成，这里只把 removeWorldBinding 的结果写进草稿。
+  // 不另写删除逻辑、不删实体、不碰总资料库原件；保存前绝不调用 updateWorld。
+  const removeBinding = useCallback((bindingId: string) => {
+    mutate((w) => removeWorldBinding(w, bindingId))
+  }, [mutate])
+
   const removeCharacter = (id: string) => confirmRemove('character', id)
 
   const tabs: { key: Section; icon: typeof Globe2; label: string }[] = [
@@ -382,6 +388,7 @@ export function WorldConsolePage({
                 onSelectionChange={changeContextSelection}
                 onGenerate={generateContext}
                 onJumpSection={jumpToSection}
+                onRemoveBinding={removeBinding}
               />
             )}
           </div>
