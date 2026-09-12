@@ -182,3 +182,132 @@ export function emptyContextSelection(): WorldContextSelection {
     bindingIds: [],
   }
 }
+
+/* --------------------------------------------------------------------------------------------- */
+/* Phase 3.1B1：与后端 worldcontext.DecodeSelection 冻结契约一致的前端纯函数（不复制后端领域类型）。 */
+/* --------------------------------------------------------------------------------------------- */
+
+/**
+ * 各类选择数量上限，必须与后端 internal/worldcontext/selection.go 的常量逐一对齐：
+ * ruleIndexes 50、character/location/faction/binding 各 20、timeline 30。
+ * 后端是最终裁决；这里只做发请求前的同源预检。
+ */
+export const SELECTION_LIMITS = {
+  ruleIndexes: 50,
+  characterIds: 20,
+  locationIds: 20,
+  factionIds: 20,
+  timelineEntryIds: 30,
+  bindingIds: 20,
+} as const
+
+/** 后端 worldcontext.BuildSnapshot 的跨分区对象总量上限。 */
+export const MAX_SELECTED_TOTAL = 60
+
+/** 参与数量上限的字段（includeTone 是布尔开关，不设数量上限）。 */
+export type SelectionLimitKey = keyof typeof SELECTION_LIMITS
+
+export interface SelectionOverflow {
+  key: SelectionLimitKey | 'total'
+  count: number
+  max: number
+}
+
+const SELECTION_LIST_KEYS: SelectionLimitKey[] = [
+  'ruleIndexes', 'characterIds', 'locationIds', 'factionIds', 'timelineEntryIds', 'bindingIds',
+]
+
+/**
+ * 数量预检：返回所有超限项。只报告、不修改入参——前端绝不静默截断选择，
+ * 超限由 UI 明确提示并阻止发请求，服务端仍会独立拒绝。
+ */
+export function findSelectionOverflow(selection: WorldContextSelection): SelectionOverflow[] {
+  const overflows: SelectionOverflow[] = []
+  for (const key of SELECTION_LIST_KEYS) {
+    const count = selection[key].length
+    const max = SELECTION_LIMITS[key]
+    if (count > max) overflows.push({ key, count, max })
+  }
+  const total = SELECTION_LIST_KEYS.reduce((sum, key) => sum + selection[key].length, 0)
+  if (total > MAX_SELECTED_TOTAL) overflows.push({ key: 'total', count: total, max: MAX_SELECTED_TOTAL })
+  return overflows
+}
+
+/** 选择是否全部处于冻结上限内（includeTone 为布尔，不参与数量检查）。 */
+export function isSelectionWithinLimits(selection: WorldContextSelection): boolean {
+  return findSelectionOverflow(selection).length === 0
+}
+
+/** 在字符串 id 列表中切换某项：已选则移除，未选则去重保序追加；纯函数，不做数量截断。 */
+export function toggleSelectionId(list: readonly string[], id: string): string[] {
+  if (list.includes(id)) return list.filter((item) => item !== id)
+  return [...list, id]
+}
+
+/** 切换规则下标（规则以 World 内下标标识，绝不存规则正文）；纯函数。 */
+export function toggleRuleIndex(list: readonly number[], index: number): number[] {
+  if (list.includes(index)) return list.filter((item) => item !== index)
+  return [...list, index].sort((a, b) => a - b)
+}
+
+/** 是否每一类都为空（identity 永远由服务端包含，不计入）。 */
+export function isIdentityOnlySelection(selection: WorldContextSelection): boolean {
+  return !selection.includeTone
+    && selection.ruleIndexes.length === 0
+    && selection.characterIds.length === 0
+    && selection.locationIds.length === 0
+    && selection.factionIds.length === 0
+    && selection.timelineEntryIds.length === 0
+    && selection.bindingIds.length === 0
+}
+
+/* --------------------------------------------------------------------------------------------- */
+/* Phase 3.1B2：来源分区映射、省略/警告已知词表与指纹短标签（纯函数，未知值安全降级、绝不冒充已知）。 */
+/* --------------------------------------------------------------------------------------------- */
+
+/** World Console 现有分区 id（context 是新增的第八分区，来源不会跳到它自己）。 */
+export type WorldConsoleSectionId =
+  | 'overview' | 'setting' | 'characters' | 'locations' | 'factions' | 'materials' | 'history' | 'context'
+
+const SOURCE_KIND_SECTION: Record<string, WorldConsoleSectionId> = {
+  identity: 'overview',
+  setting: 'setting',
+  character: 'characters',
+  location: 'locations',
+  faction: 'factions',
+  timeline: 'history',
+  material: 'materials',
+}
+
+/**
+ * sourceTable.kind → 现有控制台分区。只映射后端冻结的 7 种已知来源；
+ * 未知 kind 返回 null（调用方渲染为不可跳转的中性条目，而不是通过 default 随便落到某个分区）。
+ */
+export function sourceKindSection(kind: string): WorldConsoleSectionId | null {
+  return SOURCE_KIND_SECTION[kind] ?? null
+}
+
+export const KNOWN_SOURCE_KINDS: readonly string[] = Object.keys(SOURCE_KIND_SECTION)
+export const KNOWN_OMISSION_KINDS = ['character_faction', 'character_location', 'faction_headquarters', 'relationship_edge'] as const
+export const KNOWN_OMISSION_REASONS = ['target_not_selected', 'target_cascaded_removed'] as const
+export const KNOWN_WARNING_CODES = ['legacy_timeline_category', 'binding_unchecked'] as const
+
+export function isKnownOmissionKind(kind: string): boolean {
+  return (KNOWN_OMISSION_KINDS as readonly string[]).includes(kind)
+}
+export function isKnownOmissionReason(reason: string): boolean {
+  return (KNOWN_OMISSION_REASONS as readonly string[]).includes(reason)
+}
+export function isKnownWarningCode(code: string): boolean {
+  return (KNOWN_WARNING_CODES as readonly string[]).includes(code)
+}
+
+/**
+ * 只取指纹用于“辨认是否同一份预览”的短标签：去掉 `v1|` 算法前缀后截断到 max 个字符。
+ * 仅展示用，不提供复制/写日志动作。
+ */
+export function shortFingerprint(fingerprint: string, max = 10): string {
+  if (!fingerprint) return ''
+  const body = fingerprint.includes('|') ? fingerprint.slice(fingerprint.indexOf('|') + 1) : fingerprint
+  return body.length > max ? `${body.slice(0, max)}…` : body
+}

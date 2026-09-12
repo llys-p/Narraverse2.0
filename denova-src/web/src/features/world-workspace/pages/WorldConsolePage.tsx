@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, BookMarked, Globe2, History as HistoryIcon, Loader2, MapPin, Plus, RotateCcw, Save, Settings2, Shield, Sparkles, UserRound, Users, X,
+  ArrowLeft, BookMarked, Braces, Globe2, History as HistoryIcon, Loader2, MapPin, Plus, RotateCcw, Save, Settings2, Shield, Sparkles, UserRound, Users, X,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -22,10 +22,18 @@ import { characterDisplayName, getBinding, worldStats } from '../selectors'
 import { characterFromBinding, emptyCharacter, factionFromBinding, locationFromBinding } from '../world-factory'
 import { addWorldBinding, findDraftIssue, removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
+import { useWorldContextPreview } from '../use-world-context-preview'
+import { WorldContextPanel } from '../components/context/WorldContextPanel'
+import {
+  emptyContextSelection,
+  type WorldConsoleSectionId,
+  type WorldContextConsumer,
+  type WorldContextSelection as ContextSelection,
+} from '../world-context'
 import type { WorkspaceMode } from '@/stores/workspace-store'
 import type { World, WorldAssetBinding, WorldCharacter, WorldFaction, WorldLocation, WorldTimelineEntry } from '../types'
 
-type Section = 'overview' | 'setting' | 'characters' | 'locations' | 'factions' | 'materials' | 'history'
+type Section = 'overview' | 'setting' | 'characters' | 'locations' | 'factions' | 'materials' | 'history' | 'context'
 /** 当前打开的总资料库选择器：角色/地点/势力单选绑定，世界资料多选批量绑定。 */
 type PickerKind = 'none' | 'character' | 'location' | 'faction' | 'materials'
 type LoadState = 'loading' | 'error' | 'notfound' | 'ready'
@@ -65,6 +73,23 @@ export function WorldConsolePage({
   const [booksLoad, setBooksLoad] = useState<TargetLoadState>('loading')
   const [storiesLoad, setStoriesLoad] = useState<TargetLoadState>('loading')
 
+  // Phase 3.1B：Context Preview 会话。页面是 selection/consumer/preview 的唯一生命周期所有者；
+  // 只活在当前 WorldConsolePage，不进 Zustand、不写任何浏览器持久化、不创建 runContext。
+  const contextPreview = useWorldContextPreview()
+  const [contextConsumer, setContextConsumer] = useState<WorldContextConsumer>('writing')
+  const [contextSelection, setContextSelection] = useState<ContextSelection>(emptyContextSelection)
+  // markStale 身份会随 preview 变化，用 ref 让 mutate/save/reload 无需把它列入依赖、避免回调抖动。
+  const markContextStaleRef = useRef(contextPreview.markStale)
+  markContextStaleRef.current = contextPreview.markStale
+
+  // worldId 变化（切世界）：清空 selection/preview/错误，绝不把上一个世界的预览带过来。
+  useEffect(() => {
+    contextPreview.reset()
+    setContextConsumer('writing')
+    setContextSelection(emptyContextSelection())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worldId])
+
   const load = useCallback(async () => {
     setState('loading')
     setConflict(false)
@@ -94,6 +119,11 @@ export function WorldConsolePage({
     })
   }, [])
 
+  // 草稿一旦变成未保存，旧 Preview 立即过期（它基于的是已保存版本）；不重新请求。
+  useEffect(() => {
+    if (dirty) markContextStaleRef.current()
+  }, [dirty])
+
   const save = useCallback(async () => {
     if (!draft || saving) return
     // 保存前先拦截空名/空标题实体（后端必然 400）：定位到对应分区并提示，不发请求。
@@ -110,6 +140,8 @@ export function WorldConsolePage({
       setDraft(res.world)
       setRevision(res.revision)
       setDirty(false)
+      // 保存后世界版本已变：旧 Preview 不能保持 ready，必须等用户基于新版本重新生成。
+      markContextStaleRef.current()
       onWorldChanged()
       toast.success(t('worldWorkspace.console.settingSaved'))
     } catch (err) {
@@ -124,7 +156,39 @@ export function WorldConsolePage({
   const reload = useCallback(async () => {
     if (!window.confirm(t('worldWorkspace.bindingHealth.reloadConfirm'))) return
     await load()
+    // CAS 重新加载后服务器版本为准：旧 Preview 标 stale，等待重新生成。
+    markContextStaleRef.current()
   }, [load, t])
+
+  // 生成 Context Preview：dirty 时硬阻断（先保存/放弃），否则用“当前已保存 revision + 待提交选择”恰好请求一次。
+  const generateContext = useCallback(() => {
+    if (dirty) {
+      toast.error(t('worldWorkspace.context.blockedDirty'))
+      markContextStaleRef.current()
+      return
+    }
+    void contextPreview.requestPreview(worldId, {
+      consumer: contextConsumer,
+      expectedWorldRevision: revision,
+      selection: contextSelection,
+    })
+  }, [dirty, revision, worldId, contextConsumer, contextSelection, t, contextPreview])
+
+  // 来源跳转只在现有分区内切换，保持 Context 会话状态，不改 World/dirty/revision。
+  const jumpToSection = useCallback((target: WorldConsoleSectionId) => {
+    setSection(target as Section)
+  }, [])
+
+  // 预览不仅受 World revision 影响，也受当前待提交的 selection/consumer 影响；
+  // 改变任一者后旧结果不能继续冒充当前选择。
+  const changeContextSelection = useCallback((next: ContextSelection) => {
+    markContextStaleRef.current()
+    setContextSelection(next)
+  }, [])
+  const changeContextConsumer = useCallback((next: WorldContextConsumer) => {
+    markContextStaleRef.current()
+    setContextConsumer(next)
+  }, [])
 
   // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
   const confirmLeave = useCallback(() => !dirty || window.confirm(t('worldWorkspace.unsavedLeave')), [dirty, t])
@@ -198,6 +262,7 @@ export function WorldConsolePage({
     { key: 'factions', icon: Shield, label: t('worldWorkspace.factions') },
     { key: 'materials', icon: BookMarked, label: t('worldWorkspace.console.materials') },
     { key: 'history', icon: HistoryIcon, label: t('worldWorkspace.timeline') },
+    { key: 'context', icon: Braces, label: t('worldWorkspace.context.title') },
   ]
 
   return (
@@ -303,6 +368,21 @@ export function WorldConsolePage({
             )}
             {section === 'history' && (
               <TimelineSection world={draft} onChange={(timeline: WorldTimelineEntry[]) => mutate((w) => ({ ...w, timeline }))} />
+            )}
+            {section === 'context' && (
+              <WorldContextPanel
+                world={draft}
+                dirty={dirty}
+                consumer={contextConsumer}
+                selection={contextSelection}
+                state={contextPreview.state}
+                preview={contextPreview.preview}
+                error={contextPreview.error}
+                onConsumerChange={changeContextConsumer}
+                onSelectionChange={changeContextSelection}
+                onGenerate={generateContext}
+                onJumpSection={jumpToSection}
+              />
             )}
           </div>
         </div>
