@@ -27,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.1A1 世界上下文预览端点现已使用完整独立的 HTTP 响应 DTO，并通过共享 Selection 解码器执行冻结的字段数量上限；revision 不再自动去除空白。新增测试锁定 World 全内容只读、Registry 零占用、并发预览、稳定空数组、请求运行态字段拒绝及响应运行态字段隔离。
+- The Phase 3.1A1 world-context preview endpoint now uses a complete standalone HTTP response DTO and enforces frozen per-field selection limits through the shared Selection decoder; revisions are no longer whitespace-normalized. New tests lock down full-World read-only behavior, zero Registry occupancy, concurrent previews, stable empty arrays, rejection of runtime request fields, and runtime-field isolation in responses.
 - World Context Snapshot 的 96 KiB 字节预算现在由共享 `BuildSnapshot` 出口统一执行，控制台预览和运行绑定不会再通过不同路径放行超限快照，也不会在拒绝后占用运行时注册表。
 - The 96 KiB World Context Snapshot byte budget is now enforced at the shared `BuildSnapshot` exit, so console previews and runtime bindings cannot admit oversized snapshots through different paths or allocate registry entries after rejection.
 - 叙界头像文件名中的全角括号已规范为 ASCII 括号，角色库生成器会使用相同规则解析头像，避免 Go embed 发布构建拒绝资源或角色头像丢失。

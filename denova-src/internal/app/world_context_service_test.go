@@ -77,6 +77,19 @@ func TestWorldContext_PreviewAndBindRun(t *testing.T) {
 	}
 }
 
+func TestWorldContext_AppPreviewFacadeDoesNotEnterRegistry(t *testing.T) {
+	a, w, rev := newWorldContextTestApp(t)
+	svc := a.worldContext()
+	before := svc.WorldContextRegistryStats()
+	if _, err := a.PreviewWorldContext(context.Background(), worldcontext.ConsumerWriting, worldRef(w, rev)); err != nil {
+		t.Fatalf("App Preview 失败: %v", err)
+	}
+	after := svc.WorldContextRegistryStats()
+	if before != after || after.RunContexts != 0 || after.BodyEntries != 0 || after.BodyBytes != 0 {
+		t.Fatalf("App Preview 不得进入 Registry：before=%#v after=%#v", before, after)
+	}
+}
+
 func TestWorldContext_RevisionMismatchFails(t *testing.T) {
 	a, w, _ := newWorldContextTestApp(t)
 	svc := newWorldContextService(a)
