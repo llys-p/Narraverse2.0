@@ -105,4 +105,50 @@ describe('context preview HTTP contract (3.1A2)', () => {
       previewWorldContext('w1', { consumer: 'game', expectedWorldRevision: 'r', selection: emptyContextSelection() }),
     ).rejects.toMatchObject({ status: 403, code: 'consumer_not_trusted' } satisfies Partial<APIError>)
   })
+
+  it('forwards the caller AbortSignal without creating its own request lifecycle', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ preview: {} }))
+    globalThis.fetch = fetchMock as typeof fetch
+    const controller = new AbortController()
+    const body = {
+      consumer: 'writing' as const,
+      expectedWorldRevision: 'sha256:9',
+      selection: emptyContextSelection(),
+    }
+
+    await previewWorldContext('w1', body, controller.signal)
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.signal).toBe(controller.signal)
+  })
+
+  it('propagates cancellation without retrying', async () => {
+    const aborted = new DOMException('Aborted', 'AbortError')
+    const fetchMock = vi.fn().mockRejectedValue(aborted)
+    globalThis.fetch = fetchMock as typeof fetch
+    const controller = new AbortController()
+    controller.abort()
+    await expect(previewWorldContext('w1', {
+      consumer: 'writing', expectedWorldRevision: 'sha256:1', selection: emptyContextSelection(),
+    }, controller.signal)).rejects.toBe(aborted)
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    [400, 'invalid_request'], [400, 'selection_invalid'],
+    [404, 'world_not_found'], [409, 'revision_conflict'], [409, 'world_archived'],
+    [413, 'budget_exceeded'], [500, 'projection_failed'], [503, 'world_unavailable'],
+  ])('preserves HTTP %s and %s without retrying', async (status, code) => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      code, error: 'Preview unavailable', field: 'selection', layer: 'snapshot_bytes',
+    }, Number(status)))
+    globalThis.fetch = fetchMock as typeof fetch
+    await expect(previewWorldContext('w1', {
+      consumer: 'writing', expectedWorldRevision: 'sha256:1', selection: emptyContextSelection(),
+    })).rejects.toMatchObject({
+      status, code, payload: { field: 'selection', layer: 'snapshot_bytes' },
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
 })

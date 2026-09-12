@@ -53,7 +53,7 @@ export function WorldContextPreviewResult({
     )
   }
 
-  if (state === 'error' && !preview) {
+  if (state === 'error') {
     return (
       <div data-testid="context-preview-error" className={cn('space-y-2 text-sm', panel, className)} role="alert">
         <div className="flex items-center gap-2 text-red-600 dark:text-red-300">
@@ -73,10 +73,13 @@ export function WorldContextPreviewResult({
   if (!preview) return null
 
   const sections: IncludedSection[] = [
+    { labelKey: 'worldWorkspace.console.tone', names: preview.setting?.tone ? [preview.setting.tone] : [] },
+    { labelKey: 'worldWorkspace.console.rules', names: preview.setting?.rules ?? [] },
     { labelKey: 'worldWorkspace.characters', names: preview.characters.map((c) => c.displayName) },
     { labelKey: 'worldWorkspace.locations', names: preview.locations.map((l) => l.name) },
     { labelKey: 'worldWorkspace.factions', names: preview.factions.map((f) => f.name) },
-    { labelKey: 'worldWorkspace.timeline', names: preview.timeline.map((e) => e.title) },
+    // A2 只报告入选数量；时间线内容和兼容展示属于后续阶段。
+    { labelKey: 'worldWorkspace.timeline', names: preview.timeline.length ? [String(preview.timeline.length)] : [] },
     { labelKey: 'worldWorkspace.bindings', names: preview.materials.map((m) => m.name) },
   ]
   const includedCount = sections.reduce((sum, s) => sum + s.names.length, 0)
@@ -130,7 +133,7 @@ export function WorldContextPreviewResult({
           <ul className="mt-1 space-y-1">
             {preview.omissions.map((o, i) => (
               <li key={`${o.kind}-${o.ownerEntityId}-${o.missingEntityId}-${i}`} className="font-mono text-[11px]">
-                {o.kind}: {o.ownerEntityId} → {o.missingEntityId}（{o.reason}）
+                {o.kind}（{o.reason}）
               </li>
             ))}
           </ul>
@@ -149,7 +152,6 @@ export function WorldContextPreviewResult({
             {preview.warnings.map((w, i) => (
               <li key={`${w.code}-${w.refId ?? ''}-${i}`} className="font-mono text-[11px]">
                 {w.code}
-                {w.refId ? `: ${w.refId}` : ''}
               </li>
             ))}
           </ul>

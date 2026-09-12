@@ -29,6 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Context Preview 在草稿或保存版本变化时会使在途请求失效，避免迟到响应误标为最新；刷新失败始终显示错误与重试。只读结果不展示内部实体 ID，正确包含基调与规则，时间线仅显示入选数量。
+- Context Preview invalidates in-flight requests when the draft or saved revision changes, preventing late responses from appearing current. Refresh errors remain visible with retry; results hide internal entity IDs, include selected tone and rules, and show only the selected timeline count.
 - Phase 3.1A1 世界上下文预览端点现已使用完整独立的 HTTP 响应 DTO，并通过共享 Selection 解码器执行冻结的字段数量上限；revision 不再自动去除空白。新增测试锁定 World 全内容只读、Registry 零占用、并发预览、稳定空数组、请求运行态字段拒绝及响应运行态字段隔离。
 - The Phase 3.1A1 world-context preview endpoint now uses a complete standalone HTTP response DTO and enforces frozen per-field selection limits through the shared Selection decoder; revisions are no longer whitespace-normalized. New tests lock down full-World read-only behavior, zero Registry occupancy, concurrent previews, stable empty arrays, rejection of runtime request fields, and runtime-field isolation in responses.
 - World Context Snapshot 的 96 KiB 字节预算现在由共享 `BuildSnapshot` 出口统一执行，控制台预览和运行绑定不会再通过不同路径放行超限快照，也不会在拒绝后占用运行时注册表。

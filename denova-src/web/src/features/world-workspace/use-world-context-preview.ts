@@ -57,6 +57,7 @@ export function useWorldContextPreview(): UseWorldContextPreview {
   }, [])
 
   const requestPreview = useCallback(async (worldId: string, input: RequestPreviewInput) => {
+    if (!aliveRef.current) return
     const seq = seqRef.current + 1
     seqRef.current = seq
     setSelection(input.selection)
@@ -80,8 +81,11 @@ export function useWorldContextPreview(): UseWorldContextPreview {
   }, [])
 
   const markStale = useCallback(() => {
-    setState((current) => (current === 'ready' ? 'stale' : current))
-  }, [])
+    // 草稿/保存版本改变同样使在途结果过期，不能只处理已完成请求。
+    seqRef.current += 1
+    setError(null)
+    setState(preview ? 'stale' : 'idle')
+  }, [preview])
 
   const reset = useCallback(() => {
     seqRef.current += 1

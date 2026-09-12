@@ -67,6 +67,7 @@ describe('useWorldContextPreview 会话内状态', () => {
     expect(result.current.error).toBeNull()
     expect(result.current.selection).toEqual(emptyContextSelection())
     expect(setItem).not.toHaveBeenCalled()
+    expect(mockedPreview).not.toHaveBeenCalled()
   })
 
   it('请求成功：loading → ready，保存 selection 与 preview，并按 id+body 调用 client', async () => {
@@ -125,7 +126,7 @@ describe('useWorldContextPreview 会话内状态', () => {
     expect(result.current.state).toBe('ready')
   })
 
-  it('markStale 只把 ready 标为 stale，reset 回到 idle', async () => {
+  it('markStale 保留旧预览，reset 回到 idle', async () => {
     mockedPreview.mockResolvedValue({ preview: makeView() })
     const { result } = renderHook(() => useWorldContextPreview())
     await act(async () => result.current.requestPreview('w1', input()))
@@ -148,5 +149,47 @@ describe('useWorldContextPreview 会话内状态', () => {
     act(() => void result.current.requestPreview('w1', input()))
     unmount()
     await expect(act(async () => gate.resolve({ preview: makeView() }))).resolves.toBeUndefined()
+  })
+
+  it.each([false, true])('loading 时世界改变必须使请求失效（已有预览=%s）', async (hasPreview) => {
+    const { result } = renderHook(() => useWorldContextPreview())
+    if (hasPreview) {
+      mockedPreview.mockResolvedValueOnce({ preview: makeView() })
+      await act(async () => result.current.requestPreview('w1', input()))
+    }
+    const gate = deferred<{ preview: WorldContextUIView }>()
+    mockedPreview.mockReturnValueOnce(gate.promise)
+    act(() => void result.current.requestPreview('w1', input()))
+    act(() => result.current.markStale())
+    expect(result.current.state).toBe(hasPreview ? 'stale' : 'idle')
+    await act(async () => gate.resolve({ preview: makeView({ worldRevision: 'late' }) }))
+    expect(result.current.state).toBe(hasPreview ? 'stale' : 'idle')
+    expect(result.current.preview?.worldRevision).toBe(hasPreview ? 'sha256:1' : undefined)
+  })
+
+  it.each(['resolve', 'reject'] as const)('reset 取消后迟到 %s 不恢复旧状态', async (outcome) => {
+    const gate = deferred<{ preview: WorldContextUIView }>()
+    mockedPreview.mockReturnValueOnce(gate.promise)
+    const { result } = renderHook(() => useWorldContextPreview())
+    act(() => void result.current.requestPreview('w1', input()))
+    act(() => result.current.reset())
+    await act(async () => {
+      if (outcome === 'resolve') gate.resolve({ preview: makeView() })
+      else gate.reject(new Error('late failure'))
+    })
+    expect(result.current.state).toBe('idle')
+    expect(result.current.preview).toBeNull()
+    expect(result.current.error).toBeNull()
+  })
+
+  it('旧请求失败不覆盖较新成功结果', async () => {
+    const first = deferred<{ preview: WorldContextUIView }>()
+    mockedPreview.mockReturnValueOnce(first.promise).mockResolvedValueOnce({ preview: makeView() })
+    const { result } = renderHook(() => useWorldContextPreview())
+    act(() => void result.current.requestPreview('w1', input()))
+    await act(async () => result.current.requestPreview('w1', input()))
+    await act(async () => first.reject(new Error('late failure')))
+    expect(result.current.state).toBe('ready')
+    expect(result.current.error).toBeNull()
   })
 })

@@ -69,18 +69,19 @@ describe('WorldContextPreviewResult 只读展示', () => {
     expect(selected.textContent).toContain('林九')
     expect(selected.textContent).toContain('青云镇')
     expect(selected.textContent).toContain('天剑宗')
-    expect(selected.textContent).toContain('开宗立派')
+    expect(selected.textContent).not.toContain('开宗立派')
     expect(selected.textContent).toContain('世界规则集')
     expect(screen.queryByTestId('context-preview-selected-empty')).toBeNull()
 
     const omissions = screen.getByTestId('context-preview-omissions')
     expect(omissions.textContent).toContain('character_faction')
-    expect(omissions.textContent).toContain('c1')
-    expect(omissions.textContent).toContain('f2')
+    expect(omissions.textContent).not.toContain('c1')
+    expect(omissions.textContent).not.toContain('f2')
     expect(screen.queryByTestId('context-preview-omissions-empty')).toBeNull()
 
     const warnings = screen.getByTestId('context-preview-warnings')
     expect(warnings.textContent).toContain('legacy_timeline_category')
+    expect(warnings.textContent).not.toContain('t9')
     expect(screen.queryByTestId('context-preview-warnings-empty')).toBeNull()
   })
 
@@ -95,5 +96,20 @@ describe('WorldContextPreviewResult 只读展示', () => {
     render(<WorldContextPreviewResult state="stale" preview={makeView()} />)
     expect(screen.getByTestId('context-preview-stale')).toBeInTheDocument()
     expect(screen.getByTestId('context-preview-identity')).toBeInTheDocument()
+  })
+
+  it('刷新失败时即使保留旧 preview 也必须显示错误和重试', () => {
+    const onRetry = vi.fn()
+    render(<WorldContextPreviewResult state="error" preview={makeView()} error={new Error('revision conflict')} onRetry={onRetry} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('revision conflict')
+    fireEvent.click(screen.getByRole('button'))
+    expect(onRetry).toHaveBeenCalledOnce()
+  })
+
+  it('仅基调与规则入选时不能显示仅有世界概览的空态', () => {
+    render(<WorldContextPreviewResult state="ready" preview={makeView({ setting: { tone: '冷峻', rules: ['魔法有代价'] } })} />)
+    expect(screen.getByTestId('context-preview-selected')).toHaveTextContent('冷峻')
+    expect(screen.getByTestId('context-preview-selected')).toHaveTextContent('魔法有代价')
+    expect(screen.queryByTestId('context-preview-selected-empty')).toBeNull()
   })
 })
