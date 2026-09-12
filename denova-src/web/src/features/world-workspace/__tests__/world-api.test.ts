@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APIError } from '@/lib/api-client'
-import { archiveWorld, createWorld, getWorld, listWorlds, updateWorld } from '../world-api'
+import {
+  archiveWorld,
+  createWorld,
+  getWorld,
+  listWorlds,
+  previewWorldContext,
+  updateWorld,
+} from '../world-api'
 import type { World } from '../types'
+import { emptyContextSelection } from '../world-context'
 
 function jsonResponse(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body) }
@@ -55,5 +63,46 @@ describe('world-api HTTP contract', () => {
     })
     globalThis.fetch = fetchMock as typeof fetch
     await expect(getWorld('abcdef0123456789')).rejects.toMatchObject({ status: 409 } satisfies Partial<APIError>)
+  })
+})
+
+describe('context preview HTTP contract (3.1A2)', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('POSTs the read-only context-preview shape to the world id path', async () => {
+    const envelope = { preview: { worldId: 'w1', identity: { name: 'N' } } }
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(envelope))
+    globalThis.fetch = fetchMock as typeof fetch
+
+    const body = {
+      consumer: 'writing' as const,
+      expectedWorldRevision: 'sha256:9',
+      selection: { ...emptyContextSelection(), characterIds: ['c1'] },
+    }
+    await expect(previewWorldContext('w 1', body)).resolves.toEqual(envelope)
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/worlds/w%201/context-preview')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toEqual({ 'Content-Type': 'application/json' })
+    // 请求体绝不含 worldId；path 是唯一世界来源。
+    expect(JSON.parse(init.body)).toEqual({
+      consumer: 'writing',
+      expectedWorldRevision: 'sha256:9',
+      selection: expect.objectContaining({ characterIds: ['c1'], includeTone: false }),
+    })
+    expect(JSON.parse(init.body)).not.toHaveProperty('worldId')
+  })
+
+  it('surfaces a 403 untrusted consumer as APIError carrying the stable code', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ code: 'consumer_not_trusted', error: '当前阶段不允许该模式请求世界上下文' }),
+    })
+    globalThis.fetch = fetchMock as typeof fetch
+    await expect(
+      previewWorldContext('w1', { consumer: 'game', expectedWorldRevision: 'r', selection: emptyContextSelection() }),
+    ).rejects.toMatchObject({ status: 403, code: 'consumer_not_trusted' } satisfies Partial<APIError>)
   })
 })

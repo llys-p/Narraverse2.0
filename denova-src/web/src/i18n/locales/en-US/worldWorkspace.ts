@@ -228,6 +228,18 @@ const worldWorkspace = {
   'worldWorkspace.targetValidity.invalid': 'Unavailable target',
   'worldWorkspace.targetValidity.unavailable': 'Cannot check now',
   'worldWorkspace.targetValidity.invalidOption': 'Missing: {{value}}',
+
+  'worldWorkspace.contextPreview.idle': 'Select content to generate a context preview.',
+  'worldWorkspace.contextPreview.loading': 'Generating context preview…',
+  'worldWorkspace.contextPreview.errorTitle': 'Failed to build context preview',
+  'worldWorkspace.contextPreview.stale': 'Based on the last saved version; the current unsaved draft is not included.',
+  'worldWorkspace.contextPreview.identityTitle': 'World identity',
+  'worldWorkspace.contextPreview.selectedTitle': 'Included content',
+  'worldWorkspace.contextPreview.selectedEmpty': 'Nothing included beyond world identity.',
+  'worldWorkspace.contextPreview.omissionsTitle': 'Closure omissions',
+  'worldWorkspace.contextPreview.omissionsEmpty': 'No references omitted by closure.',
+  'worldWorkspace.contextPreview.warningsTitle': 'Compatibility & warnings',
+  'worldWorkspace.contextPreview.warningsEmpty': 'No warnings.',
 } as const
 
 export default worldWorkspace

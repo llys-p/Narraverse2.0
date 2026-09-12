@@ -8,6 +8,7 @@ import type {
   WorldStatus,
   WorldStructureAnalysisRequest,
 } from './types'
+import type { PreviewWorldContextRequest, WorldContextPreviewEnvelope } from './world-context'
 
 function encode(id: string): string {
   return encodeURIComponent(id)
@@ -68,6 +69,23 @@ export function analyzeWorldStructure(
     method: 'POST',
     headers: jsonHeaders,
     body: JSON.stringify(input),
+    signal,
+  })
+}
+
+/**
+ * POST /api/worlds/:id/context-preview —— 只读世界上下文预览（3.1A1/A2）。
+ * 只读取已保存 World + revision 派生 UI Projection；不创建 runContext、不调模型、不写 World。
+ */
+export function previewWorldContext(
+  id: string,
+  body: PreviewWorldContextRequest,
+  signal?: AbortSignal,
+): Promise<WorldContextPreviewEnvelope> {
+  return requestJSON<WorldContextPreviewEnvelope>(`/api/worlds/${encode(id)}/context-preview`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(body),
     signal,
   })
 }

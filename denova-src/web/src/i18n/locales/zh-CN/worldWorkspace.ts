@@ -228,6 +228,18 @@ const worldWorkspace = {
   'worldWorkspace.targetValidity.invalid': '已失效',
   'worldWorkspace.targetValidity.unavailable': '暂时无法检查',
   'worldWorkspace.targetValidity.invalidOption': '已失效：{{value}}',
+
+  'worldWorkspace.contextPreview.idle': '选择内容后生成上下文预览',
+  'worldWorkspace.contextPreview.loading': '正在生成上下文预览…',
+  'worldWorkspace.contextPreview.errorTitle': '上下文预览失败',
+  'worldWorkspace.contextPreview.stale': '基于上次已保存版本；当前草稿未包含',
+  'worldWorkspace.contextPreview.identityTitle': '世界概览',
+  'worldWorkspace.contextPreview.selectedTitle': '已选内容',
+  'worldWorkspace.contextPreview.selectedEmpty': '暂未包含任何条目（仅世界概览）',
+  'worldWorkspace.contextPreview.omissionsTitle': '闭包省略',
+  'worldWorkspace.contextPreview.omissionsEmpty': '没有因闭包被省略的引用',
+  'worldWorkspace.contextPreview.warningsTitle': '兼容与提示',
+  'worldWorkspace.contextPreview.warningsEmpty': '没有警告',
 } as const
 
 export default worldWorkspace
