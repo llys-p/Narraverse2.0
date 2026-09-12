@@ -101,6 +101,8 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 	api.GET("/worlds/:id", apiHandlers.HandleWorldGet)
 	api.PUT("/worlds/:id", apiHandlers.HandleWorldReplace)
 	api.POST("/worlds/:id/archive", apiHandlers.HandleWorldArchive)
+	// World Workspace 3.1A1：只读世界上下文预览（无写入、不建 runContext、不占 Registry）。
+	api.POST("/worlds/:id/context-preview", apiHandlers.HandleWorldContextPreview)
 	// World Workspace 2B.2：创建向导受控 AI 结构提案（前端不得直调 /api/model/chat）。
 	api.POST("/world-proposals", apiHandlers.HandleWorldProposal)
 		api.GET("/lore/items", apiHandlers.HandleLoreItems)

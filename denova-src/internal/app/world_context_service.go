@@ -62,6 +62,12 @@ func (s *WorldContextService) PreviewWorldContext(ctx context.Context, consumer 
 	return worldcontext.ProjectForUI(snap), nil
 }
 
+// PreviewWorldContext 是供 HTTP handler 调用的 App 外观（Phase 3.1A1）：
+// 只做只读 UIView 派生，内部复用同一 service，不重复预算逻辑、不创建 runContext、不占用 Registry。
+func (a *App) PreviewWorldContext(ctx context.Context, consumer worldcontext.Consumer, ref worldcontext.Ref) (*worldcontext.UIView, error) {
+	return a.worldContext().PreviewWorldContext(ctx, consumer, ref)
+}
+
 // BindWorldRun 读取 World、构建 Snapshot 后按服务端内部 scopeKey 创建/复用/替换 runContext。
 // scopeKey 必须由服务端在后续 3.2-A/B 从 Task / InteractiveRun 派生，P2 不读取任何请求体自造身份。
 func (s *WorldContextService) BindWorldRun(

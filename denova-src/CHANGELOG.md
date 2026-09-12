@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Phase 3.1A1 新增只读世界上下文预览端点 `POST /api/worlds/:id/context-preview`：从已保存 World 与 revision 即时派生 UI Projection，使用显式 camelCase 传输 DTO（不直接序列化内部 Selection），稳定错误码与脱敏，请求体上限 64 KiB；不创建 runContext、不占 Registry、不调用模型或 Master 详情，不返回 ModelView/sourceRef/runSalt 等运行态字段。
+- Phase 3.1A1 adds the read-only `POST /api/worlds/:id/context-preview` endpoint: it derives the UI Projection on demand from the saved World and revision through explicit camelCase transport DTOs (the internal Selection is never serialized directly), with stable error codes, sanitized errors, and a 64 KiB body cap. It creates no run context, occupies no registry, calls no model or master-asset detail, and never returns ModelView/sourceRef/runSalt runtime fields.
 - Phase 3.0B 将 InteractiveRun 身份接入现有游戏 Task 流程：普通回合创建新 run，regenerate 只按已持久化 turn 复用原 run，Task 在索引完成后才启动，真实持久化成功后再登记 TurnIndex；现有 HTTP/SSE 协议与游戏模型调用保持不变。
 - Phase 3.0B connects InteractiveRun identity to the existing game Task flow: normal turns create a new run, regenerate reuses a run only through an indexed persisted turn, Tasks start only after indexing, and TurnIndex is recorded only after persistence is verified. Existing HTTP/SSE contracts and game model calls remain unchanged.
 - Phase 3.0B 新增独立的 InteractiveRun 进程内注册表：一回合可顺序关联 initial/regenerate 等多个 Task 执行尝试，并以 story/branch 隔离的 TaskIndex 与持久化 TurnIndex 确定归属；TTL、detach 与 destroy 只交出一次 runContext 清理所有权，不保存 World 或剧情副本。
