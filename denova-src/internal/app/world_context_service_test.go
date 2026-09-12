@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"denova/config"
@@ -200,5 +202,52 @@ func TestWorldContext_RegistryEmptyAfterRebuild(t *testing.T) {
 	// World 仍是唯一真源：重新 bind 可成功。
 	if _, _, err := svc2.BindWorldRun(ctx, worldcontext.ConsumerWriting, "task:1", worldRef(w, rev)); err != nil {
 		t.Fatalf("重建后应能重新 Bind：%v", err)
+	}
+}
+
+func TestWorldContext_SnapshotBudgetSharedByPreviewAndBind(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.SetDataDir(t.TempDir())
+	a := &App{cfg: cfg}
+
+	locations := make([]world.Location, 0, 5)
+	locationIDs := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("budget-location-%d", i)
+		locationIDs = append(locationIDs, id)
+		locations = append(locations, world.Location{
+			ID:          id,
+			Name:        fmt.Sprintf("地点%d", i),
+			Description: strings.Repeat("x", 20000),
+		})
+	}
+	w, rev, err := a.CreateWorld(context.Background(), world.CreateInput{
+		Name:      "超限测试世界",
+		Locations: locations,
+	})
+	if err != nil {
+		t.Fatalf("准备超限世界失败: %v", err)
+	}
+	ref := worldcontext.Ref{
+		WorldID:               w.ID,
+		ExpectedWorldRevision: rev,
+		Selection:             worldcontext.Selection{LocationIDs: locationIDs},
+	}
+	svc := newWorldContextService(a)
+
+	assertSnapshotBudgetError := func(label string, got error) {
+		t.Helper()
+		de, ok := got.(*worldcontext.DomainError)
+		if !ok || de.Code != worldcontext.ErrBudgetExceeded || de.Layer != string(worldcontext.LayerSnapshotBytes) {
+			t.Fatalf("%s 必须返回 budget_exceeded/snapshot_bytes，got %#v", label, got)
+		}
+	}
+	_, previewErr := svc.PreviewWorldContext(context.Background(), worldcontext.ConsumerWriting, ref)
+	assertSnapshotBudgetError("Preview", previewErr)
+	_, _, bindErr := svc.BindWorldRun(context.Background(), worldcontext.ConsumerWriting, "task:budget", ref)
+	assertSnapshotBudgetError("Bind", bindErr)
+
+	if stats := svc.WorldContextRegistryStats(); stats.RunContexts != 0 || stats.BodyEntries != 0 || stats.BodyBytes != 0 {
+		t.Fatalf("预算失败不得占用 Registry，got %#v", stats)
 	}
 }

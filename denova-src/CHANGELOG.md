@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- World Context Snapshot 的 96 KiB 字节预算现在由共享 `BuildSnapshot` 出口统一执行，控制台预览和运行绑定不会再通过不同路径放行超限快照，也不会在拒绝后占用运行时注册表。
+- The 96 KiB World Context Snapshot byte budget is now enforced at the shared `BuildSnapshot` exit, so console previews and runtime bindings cannot admit oversized snapshots through different paths or allocate registry entries after rejection.
 - 叙界头像文件名中的全角括号已规范为 ASCII 括号，角色库生成器会使用相同规则解析头像，避免 Go embed 发布构建拒绝资源或角色头像丢失。
 - Full-width parentheses in Narraverse avatar filenames are normalized to ASCII, and the character-library generator applies the same lookup rule so Go embed releases accept the assets without dropping avatars.
 - Denova 发布构建重新追踪正式 `cmd/denova` 主程序入口；根目录运行时忽略规则现锚定为 `/denova/`，不再误伤源码目录。

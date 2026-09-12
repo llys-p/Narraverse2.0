@@ -1,6 +1,7 @@
 package worldcontext
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -212,5 +213,68 @@ func TestBuildSnapshot_FingerprintChangesWithRevision(t *testing.T) {
 	b := mustBuildAt(t, ConsumerWriting, refB, revB, sampleWorld())
 	if a.ContextFingerprint == b.ContextFingerprint {
 		t.Fatal("不同 worldRevision 的 fingerprint 必须不同")
+	}
+}
+
+func TestBuildSnapshot_EnforcesSnapshotByteBudgetBoundary(t *testing.T) {
+	w := sampleWorld()
+	w.Locations = nil
+	locationIDs := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("budget-location-%d", i)
+		description := ""
+		if i < 4 {
+			description = strings.Repeat("x", maxEntityDesc)
+		}
+		locationIDs = append(locationIDs, id)
+		w.Locations = append(w.Locations, world.Location{
+			ID:          id,
+			Name:        fmt.Sprintf("地点%d", i),
+			Description: description,
+		})
+	}
+	ref := baseRef(Selection{LocationIDs: locationIDs})
+
+	withoutLastDescription, err := BuildSnapshot(ConsumerWriting, ref, testRevision, w)
+	if err != nil {
+		t.Fatalf("准备 Snapshot 边界基线: %v", err)
+	}
+	withoutLastDescriptionJSON, err := marshalStable(withoutLastDescription)
+	if err != nil {
+		t.Fatalf("序列化 Snapshot 边界基线: %v", err)
+	}
+	w.Locations[4].Description = "x"
+	withOneByte, err := BuildSnapshot(ConsumerWriting, ref, testRevision, w)
+	if err != nil {
+		t.Fatalf("准备带最后描述的 Snapshot: %v", err)
+	}
+	withOneByteJSON, err := marshalStable(withOneByte)
+	if err != nil {
+		t.Fatalf("序列化带最后描述的 Snapshot: %v", err)
+	}
+	descriptionFieldOverhead := len(withOneByteJSON) - len(withoutLastDescriptionJSON) - 1
+	paddingBytes := MaxSnapshotBytes - len(withoutLastDescriptionJSON) - descriptionFieldOverhead
+	if paddingBytes <= 0 || paddingBytes > maxEntityDesc {
+		t.Fatalf("无法在合法地点描述上构造精确边界：padding=%d", paddingBytes)
+	}
+	w.Locations[4].Description = strings.Repeat("x", paddingBytes)
+
+	exact, err := BuildSnapshot(ConsumerWriting, ref, testRevision, w)
+	if err != nil {
+		t.Fatalf("恰好等于 Snapshot 上限应通过: %v", err)
+	}
+	exactJSON, err := marshalStable(exact)
+	if err != nil {
+		t.Fatalf("序列化精确边界 Snapshot: %v", err)
+	}
+	if len(exactJSON) != MaxSnapshotBytes {
+		t.Fatalf("测试必须精确命中字节上限：got=%d want=%d", len(exactJSON), MaxSnapshotBytes)
+	}
+
+	w.Locations[4].Description += "x"
+	_, err = BuildSnapshot(ConsumerWriting, ref, testRevision, w)
+	de, ok := err.(*DomainError)
+	if !ok || de.Code != ErrBudgetExceeded || de.Layer != string(LayerSnapshotBytes) {
+		t.Fatalf("超过 Snapshot 上限 1 字节应返回 budget_exceeded/snapshot_bytes，got %#v", err)
 	}
 }

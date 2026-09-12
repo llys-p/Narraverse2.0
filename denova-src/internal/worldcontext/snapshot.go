@@ -303,6 +303,9 @@ func BuildSnapshot(consumer Consumer, ref Ref, currentRevision string, w world.W
 			MaterialCount:  len(materials),
 		},
 	}
+	if err := CheckSnapshotBudget(snap); err != nil {
+		return nil, err
+	}
 	return snap, nil
 }
 
