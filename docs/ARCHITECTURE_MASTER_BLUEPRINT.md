@@ -1,220 +1,189 @@
 # Narraverse2.0 Architecture Master Blueprint
 
-> Status: Draft / Review Required
+> Status: Architecture baseline after repository review.
 >
-> Purpose: Establish the long-term architecture map. This document is a planning source, not a statement that all modules are already implemented.
+> Purpose: Separate current implementation, frozen design, and future planning. This document is not a claim that every planned module exists.
 
-## 0. Core Principles
+## 1. Architecture Layers
 
-### Single Source of Truth
+```text
+Persistent Truth Layer
 
-World data is the authoritative persistent source.
+World
+ ├── Characters
+ ├── Locations
+ ├── Factions
+ ├── Timeline
+ └── AssetBindings
 
-- World files contain durable world definitions.
-- Runtime context, snapshots, projections and indexes are derived state.
-- Runtime derived state must not silently rewrite World data.
+Derived Runtime Layer
 
-### Separation of Concerns
+WorldContext
+ ├── Selection
+ ├── Snapshot
+ ├── Projection
+ ├── Model/UI projections
+ └── RunContext references
 
-Persistent data, runtime execution state and presentation state are separate layers.
+Execution Layer
 
-```
-Persistent Layer
-    World
-    Projects
-    Assets
-
-Runtime Layer
-    Snapshot
-    WorldContext
-    RunContext
-    Task
-    InteractiveRun
+InteractiveRun
+ ├── Task
+ ├── Turn indexes
+ └── execution lifecycle
 
 Presentation Layer
-    Console UI
-    Preview UI
-    Editors
+
+World Console
+Preview UI
+Editors
 ```
 
----
+## 2. Current Implemented Architecture
 
-# 1. Current Architecture (Implemented Direction)
+### World
 
-## World Workspace
+World is the persistent source of truth.
 
-Purpose:
+It owns:
 
-- Manage world definitions.
-- Preview selected context.
-- Prepare controlled context consumption.
-
-Current implemented foundation:
-
-```
-World
- |
- +-- Snapshot
-      |
-      +-- Selection
-      |
-      +-- Projection
-      |
-      +-- WorldContext Registry
-```
-
-WorldContext is temporary runtime state.
+- world identity
+- characters
+- locations
+- factions
+- timeline entries
+- bindings to external/master assets
 
 It does not own:
 
-- World files
-- Story content
-- Model outputs
-- Permanent memories
+- AI execution state
+- conversation runtime state
+- temporary context projections
 
----
+### Binding Model
 
-# 2. Runtime Execution Model
-
-Current frozen relationship:
-
+```text
+Master Library Asset
+        |
+        v
+AssetBinding
+        |
+        v
+World Entity
 ```
+
+Binding is a relationship, not a copied master record.
+
+World-specific notes and runtime state must remain separated from master assets.
+
+## 3. WorldContext Architecture
+
+```text
+World
+  |
+  v
+Selection
+  |
+  v
+Snapshot
+  |
+  +---- UI Projection
+  |
+  +---- Model Projection
+  |
+  v
+RunContext
+```
+
+WorldContext is derived state.
+
+Rules:
+
+- no independent persistence
+- no World replacement
+- no direct model ownership
+- no story state storage
+
+## 4. Runtime Architecture
+
+```text
 InteractiveRun
  |
- +-- Task
- |     |
- |     +-- execution attempt
+ +-- Task A
  |
- +-- Task
+ +-- Task B (regenerate)
  |
- +-- Task
+ +-- Task C
 ```
 
 Definitions:
 
-- InteractiveRun = logical conversation/generation lineage.
-- Task = one execution attempt.
+- InteractiveRun represents a logical runtime lineage.
+- Task represents one execution attempt.
 - Regenerate creates another Task under the same InteractiveRun.
 
-Task completion does not destroy InteractiveRun automatically.
+## 5. Current Phase Position
 
----
+Implemented:
 
-# 3. Context Flow Blueprint
+- World data foundation
+- World binding foundation
+- WorldContext domain core
+- Context registry
+- Analysis handle lifecycle
+- InteractiveRun foundation
+- World Console context preview foundation
 
-```
+Planned:
+
+- richer World Console management
+- runtime context consumption
+- knowledge workspace
+- advanced relationship visualization
+
+## 6. Future Extension Boundaries
+
+Knowledge systems, book analysis, Obsidian integration and relationship graphs belong above Master Library / Knowledge Workspace.
+
+Future direction:
+
+```text
+Book
+ |
+Chapter
+ |
+Extracted Knowledge
+ |
+Characters / Events / Locations
+ |
+Master Library
+ |
+Binding
+ |
 World
-  |
-  v
-Snapshot Builder
-  |
-  v
-Selection + Closure Calculation
-  |
-  v
-WorldContext
-  |
-  v
-InteractiveRun
-  |
-  v
-Task Execution
-  |
-  v
-Persisted Result
 ```
 
----
+Restrictions:
 
-# 4. Planned Console Evolution
+- Knowledge is not World truth.
+- Graphs are projections, not source data.
+- Notes must not automatically overwrite World.
 
-## Phase 3.1 World Console
+## 7. Architectural Invariants
 
-Goal:
+Must preserve:
 
-Make World state understandable and controllable without changing the source of truth.
+1. World is the single persistent truth.
+2. Runtime state is separated from world definition.
+3. UI projections are not databases.
+4. AI proposals require controlled input and human confirmation.
+5. Different modes share world context but do not create incompatible world models.
 
-Planned areas:
+## 8. Review Rule
 
-- Context preview
-- Selection visualization
-- Source ownership
-- Binding health
-- Timeline compatibility
-- World management tools
+Future architecture reviews must distinguish:
 
-No automatic story generation is introduced here.
-
----
-
-# 5. Long Term Roadmap
-
-## Phase 3.x World Management
-
-Focus:
-
-- World inspection
-- Context preparation
-- Entity management
-- Timeline management
-
-## Phase 4 Runtime Integration
-
-Focus:
-
-- Connect prepared context to actual interaction flows.
-- Complete analysisHandle to runtime path.
-- Improve runtime orchestration.
-
-## Phase 5 Agent System
-
-Focus:
-
-- Specialized agents.
-- Tool execution.
-- Controlled automation.
-- Human approval boundaries.
-
-## Phase 6 Knowledge / Content Library
-
-Focus:
-
-- Global content organization.
-- Character cards.
-- Setting cards.
-- Version management.
-- Import pipelines.
-
-## Phase 7 Product Experience
-
-Focus:
-
-- Full creative workflow.
-- Writing mode.
-- Game mode.
-- Character exploration.
-- Rich presentation.
-
----
-
-# 6. Forbidden Architectural Drift
-
-The following must not happen without redesign review:
-
-- WorldContext becoming a second database.
-- UI state becoming persistent truth.
-- Runtime state writing directly into World definitions.
-- InteractiveRun storing complete world copies.
-- Different modes creating independent incompatible world models.
-
----
-
-# 7. Review Checklist for Future Models
-
-When reviewing this blueprint:
-
-1. Verify against current repository code.
-2. Mark implemented vs planned separately.
-3. Identify contradictions.
-4. Do not add new architecture without approval.
-5. Preserve World as the single source of truth.
+- Implemented
+- Frozen design
+- Planned
+- Not approved
