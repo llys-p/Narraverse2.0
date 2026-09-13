@@ -19,6 +19,11 @@ function sortByOrder(entries: WorldTimelineEntry[]): WorldTimelineEntry[] {
 export function TimelineSection({ world, onChange, readOnly = false }: TimelineSectionProps) {
   const { t } = useTranslation()
   const ordered = sortByOrder(world.timeline)
+  const help = (
+    <p className="text-xs leading-5 text-[var(--nova-text-muted)]">
+      {t('worldWorkspace.timeline.help')}
+    </p>
+  )
 
   const update = (id: string, patch: Partial<WorldTimelineEntry>) =>
     onChange(world.timeline.map((e) => (e.id === id ? { ...e, ...patch } : e)))
@@ -42,8 +47,11 @@ export function TimelineSection({ world, onChange, readOnly = false }: TimelineS
 
   if (world.timeline.length === 0) {
     return (
-      <EmptyState variant="dashed" icon={HistoryIcon} title={t('worldWorkspace.console.emptyTimeline')}
-        action={readOnly ? undefined : { label: t('worldWorkspace.console.addEntry'), onClick: add }} />
+      <div className="flex flex-col gap-2">
+        {help}
+        <EmptyState variant="dashed" icon={HistoryIcon} title={t('worldWorkspace.console.emptyTimeline')}
+          action={readOnly ? undefined : { label: t('worldWorkspace.console.addEntry'), onClick: add }} />
+      </div>
     )
   }
 
@@ -51,6 +59,7 @@ export function TimelineSection({ world, onChange, readOnly = false }: TimelineS
 
   return (
     <div className="flex flex-col gap-2">
+      {help}
       {ordered.map((entry, index) => (
         <div key={entry.id} className="flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[var(--nova-border)] p-3">
           <div className="flex items-center gap-2">
