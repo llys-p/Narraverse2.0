@@ -65,6 +65,22 @@ type worldContextRefWire struct {
 	Selection             json.RawMessage `json:"selection"`
 }
 
+var worldContextRefWireKeys = map[string]struct{}{
+	"worldId":               {},
+	"expectedWorldRevision": {},
+	"selection":             {},
+}
+
+var worldContextSelectionWireKeys = map[string]struct{}{
+	"includeTone":      {},
+	"ruleIndexes":      {},
+	"characterIds":     {},
+	"locationIds":      {},
+	"factionIds":       {},
+	"timelineEntryIds": {},
+	"bindingIds":       {},
+}
+
 // forbiddenWorldContextKeys 是无论出现在顶层还是 world_context 子树都必须拒绝的越权字段：
 // consumer 由路由固定；scope/runContext/capability 等是服务端内部运行态；snapshot/modelView
 // 是运行时派生数据，禁止客户端提交。
@@ -154,6 +170,9 @@ func decodeWorldContextRef(raw json.RawMessage) (*worldcontext.Ref, error) {
 		if msg, forbidden := forbiddenWorldContextKeys[key]; forbidden {
 			return nil, transportInvalidRequest("world_context."+key, msg)
 		}
+		if _, allowed := worldContextRefWireKeys[key]; !allowed {
+			return nil, transportInvalidRequest("world_context."+key, "world_context 包含未知字段")
+		}
 	}
 
 	var wire worldContextRefWire
@@ -166,6 +185,9 @@ func decodeWorldContextRef(raw json.RawMessage) (*worldcontext.Ref, error) {
 	if len(bytes.TrimSpace(selectionRaw)) == 0 {
 		selectionRaw = json.RawMessage(`{}`)
 	}
+	if err := validateExactSelectionWireKeys(selectionRaw); err != nil {
+		return nil, err
+	}
 	selection, err := worldcontext.DecodeSelection(selectionRaw)
 	if err != nil {
 		return nil, err
@@ -176,6 +198,26 @@ func decodeWorldContextRef(raw json.RawMessage) (*worldcontext.Ref, error) {
 		ExpectedWorldRevision: wire.ExpectedWorldRevision,
 		Selection:             selection,
 	}, nil
+}
+
+// validateExactSelectionWireKeys 在领域 DecodeSelection 前锁定传输层字段拼写。
+// encoding/json 对结构体字段默认接受大小写不敏感匹配，仅靠 DisallowUnknownFields
+// 无法保证冻结的 camelCase wire schema。
+func validateExactSelectionWireKeys(raw json.RawMessage) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return nil
+	}
+	keys := map[string]json.RawMessage{}
+	if err := json.Unmarshal(trimmed, &keys); err != nil {
+		return transportInvalidRequest("world_context.selection", "selection 必须是 JSON 对象")
+	}
+	for key := range keys {
+		if _, allowed := worldContextSelectionWireKeys[key]; !allowed {
+			return transportInvalidRequest("world_context.selection."+key, "selection 包含未知字段")
+		}
+	}
+	return nil
 }
 
 // decodeAnalysisHandle 规范化 analysis_handle：

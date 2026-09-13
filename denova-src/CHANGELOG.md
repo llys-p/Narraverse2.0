@@ -46,6 +46,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.2-A1a 传输解码现会精确校验 `world_context` 与 `selection` 的冻结 camelCase 键名，拒绝 Go `encoding/json` 原本会大小写不敏感接受的 PascalCase/混合大小写别名；回归测试同时锁定当前 `/api/chat` 全部 11 个合法业务字段的兼容性。
+- Phase 3.2-A1a transport decoding now validates the frozen camelCase keys of `world_context` and `selection` exactly, rejecting PascalCase or mixed-case aliases that Go's `encoding/json` would otherwise accept case-insensitively. Regression coverage also locks compatibility for all 11 current `/api/chat` business fields.
 - Phase 3.1D 前置修复将会话级 Context Selection 对 World 草稿的有效性收敛为统一不变量：规则、角色、地点、势力、时间线和 world-scope Binding 被移除后，所有失效引用都会从选择中剪枝，避免不可见 ID 导致 `selection_invalid`。规则删除还会移除对应选择并重编号后续索引，使仍被选择的规则保持原语义；不改变 World、Preview API 或持久化契约。
 - The Phase 3.1D prerequisite fix makes session Context Selection validity against the World draft a single invariant: removing rules, characters, locations, factions, timeline entries, or world-scope bindings prunes every invalid selection reference, preventing hidden IDs from causing `selection_invalid`. Rule deletion also drops the removed choice and reindexes later choices so selected rules keep their meaning. World, Preview API, and persistence contracts remain unchanged.
 - Phase 3.1C2b 在移除已被 Context Selection 选中的 world-scope Binding 时同步清理会话内 `bindingIds`，避免保存后继续提交已经不存在的资料 ID 并触发 `selection_invalid`；Selection 仍只存在组件内存，不新增持久化或请求。

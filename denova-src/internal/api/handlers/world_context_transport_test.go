@@ -31,7 +31,19 @@ func wantInvalidRequest(t *testing.T, err error, fieldContains string) {
 
 // 1) 旧 chat 请求逐字段兼容：不携带任何控制字段时正常，且不影响既有 ChatRequest 字段。
 func TestWorldContextTransportLegacyChat(t *testing.T) {
-	body := []byte(`{"message":"hi","references":["r1"],"plan_mode":true,"teller_id":"t","writing_skill":"s"}`)
+	body := []byte(`{
+		"message":"hi",
+		"references":["r1"],
+		"lore_references":["l1"],
+		"style_scenes":["scene1"],
+		"selections":[{"file_name":"chapter.md","start_line":2,"end_line":4,"content":"selected"}],
+		"ide_context":{"current_file":"chapter.md","open_files":["chapter.md","notes.md"]},
+		"review_feedback":[{"source":"review","review_thread_id":"thread-1","comment_ids":["comment-1"]}],
+		"plan_mode":true,
+		"writing_skill":"s",
+		"image_preset_id":"preset-1",
+		"teller_id":"t"
+	}`)
 	got, err := DecodeWorldContextTransport(body, PolicyChat)
 	if err != nil {
 		t.Fatalf("旧请求不应报错: %v", err)
@@ -44,7 +56,23 @@ func TestWorldContextTransportLegacyChat(t *testing.T) {
 	if err := DecodeChatRequestWithoutWorldContext(body, &req); err != nil {
 		t.Fatalf("ChatRequest 解码失败: %v", err)
 	}
-	if req.Message != "hi" || !req.PlanMode || req.TellerID != "t" || req.WritingSkill != "s" || len(req.References) != 1 {
+	if req.Message != "hi" || !req.PlanMode || req.TellerID != "t" || req.WritingSkill != "s" || req.ImagePresetID != "preset-1" {
+		t.Fatalf("ChatRequest 标量字段未逐字段保留: %+v", req)
+	}
+	if len(req.References) != 1 || req.References[0] != "r1" ||
+		len(req.LoreReferences) != 1 || req.LoreReferences[0] != "l1" ||
+		len(req.StyleScenes) != 1 || req.StyleScenes[0] != "scene1" {
+		t.Fatalf("ChatRequest 引用字段未逐字段保留: %+v", req)
+	}
+	if len(req.Selections) != 1 || req.Selections[0].FileName != "chapter.md" ||
+		req.Selections[0].StartLine != 2 || req.Selections[0].EndLine != 4 || req.Selections[0].Content != "selected" {
+		t.Fatalf("ChatRequest selections 未保留: %+v", req.Selections)
+	}
+	if req.IDEContext.CurrentFile != "chapter.md" || len(req.IDEContext.OpenFiles) != 2 {
+		t.Fatalf("ChatRequest ide_context 未保留: %+v", req.IDEContext)
+	}
+	if len(req.ReviewFeedback) != 1 || req.ReviewFeedback[0].Source != "review" ||
+		req.ReviewFeedback[0].ReviewThreadID != "thread-1" || len(req.ReviewFeedback[0].CommentIDs) != 1 {
 		t.Fatalf("ChatRequest 字段未逐字段保留: %+v", req)
 	}
 }
@@ -246,6 +274,38 @@ func TestWorldContextTransportUnknownSelectionField(t *testing.T) {
 	// 领域层返回 selection_invalid 或 invalid_request 均可，但必须是 DomainError。
 	if _, ok := err.(*worldcontext.DomainError); !ok {
 		t.Fatalf("期望 DomainError，实际 %T", err)
+	}
+}
+
+// world_context 与 selection 的冻结 wire schema 严格区分大小写；
+// encoding/json 默认的大小写不敏感结构体匹配不得放宽该契约。
+func TestWorldContextTransportRejectsNonCanonicalRefKeyCasing(t *testing.T) {
+	cases := []string{
+		`{"WorldID":"w","expectedWorldRevision":"r","selection":{}}`,
+		`{"worldId":"w","ExpectedWorldRevision":"r","selection":{}}`,
+		`{"worldId":"w","expectedWorldRevision":"r","Selection":{}}`,
+	}
+	for _, ref := range cases {
+		body := []byte(`{"world_context":` + ref + `}`)
+		_, err := DecodeWorldContextTransport(body, PolicyChat)
+		wantInvalidRequest(t, err, "world_context")
+	}
+}
+
+func TestWorldContextTransportRejectsNonCanonicalSelectionKeyCasing(t *testing.T) {
+	cases := []string{
+		`"IncludeTone":true`,
+		`"RuleIndexes":[]`,
+		`"CharacterIDs":[]`,
+		`"LocationIDs":[]`,
+		`"FactionIDs":[]`,
+		`"TimelineEntryIDs":[]`,
+		`"BindingIDs":[]`,
+	}
+	for _, field := range cases {
+		body := []byte(`{"world_context":{"worldId":"w","expectedWorldRevision":"r","selection":{` + field + `}}}`)
+		_, err := DecodeWorldContextTransport(body, PolicyChat)
+		wantInvalidRequest(t, err, "selection")
 	}
 }
 
