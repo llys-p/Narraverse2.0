@@ -26,6 +26,8 @@ import { useWorldContextPreview } from '../use-world-context-preview'
 import { WorldContextPanel } from '../components/context/WorldContextPanel'
 import {
   emptyContextSelection,
+  pruneContextSelection,
+  remapSelectionAfterRuleRemoval,
   type WorldConsoleSectionId,
   type WorldContextConsumer,
   type WorldContextSelection as ContextSelection,
@@ -118,6 +120,13 @@ export function WorldConsolePage({
       return mutator(prev)
     })
   }, [])
+
+  // Selection 只引用当前草稿中的规则/实体/时间线/世界资料。任何编辑路径改变 draft 后
+  // 都从这一处统一剪枝，避免不可见的失效 ID 被提交给只读 Preview API。
+  useEffect(() => {
+    if (!draft) return
+    setContextSelection((prev) => pruneContextSelection(prev, draft))
+  }, [draft])
 
   // 草稿一旦变成未保存，旧 Preview 立即过期（它基于的是已保存版本）；不重新请求。
   useEffect(() => {
@@ -255,13 +264,18 @@ export function WorldConsolePage({
   // 移除 Binding：确认已在影响预览里完成，这里只把 removeWorldBinding 的结果写进草稿。
   // 不另写删除逻辑、不删实体、不碰总资料库原件；保存前绝不调用 updateWorld。
   const removeBinding = useCallback((bindingId: string) => {
-    // world scope 资料可能已被当前 Context Selection 选中；Binding 消失后 UI 不再有
-    // 对应复选框，因此必须同时清掉这个会话内引用，避免后续预览提交失效 ID。
-    setContextSelection((prev) => {
-      if (!prev.bindingIds.includes(bindingId)) return prev
-      return { ...prev, bindingIds: prev.bindingIds.filter((id) => id !== bindingId) }
-    })
     mutate((w) => removeWorldBinding(w, bindingId))
+  }, [mutate])
+
+  const removeRule = useCallback((index: number) => {
+    setContextSelection((prev) => remapSelectionAfterRuleRemoval(prev, index))
+    mutate((w) => ({
+      ...w,
+      worldSetting: {
+        ...w.worldSetting,
+        rules: (w.worldSetting?.rules ?? []).filter((_, ruleIndex) => ruleIndex !== index),
+      },
+    }))
   }, [mutate])
 
   const removeCharacter = (id: string) => confirmRemove('character', id)
@@ -322,7 +336,7 @@ export function WorldConsolePage({
               booksLoad={booksLoad} storiesLoad={storiesLoad} mutate={mutate} confirmLeave={confirmLeave}
               onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />}
 
-            {section === 'setting' && <SettingEditor world={draft} mutate={mutate} t={t} />}
+            {section === 'setting' && <SettingEditor world={draft} mutate={mutate} onRemoveRule={removeRule} t={t} />}
 
             {section === 'characters' && (
               <div className="flex flex-col gap-2">
@@ -512,7 +526,7 @@ function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, co
   )
 }
 
-function SettingEditor({ world, mutate, t }: { world: World; mutate: Mutator; t: TFn }) {
+function SettingEditor({ world, mutate, onRemoveRule, t }: { world: World; mutate: Mutator; onRemoveRule: (index: number) => void; t: TFn }) {
   const setting = world.worldSetting ?? { rules: [] }
   const inputCls = 'h-8 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2.5 text-sm outline-none focus:border-[var(--nova-ring)]'
   const patch = (patch: Partial<World>) => mutate((w) => ({ ...w, ...patch }))
@@ -545,7 +559,7 @@ function SettingEditor({ world, mutate, t }: { world: World; mutate: Mutator; t:
             <div key={i} className="flex items-center gap-2">
               <input className={inputCls} value={rule} maxLength={2000} onChange={(e) => setRule(i, e.target.value)} />
               <Button variant="ghost" size="icon-sm" aria-label="remove"
-                onClick={() => patchSetting({ rules: setting.rules.filter((_, idx) => idx !== i) })}><X /></Button>
+                onClick={() => onRemoveRule(i)}><X /></Button>
             </div>
           ))}
           <Button variant="outline" size="xs" className="self-start" data-icon="inline-start"

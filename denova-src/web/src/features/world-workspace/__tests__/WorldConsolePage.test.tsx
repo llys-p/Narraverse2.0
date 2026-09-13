@@ -330,7 +330,9 @@ describe('WorldConsolePage 世界资料刷新（按需、不自动、保存才�
     mocks.updateWorld.mockImplementation(async (_id: string, _rev: string, world: World) => ({ world, revision: 'sha256:r2' }))
     render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
       onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} />)
-    await user.click(await screen.findByRole('button', { name: '世界资料' }))
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '旧规则名' }))
+    await user.click(screen.getByRole('button', { name: '世界资料' }))
     await screen.findByText('旧规则名')
 
     const cancel = vi.spyOn(window, 'confirm').mockReturnValue(false)
@@ -346,6 +348,12 @@ describe('WorldConsolePage 世界资料刷新（按需、不自动、保存才�
     await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
     const saved: World = mocks.updateWorld.mock.calls[0][2]
     expect(saved.bindings.some((b) => b.bindingId === 'bw')).toBe(false)
+
+    mocks.previewWorldContext.mockResolvedValue(previewEnvelope())
+    await user.click(screen.getByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('button', { name: '生成预览' }))
+    await waitFor(() => expect(mocks.previewWorldContext).toHaveBeenCalledTimes(1))
+    expect(mocks.previewWorldContext.mock.calls[0][1].selection.bindingIds).toEqual([])
   })
 })
 
@@ -510,6 +518,53 @@ describe('WorldConsolePage Context 分区（B3）', () => {
     await openContextTab(user)
     expect(screen.queryByTestId('context-preview-detail')).toBeNull()
     expect(screen.getByText('选择内容后生成上下文预览')).toBeInTheDocument()
+  })
+
+  it('删除已选角色后统一剪枝 Selection，保存后预览不提交失效角色 ID', async () => {
+    const user = userEvent.setup()
+    const world = worldFixture()
+    renderConsoleWith(world)
+    await openContextTab(user)
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+
+    await user.click(screen.getByRole('button', { name: '角色' }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: 'remove' }))
+    confirm.mockRestore()
+
+    const savedWorld = { ...world, bindings: [], characters: [] }
+    mocks.updateWorld.mockResolvedValue({ world: savedWorld, revision: 'sha256:r2' })
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+
+    mocks.previewWorldContext.mockResolvedValue(previewEnvelope())
+    await openContextTab(user)
+    await user.click(screen.getByRole('button', { name: '生成预览' }))
+    await waitFor(() => expect(mocks.previewWorldContext).toHaveBeenCalledTimes(1))
+    expect(mocks.previewWorldContext.mock.calls[0][1].selection.characterIds).toEqual([])
+  })
+
+  it('删除规则时移除对应选择并重编号后续规则，预览仍指向原来选中的内容', async () => {
+    const user = userEvent.setup()
+    const world = { ...worldFixture(), worldSetting: { rules: ['规则甲', '规则乙', '规则丙'] } }
+    renderConsoleWith(world)
+    await openContextTab(user)
+    await user.click(screen.getByRole('checkbox', { name: '规则甲' }))
+    await user.click(screen.getByRole('checkbox', { name: '规则丙' }))
+
+    await user.click(screen.getByRole('button', { name: '世界设定' }))
+    await user.click(screen.getAllByRole('button', { name: 'remove' })[0])
+
+    const savedWorld = { ...world, worldSetting: { rules: ['规则乙', '规则丙'] } }
+    mocks.updateWorld.mockResolvedValue({ world: savedWorld, revision: 'sha256:r2' })
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+
+    mocks.previewWorldContext.mockResolvedValue(previewEnvelope())
+    await openContextTab(user)
+    await user.click(screen.getByRole('button', { name: '生成预览' }))
+    await waitFor(() => expect(mocks.previewWorldContext).toHaveBeenCalledTimes(1))
+    expect(mocks.previewWorldContext.mock.calls[0][1].selection.ruleIndexes).toEqual([1])
   })
 
   it('Context 分区不访问浏览器持久化、不发 Master 详情请求', async () => {

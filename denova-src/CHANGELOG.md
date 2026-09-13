@@ -44,6 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.1D 前置修复将会话级 Context Selection 对 World 草稿的有效性收敛为统一不变量：规则、角色、地点、势力、时间线和 world-scope Binding 被移除后，所有失效引用都会从选择中剪枝，避免不可见 ID 导致 `selection_invalid`。规则删除还会移除对应选择并重编号后续索引，使仍被选择的规则保持原语义；不改变 World、Preview API 或持久化契约。
+- The Phase 3.1D prerequisite fix makes session Context Selection validity against the World draft a single invariant: removing rules, characters, locations, factions, timeline entries, or world-scope bindings prunes every invalid selection reference, preventing hidden IDs from causing `selection_invalid`. Rule deletion also drops the removed choice and reindexes later choices so selected rules keep their meaning. World, Preview API, and persistence contracts remain unchanged.
 - Phase 3.1C2b 在移除已被 Context Selection 选中的 world-scope Binding 时同步清理会话内 `bindingIds`，避免保存后继续提交已经不存在的资料 ID 并触发 `selection_invalid`；Selection 仍只存在组件内存，不新增持久化或请求。
 - Phase 3.1C2b now removes a world-scope binding from the in-memory Context Selection when that binding is unlinked, preventing a saved World from submitting a no-longer-existing material ID and receiving `selection_invalid`. Selection remains component-local with no new persistence or request path.
 - Phase 3.1C2b 第二版修复：Binding 在影响预览期间失效时不再把内部 `bindingId` 或伪造的 entity scope 显示给用户；移除确认区补充 `alertdialog` 语义与可访问名称，保持确认禁用且不执行过期移除。

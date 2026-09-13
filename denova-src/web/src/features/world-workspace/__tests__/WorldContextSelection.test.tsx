@@ -8,6 +8,8 @@ import {
   MAX_SELECTED_TOTAL,
   emptyContextSelection,
   findSelectionOverflow,
+  pruneContextSelection,
+  remapSelectionAfterRuleRemoval,
   toggleRuleIndex,
   toggleSelectionId,
 } from '../world-context'
@@ -93,6 +95,38 @@ describe('WorldContextSelection B1', () => {
     expect(toggleSelectionId(['a', 'b'], 'a')).toEqual(['b'])
     expect(toggleRuleIndex([2], 1)).toEqual([1, 2])
     expect(toggleRuleIndex([1, 2], 1)).toEqual([2])
+  })
+
+  it('草稿变化后统一剪枝全部六类引用，且无变化时保持原对象', () => {
+    const world = worldFixture()
+    const selection = {
+      includeTone: true,
+      ruleIndexes: [-1, 0, 1, 2],
+      characterIds: ['missing-character', 'c2'],
+      locationIds: ['l1', 'missing-location'],
+      factionIds: ['missing-faction', 'f1'],
+      timelineEntryIds: ['t1', 'missing-timeline'],
+      bindingIds: ['missing-binding', 'bw'],
+    }
+
+    expect(pruneContextSelection(selection, world)).toEqual({
+      includeTone: true,
+      ruleIndexes: [0, 1],
+      characterIds: ['c2'],
+      locationIds: ['l1'],
+      factionIds: ['f1'],
+      timelineEntryIds: ['t1'],
+      bindingIds: ['bw'],
+    })
+    const valid = pruneContextSelection(selection, world)
+    expect(pruneContextSelection(valid, world)).toBe(valid)
+  })
+
+  it('删除规则时移除被删项并重编号后续选择，避免静默选中另一条规则', () => {
+    const selection = { ...emptyContextSelection(), ruleIndexes: [0, 2] }
+    expect(remapSelectionAfterRuleRemoval(selection, 0).ruleIndexes).toEqual([1])
+    expect(remapSelectionAfterRuleRemoval(selection, 1).ruleIndexes).toEqual([0, 1])
+    expect(remapSelectionAfterRuleRemoval(selection, 3)).toBe(selection)
   })
 
   it('全选/清空某一分区', async () => {

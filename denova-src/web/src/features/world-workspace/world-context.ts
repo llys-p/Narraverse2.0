@@ -11,6 +11,8 @@
  *     或进入 Zustand 全局 store。
  */
 
+import type { World } from './types'
+
 /** 可信 consumer：当前阶段仅写作/游戏；narraverse/module4 由后端直接拒绝（403）。 */
 export type WorldContextConsumer = 'writing' | 'game'
 
@@ -180,6 +182,56 @@ export function emptyContextSelection(): WorldContextSelection {
     factionIds: [],
     timelineEntryIds: [],
     bindingIds: [],
+  }
+}
+
+function sameArray<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+/**
+ * Reprojects a session-only Selection against the current World draft.
+ * Deleted entities/materials/timeline entries and out-of-range rule indexes
+ * disappear from the selection instead of becoming invisible invalid IDs.
+ */
+export function pruneContextSelection(selection: WorldContextSelection, world: World): WorldContextSelection {
+  const rulesLength = world.worldSetting?.rules.length ?? 0
+  const characterIds = new Set(world.characters.map((item) => item.id))
+  const locationIds = new Set(world.locations.map((item) => item.id))
+  const factionIds = new Set(world.factions.map((item) => item.id))
+  const timelineEntryIds = new Set(world.timeline.map((item) => item.id))
+  const bindingIds = new Set(world.bindings.map((item) => item.bindingId))
+  const next = {
+    ruleIndexes: selection.ruleIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < rulesLength),
+    characterIds: selection.characterIds.filter((id) => characterIds.has(id)),
+    locationIds: selection.locationIds.filter((id) => locationIds.has(id)),
+    factionIds: selection.factionIds.filter((id) => factionIds.has(id)),
+    timelineEntryIds: selection.timelineEntryIds.filter((id) => timelineEntryIds.has(id)),
+    bindingIds: selection.bindingIds.filter((id) => bindingIds.has(id)),
+  }
+  if (
+    sameArray(next.ruleIndexes, selection.ruleIndexes)
+    && sameArray(next.characterIds, selection.characterIds)
+    && sameArray(next.locationIds, selection.locationIds)
+    && sameArray(next.factionIds, selection.factionIds)
+    && sameArray(next.timelineEntryIds, selection.timelineEntryIds)
+    && sameArray(next.bindingIds, selection.bindingIds)
+  ) return selection
+  return { ...selection, ...next }
+}
+
+/** Keeps position-based rule selections attached to the same remaining rules after one deletion. */
+export function remapSelectionAfterRuleRemoval(
+  selection: WorldContextSelection,
+  removedIndex: number,
+): WorldContextSelection {
+  if (!selection.ruleIndexes.some((index) => index >= removedIndex)) return selection
+  return {
+    ...selection,
+    ruleIndexes: selection.ruleIndexes.flatMap((index) => {
+      if (index === removedIndex) return []
+      return [index > removedIndex ? index - 1 : index]
+    }),
   }
 }
 
