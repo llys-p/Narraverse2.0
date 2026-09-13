@@ -168,8 +168,9 @@ const worldWorkspace = {
   'worldWorkspace.timeline.category.background': 'Background',
   'worldWorkspace.timeline.category.historical': 'Historical',
   'worldWorkspace.timeline.category.planned': 'Planned',
-  'worldWorkspace.timeline.category.legacyCanon': 'Legacy: canon',
-  'worldWorkspace.timeline.category.legacyUnknown': 'Legacy: unknown category',
+  'worldWorkspace.timeline.category.legacyCanon': 'Historical (legacy data)',
+  'worldWorkspace.timeline.category.legacyUnknown': 'Background (legacy data)',
+  'worldWorkspace.timeline.help': 'Timeline records world background; it is not shared story truth across modes.',
 
   'worldWorkspace.bindingPicker.title': 'Bind master library asset',
   'worldWorkspace.bindingPicker.search': 'Search asset name or source',

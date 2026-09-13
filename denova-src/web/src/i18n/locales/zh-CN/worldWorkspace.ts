@@ -168,8 +168,9 @@ const worldWorkspace = {
   'worldWorkspace.timeline.category.background': '背景',
   'worldWorkspace.timeline.category.historical': '历史',
   'worldWorkspace.timeline.category.planned': '规划中',
-  'worldWorkspace.timeline.category.legacyCanon': '旧数据：canon',
-  'worldWorkspace.timeline.category.legacyUnknown': '旧数据：未知分类',
+  'worldWorkspace.timeline.category.legacyCanon': '历史（旧数据）',
+  'worldWorkspace.timeline.category.legacyUnknown': '背景（旧数据）',
+  'worldWorkspace.timeline.help': '时间线用于记录世界背景，不是跨模式共享的剧情真相。',
 
   'worldWorkspace.bindingPicker.title': '绑定总资料库资产',
   'worldWorkspace.bindingPicker.search': '搜索资产名称或来源',
