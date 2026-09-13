@@ -255,6 +255,12 @@ export function WorldConsolePage({
   // 移除 Binding：确认已在影响预览里完成，这里只把 removeWorldBinding 的结果写进草稿。
   // 不另写删除逻辑、不删实体、不碰总资料库原件；保存前绝不调用 updateWorld。
   const removeBinding = useCallback((bindingId: string) => {
+    // world scope 资料可能已被当前 Context Selection 选中；Binding 消失后 UI 不再有
+    // 对应复选框，因此必须同时清掉这个会话内引用，避免后续预览提交失效 ID。
+    setContextSelection((prev) => {
+      if (!prev.bindingIds.includes(bindingId)) return prev
+      return { ...prev, bindingIds: prev.bindingIds.filter((id) => id !== bindingId) }
+    })
     mutate((w) => removeWorldBinding(w, bindingId))
   }, [mutate])
 

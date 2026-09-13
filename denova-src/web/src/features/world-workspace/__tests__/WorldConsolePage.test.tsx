@@ -114,6 +114,18 @@ function sharedBindingWorld(): World {
   }
 }
 
+function worldScopeBindingWorld(): World {
+  return {
+    id: 'w1', schemaVersion: 1, name: '控制台世界', status: 'active',
+    bindings: [{
+      bindingId: 'world-rule', masterItemId: 'master-rule', recordKind: 'lorebook_template',
+      semanticType: 'rule', nameSnapshot: '世界规则集', tagsSnapshot: [], masterRevision: 'sha256:o',
+      scope: 'world', boundAt: '',
+    }],
+    characters: [], locations: [], factions: [], timeline: [], createdAt: '', updatedAt: '',
+  }
+}
+
 function renderConsoleWith(world: World) {
   mocks.getWorld.mockResolvedValue({ world, revision: 'sha256:r1' })
   mocks.getBooks.mockResolvedValue([])
@@ -511,6 +523,27 @@ describe('WorldConsolePage Context 分区（B3）', () => {
 })
 
 describe('WorldConsolePage 移除 Binding 闭环 C2b', () => {
+  it('移除已选 world binding 后同步清理会话 Selection，保存后预览不提交失效 ID', async () => {
+    const user = userEvent.setup()
+    const world = worldScopeBindingWorld()
+    renderConsoleWith(world)
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+
+    await user.click(screen.getByRole('checkbox', { name: '世界规则集' }))
+    await user.click(screen.getByRole('button', { name: '移除：世界规则集' }))
+    await user.click(screen.getByTestId('binding-removal-confirm'))
+
+    const savedWorld = { ...world, bindings: [] }
+    mocks.updateWorld.mockResolvedValue({ world: savedWorld, revision: 'sha256:r2' })
+    await user.click(await screen.findByRole('button', { name: '保存' }))
+    await waitFor(() => expect(mocks.updateWorld).toHaveBeenCalledTimes(1))
+
+    mocks.previewWorldContext.mockResolvedValue(previewEnvelope())
+    await user.click(screen.getByRole('button', { name: '生成预览' }))
+    await waitFor(() => expect(mocks.previewWorldContext).toHaveBeenCalledTimes(1))
+    expect(mocks.previewWorldContext.mock.calls[0][1].selection.bindingIds).toEqual([])
+  })
+
   it('确认后移除绑定并解除全部实体引用；只改草稿置 dirty，保存前零 PUT', async () => {
     const user = userEvent.setup()
     const setItem = vi.spyOn(Storage.prototype, 'setItem')

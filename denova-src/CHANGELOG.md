@@ -42,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.1C2b 在移除已被 Context Selection 选中的 world-scope Binding 时同步清理会话内 `bindingIds`，避免保存后继续提交已经不存在的资料 ID 并触发 `selection_invalid`；Selection 仍只存在组件内存，不新增持久化或请求。
+- Phase 3.1C2b now removes a world-scope binding from the in-memory Context Selection when that binding is unlinked, preventing a saved World from submitting a no-longer-existing material ID and receiving `selection_invalid`. Selection remains component-local with no new persistence or request path.
 - Phase 3.1C2b 第二版修复：Binding 在影响预览期间失效时不再把内部 `bindingId` 或伪造的 entity scope 显示给用户；移除确认区补充 `alertdialog` 语义与可访问名称，保持确认禁用且不执行过期移除。
 - Phase 3.1C2b second-pass fix: when a binding disappears while its impact preview is open, the UI no longer exposes the internal `bindingId` or labels the missing binding with a fabricated entity scope. The removal confirmation surface now has `alertdialog` semantics and an accessible name while confirmation remains disabled and stale removal cannot run.
 - Phase 3.1B 第二版修复：选择内容或目标模式变化后立即将旧 Context Preview 标记为 stale；补齐跨分区对象总量 60 项的前端预检，避免明知会被后端拒绝仍发送请求；闭包目标缺失时使用中性文案，不渲染内部实体 ID。
