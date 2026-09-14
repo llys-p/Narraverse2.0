@@ -35,6 +35,8 @@ const (
 	AnalysisHandleIgnoredInvalid  AnalysisHandleUseStatus = "ignored_invalid"
 	AnalysisHandleIgnoredExpired  AnalysisHandleUseStatus = "ignored_expired"
 	AnalysisHandleIgnoredConsumed AnalysisHandleUseStatus = "ignored_consumed"
+	// AnalysisHandleIgnoredConflict：Ref 与 handle 同现但 fingerprint 不一致，Ref 优先、handle 作废。
+	AnalysisHandleIgnoredConflict AnalysisHandleUseStatus = "ignored_conflict"
 )
 
 // AnalysisHandleInvalidateOutcome 区分取消方是否获得了 pending context 的清理责任。
@@ -383,6 +385,33 @@ func (r *analysisHandleRegistry) rollback(claim *AnalysisHandleClaim) bool {
 	return true
 }
 
+// invalidateForSession 使某 consumer+sessionKey 下所有尚未 settled 的 pending/claimed handle
+// 失效并释放其 pending runContext（恰好一次）。用于会话/工作区切换，避免旧会话残留可被 claim 的句柄。
+// 已 consumed/settled 的句柄所有权已迁移，不在此处理。返回失效句柄数（仅诊断计数）。
+func (r *analysisHandleRegistry) invalidateForSession(consumer worldcontext.Consumer, sessionKey string) int {
+	if r == nil || sessionKey == "" {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed := 0
+	for handleID, record := range r.handles {
+		if record.contextSettled {
+			continue
+		}
+		if record.key.consumer != consumer || record.key.sessionKey != sessionKey {
+			continue
+		}
+		delete(r.byKey, record.key)
+		// releasePendingLocked 置 settled 并 Destroy pending scope（幂等，不会重复 refCount--）。
+		r.releasePendingLocked(record)
+		record.state = analysisHandleInvalidated
+		delete(r.handles, handleID)
+		removed++
+	}
+	return removed
+}
+
 func (r *analysisHandleRegistry) sweep() AnalysisHandleSweepResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -464,6 +493,14 @@ func (s *WorldContextService) invalidateAnalysisHandle(handleID string, consumer
 
 func (s *WorldContextService) rollbackAnalysisClaim(claim *AnalysisHandleClaim) bool {
 	return s != nil && s.analysisHandles != nil && s.analysisHandles.rollback(claim)
+}
+
+// invalidateWritingHandlesForSession 使指定写作会话键下未结算的 handle 失效（会话/工作区切换时调用）。
+func (s *WorldContextService) invalidateWritingHandlesForSession(sessionKey string) int {
+	if s == nil || s.analysisHandles == nil || strings.TrimSpace(sessionKey) == "" {
+		return 0
+	}
+	return s.analysisHandles.invalidateForSession(worldcontext.ConsumerWriting, sessionKey)
 }
 
 func (s *WorldContextService) sweepAnalysisHandles() AnalysisHandleSweepResult {

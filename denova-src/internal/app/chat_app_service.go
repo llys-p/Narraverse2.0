@@ -624,4 +624,9 @@ func (s *ChatAppService) abortActiveTaskLocked() {
 		log.Printf("[agent-task] abort due to session switch/delete id=%s", s.app.activeTask.ID())
 		s.app.activeTask.Abort()
 	}
+	// 会话/工作区切换（此刻 a.session 仍是即将离开的旧会话）：让旧写作会话下尚未结算的
+	// analysis handle 与其 pending runContext 一并失效，避免它们在新会话被错误 claim。
+	if cur := s.app; cur.session != nil && cur.worldContextSvc != nil {
+		cur.worldContextSvc.invalidateWritingHandlesForSession(writingSessionKey(cur.workspace, cur.session.ID))
+	}
 }
