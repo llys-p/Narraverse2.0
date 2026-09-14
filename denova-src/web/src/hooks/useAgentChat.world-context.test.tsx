@@ -101,6 +101,30 @@ describe('useAgentChat world context (Phase 3.2-A6)', () => {
     chatMock.sendMessage.mockResolvedValue(undefined)
   })
 
+  it('consumes a writing launch created after the chat hook has mounted', async () => {
+    const seedRef = { current: null }
+    const { result } = renderHook(() => ({
+      chat: useAgentChat(),
+      launch: useWorldContextLaunch(),
+    }), { wrapper: makeWrapper(seedRef) })
+
+    expect(result.current.chat.hasBoundWorldContext).toBe(false)
+
+    act(() => result.current.launch.launchWriting(makeSeed()))
+
+    expect(result.current.chat.hasBoundWorldContext).toBe(true)
+    expect(result.current.chat.worldContextState).toBe('bound')
+
+    await act(async () => {
+      expect(await result.current.chat.send('挂载后带入世界背景')).toBe(true)
+    })
+
+    expect(lastSendBody()?.world_context).toEqual(expect.objectContaining({
+      worldId: 'world-1',
+      expectedWorldRevision: 'rev-3',
+    }))
+  })
+
   it('direct first send carries world_context and no analysis_handle', async () => {
     const seedRef = { current: makeSeed() }
     const { result } = renderHook(() => useAgentChat(), { wrapper: makeWrapper(seedRef) })

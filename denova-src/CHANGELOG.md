@@ -58,6 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.2-A 写作世界背景交接现会响应 Hook 挂载后由 World Console 写入的 pending Ref：`useAgentChat` 监听内存交接状态并一次性取走最新 Ref，避免应用常驻时点击“带入写作”却继续 bare 发送。新增真实时序回归测试，并以正式 Denova 页面确认状态从“将带入”进入“已带入（只读，不回写世界）”。
+- Phase 3.2-A writing world-context handoff now reacts when World Console writes a pending Ref after the chat hook has mounted. `useAgentChat` observes the in-memory handoff and consumes the latest Ref exactly once, preventing a long-lived app from sending bare after “Bring into writing.” A real-timing regression test and a formal Denova page check verify the transition from pending to active read-only world context.
 - Phase 3.2-A 节点复审修复写作 World Context 的三处边界：不存在的 World 可安全降级为 bare，不再把 nil Snapshot 送入 Registry；非窗口类预算超限按冻结契约阻断；mid-run 压缩同时保留临时世界抬头与稳定运行上下文。开发者完整模型输入日志会过滤临时 World 正文，模型实际输入不变。A4 仍须用 pending runContext 的同一份 ModelView bytes 闭合 context-analysis/首次 chat，并在创建 handle 前补齐工作区切换失效。
 - The Phase 3.2-A checkpoint review fixes three writing World Context boundaries: a missing World safely degrades to bare without sending a nil Snapshot into the Registry; non-window budget overruns block per the frozen contract; and mid-run compaction preserves both the ephemeral World header and stable runtime context. The opt-in full model-input log filters ephemeral World bodies without changing actual model input. A4 must still close context-analysis/first-chat byte identity through the same pending runContext and add workspace-switch invalidation before issuing handles.
 - Phase 3.2-A1a 传输解码现会精确校验 `world_context` 与 `selection` 的冻结 camelCase 键名，拒绝 Go `encoding/json` 原本会大小写不敏感接受的 PascalCase/混合大小写别名；回归测试同时锁定当前 `/api/chat` 全部 11 个合法业务字段的兼容性。

@@ -66,7 +66,7 @@ export function useAgentChat(options: ChatOptions = {}) {
   const { workspace = '', onAgentFileChange, onWorkspaceChange } = options
   const transport = useMemo(() => new AgentChatTransport(), [])
   // Phase 3.2-A6：写作世界背景运行态（纯组件内存，不持久化、不进 Zustand）。
-  const worldLaunch = useWorldContextLaunch()
+  const { pendingWriting, takeWritingLaunch } = useWorldContextLaunch()
   // 只取稳定引用：setView 是 useState setter、registerClear 是 useCallback，均不随 view 变化，
   // 避免同步 effect 依赖会变化的 context value 而触发 setView→重渲染→effect 的无限循环。
   const { setView: setRunView, registerClear: registerRunClear } = useWorldContextRun()
@@ -88,8 +88,10 @@ export function useAgentChat(options: ChatOptions = {}) {
     setAnalysisHandleState(handle)
   }, [])
   useEffect(() => {
-    // 进入写作时一次性取走 World Console 的交接 Ref；刷新/重挂载后必然为空（bare）。
-    const launch = worldLaunch.takeWritingLaunch()
+    // World Console 可能在本 Hook 挂载后才写入交接 Ref；pendingWriting 变化时立即一次性取走。
+    // 刷新/重挂载后 Provider 为空，仍保持 bare。
+    if (!pendingWriting) return
+    const launch = takeWritingLaunch()
     if (!launch) return
     const ref: WritingWorldContextRef = {
       worldId: launch.worldId,
@@ -105,9 +107,7 @@ export function useAgentChat(options: ChatOptions = {}) {
     })
     setWorldContextState('bound')
     setWorldErrorCode(null)
-    // 只在挂载时消费一次交接。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [pendingWriting, takeWritingLaunch])
   const {
     messages: uiMessages,
     setMessages: setUIMessages,
