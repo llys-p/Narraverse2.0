@@ -24,6 +24,8 @@ import { agentSubAgentSessionKey, agentViewToRenderMessage, type AgentMessageVie
 import { fetchSettings } from '@/features/settings/api'
 import { useSkillCommands } from '@/hooks/useSkillCommands'
 import { abortInteractiveChat, analyzeInteractiveContext, compactInteractiveContext, generateInteractiveImage, removeInteractiveContextCompaction, runInteractiveDirector, sendInteractiveMessage, streamActiveInteractiveChat, switchInteractiveTurnVersion, updateInteractiveTurnNarrative } from '../api'
+import type { InteractiveWorldContextRef } from '../api'
+import { useGameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
 import type { ActiveInteractiveChat } from '../api'
 import { createInteractiveNarrativeFilter, sanitizeStoredNarrative } from '../stream-parser'
 import { emptyStoryStageRun, useInteractiveStore } from '../stores/interactive-store'
@@ -99,6 +101,8 @@ type InteractiveStreamOutcome = {
 
 export function StoryStage({ workspace, styleSceneSuggestions = [], stories = [], story, tellers = [], storyDirectors = [], imagePresets = [], storyId, branchId, snapshot, snapshotLoading = false, loreEmpty = false, bookOpeningPresets = [], narraverseImported = false, directorPanelVisible = true, stateDisplayPreference = DEFAULT_STORY_STATE_DISPLAY, onStorySelect = noop, onStoryCreate = noop, onStorySetupUpdate = noop, onStoryDelete = noop, onDirectorChange = noop, onReplyTargetCharsChange, onImageSettingsChange, onRequestLoreInit, onOpenDirectorConfig, onToggleDirectorPanel, onOpenDirectorState, onStateDisplayPreferenceChange = noopStateDisplayPreferenceChange, onTurnPersisted = noopTurnPersisted, onDone }: StoryStageProps) {
   const { t } = useTranslation()
+  const gameWorldLaunch = useGameWorldContextLaunch()
+  const pendingWorldCtxRef = useRef<InteractiveWorldContextRef | null>(null)
   const isMobile = useIsMobile()
   const keyboardInset = useKeyboardInset()
   const storyStateModel = useMemo(() => buildStoryStateModel(snapshot), [snapshot])
@@ -621,6 +625,13 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
     const abortController = new AbortController()
     registerStoryRunAbortController(stageKey, abortController)
     try {
+      // B3: consume pending game launch once (first turn after World Console handoff).
+      if (pendingWorldCtxRef.current === null) {
+        const pending = gameWorldLaunch.peekGameLaunch()
+        if (pending && pending.storyId === storyId && pending.branchId === branchId) {
+          pendingWorldCtxRef.current = gameWorldLaunch.takeGameLaunch()
+        }
+      }
       const stream = await sendInteractiveMessage({
         mode: 'story',
         story_id: storyId,
@@ -628,6 +639,7 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
         message,
         style_scenes: mergedStyleScenes,
         regenerate_from_turn_id: nextRewindTurnId || undefined,
+        world_context: pendingWorldCtxRef.current ?? undefined,
         signal: abortController.signal,
       })
       await completeInteractiveStream(await consumeInteractiveStream(stream))
@@ -770,6 +782,11 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
             ...prev,
             { role: 'error', content: data.message || data.error || t('storyStage.activity.unknownError') },
           ])
+          break
+        }
+        case 'world_context_state': {
+          // B3: transient status event (active/degraded/none). Log for debugging;
+          // UI badge rendering is a follow-up. Must not break the stream.
           break
         }
         case 'done': {

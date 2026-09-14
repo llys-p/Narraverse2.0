@@ -13,6 +13,7 @@ import { installGlobalRuntimeLoggers, recordRuntimeLog, scheduleWhiteScreenCheck
 import { fetchSettings } from '@/features/settings/api'
 import { applyFontSettings, fontSettingsFromEffective } from '@/features/settings/font-variables'
 import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import { GameWorldContextLaunchProvider } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 
 function redirectLocalhostToCanonicalLoopback(): boolean {
@@ -47,7 +48,9 @@ if (!isRedirectingToCanonicalOrigin) {
             <RuntimeErrorBoundary>
               <WorldContextLaunchProvider>
                 <WorldContextRunProvider>
-                  <App />
+                  <GameWorldContextLaunchProvider>
+                    <App />
+                  </GameWorldContextLaunchProvider>
                 </WorldContextRunProvider>
               </WorldContextLaunchProvider>
               <Toaster richColors closeButton />
