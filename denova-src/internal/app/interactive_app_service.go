@@ -853,8 +853,36 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 		// existing game path depend on World Context; continue as an untracked run.
 		log.Printf("[interactive-agent-task] interactive run unavailable; continue untracked task_id=%s err=%v", task.ID(), runErr)
 	}
+
+	// B2: bind-before-start. New turn with Ref -> resolve & bind to Run scope.
+	// Regenerate -> reuse the Run's already-bound context (no re-read of World).
+	var worldRun *interactiveWorldRun
+	if runBinding.tracked && world.Present() {
+		if strings.TrimSpace(rewindTurnID) != "" {
+			// regenerate: reuse existing context on the persisted-turn-mapped Run.
+			if rc := worldContexts.reuseInteractiveRunContext(runBinding); rc != nil {
+				record, _ := worldContexts.interactiveRuns.snapshot(runBinding.runID)
+				scopeKey := ""
+				if record != nil {
+					scopeKey = record.scopeKey
+				}
+				worldRun = &interactiveWorldRun{runContext: rc, scopeKey: scopeKey}
+			}
+		} else {
+			// new turn: resolve Ref/handle and bind to Run scope.
+			wr, werr := worldContexts.resolveInteractiveRun(ctx, runBinding, world)
+			if werr != nil {
+				log.Printf("[interactive-agent-task] world context resolve failed; continuing bare task_id=%s err=%v", task.ID(), werr)
+			} else {
+				worldRun = wr
+			}
+		}
+	}
+
 	runTask := func(ctx context.Context, task *Task, emit func(agent.Event)) {
 		defer worldContexts.markInteractiveTaskTerminal(runBinding, task.ID())
+		// B2: emit world_context_state before any model content (active/degraded/none).
+		emit(interactiveWorldContextStateEvent(worldRun))
 		log.Printf("[interactive-agent-task] run begin id=%s story_id=%s branch_id=%s rewind_turn_id=%s message_len=%d style_scenes=%d", task.ID(), storyID, branchID, rewindTurnID, len(message), len(styleScenes))
 		if strings.TrimSpace(rewindTurnID) != "" {
 			if err := store.RewindToTurnParent(storyID, interactive.RewindTurnRequest{BranchID: branchID, TurnID: rewindTurnID}); err != nil {
@@ -921,15 +949,16 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 			emit(event)
 		}
 		chatService.RunWithOptions(ctx, runner, conversation, bookService, req, agent.RunOptions{
-			AgentKind:          agent.AgentKindInteractiveStory,
-			TaskID:             task.ID(),
-			StoryID:            storyID,
-			BranchID:           conversation.branchID,
-			Workspace:          workspace,
-			Mode:               "interactive",
-			IdleTimeout:        agentIdleTimeout(runtimeCfg),
-			ToolResultMaxBytes: agentToolResultMaxBytes(runtimeCfg),
-			SystemPromptLog:    agent.BuildInteractiveStoryInstructionComposition(&runtimeCfg, state, tellerSystemInput),
+			AgentKind:             agent.AgentKindInteractiveStory,
+			TaskID:                task.ID(),
+			StoryID:               storyID,
+			BranchID:              conversation.branchID,
+			Workspace:             workspace,
+			Mode:                  "interactive",
+			IdleTimeout:           agentIdleTimeout(runtimeCfg),
+			ToolResultMaxBytes:    agentToolResultMaxBytes(runtimeCfg),
+			SystemPromptLog:       agent.BuildInteractiveStoryInstructionComposition(&runtimeCfg, state, tellerSystemInput),
+			EphemeralWorldContext: interactiveEphemeralWorldInput(worldRun),
 			OnMutationsVerified: a.verifiedWorkspaceMutationCallback(
 				"interactive_agent_post_run",
 				versionService,
