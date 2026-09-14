@@ -12,7 +12,8 @@ import (
 //   - 它只存在于一次模型 Run 的调用栈，绝不进入 Session 消息、ContextCompaction 持久化摘要、
 //     context/run ledger、display history、export 或日志正文；
 //   - 内容来自运行时派生的最终 ModelView bytes（World 只读，不回写）；
-//   - 模型输入与 context-analysis 展示必须经同一构造函数，保证同字节装配；
+//   - 同一 EphemeralWorldContextInput 的模型输入与 context-analysis 展示经同一构造函数，
+//     保证同字节装配；跨请求复用同一 runContext 字节由 A4 analysisHandle 闭环负责；
 //   - 零值（空 bytes）等价于不存在，bare 路径因此与基线逐结构一致。
 //
 // 临时抬头为计划 §7 冻结的三行固定英文，其后逐字节拼接最终 ModelView JSON。
@@ -81,6 +82,12 @@ func (e EphemeralWorldContextInput) PrependTo(history []*schema.Message) []*sche
 // 世界背景（全新副本）。bare（零值）时逐结构返回原 history 切片，保证与无世界背景基线一致。
 func ModelInputMessages(history []*schema.Message, ephemeral EphemeralWorldContextInput) []*schema.Message {
 	return ephemeral.PrependTo(history)
+}
+
+// isEphemeralWorldContextMessage 只识别本包用冻结抬头生成的临时世界消息。
+// 它用于 mid-run 压缩时保留该消息，同时仍把它排除在持久化压缩来源之外。
+func isEphemeralWorldContextMessage(message *schema.Message) bool {
+	return message != nil && message.Role == schema.User && strings.HasPrefix(message.Content, ephemeralWorldContextHeader)
 }
 
 // EphemeralWorldContextHeaderLines 返回固定抬头行数（测试/断言用）。

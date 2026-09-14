@@ -325,16 +325,25 @@ func (c *SessionConversation) runtimeContextSources() []agentcontext.Source {
 }
 
 func (c *SessionConversation) splitLeadingRuntimeMessages(messages []*schema.Message) ([]*schema.Message, []*schema.Message) {
-	leading := c.leadingRuntimeMessages()
-	if len(leading) == 0 || len(messages) < len(leading) {
-		return nil, messages
+	offset := 0
+	if len(messages) > 0 && isEphemeralWorldContextMessage(messages[0]) {
+		offset = 1
 	}
-	for i := range leading {
-		if messages[i] == nil || leading[i] == nil || messages[i].Role != leading[i].Role || messages[i].Content != leading[i].Content {
-			return nil, messages
+	stable := c.leadingRuntimeMessages()
+	if len(stable) == 0 {
+		return messages[:offset], messages[offset:]
+	}
+	if len(messages) < offset+len(stable) {
+		return messages[:offset], messages[offset:]
+	}
+	for i := range stable {
+		message := messages[offset+i]
+		if message == nil || stable[i] == nil || message.Role != stable[i].Role || message.Content != stable[i].Content {
+			return messages[:offset], messages[offset:]
 		}
 	}
-	return messages[:len(leading)], messages[len(leading):]
+	end := offset + len(stable)
+	return messages[:end], messages[end:]
 }
 
 func (c *SessionConversation) compactionPolicy() contextCompactionPolicy {

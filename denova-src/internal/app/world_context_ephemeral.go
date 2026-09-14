@@ -16,7 +16,9 @@ const writingRunSaltSize = 32
 // 最终 ModelView bytes（与 runContext.ModelViewBytes 走同一物化/稳定序列化/96KiB 门禁路径），
 // 再交给 agent.NewEphemeralWorldContextInput 产出与真实模型输入同字节的临时抬头。
 //
-// 它用于 context-analysis 展示（A3 同字节装配能力）；真正的写作运行仍使用绑定 runContext 的 bytes。
+// 它用于 A3 context-analysis 的独立只读预览；真正的写作运行仍使用绑定 runContext 的 bytes。
+// A4 必须改为从 pending runContext 读取同一份 ModelViewBytes 并签发 analysisHandle，
+// 才能保证“分析展示 = 后续真实模型输入”的跨请求逐字节闭环。
 func (s *WorldContextService) BuildWritingEphemeralWorld(ctx context.Context, ref worldcontext.Ref) (agent.EphemeralWorldContextInput, error) {
 	snap, err := s.loadSnapshot(ctx, worldcontext.ConsumerWriting, ref)
 	if err != nil {

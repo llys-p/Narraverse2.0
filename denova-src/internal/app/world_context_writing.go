@@ -55,11 +55,13 @@ func writingSessionKey(workspaceID, sessionID string) string {
 	return "workspace:" + workspaceID + "|session:" + sessionID
 }
 
-// isBlockingWorldContextCode 区分“必须阻断本次写作”的领域错误与“可降级为 bare”的错误。
+// isBlockingWorldContextError 区分“必须阻断本次写作”的领域错误与“可降级为 bare”的错误。
 // 选择/修订/归档/可信消费者/引用不一致属于客户端可纠正或安全相关问题，必须阻断；
 // world 暂时不可读、投影失败等运行时问题不阻断写作，降级为无 World 背景的 bare 运行。
-func isBlockingWorldContextCode(code worldcontext.ErrorCode) bool {
-	switch code {
+// budget_exceeded 只有 consumer_window 过小无法由用户缩减选择修复，允许降级；
+// 其它预算层必须阻断并让用户显式缩减输入。
+func isBlockingWorldContextError(err error) bool {
+	switch worldcontext.CodeOf(err) {
 	case worldcontext.ErrInvalidRequest,
 		worldcontext.ErrSelectionInvalid,
 		worldcontext.ErrRevisionConflict,
@@ -67,6 +69,9 @@ func isBlockingWorldContextCode(code worldcontext.ErrorCode) bool {
 		worldcontext.ErrContextRefMismatch,
 		worldcontext.ErrConsumerNotTrusted:
 		return true
+	case worldcontext.ErrBudgetExceeded:
+		de, ok := err.(*worldcontext.DomainError)
+		return !ok || de.Layer != "consumer_window"
 	default:
 		return false
 	}
@@ -108,7 +113,7 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID stri
 	if hasRef {
 		snap, err := s.loadSnapshot(ctx, consumer, *ctrl.Ref)
 		if err != nil {
-			if isBlockingWorldContextCode(worldcontext.CodeOf(err)) {
+			if isBlockingWorldContextError(err) {
 				return nil, err
 			}
 			slog.Warn("world_context writing ref degraded to bare",
@@ -185,9 +190,14 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID stri
 	}
 
 	// 仅 Ref。
+	// loadSnapshot 的非阻断错误会把 hasRef 降级为 false；没有可用 handle 时必须在
+	// 进入 bindWritingSnapshot 前结束为 bare，绝不能把 nil Snapshot 交给 Registry。
+	if !hasRef || refSnapshot == nil {
+		return nil, nil
+	}
 	rc, err := s.bindWritingSnapshot(taskScope, refSnapshot)
 	if err != nil {
-		if isBlockingWorldContextCode(worldcontext.CodeOf(err)) {
+		if isBlockingWorldContextError(err) {
 			return nil, err
 		}
 		slog.Warn("world_context writing bind degraded to bare",

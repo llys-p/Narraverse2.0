@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -44,6 +46,63 @@ func TestWritingResolve_BareZeroRegistry(t *testing.T) {
 	}
 	if after := svc.WorldContextRegistryStats(); after != before {
 		t.Fatalf("bare 必须零 Registry 增量: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestWritingResolve_DegradedWorldNotFoundReturnsBare(t *testing.T) {
+	_, svc, _, _ := writingSvcHarness(t)
+	before := svc.WorldContextRegistryStats()
+	ref := worldcontext.Ref{
+		WorldID:               "world-that-does-not-exist",
+		ExpectedWorldRevision: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		Selection:             worldcontext.Selection{IncludeTone: true},
+	}
+
+	wr, err := svc.resolveWritingRun(context.Background(), "missing", WritingWorldControl{Ref: &ref})
+	if err != nil {
+		t.Fatalf("world_not_found should degrade to bare, got %v", err)
+	}
+	if wr != nil {
+		t.Fatalf("degraded ref must not produce a run context, got %+v", wr)
+	}
+	if after := svc.WorldContextRegistryStats(); after != before {
+		t.Fatalf("degraded ref must add no Registry entries: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestWritingResolve_SnapshotBudgetBlocksWithoutRegistryEntry(t *testing.T) {
+	a, svc, _, _ := writingSvcHarness(t)
+	locations := make([]world.Location, 0, 5)
+	locationIDs := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("writing-budget-location-%d", i)
+		locationIDs = append(locationIDs, id)
+		locations = append(locations, world.Location{
+			ID:          id,
+			Name:        fmt.Sprintf("地点%d", i),
+			Description: strings.Repeat("x", 20000),
+		})
+	}
+	w, rev, err := a.CreateWorld(context.Background(), world.CreateInput{
+		Name:      "写作降级超限世界",
+		Locations: locations,
+	})
+	if err != nil {
+		t.Fatalf("prepare oversized world: %v", err)
+	}
+	ref := worldcontext.Ref{
+		WorldID:               w.ID,
+		ExpectedWorldRevision: rev,
+		Selection:             worldcontext.Selection{LocationIDs: locationIDs},
+	}
+	before := svc.WorldContextRegistryStats()
+
+	wr, err := svc.resolveWritingRun(context.Background(), "budget", WritingWorldControl{Ref: &ref})
+	if worldcontext.CodeOf(err) != worldcontext.ErrBudgetExceeded {
+		t.Fatalf("snapshot budget failure must block, got wr=%+v err=%v", wr, err)
+	}
+	if after := svc.WorldContextRegistryStats(); after != before {
+		t.Fatalf("blocked budget must add no Registry entries: before=%#v after=%#v", before, after)
 	}
 }
 
