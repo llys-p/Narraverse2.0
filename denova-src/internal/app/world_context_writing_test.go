@@ -37,7 +37,7 @@ func snapshotFingerprint(t *testing.T, svc *WorldContextService, ref worldcontex
 func TestWritingResolve_BareZeroRegistry(t *testing.T) {
 	_, svc, _, _ := writingSvcHarness(t)
 	before := svc.WorldContextRegistryStats()
-	wr, err := svc.resolveWritingRun(context.Background(), "1", WritingWorldControl{})
+	wr, err := svc.resolveWritingRun(context.Background(), "1", "", WritingWorldControl{})
 	if err != nil {
 		t.Fatalf("bare 不应报错: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestWritingResolve_DegradedWorldNotFoundReturnsBare(t *testing.T) {
 		Selection:             worldcontext.Selection{IncludeTone: true},
 	}
 
-	wr, err := svc.resolveWritingRun(context.Background(), "missing", WritingWorldControl{Ref: &ref})
+	wr, err := svc.resolveWritingRun(context.Background(), "missing", "", WritingWorldControl{Ref: &ref})
 	if err != nil {
 		t.Fatalf("world_not_found should degrade to bare, got %v", err)
 	}
@@ -97,7 +97,7 @@ func TestWritingResolve_SnapshotBudgetBlocksWithoutRegistryEntry(t *testing.T) {
 	}
 	before := svc.WorldContextRegistryStats()
 
-	wr, err := svc.resolveWritingRun(context.Background(), "budget", WritingWorldControl{Ref: &ref})
+	wr, err := svc.resolveWritingRun(context.Background(), "budget", "", WritingWorldControl{Ref: &ref})
 	if worldcontext.CodeOf(err) != worldcontext.ErrBudgetExceeded {
 		t.Fatalf("snapshot budget failure must block, got wr=%+v err=%v", wr, err)
 	}
@@ -109,7 +109,7 @@ func TestWritingResolve_SnapshotBudgetBlocksWithoutRegistryEntry(t *testing.T) {
 func TestWritingResolve_DirectRefTaskScopeAndReleaseOnce(t *testing.T) {
 	a, svc, w, rev := writingSvcHarness(t)
 	ref := worldRef(w, rev)
-	wr, err := svc.resolveWritingRun(context.Background(), "77", WritingWorldControl{Ref: &ref})
+	wr, err := svc.resolveWritingRun(context.Background(), "77", "", WritingWorldControl{Ref: &ref})
 	if err != nil {
 		t.Fatalf("direct Ref 绑定失败: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestWritingResolve_HandleOnlyMovesAndConsumes(t *testing.T) {
 	}
 	wantFP := snapshotFingerprint(t, svc, ref)
 
-	wr, err := svc.resolveWritingRun(ctx, "9", WritingWorldControl{
+	wr, err := svc.resolveWritingRun(ctx, "9", "workspace:ws|session:s1", WritingWorldControl{
 		HasAnalysisHandle: true, AnalysisHandle: view.AnalysisHandle,
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestWritingResolve_HandleOnlyMovesAndConsumes(t *testing.T) {
 		t.Fatalf("迁移后仍应恰好 1 个 runContext, got %#v", st)
 	}
 	// 已 consume 的 handle 不可再次接管；无 Ref 时回落 bare。
-	wr2, err := svc.resolveWritingRun(ctx, "10", WritingWorldControl{
+	wr2, err := svc.resolveWritingRun(ctx, "10", "workspace:ws|session:s1", WritingWorldControl{
 		HasAnalysisHandle: true, AnalysisHandle: view.AnalysisHandle,
 	})
 	if err != nil {
@@ -197,7 +197,7 @@ func TestWritingResolve_RefPlusHandleMatchReusesPending(t *testing.T) {
 	}
 	wantFP := snapshotFingerprint(t, svc, ref)
 
-	wr, err := svc.resolveWritingRun(ctx, "11", WritingWorldControl{
+	wr, err := svc.resolveWritingRun(ctx, "11", "workspace:ws|session:s1", WritingWorldControl{
 		Ref: &ref, HasAnalysisHandle: true, AnalysisHandle: view.AnalysisHandle,
 	})
 	if err != nil {
@@ -232,7 +232,7 @@ func TestWritingResolve_RefPlusHandleConflictRefWins(t *testing.T) {
 	}
 	fpA := snapshotFingerprint(t, svc, refA)
 
-	wr, err := svc.resolveWritingRun(ctx, "12", WritingWorldControl{
+	wr, err := svc.resolveWritingRun(ctx, "12", "workspace:ws|session:s1", WritingWorldControl{
 		Ref: &refB, HasAnalysisHandle: true, AnalysisHandle: view.AnalysisHandle,
 	})
 	if err != nil {
@@ -251,7 +251,7 @@ func TestWritingResolve_RefPlusHandleConflictRefWins(t *testing.T) {
 		t.Fatalf("A 的 pending 必须被释放，仅剩 B 的 task run, got %#v", st)
 	}
 	// 被作废的 handle 不可再 claim。
-	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "workspace:ws|session:s1")
 	if claim != nil || status == AnalysisHandleClaimed {
 		t.Fatal("冲突作废的 handle 不允许再次 claim")
 	}
@@ -264,7 +264,7 @@ func TestWritingResolve_InvalidHandleFallback(t *testing.T) {
 	ref := worldRef(w, rev)
 
 	// 失效 handle + 有效 Ref：仍按 Ref 绑定，handle 记为 ignored_invalid。
-	wr, err := svc.resolveWritingRun(ctx, "13", WritingWorldControl{
+	wr, err := svc.resolveWritingRun(ctx, "13", "workspace:ws|session:s1", WritingWorldControl{
 		Ref: &ref, HasAnalysisHandle: true, AnalysisHandle: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	})
 	if err != nil {
@@ -280,7 +280,7 @@ func TestWritingResolve_InvalidHandleFallback(t *testing.T) {
 
 	// 失效 handle 且无 Ref：bare，零增量。
 	before := svc.WorldContextRegistryStats()
-	wr2, err := svc.resolveWritingRun(ctx, "14", WritingWorldControl{
+	wr2, err := svc.resolveWritingRun(ctx, "14", "workspace:ws|session:s1", WritingWorldControl{
 		HasAnalysisHandle: true, AnalysisHandle: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	})
 	if err != nil || wr2 != nil {
@@ -298,7 +298,7 @@ func TestWritingResolve_BlockingRefRevisionConflict(t *testing.T) {
 		ExpectedWorldRevision: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
 		Selection:             worldcontext.Selection{IncludeTone: true},
 	}
-	wr, err := svc.resolveWritingRun(context.Background(), "15", WritingWorldControl{Ref: &bad})
+	wr, err := svc.resolveWritingRun(context.Background(), "15", "", WritingWorldControl{Ref: &bad})
 	if err == nil || wr != nil {
 		t.Fatalf("revision 冲突必须阻断且不产生 run, wr=%+v err=%v", wr, err)
 	}
@@ -330,7 +330,7 @@ func TestWritingResolve_SessionSwitchInvalidatesPendingHandle(t *testing.T) {
 		t.Fatalf("失效后 pending runContext 必须释放, got %#v", st)
 	}
 	// 之后无法再 claim，只能 bare。
-	wr, err := svc.resolveWritingRun(ctx, "16", WritingWorldControl{
+	wr, err := svc.resolveWritingRun(ctx, "16", "workspace:ws|session:old", WritingWorldControl{
 		HasAnalysisHandle: true, AnalysisHandle: view.AnalysisHandle,
 	})
 	if err != nil || wr != nil {
@@ -358,7 +358,7 @@ func TestWritingResolve_ConcurrentClaimOnlyOneWins(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+			claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "workspace:ws|session:s1")
 			if status == AnalysisHandleClaimed {
 				mu.Lock()
 				winners++

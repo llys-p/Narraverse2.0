@@ -333,8 +333,8 @@ func (a *App) AnalyzeContext(ctx context.Context, req agent.ChatRequest) (agent.
 	return a.chat().AnalyzeContext(ctx, req)
 }
 
-// AnalyzeWritingContext 为写作 context-analysis 装配只读世界背景（不创建 runContext/handle）。
-func (a *App) AnalyzeWritingContext(ctx context.Context, req agent.ChatRequest, ref *worldcontext.Ref) (agent.ContextAnalysis, error) {
+// AnalyzeWritingContext 为写作 context-analysis 建立 pending 世界背景并签发短期 analysisHandle。
+func (a *App) AnalyzeWritingContext(ctx context.Context, req agent.ChatRequest, ref *worldcontext.Ref) (WritingContextAnalysis, error) {
 	return a.chat().AnalyzeWritingContext(ctx, req, ref)
 }
 
@@ -342,25 +342,16 @@ func (s *ChatAppService) AnalyzeContext(ctx context.Context, req agent.ChatReque
 	return s.analyzeContextWithWorld(ctx, req, agent.EphemeralWorldContextInput{})
 }
 
-// AnalyzeWritingContext 在不创建/占用 runContext、不创建 handle 的前提下，按 Ref 只读装配与真实模型
-// 输入同字节的临时世界背景并纳入 context-analysis 展示；不写 World（handle 闭环属后续 A4）。
-func (s *ChatAppService) AnalyzeWritingContext(ctx context.Context, req agent.ChatRequest, ref *worldcontext.Ref) (agent.ContextAnalysis, error) {
-	ephemeral := agent.EphemeralWorldContextInput{}
-	if ref != nil {
-		built, err := s.app.worldContext().BuildWritingEphemeralWorld(ctx, *ref)
-		if err != nil {
-			return agent.ContextAnalysis{}, err
-		}
-		ephemeral = built
-	}
-	return s.analyzeContextWithWorld(ctx, req, ephemeral)
-}
-
 func (s *ChatAppService) analyzeContextWithWorld(ctx context.Context, req agent.ChatRequest, ephemeral agent.EphemeralWorldContextInput) (agent.ContextAnalysis, error) {
 	runtime, req, err := s.prepareIDEChatRuntime(ctx, req, false)
 	if err != nil {
 		return agent.ContextAnalysis{}, err
 	}
+	return s.buildContextAnalysis(runtime, req, ephemeral)
+}
+
+// buildContextAnalysis 基于已准备好的 runtime 装配 context-analysis，避免 A4 建立 pending 后二次准备运行时。
+func (s *ChatAppService) buildContextAnalysis(runtime ideChatRuntime, req agent.ChatRequest, ephemeral agent.EphemeralWorldContextInput) (agent.ContextAnalysis, error) {
 	var pending *session.Interruption
 	if shouldResume := strings.TrimSpace(req.Message); shouldResume != "" {
 		pending = runtime.sess.PendingInterruption()

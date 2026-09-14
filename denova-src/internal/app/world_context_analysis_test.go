@@ -78,11 +78,11 @@ func TestAnalysisHandle_ClaimIsSingleUse(t *testing.T) {
 	svc, ref, _ := newAnalysisTestService(t)
 	view := createAnalysisHandleForTest(t, svc, ref, "writing-session-1")
 
-	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1")
 	if status != AnalysisHandleClaimed || claim == nil {
 		t.Fatalf("首次 claim 应成功: status=%s claim=%#v", status, claim)
 	}
-	if second, secondStatus := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting); second != nil || secondStatus != AnalysisHandleIgnoredConsumed {
+	if second, secondStatus := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1"); second != nil || secondStatus != AnalysisHandleIgnoredConsumed {
 		t.Fatalf("同一 handle 不得二次 claim: status=%s claim=%#v", secondStatus, second)
 	}
 
@@ -116,7 +116,7 @@ func TestAnalysisHandle_CancelAndClaimRaceHasOneOwner(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			claim, claimStatus = svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+			claim, claimStatus = svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "race-session")
 		}()
 
 		var cancelOutcome AnalysisHandleInvalidateOutcome
@@ -154,7 +154,7 @@ func TestAnalysisHandle_CancelAndClaimRaceHasOneOwner(t *testing.T) {
 func TestAnalysisHandle_CancelAfterConsumeIsNoop(t *testing.T) {
 	svc, ref, _ := newAnalysisTestService(t)
 	view := createAnalysisHandleForTest(t, svc, ref, "writing-session-1")
-	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1")
 	if status != AnalysisHandleClaimed {
 		t.Fatalf("claim: %s", status)
 	}
@@ -181,7 +181,7 @@ func TestAnalysisHandle_CancelRejectsDifferentConsumer(t *testing.T) {
 	if got := svc.invalidateAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerGame); got != AnalysisHandleInvalidateMissingNoop {
 		t.Fatalf("其它 consumer 不得取消 handle: %s", got)
 	}
-	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1")
 	if status != AnalysisHandleClaimed || claim == nil {
 		t.Fatalf("原 consumer 的 handle 不应受影响: status=%s claim=%#v", status, claim)
 	}
@@ -195,7 +195,7 @@ func TestAnalysisHandle_ExpiredCannotBeClaimed(t *testing.T) {
 	view := createAnalysisHandleForTest(t, svc, ref, "writing-session-1")
 	clock.Advance(10*time.Minute + time.Nanosecond)
 
-	if claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting); claim != nil || status != AnalysisHandleIgnoredExpired {
+	if claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1"); claim != nil || status != AnalysisHandleIgnoredExpired {
 		t.Fatalf("过期 handle 不得 claim: status=%s claim=%#v", status, claim)
 	}
 	if stats := svc.WorldContextRegistryStats(); stats.RunContexts != 0 {
@@ -206,7 +206,7 @@ func TestAnalysisHandle_ExpiredCannotBeClaimed(t *testing.T) {
 func TestAnalysisHandle_ClaimedExpiryReleasesOnce(t *testing.T) {
 	svc, ref, clock := newAnalysisTestService(t)
 	view := createAnalysisHandleForTest(t, svc, ref, "writing-session-1")
-	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1")
 	if status != AnalysisHandleClaimed {
 		t.Fatalf("claim: %s", status)
 	}
@@ -234,7 +234,7 @@ func TestAnalysisHandle_ServiceRebuildDoesNotRestoreHandle(t *testing.T) {
 	view := createAnalysisHandleForTest(t, svc, ref, "writing-session-1")
 
 	rebuilt := newWorldContextService(svc.app)
-	if claim, status := rebuilt.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting); claim != nil || status != AnalysisHandleIgnoredInvalid {
+	if claim, status := rebuilt.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1"); claim != nil || status != AnalysisHandleIgnoredInvalid {
 		t.Fatalf("服务重建后不得恢复旧 handle: status=%s claim=%#v", status, claim)
 	}
 	if stats := rebuilt.WorldContextRegistryStats(); stats.RunContexts != 0 || stats.BodyEntries != 0 {
@@ -250,7 +250,7 @@ func TestAnalysisHandle_CapacityDoesNotEvictLivePendingContext(t *testing.T) {
 	if _, err := svc.createAnalysisHandle(context.Background(), worldcontext.ConsumerWriting, "writing-session-2", ref); worldcontext.CodeOf(err) != worldcontext.ErrContextUnavailable {
 		t.Fatalf("容量满时应拒绝新建而不是驱逐 live pending context: %v", err)
 	}
-	claim, status := svc.claimAnalysisHandle(first.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(first.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1")
 	if status != AnalysisHandleClaimed || claim == nil {
 		t.Fatalf("容量拒绝不得破坏已有 handle: status=%s claim=%#v", status, claim)
 	}
@@ -296,7 +296,7 @@ func TestAnalysisHandle_DuplicateCleanupDoesNotUnderflowSharedBodyRefCount(t *te
 func TestAnalysisHandle_ClaimedCancellationUsesClaimantCleanupOnce(t *testing.T) {
 	svc, ref, _ := newAnalysisTestService(t)
 	view := createAnalysisHandleForTest(t, svc, ref, "writing-session-1")
-	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting)
+	claim, status := svc.claimAnalysisHandle(view.AnalysisHandle, worldcontext.ConsumerWriting, "writing-session-1")
 	if status != AnalysisHandleClaimed {
 		t.Fatalf("claim: %s", status)
 	}

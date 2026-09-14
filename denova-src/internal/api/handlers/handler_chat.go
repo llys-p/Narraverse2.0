@@ -94,8 +94,9 @@ func (h *Handlers) HandleChatContextAnalysis(ctx context.Context, c *app.Request
 		return
 	}
 	req.Locale = requestLocale(c)
-	// 只读装配与真实模型输入同字节的临时世界背景（不创建 runContext/handle）。
-	analysis, err := h.app.AnalyzeWritingContext(ctx, req, runtimeWC.Ref)
+	// A4：提交有效 Ref 时建立/复用 pending runContext 并签发短期 analysisHandle；
+	// 分析展示读取该 pending runContext 的最终 ModelView bytes（与首次 chat 同源）。
+	result, err := h.app.AnalyzeWritingContext(ctx, req, runtimeWC.Ref)
 	if err != nil {
 		var domainErr *worldcontext.DomainError
 		if errors.As(err, &domainErr) {
@@ -105,7 +106,7 @@ func (h *Handlers) HandleChatContextAnalysis(ctx context.Context, c *app.Request
 		h.writeChatPreparationError(c, err)
 		return
 	}
-	c.JSON(consts.StatusOK, analysis)
+	c.JSON(consts.StatusOK, toWritingContextAnalysisWire(result))
 }
 
 func (h *Handlers) writeChatPreparationError(c *app.RequestContext, err error) {

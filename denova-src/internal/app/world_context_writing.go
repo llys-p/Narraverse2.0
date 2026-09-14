@@ -95,7 +95,7 @@ type writingWorldRun struct {
 //     claim 失效（invalid/expired/consumed）且无服务端 Task 关联时回落 bare。
 //   - Ref + handle：Ref 优先。fingerprint 一致→迁移 pending 并 consume（不复制 bytes）；
 //     不一致→回滚 handle、按 Ref 新建，状态 ignored_conflict；绝不报“字段互斥”。
-func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID string, ctrl WritingWorldControl) (*writingWorldRun, error) {
+func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID, sessionKey string, ctrl WritingWorldControl) (*writingWorldRun, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -126,7 +126,7 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID stri
 	}
 
 	if hasHandle {
-		claim, claimStatus := s.claimAnalysisHandle(ctrl.AnalysisHandle, consumer)
+		claim, claimStatus := s.claimAnalysisHandle(ctrl.AnalysisHandle, consumer, sessionKey)
 		if claim != nil && claimStatus == AnalysisHandleClaimed {
 			lease := claim.pendingContextLease()
 			fingerprint := lease.Fingerprint
@@ -137,11 +137,19 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID stri
 				consumer, lease.RunContextID, lease.PendingScopeKey, taskScope, fingerprint,
 			)
 			if moveErr == nil {
-				s.consumeAnalysisHandle(claim)
-				status := AnalysisHandleConsumed
-				if hasRef && lease.Fingerprint != refFingerprint {
+				// runContext 已原子迁移到 task scope（不重投影/不换 salt/不复制 bytes），此后由本 task
+				// 的 releaseWorldRun 负责释放。consume 可能在 move 之后被并发取消/会话切换/TTL 过期命中，
+				// 必须采用其真实返回状态，不能无条件假定 consumed；handle 清理即便失败也不会重复释放
+				// task scope（releasePendingLocked 只 Destroy 原 pending scope，幂等返回 false）。
+				consumeStatus := s.consumeAnalysisHandle(claim)
+				status := consumeStatus
+				if consumeStatus == AnalysisHandleConsumed && hasRef && lease.Fingerprint != refFingerprint {
 					// 迁移成功但指纹不一致在 MoveScopeByID 下不可能发生；保守按冲突处理。
 					status = AnalysisHandleIgnoredConflict
+				}
+				if consumeStatus != AnalysisHandleConsumed {
+					slog.Warn("world_context writing handle moved but not cleanly consumed",
+						"consumer", string(consumer), "status", string(consumeStatus))
 				}
 				return &writingWorldRun{
 					runContext:   moved,
@@ -252,8 +260,10 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 	task := newPendingTask()
 
 	// 2) bind-before-start：所有 Ref/handle 副作用在模型启动前完成裁定。
+	// sessionKey 由服务端按当前工作区+活跃会话派生，用于校验 handle 归属，禁止采信客户端字段。
 	worldSvc := a.worldContext()
-	worldRun, err := worldSvc.resolveWritingRun(ctx, task.ID(), in.World)
+	sessionKey := writingSessionKey(runtime.workspace, runtime.sess.ID)
+	worldRun, err := worldSvc.resolveWritingRun(ctx, task.ID(), sessionKey, in.World)
 	if err != nil {
 		task.discard() // 从未启动，废弃半成品 Task，不产生模型回调。
 		return nil, err
