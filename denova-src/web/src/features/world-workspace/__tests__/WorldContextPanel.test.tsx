@@ -188,7 +188,7 @@ describe('WorldContextPanel B2 内容', () => {
   it('内部 ID 不作为主文案：来源显示名称而非 c1', () => {
     setup()
     const sources = screen.getByTestId('context-sources')
-    expect(sources.textContent).toContain('角色甲')
+    expect(document.body.textContent).toContain('角色甲')
     expect(within(sources).queryByRole('button', { name: 'c1' })).toBeNull()
   })
 
@@ -222,5 +222,48 @@ describe('WorldContextPanel 生成动作', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     setup()
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorldContextPanel A5 带入写作', () => {
+  it('writing consumer 且提供回调时显示入口，点击只回调一次', async () => {
+    const user = userEvent.setup()
+    const onLaunchWriting = vi.fn()
+    render(<WorldContextPanel {...baseProps('idle')} preview={null} onLaunchWriting={onLaunchWriting} />)
+    const btn = screen.getByTestId('context-launch-writing')
+    expect(btn).toBeInTheDocument()
+    await user.click(btn)
+    expect(onLaunchWriting).toHaveBeenCalledTimes(1)
+  })
+
+  it('game consumer 不显示带入写作入口', () => {
+    render(<WorldContextPanel {...baseProps('idle')} preview={null} consumer="game" onLaunchWriting={vi.fn()} />)
+    expect(screen.queryByTestId('context-launch-writing')).toBeNull()
+  })
+
+  it('未提供 onLaunchWriting 时不显示入口', () => {
+    render(<WorldContextPanel {...baseProps('idle')} preview={null} />)
+    expect(screen.queryByTestId('context-launch-writing')).toBeNull()
+  })
+
+  it('dirty 时带入写作禁用且点击不回调', async () => {
+    const user = userEvent.setup()
+    const onLaunchWriting = vi.fn()
+    render(<WorldContextPanel {...baseProps('idle')} preview={null} dirty onLaunchWriting={onLaunchWriting} />)
+    const btn = screen.getByTestId('context-launch-writing')
+    expect(btn).toBeDisabled()
+    await user.click(btn)
+    expect(onLaunchWriting).not.toHaveBeenCalled()
+  })
+
+  it('切书进行中（pending）禁用', () => {
+    render(<WorldContextPanel {...baseProps('idle')} preview={null} launchWritingPending onLaunchWriting={vi.fn()} />)
+    expect(screen.getByTestId('context-launch-writing')).toBeDisabled()
+  })
+
+  it('选择超限时带入写作禁用（不静默截断）', () => {
+    const overflow = { ...emptyContextSelection(), characterIds: Array.from({ length: 21 }, (_, i) => `c${i}`) }
+    render(<WorldContextPanel {...baseProps('idle')} preview={null} selection={overflow} onLaunchWriting={vi.fn()} />)
+    expect(screen.getByTestId('context-launch-writing')).toBeDisabled()
   })
 })

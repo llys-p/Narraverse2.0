@@ -20,11 +20,23 @@ const mocks = vi.hoisted(() => {
     getBooks: vi.fn(),
     getStories: vi.fn(),
     fetchMasterAsset: vi.fn(),
+    launchWriting: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn() },
   }
 })
 
 vi.mock('sonner', () => ({ toast: mocks.toast }))
+vi.mock('@/features/world-context-runtime/WorldContextLaunchProvider', () => ({
+  // 页面单测不需要真正的内存桥：Provider 透传，hook 返回可断言的 launchWriting spy。
+  WorldContextLaunchProvider: ({ children }: { children: React.ReactNode }) => children,
+  useWorldContextLaunch: () => ({
+    pendingWriting: null,
+    launchWriting: mocks.launchWriting,
+    takeWritingLaunch: vi.fn(),
+    peekWritingLaunch: vi.fn(),
+    clearWritingLaunch: vi.fn(),
+  }),
+}))
 vi.mock('../world-api', () => ({
   getWorld: mocks.getWorld,
   updateWorld: mocks.updateWorld,
@@ -574,6 +586,83 @@ describe('WorldConsolePage Context 分区（B3）', () => {
     await openContextTab(user)
     expect(setItem).not.toHaveBeenCalled()
     expect(mocks.fetchMasterAsset).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorldConsolePage A5 带入写作', () => {
+  function renderLaunch(quickSwitch: (path: string) => Promise<boolean>) {
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    const onSetMode = vi.fn()
+    const onQuickSwitchBook = vi.fn(quickSwitch)
+    const view = render(
+      <WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+        onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} />,
+    )
+    return { onSetMode, onQuickSwitchBook, view }
+  }
+
+  async function openContextAndPickCharacter(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+  }
+
+  it('成功：切主书成功后才写入已保存 Ref 并切到 ide，且不发 PUT', async () => {
+    const user = userEvent.setup()
+    const { onSetMode, onQuickSwitchBook } = renderLaunch(async () => true)
+    await openContextAndPickCharacter(user)
+    await user.click(screen.getByTestId('context-launch-writing'))
+    await waitFor(() => expect(mocks.launchWriting).toHaveBeenCalledTimes(1))
+    expect(onQuickSwitchBook).toHaveBeenCalledWith('/lost-book.md')
+    const arg = mocks.launchWriting.mock.calls[0][0]
+    expect(arg).toMatchObject({ worldId: 'w1', expectedWorldRevision: 'sha256:r1', worldName: '控制台世界' })
+    expect(arg.selection.characterIds).toEqual(['c1'])
+    expect(onSetMode).toHaveBeenCalledWith('ide')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('切主书失败：不写 Ref、不切模式、留在原页并提示', async () => {
+    const user = userEvent.setup()
+    const { onSetMode, onQuickSwitchBook } = renderLaunch(async () => false)
+    await openContextAndPickCharacter(user)
+    await user.click(screen.getByTestId('context-launch-writing'))
+    await waitFor(() => expect(onQuickSwitchBook).toHaveBeenCalledTimes(1))
+    expect(mocks.launchWriting).not.toHaveBeenCalled()
+    expect(onSetMode).not.toHaveBeenCalled()
+    expect(mocks.toast.error).toHaveBeenCalled()
+  })
+
+  it('无主书：阻断，不切书、不写 Ref', async () => {
+    const user = userEvent.setup()
+    const noBook = worldFixture()
+    noBook.primaryBookPath = undefined
+    mocks.getWorld.mockResolvedValue({ world: noBook, revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    const onSetMode = vi.fn()
+    const onQuickSwitchBook = vi.fn(async () => true)
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} />)
+    await openContextAndPickCharacter(user)
+    await user.click(screen.getByTestId('context-launch-writing'))
+    expect(onQuickSwitchBook).not.toHaveBeenCalled()
+    expect(mocks.launchWriting).not.toHaveBeenCalled()
+    expect(onSetMode).not.toHaveBeenCalled()
+  })
+
+  it('dirty 时硬阻断：按钮禁用，零切书、零 Ref', async () => {
+    const user = userEvent.setup()
+    const { onQuickSwitchBook } = renderLaunch(async () => true)
+    await user.click(await screen.findByRole('button', { name: '角色' }))
+    await user.click(screen.getByRole('button', { name: '手动新建' }))
+    await screen.findByText('新角色') // 产生未保存修改
+    await user.click(screen.getByRole('button', { name: '世界上下文' }))
+    const btn = screen.getByTestId('context-launch-writing')
+    expect(btn).toBeDisabled()
+    await user.click(btn)
+    expect(onQuickSwitchBook).not.toHaveBeenCalled()
+    expect(mocks.launchWriting).not.toHaveBeenCalled()
   })
 })
 

@@ -27,6 +27,7 @@ import {
   type Tab,
 } from '@/components/workbench/TabController'
 import { ModeRouter } from '@/components/workbench/ModeRouter'
+import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
 import { resolveCurrentBookName } from '@/components/workbench/workbench-utils'
 import type { EditorFlushHandler } from '@/components/Editor/MarkdownEditor'
 import {
@@ -742,6 +743,7 @@ function App() {
 
   return (
     <NovaMotionProvider intensity={motionIntensity}>
+      <WorldContextLaunchProvider>
       <ModeRouter
         mode={mode}
         booksReturnMode={booksReturnMode}
@@ -894,6 +896,7 @@ function App() {
         isStreaming={isStreaming}
         onNavigate={handleOnboardingNavigate}
       />
+      </WorldContextLaunchProvider>
     </NovaMotionProvider>
   )
 }

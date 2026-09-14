@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { PenLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { World } from '../../types'
@@ -45,6 +46,13 @@ interface WorldContextPanelProps {
    * 未提供时 BindingOverview 不显示移除入口，控制台真实链路必须提供。
    */
   onRemoveBinding?: (bindingId: string) => void
+  /**
+   * Phase 3.2-A5：显式「带入写作」。由 WorldConsolePage 实现：dirty/超限/无已保存
+   * revision/无主书时不应提供；切主书成功后才写入 LaunchProvider 并切到写作模式。
+   * 未提供时不显示入口（普通预览不强制进入运行态）。
+   */
+  onLaunchWriting?: () => void
+  launchWritingPending?: boolean
 }
 
 export function WorldContextPanel({
@@ -60,12 +68,17 @@ export function WorldContextPanel({
   onGenerate,
   onJumpSection,
   onRemoveBinding,
+  onLaunchWriting,
+  launchWritingPending = false,
 }: WorldContextPanelProps) {
   const { t } = useTranslation()
   const loading = state === 'loading'
   const overflow = selectionBlocksPreview(selection)
   const generateDisabled = loading || overflow || dirty
   const showDetail = (state === 'ready' || state === 'stale') && preview
+  // 只在写作 consumer 下提供「带入写作」；dirty/超限/切书进行中禁用。
+  const showLaunch = consumer === 'writing' && Boolean(onLaunchWriting)
+  const launchDisabled = generateDisabled || launchWritingPending
 
   return (
     <div data-testid="world-context-panel" className="mx-auto flex max-w-3xl flex-col gap-4">
@@ -85,11 +98,25 @@ export function WorldContextPanel({
         </p>
       ) : null}
 
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" disabled={generateDisabled} onClick={onGenerate}>
           {loading ? <Spinner className="mr-1.5 h-3.5 w-3.5" /> : null}
           {loading ? t('worldWorkspace.context.generating') : t('worldWorkspace.context.generate')}
         </Button>
+        {showLaunch ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-writing"
+            disabled={launchDisabled}
+            onClick={onLaunchWriting}
+          >
+            {launchWritingPending ? <Spinner className="size-3.5" /> : <PenLine className="size-3.5" />}
+            {t('worldWorkspace.context.launchWriting')}
+          </Button>
+        ) : null}
       </div>
 
       {showDetail ? (

@@ -23,9 +23,11 @@ import { characterFromBinding, emptyCharacter, factionFromBinding, locationFromB
 import { addWorldBinding, findDraftIssue, removeWorldBinding, removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
 import { useWorldContextPreview } from '../use-world-context-preview'
+import { useWorldContextLaunch } from '@/features/world-context-runtime/WorldContextLaunchProvider'
 import { WorldContextPanel } from '../components/context/WorldContextPanel'
 import {
   emptyContextSelection,
+  isSelectionWithinLimits,
   pruneContextSelection,
   remapSelectionAfterRuleRemoval,
   type WorldConsoleSectionId,
@@ -80,6 +82,9 @@ export function WorldConsolePage({
   const contextPreview = useWorldContextPreview()
   const [contextConsumer, setContextConsumer] = useState<WorldContextConsumer>('writing')
   const [contextSelection, setContextSelection] = useState<ContextSelection>(emptyContextSelection)
+  // Phase 3.2-A5：显式「带入写作」交接（纯内存 Provider），切主书进行中的忙态。
+  const { launchWriting } = useWorldContextLaunch()
+  const [launchPending, setLaunchPending] = useState(false)
   // markStale 身份会随 preview 变化，用 ref 让 mutate/save/reload 无需把它列入依赖、避免回调抖动。
   const markContextStaleRef = useRef(contextPreview.markStale)
   markContextStaleRef.current = contextPreview.markStale
@@ -198,6 +203,42 @@ export function WorldConsolePage({
     markContextStaleRef.current()
     setContextConsumer(next)
   }, [])
+
+  // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
+  // Phase 3.2-A5：把当前已保存 World + Selection 显式带入写作。
+  // 守卫顺序与 ModeEntries.enterWriting 一致：先校验可带入条件 → 一次离开确认 → 成功切主书后
+  // 才写入内存 Ref 并切到写作模式；任何一步失败都留在原页、无副作用（不写 Ref、不切模式）。
+  const launchToWriting = useCallback(async () => {
+    if (launchPending) return
+    if (dirty) { toast.error(t('worldWorkspace.context.blockedDirty')); return }
+    if (!revision) { toast.error(t('worldWorkspace.context.launchNeedSaved')); return }
+    if (!isSelectionWithinLimits(contextSelection)) { toast.error(t('worldWorkspace.context.launchOverflow')); return }
+    if (!draft?.primaryBookPath) { toast.error(t('worldWorkspace.modes.noPrimaryBook')); return }
+    // 与 confirmLeave 同一套单次离开确认（此处内联以保证声明顺序，杜绝双重确认）。
+    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return
+    setLaunchPending(true)
+    try {
+      const ok = await onQuickSwitchBook(draft.primaryBookPath)
+      if (!ok) { toast.error(t('worldWorkspace.modes.switchBookFailed')); return }
+      const selection = contextSelection
+      const selectedCount = (selection.includeTone ? 1 : 0)
+        + selection.ruleIndexes.length + selection.characterIds.length + selection.locationIds.length
+        + selection.factionIds.length + selection.timelineEntryIds.length + selection.bindingIds.length
+      // 只在切书成功后写入；Ref 只含已保存 revision 与选择，绝不携带草稿或运行态对象。
+      launchWriting({
+        worldId,
+        expectedWorldRevision: revision,
+        selection,
+        worldName: draft.name,
+        revisionLabel: contextPreview.preview?.revisionLabel,
+        selectedCount,
+        launchedAt: Date.now(),
+      })
+      onSetMode('ide')
+    } finally {
+      setLaunchPending(false)
+    }
+  }, [launchPending, dirty, revision, contextSelection, draft, t, onQuickSwitchBook, worldId, contextPreview.preview, launchWriting, onSetMode])
 
   // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
   const confirmLeave = useCallback(() => !dirty || window.confirm(t('worldWorkspace.unsavedLeave')), [dirty, t])
@@ -409,6 +450,8 @@ export function WorldConsolePage({
                 onGenerate={generateContext}
                 onJumpSection={jumpToSection}
                 onRemoveBinding={removeBinding}
+                onLaunchWriting={() => void launchToWriting()}
+                launchWritingPending={launchPending}
               />
             )}
           </div>
