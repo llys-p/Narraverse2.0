@@ -103,6 +103,51 @@ func TestStreamEncoderMapsAgentEventsToUIStream(t *testing.T) {
 	assertStartMetadata(t, chunks[0])
 }
 
+// Phase 3.2-A6：world_context_state 必须在任何模型 chunk 之前下发，且只携带脱敏摘要。
+func TestStreamEncoderWorldContextStatePrecedesModelContent(t *testing.T) {
+	var out bytes.Buffer
+	encoder := NewStreamEncoder(&out)
+	events := []agent.Event{
+		{Type: "world_context_state", Data: map[string]any{
+			"state":                "active",
+			"worldName":            "测试世界",
+			"revisionLabel":        "r3",
+			"selectedCount":        4,
+			"analysisHandleStatus": "consumed",
+		}},
+		{Type: "chunk", Data: map[string]any{"content": "正文"}},
+		{Type: "done", Data: map[string]any{}},
+	}
+	for _, event := range events {
+		if err := encoder.WriteEvent(event); err != nil {
+			t.Fatalf("WriteEvent(%s) failed: %v", event.Type, err)
+		}
+	}
+	chunks, done := parseUIStreamChunks(t, out.String())
+	if !done {
+		t.Fatalf("expected [DONE], got:\n%s", out.String())
+	}
+	got := chunkTypes(chunks)
+	want := []string{"start", DataTypeWorldContextState, "text-start", "text-delta", "text-end", "finish"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("world_context_state ordering mismatch\nwant: %v\n got: %v", want, got)
+	}
+	var state map[string]any
+	for _, c := range chunks {
+		if c["type"] == DataTypeWorldContextState {
+			state, _ = c["data"].(map[string]any)
+		}
+	}
+	if state == nil || state["state"] != "active" || state["worldName"] != "测试世界" {
+		t.Fatalf("world context state payload mismatch: %#v", state)
+	}
+	for _, banned := range []string{"runContextId", "scopeKey", "fingerprint", "sourceRef", "runSalt", "analysisHandle", "body"} {
+		if _, ok := state[banned]; ok {
+			t.Fatalf("world_context_state leaked internal field %q: %#v", banned, state)
+		}
+	}
+}
+
 func parseUIStreamChunks(t *testing.T, raw string) ([]map[string]any, bool) {
 	t.Helper()
 	chunks := []map[string]any{}

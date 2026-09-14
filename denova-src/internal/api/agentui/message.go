@@ -22,6 +22,9 @@ const (
 	DataTypeTokenUsage        = "data-agent-token-usage"
 	DataTypeToolResult        = "data-agent-tool-result"
 	DataTypeWorkspaceChange   = "data-agent-workspace-change"
+	// DataTypeWorldContextState 是 Phase 3.2-A6 写作运行在模型内容前下发的一次性世界背景状态事件，
+	// 只携带稳定状态与脱敏摘要，绝不含 runContextId/scopeKey/fingerprint/handle/正文。
+	DataTypeWorldContextState = "data-world-context-state"
 )
 
 // Message is the backend JSON shape for AI SDK UI messages used by the web app.

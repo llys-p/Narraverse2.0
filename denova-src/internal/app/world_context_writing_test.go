@@ -49,7 +49,7 @@ func TestWritingResolve_BareZeroRegistry(t *testing.T) {
 	}
 }
 
-func TestWritingResolve_DegradedWorldNotFoundReturnsBare(t *testing.T) {
+func TestWritingResolve_DegradedWorldNotFoundMarkedDegraded(t *testing.T) {
 	_, svc, _, _ := writingSvcHarness(t)
 	before := svc.WorldContextRegistryStats()
 	ref := worldcontext.Ref{
@@ -60,14 +60,54 @@ func TestWritingResolve_DegradedWorldNotFoundReturnsBare(t *testing.T) {
 
 	wr, err := svc.resolveWritingRun(context.Background(), "missing", "", WritingWorldControl{Ref: &ref})
 	if err != nil {
-		t.Fatalf("world_not_found should degrade to bare, got %v", err)
+		t.Fatalf("world_not_found should degrade (not block), got %v", err)
 	}
-	if wr != nil {
-		t.Fatalf("degraded ref must not produce a run context, got %+v", wr)
+	// §6.3：客户端显式提交 Ref 但可降级失败时，必须标 degraded 而不是 none；不绑定 runContext。
+	if wr == nil {
+		t.Fatal("degraded ref must return a degraded marker rather than nil/none")
+	}
+	if wr.runContext != nil {
+		t.Fatalf("degraded ref must not bind a run context, got %+v", wr.runContext)
+	}
+	if !wr.degraded || wr.degradedCode != string(worldcontext.ErrWorldNotFound) {
+		t.Fatalf("degraded marker mismatch: %+v", wr)
 	}
 	if after := svc.WorldContextRegistryStats(); after != before {
 		t.Fatalf("degraded ref must add no Registry entries: before=%#v after=%#v", before, after)
 	}
+	ev := writingWorldContextStateEvent(wr)
+	if ev.Type != "world_context_state" {
+		t.Fatalf("event type mismatch: %q", ev.Type)
+	}
+	m, _ := ev.Data.(map[string]any)
+	if m["state"] != "degraded" || m["errorCode"] != string(worldcontext.ErrWorldNotFound) {
+		t.Fatalf("degraded state event mismatch: %#v", m)
+	}
+}
+
+func TestWritingWorldContextStateEvent_States(t *testing.T) {
+	// none：bare（nil run）。
+	if m, _ := writingWorldContextStateEvent(nil).Data.(map[string]any); m["state"] != "none" {
+		t.Fatalf("nil run must be none, got %#v", m)
+	}
+	// active：真实绑定 run，带脱敏摘要与 handle 状态。
+	_, svc, w, rev := writingSvcHarness(t)
+	ref := worldRef(w, rev)
+	wr, err := svc.resolveWritingRun(context.Background(), "state-active", "", WritingWorldControl{Ref: &ref})
+	if err != nil || wr == nil || wr.runContext == nil {
+		t.Fatalf("active run setup failed: wr=%+v err=%v", wr, err)
+	}
+	m, _ := writingWorldContextStateEvent(wr).Data.(map[string]any)
+	if m["state"] != "active" {
+		t.Fatalf("active state mismatch: %#v", m)
+	}
+	if m["worldName"] != w.Name || m["revisionLabel"] == "" {
+		t.Fatalf("active summary mismatch: %#v (world=%q)", m, w.Name)
+	}
+	if _, ok := m["analysisHandleStatus"]; ok {
+		t.Fatal("direct Ref run must not carry analysisHandleStatus")
+	}
+	svc.ReleaseWorldRun(worldcontext.ConsumerWriting, wr.scopeKey)
 }
 
 func TestWritingResolve_SnapshotBudgetBlocksWithoutRegistryEntry(t *testing.T) {

@@ -83,6 +83,10 @@ type writingWorldRun struct {
 	scopeKey     string
 	hasHandle    bool
 	handleStatus AnalysisHandleUseStatus // 未携带 handle 时为空
+	// degraded 表示客户端显式提交了 Ref，但因可降级运行时错误最终无背景送模（§6.3）。
+	// 此时 runContext 为 nil，但 context_state 必须标 degraded 而不是 none。
+	degraded     bool
+	degradedCode string
 }
 
 // resolveWritingRun 执行写作的 bind-before-start 裁定，返回最终绑定到 task scope 的运行上下文。
@@ -101,23 +105,30 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID, ses
 	}
 	consumer := worldcontext.ConsumerWriting
 	taskScope := writingTaskScopeKey(taskID)
-	hasRef := ctrl.Ref != nil
+	refRequested := ctrl.Ref != nil
+	hasRef := refRequested
 	hasHandle := ctrl.HasAnalysisHandle && strings.TrimSpace(ctrl.AnalysisHandle) != ""
 	if !hasRef && !hasHandle {
 		return nil, nil // bare：零 Registry 增量
+	}
+	// degradedRun 构造一个“客户端要了背景但可降级失败”的占位结果（runContext 为 nil）。
+	degradedRun := func(code string) *writingWorldRun {
+		return &writingWorldRun{scopeKey: taskScope, degraded: true, degradedCode: code}
 	}
 
 	// Ref 优先：先校验显式 Ref。阻断错误直接返回；可降级错误放弃 Ref，但仍允许尝试 handle。
 	var refSnapshot *worldcontext.Snapshot
 	refFingerprint := ""
+	refDegradedCode := ""
 	if hasRef {
 		snap, err := s.loadSnapshot(ctx, consumer, *ctrl.Ref)
 		if err != nil {
 			if isBlockingWorldContextError(err) {
 				return nil, err
 			}
+			refDegradedCode = string(worldcontext.CodeOf(err))
 			slog.Warn("world_context writing ref degraded to bare",
-				"consumer", string(consumer), "code", string(worldcontext.CodeOf(err)))
+				"consumer", string(consumer), "code", refDegradedCode)
 			hasRef = false
 		} else {
 			refSnapshot = snap
@@ -175,6 +186,13 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID, ses
 			}
 			slog.Warn("world_context writing handle move failed; fall back to bare",
 				"consumer", string(consumer), "code", string(worldcontext.CodeOf(moveErr)))
+			if refRequested {
+				code := refDegradedCode
+				if code == "" {
+					code = string(worldcontext.CodeOf(moveErr))
+				}
+				return degradedRun(code), nil
+			}
 			return nil, nil
 		}
 
@@ -191,9 +209,17 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID, ses
 				handleStatus: claimStatus,
 			}, nil
 		}
-		// 无 Ref、handle 失效：写作阶段不存在可恢复的服务端 Task 关联 → bare。
+		// 无可用 Ref、handle 失效：若客户端原本提交了 Ref 但已可降级失败，标 degraded；
+		// 否则写作阶段不存在可恢复的服务端 Task 关联 → bare（none）。
 		slog.Warn("world_context writing handle unusable; fall back to bare",
 			"consumer", string(consumer), "status", string(claimStatus))
+		if refRequested {
+			code := refDegradedCode
+			if code == "" {
+				code = "context_unavailable"
+			}
+			return degradedRun(code), nil
+		}
 		return nil, nil
 	}
 
@@ -201,6 +227,14 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID, ses
 	// loadSnapshot 的非阻断错误会把 hasRef 降级为 false；没有可用 handle 时必须在
 	// 进入 bindWritingSnapshot 前结束为 bare，绝不能把 nil Snapshot 交给 Registry。
 	if !hasRef || refSnapshot == nil {
+		// 客户端提交了 Ref，但快照阶段已可降级失败 → degraded；否则才是真正的 bare（none）。
+		if refRequested {
+			code := refDegradedCode
+			if code == "" {
+				code = "context_unavailable"
+			}
+			return degradedRun(code), nil
+		}
 		return nil, nil
 	}
 	rc, err := s.bindWritingSnapshot(taskScope, refSnapshot)
@@ -208,11 +242,44 @@ func (s *WorldContextService) resolveWritingRun(ctx context.Context, taskID, ses
 		if isBlockingWorldContextError(err) {
 			return nil, err
 		}
+		code := string(worldcontext.CodeOf(err))
 		slog.Warn("world_context writing bind degraded to bare",
-			"consumer", string(consumer), "code", string(worldcontext.CodeOf(err)))
-		return nil, nil
+			"consumer", string(consumer), "code", code)
+		return degradedRun(code), nil
 	}
 	return &writingWorldRun{runContext: rc, scopeKey: taskScope}, nil
+}
+
+// writingWorldContextStateEvent 构造模型内容前下发一次的 world_context_state 事件（派生、不持久化）。
+// active：已绑定背景并附脱敏摘要；degraded：客户端要了背景但可降级失败；none：本次无世界背景。
+// analysisHandleStatus 单列，绝不伪装成 context_state=degraded。
+func writingWorldContextStateEvent(run *writingWorldRun) agent.Event {
+	data := map[string]any{}
+	switch {
+	case run != nil && run.runContext != nil:
+		summary := run.runContext.UISummary()
+		data["state"] = "active"
+		if summary.WorldName != "" {
+			data["worldName"] = summary.WorldName
+		}
+		if summary.RevisionLabel != "" {
+			data["revisionLabel"] = summary.RevisionLabel
+		}
+		if summary.SelectedCount != 0 {
+			data["selectedCount"] = summary.SelectedCount
+		}
+		if run.hasHandle && run.handleStatus != "" {
+			data["analysisHandleStatus"] = string(run.handleStatus)
+		}
+	case run != nil && run.degraded:
+		data["state"] = "degraded"
+		if run.degradedCode != "" {
+			data["errorCode"] = run.degradedCode
+		}
+	default:
+		data["state"] = "none"
+	}
+	return agent.Event{Type: "world_context_state", Data: data}
 }
 
 // bindWritingSnapshot 把已构建的 Snapshot 绑定到指定 task scope（不重新读 World）。
@@ -273,7 +340,8 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 	var releaseOnce sync.Once
 	releaseWorldRun := func() {
 		releaseOnce.Do(func() {
-			if worldRun != nil {
+			// degraded 占位结果没有真正绑定 runContext，无需也不能 Destroy 一个不存在的 scope。
+			if worldRun != nil && worldRun.runContext != nil {
 				worldSvc.ReleaseWorldRun(worldcontext.ConsumerWriting, worldRun.scopeKey)
 			}
 		})
@@ -281,6 +349,8 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 
 	runFunc := func(ctx context.Context, task *Task, emit func(agent.Event)) {
 		defer releaseWorldRun()
+		// A6：模型内容前恰好下发一次世界背景状态（active/degraded/none）；纯派生、不含正文/内部 ID。
+		emit(writingWorldContextStateEvent(worldRun))
 		if worldRun != nil && worldRun.hasHandle {
 			log.Printf("[agent-task] world context handle status id=%s status=%s", task.ID(), string(worldRun.handleStatus))
 		}

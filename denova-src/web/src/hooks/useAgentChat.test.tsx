@@ -1,7 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getMessagesPage, getSessions, switchSession, type SessionSummary } from '@/lib/api'
+import type { ReactNode } from 'react'
+import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 import { useAgentChat } from './useAgentChat'
+
+function WorldProviders({ children }: { children: ReactNode }) {
+  return (
+    <WorldContextLaunchProvider>
+      <WorldContextRunProvider>{children}</WorldContextRunProvider>
+    </WorldContextLaunchProvider>
+  )
+}
 
 const chatMock = vi.hoisted(() => ({
   options: null as Record<string, any> | null,
@@ -58,7 +69,7 @@ describe('useAgentChat', () => {
       { id: 'target', title: 'just say hello', active: true, message_count: 17, created_at: '2026-07-02T13:26:00Z', updated_at: '2026-07-02T13:26:00Z' },
     ])
     vi.mocked(getMessagesPage).mockResolvedValue({ messages: [], nextBefore: '0', hasMore: false, total: 0 })
-    const { result } = renderHook(() => useAgentChat())
+    const { result } = renderHook(() => useAgentChat(), { wrapper: WorldProviders })
 
     let request!: Promise<void>
     act(() => {
@@ -78,7 +89,7 @@ describe('useAgentChat', () => {
     let finishRequest!: () => void
     chatMock.sendMessage.mockReturnValue(new Promise<void>((resolve) => { finishRequest = resolve }))
     const onSubmissionStart = vi.fn()
-    const { result } = renderHook(() => useAgentChat())
+    const { result } = renderHook(() => useAgentChat(), { wrapper: WorldProviders })
 
     act(() => {
       result.current.addReference('chapters/ch01.md')
@@ -130,7 +141,7 @@ describe('useAgentChat', () => {
   it('restores consumed composer references when submission fails', async () => {
     chatMock.sendMessage.mockRejectedValue(new Error('offline'))
     const onSubmissionError = vi.fn()
-    const { result } = renderHook(() => useAgentChat())
+    const { result } = renderHook(() => useAgentChat(), { wrapper: WorldProviders })
     act(() => result.current.addReference('chapters/ch01.md'))
 
     await act(async () => {
@@ -145,7 +156,7 @@ describe('useAgentChat', () => {
     const older = deferred<Awaited<ReturnType<typeof getMessagesPage>>>()
     const newer = deferred<Awaited<ReturnType<typeof getMessagesPage>>>()
     vi.mocked(getMessagesPage).mockImplementation((sessionId?: string) => sessionId === 'older' ? older.promise : newer.promise)
-    const { result } = renderHook(() => useAgentChat())
+    const { result } = renderHook(() => useAgentChat(), { wrapper: WorldProviders })
 
     let olderRequest!: Promise<void>
     let newerRequest!: Promise<void>
@@ -183,7 +194,7 @@ describe('useAgentChat', () => {
         hasMore: false,
         total: 2,
       })
-    const { result } = renderHook(() => useAgentChat())
+    const { result } = renderHook(() => useAgentChat(), { wrapper: WorldProviders })
     await act(async () => result.current.loadHistory('session-a'))
     chatMock.setMessages.mockClear()
 

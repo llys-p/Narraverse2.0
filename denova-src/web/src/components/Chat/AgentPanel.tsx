@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Bot, FileText, PenLine, Plus, SearchCheck, Sparkles, WandSparkles, X } from 'lucide-react'
+import { Activity, Bot, FileText, Globe2, PenLine, Plus, SearchCheck, Sparkles, WandSparkles, X } from 'lucide-react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +25,7 @@ import { AgentChangeSummaryCard } from '@/features/changes/agent/AgentChangeSumm
 import { MAX_REVIEW_FEEDBACK_COMMENT_COUNT, MAX_REVIEW_FEEDBACK_CONTEXT_BYTES, reviewFeedbackCommentCount, reviewFeedbackContextBytes, type ReviewFeedbackBatch, type ReviewFeedbackComment, type ReviewFeedbackSelection } from '@/features/changes/agent/ReviewFeedbackTray'
 import { toast } from 'sonner'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
+import { useWorldContextRun } from '@/features/world-context-runtime/WorldContextRunProvider'
 
 type AgentPanelView = 'chat' | 'sessions' | 'traces'
 
@@ -93,6 +94,61 @@ interface AgentPanelProps {
 }
 
 /** IDE 右侧创作 Agent 面板，内部支持在对话与完整会话管理之间切换。 */
+// Phase 3.2-A6：写作世界背景运行状态条。none 不显示（缺省即主动无背景）；
+// bound/active/degraded 明确区分，analysisHandleStatus 单列、绝不伪装成 degraded。
+function WorldContextStateBar() {
+  const { t } = useTranslation()
+  const { view, requestClear } = useWorldContextRun()
+  if (view.state === 'none' && !view.hasBound) return null
+
+  const name = view.worldName || t('chat.worldContext.unnamed')
+  const rev = view.revisionLabel ? ` · ${view.revisionLabel}` : ''
+  const count = typeof view.selectedCount === 'number' ? ` · ${t('chat.worldContext.selectedCount', { count: view.selectedCount })}` : ''
+  const tone =
+    view.state === 'active'
+      ? 'border-[var(--nova-success,#16a34a)]/30 bg-[var(--nova-success-bg,rgba(22,163,74,0.10))] text-[var(--nova-text)]'
+      : view.state === 'degraded'
+        ? 'border-amber-500/30 bg-amber-500/10 text-[var(--nova-text)]'
+        : 'border-[var(--nova-border)] bg-[var(--nova-surface-2)] text-[var(--nova-text-muted)]'
+  const stateLabel =
+    view.state === 'active'
+      ? t('chat.worldContext.active', { name, rev, count })
+      : view.state === 'degraded'
+        ? t('chat.worldContext.degraded', { error: view.errorCode ? t(`chat.worldContext.error.${view.errorCode}`, { defaultValue: view.errorCode }) : t('chat.worldContext.error.generic') })
+        : t('chat.worldContext.bound', { name, rev, count })
+  const handleNote =
+    view.analysisHandleStatus === 'consumed'
+      ? t('chat.worldContext.handleConsumed')
+      : view.analysisHandleStatus
+        ? t(`chat.worldContext.handle.${view.analysisHandleStatus}`, { defaultValue: view.analysisHandleStatus })
+        : ''
+
+  return (
+    <div
+      className={`flex shrink-0 items-start gap-2 border-b px-3 py-1.5 text-[11px] leading-snug ${tone}`}
+      data-testid="writing-world-context-state"
+      data-state={view.state}
+      role="status"
+    >
+      <Globe2 className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="truncate">{stateLabel}</div>
+        {handleNote ? <div className="truncate text-[var(--nova-text-faint)]">{handleNote}</div> : null}
+      </div>
+      <button
+        type="button"
+        onClick={requestClear}
+        className="shrink-0 rounded p-0.5 text-[var(--nova-text-faint)] hover:text-[var(--nova-text)]"
+        aria-label={t('chat.worldContext.clear')}
+        title={t('chat.worldContext.clear')}
+        data-testid="writing-world-context-clear"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
 export function AgentPanel({
   workspace,
   composerSettings: persistedSettings,
@@ -459,6 +515,8 @@ export function AgentPanel({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      <WorldContextStateBar />
 
       {view === 'chat' ? (
         <>

@@ -43,11 +43,20 @@ export type AgentDataParts = {
   'agent-token-usage': AgentDataPayload
   'agent-tool-result': AgentDataPayload
   'agent-workspace-change': AgentDataPayload
+  'world-context-state': AgentDataPayload
 }
 
 export type AgentUIMessage = UIMessage<AgentMessageMetadata, AgentDataParts>
 
 interface AgentChatRequestBody {
+  // Phase 3.2-A6：写作运行的世界背景 Ref（camelCase，服务端固定 consumer=writing）。
+  world_context?: {
+    worldId: string
+    expectedWorldRevision: string
+    selection: Record<string, unknown>
+  }
+  // 一次性 analysisHandle；reconnect 走 GET /api/chat/stream 无 body，天然不会提交它。
+  analysis_handle?: string
   references?: string[]
   lore_references?: string[]
   style_scenes?: string[]
@@ -105,6 +114,8 @@ export function buildAgentChatRequestBody(body: AgentChatRequestBody): AgentChat
     image_preset_id: body.image_preset_id || undefined,
     teller_id: body.teller_id || undefined,
     review_feedback: reviewFeedback.length ? reviewFeedback : undefined,
+    world_context: body.world_context,
+    analysis_handle: body.analysis_handle || undefined,
   }
 }
 

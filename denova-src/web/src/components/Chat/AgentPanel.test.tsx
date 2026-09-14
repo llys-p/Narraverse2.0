@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { VirtuosoMockContext } from 'react-virtuoso'
@@ -6,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchSettings, updateUserSettings } from '@/features/settings/api'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import { AgentPanel, WRITING_COMPOSER_SETTING_DEFAULTS, type WritingComposerSettingsController } from './AgentPanel'
+import { WorldContextRunProvider, useWorldContextRun, type WritingWorldRunView } from '@/features/world-context-runtime/WorldContextRunProvider'
 
 const useWritingSkillOptionsMock = vi.hoisted(() => vi.fn())
 const useWorkspaceChangeGroupsMock = vi.hoisted(() => vi.fn())
@@ -278,7 +280,9 @@ describe('AgentPanel', () => {
 
     const view = render(
       <VirtuosoMockContext.Provider value={{ viewportHeight: 1200, itemHeight: 52 }}>
-        <Owner open />
+        <WorldContextRunProvider>
+          <Owner open />
+        </WorldContextRunProvider>
       </VirtuosoMockContext.Provider>,
     )
     await waitFor(() => expect(screen.getByRole('button', { name: '输入动作' })).toBeEnabled())
@@ -293,7 +297,9 @@ describe('AgentPanel', () => {
 
     view.rerender(
       <VirtuosoMockContext.Provider value={{ viewportHeight: 1200, itemHeight: 52 }}>
-        <Owner open={false} />
+        <WorldContextRunProvider>
+          <Owner open={false} />
+        </WorldContextRunProvider>
       </VirtuosoMockContext.Provider>,
     )
     await vi.advanceTimersByTimeAsync(1000)
@@ -413,7 +419,44 @@ describe('AgentPanel', () => {
 
 type AgentPanelOverrides = Partial<Omit<ComponentProps<typeof AgentPanel>, 'composerSettings'>>
 
-function renderAgentPanel(overrides: AgentPanelOverrides = {}) {
+  it('世界背景状态条：none 隐藏，bound/active/degraded 分别展示且不泄漏内部 ID', () => {
+    renderAgentPanel()
+    expect(screen.queryByTestId('writing-world-context-state')).not.toBeInTheDocument()
+
+    renderAgentPanel({}, { state: 'bound', hasBound: true, worldName: '苍穹', revisionLabel: 'rev·2', selectedCount: 4 })
+    const bound = screen.getAllByTestId('writing-world-context-state').at(-1)!
+    expect(bound).toHaveAttribute('data-state', 'bound')
+    expect(bound).toHaveTextContent('苍穹')
+    expect(bound).toHaveTextContent('rev·2')
+
+    renderAgentPanel({}, { state: 'active', hasBound: true, worldName: '苍穹', selectedCount: 4, analysisHandleStatus: 'consumed' })
+    const active = screen.getAllByTestId('writing-world-context-state').at(-1)!
+    expect(active).toHaveAttribute('data-state', 'active')
+    expect(active).toHaveTextContent('已采用本次上下文分析的背景')
+    expect(active).not.toHaveTextContent(/runContext|scopeKey|fingerprint|analysisHandle/i)
+
+    renderAgentPanel({}, { state: 'degraded', hasBound: true, errorCode: 'world_not_found' })
+    const degraded = screen.getAllByTestId('writing-world-context-state').at(-1)!
+    expect(degraded).toHaveAttribute('data-state', 'degraded')
+    expect(degraded).toHaveTextContent('世界不存在或已被删除')
+  })
+
+  it('世界背景状态条清除按钮可点击', async () => {
+    const user = userEvent.setup()
+    renderAgentPanel({}, { state: 'bound', hasBound: true, worldName: '苍穹' })
+    await user.click(screen.getAllByTestId('writing-world-context-clear').at(-1)!)
+    // 不抛错即通过；真正的清除逻辑由 useAgentChat 注册并在 hook 测试覆盖。
+  })
+
+function RunViewSeeder({ view }: { view: WritingWorldRunView | null }) {
+  const { setView } = useWorldContextRun()
+  useEffect(() => {
+    if (view) setView(view)
+  }, [view, setView])
+  return null
+}
+
+function renderAgentPanel(overrides: AgentPanelOverrides = {}, worldView: WritingWorldRunView | null = null) {
   function Owner() {
     const composerSettings = usePersistedUserSettings({
       workspace: overrides.workspace || '/workspace',
@@ -423,7 +466,10 @@ function renderAgentPanel(overrides: AgentPanelOverrides = {}) {
   }
   return render(
     <VirtuosoMockContext.Provider value={{ viewportHeight: 1200, itemHeight: 52 }}>
-      <Owner />
+      <WorldContextRunProvider>
+        <RunViewSeeder view={worldView} />
+        <Owner />
+      </WorldContextRunProvider>
     </VirtuosoMockContext.Provider>,
   )
 }

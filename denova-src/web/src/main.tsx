@@ -12,6 +12,8 @@ import { queryClient } from '@/lib/query-client'
 import { installGlobalRuntimeLoggers, recordRuntimeLog, scheduleWhiteScreenCheck } from '@/lib/runtimeLog'
 import { fetchSettings } from '@/features/settings/api'
 import { applyFontSettings, fontSettingsFromEffective } from '@/features/settings/font-variables'
+import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 
 function redirectLocalhostToCanonicalLoopback(): boolean {
   if (window.location.hostname.toLowerCase() !== 'localhost') return false
@@ -43,7 +45,11 @@ if (!isRedirectingToCanonicalOrigin) {
         <ThemeProvider attribute="data-theme" defaultTheme="dark" enableSystem themes={['light', 'dark']}>
           <TooltipProvider>
             <RuntimeErrorBoundary>
-              <App />
+              <WorldContextLaunchProvider>
+                <WorldContextRunProvider>
+                  <App />
+                </WorldContextRunProvider>
+              </WorldContextLaunchProvider>
               <Toaster richColors closeButton />
             </RuntimeErrorBoundary>
           </TooltipProvider>
