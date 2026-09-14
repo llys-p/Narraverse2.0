@@ -281,8 +281,12 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 				return s.consumeResolvedReviewFeedback(ctx, runtime, req)
 			}
 		}
-		// Phase 3.2-A3 将在此把 worldRun 的最终 ModelView bytes 作为临时只读输入注入模型，
-		// 且不进入 Session/压缩摘要/ledger；A2 只完成绑定与生命周期。
+		// A3：用绑定 runContext 的最终 ModelView bytes 装配临时只读世界背景；bare（worldRun==nil）
+		// 传零值，模型输入与基线逐结构一致。该输入只在本次 Run 调用栈，绝不进 Session/压缩/ledger。
+		var ephemeralWorld agent.EphemeralWorldContextInput
+		if worldRun != nil {
+			ephemeralWorld = agent.NewEphemeralWorldContextInput(worldRun.runContext.ModelViewBytes())
+		}
 		runtime.chatService.RunWithOptions(ctx, runner, conversation, runtime.bookService, req, agent.RunOptions{
 			AgentKind:          agent.AgentKindIDE,
 			TaskID:             task.ID(),
@@ -299,6 +303,7 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 				versionAutoSettingsForConfig(&runtime.cfg),
 			),
 			OnUserMessageCommitted: onUserMessageCommitted,
+			EphemeralWorldContext:  ephemeralWorld,
 		}, emit)
 		log.Printf("[agent-task] run end id=%s status=%s", task.ID(), task.Status())
 	}

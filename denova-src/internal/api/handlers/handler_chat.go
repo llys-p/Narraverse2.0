@@ -84,7 +84,7 @@ func (h *Handlers) HandleChatContextAnalysis(ctx context.Context, c *app.Request
 	if !h.requireWorkspace(c) {
 		return
 	}
-	req, _, err := decodeChatRequestBody(c.Request.Body(), PolicyContextAnalysis)
+	req, runtimeWC, err := decodeChatRequestBody(c.Request.Body(), PolicyContextAnalysis)
 	if err != nil {
 		h.writeChatBodyDecodeError(c, err)
 		return
@@ -94,8 +94,14 @@ func (h *Handlers) HandleChatContextAnalysis(ctx context.Context, c *app.Request
 		return
 	}
 	req.Locale = requestLocale(c)
-	analysis, err := h.app.AnalyzeContext(ctx, req)
+	// 只读装配与真实模型输入同字节的临时世界背景（不创建 runContext/handle）。
+	analysis, err := h.app.AnalyzeWritingContext(ctx, req, runtimeWC.Ref)
 	if err != nil {
+		var domainErr *worldcontext.DomainError
+		if errors.As(err, &domainErr) {
+			writeContextPreviewError(c, err)
+			return
+		}
 		h.writeChatPreparationError(c, err)
 		return
 	}

@@ -14,6 +14,7 @@ import (
 	"denova/internal/interactive"
 	"denova/internal/session"
 	"denova/internal/styleref"
+	"denova/internal/worldcontext"
 )
 
 // ChatAppService 负责普通创作 Agent 任务与会话管理。
@@ -332,7 +333,30 @@ func (a *App) AnalyzeContext(ctx context.Context, req agent.ChatRequest) (agent.
 	return a.chat().AnalyzeContext(ctx, req)
 }
 
+// AnalyzeWritingContext 为写作 context-analysis 装配只读世界背景（不创建 runContext/handle）。
+func (a *App) AnalyzeWritingContext(ctx context.Context, req agent.ChatRequest, ref *worldcontext.Ref) (agent.ContextAnalysis, error) {
+	return a.chat().AnalyzeWritingContext(ctx, req, ref)
+}
+
 func (s *ChatAppService) AnalyzeContext(ctx context.Context, req agent.ChatRequest) (agent.ContextAnalysis, error) {
+	return s.analyzeContextWithWorld(ctx, req, agent.EphemeralWorldContextInput{})
+}
+
+// AnalyzeWritingContext 在不创建/占用 runContext、不创建 handle 的前提下，按 Ref 只读装配与真实模型
+// 输入同字节的临时世界背景并纳入 context-analysis 展示；不写 World（handle 闭环属后续 A4）。
+func (s *ChatAppService) AnalyzeWritingContext(ctx context.Context, req agent.ChatRequest, ref *worldcontext.Ref) (agent.ContextAnalysis, error) {
+	ephemeral := agent.EphemeralWorldContextInput{}
+	if ref != nil {
+		built, err := s.app.worldContext().BuildWritingEphemeralWorld(ctx, *ref)
+		if err != nil {
+			return agent.ContextAnalysis{}, err
+		}
+		ephemeral = built
+	}
+	return s.analyzeContextWithWorld(ctx, req, ephemeral)
+}
+
+func (s *ChatAppService) analyzeContextWithWorld(ctx context.Context, req agent.ChatRequest, ephemeral agent.EphemeralWorldContextInput) (agent.ContextAnalysis, error) {
 	runtime, req, err := s.prepareIDEChatRuntime(ctx, req, false)
 	if err != nil {
 		return agent.ContextAnalysis{}, err
@@ -345,7 +369,7 @@ func (s *ChatAppService) AnalyzeContext(ctx context.Context, req agent.ChatReque
 	if record, ok := runtime.sess.LatestContextCompaction(config.AgentKindIDE); ok {
 		compaction = &record
 	}
-	return agent.BuildIDEContextAnalysis(&runtime.cfg, runtime.state, runtime.ideTeller, runtime.bookService, runtime.sess.GetEffectiveMessages(), runtime.sess.MessageCountTotal(), compaction, pending, req)
+	return agent.BuildIDEContextAnalysis(&runtime.cfg, runtime.state, runtime.ideTeller, runtime.bookService, runtime.sess.GetEffectiveMessages(), runtime.sess.MessageCountTotal(), compaction, pending, req, ephemeral)
 }
 
 func (a *App) CompactContext(ctx context.Context) (agent.ContextCompactionResult, error) {

@@ -33,6 +33,9 @@ type RunOptions struct {
 	SystemPromptLog        SystemPromptCompositionLog
 	OnMutationsVerified    func(context.Context, []ToolMutation, PostRunVerification)
 	OnUserMessageCommitted func(context.Context) error
+	// EphemeralWorldContext 是本次运行临时前置的只读世界背景，仅存在于调用栈，
+	// 不进入 Session/压缩摘要/ledger/display/export/日志；零值表示 bare 运行。
+	EphemeralWorldContext EphemeralWorldContextInput
 }
 
 func (o RunOptions) normalized(defaultWorkspace string) RunOptions {
