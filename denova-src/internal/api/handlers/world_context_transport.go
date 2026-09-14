@@ -92,6 +92,8 @@ var forbiddenWorldContextKeys = map[string]string{
 	"runContextId":     "runContextId 为服务端内部运行字段，不允许提交",
 	"run_context_id":   "run_context_id 为服务端内部运行字段，不允许提交",
 	"interactiveRunId": "interactiveRunId 为服务端内部运行字段，不允许提交",
+	"taskId":           "taskId is a server-internal runtime field and cannot be submitted by clients",
+	"runContextID":     "runContextID is a server-internal runtime field and cannot be submitted by clients",
 	"capability":       "capability 为服务端内部运行字段，不允许提交",
 	"snapshot":         "snapshot 是运行时派生数据，不允许提交",
 	"modelView":        "modelView 是运行时派生数据，不允许提交",

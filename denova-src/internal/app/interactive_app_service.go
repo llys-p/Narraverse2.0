@@ -12,6 +12,7 @@ import (
 	"denova/internal/book"
 	"denova/internal/imagepreset"
 	"denova/internal/interactive"
+	"denova/internal/worldcontext"
 )
 
 // InteractiveAppService 负责互动故事、剧情分支、导演和互动 Agent 任务。
@@ -549,7 +550,7 @@ func (a *App) StartInteractiveTask(ctx context.Context, storyID, branchID, messa
 }
 
 func (s *InteractiveAppService) StartInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, locale string) *Task {
-	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, "", locale)
+	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, "", locale, InteractiveWorldControl{})
 }
 
 func (a *App) StartInteractiveRegenerateTask(ctx context.Context, storyID, branchID, turnID, message string, styleScenes []string, locale string) *Task {
@@ -557,11 +558,31 @@ func (a *App) StartInteractiveRegenerateTask(ctx context.Context, storyID, branc
 }
 
 func (s *InteractiveAppService) StartInteractiveRegenerateTask(ctx context.Context, storyID, branchID, turnID, message string, styleScenes []string, locale string) *Task {
-	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, turnID, locale)
+	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, turnID, locale, InteractiveWorldControl{})
+}
+
+// StartInteractiveTaskWithWorld is the B1 entry that carries WorldContext control.
+// B1 passes world through but does not bind it (B2 adds resolveInteractiveRun).
+func (a *App) StartInteractiveTaskWithWorld(ctx context.Context, in InteractiveTaskInput) *Task {
+	return a.interactiveService().StartInteractiveTaskWithWorld(ctx, in)
+}
+
+func (s *InteractiveAppService) StartInteractiveTaskWithWorld(ctx context.Context, in InteractiveTaskInput) *Task {
+	return s.startInteractiveTask(ctx, in.StoryID, in.BranchID, in.Message, in.StyleScenes, in.RewindTurnID, in.Locale, in.World)
 }
 
 func (a *App) AnalyzeInteractiveContext(storyID, branchID, message string, styleScenes []string, locale string) (agent.ContextAnalysis, error) {
 	return a.interactiveService().AnalyzeInteractiveContext(storyID, branchID, message, styleScenes, locale)
+}
+
+// AnalyzeInteractiveContextWithRef is the B1 entry that accepts an optional World Ref.
+// B1 ignores the ref (bare analysis); B2 will build a pending runContext and issue a handle.
+func (a *App) AnalyzeInteractiveContextWithRef(storyID, branchID, message string, styleScenes []string, locale string, ref *worldcontext.Ref) (agent.ContextAnalysis, error) {
+	return a.interactiveService().AnalyzeInteractiveContextWithRef(storyID, branchID, message, styleScenes, locale, ref)
+}
+
+func (s *InteractiveAppService) AnalyzeInteractiveContextWithRef(storyID, branchID, message string, styleScenes []string, locale string, ref *worldcontext.Ref) (agent.ContextAnalysis, error) {
+	return s.AnalyzeInteractiveContext(storyID, branchID, message, styleScenes, locale)
 }
 
 func (s *InteractiveAppService) AnalyzeInteractiveContext(storyID, branchID, message string, styleScenes []string, locale string) (agent.ContextAnalysis, error) {
@@ -746,7 +767,7 @@ func (s *InteractiveAppService) RemoveInteractiveContextCompaction(storyID, bran
 	return true, nil
 }
 
-func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, rewindTurnID string, locale string) *Task {
+func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, rewindTurnID string, locale string, world InteractiveWorldControl) *Task {
 	a := s.app
 	a.mu.Lock()
 	if a.interactive == nil || a.bookState == nil || a.cfg == nil {

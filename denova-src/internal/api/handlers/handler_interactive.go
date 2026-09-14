@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"path/filepath"
@@ -299,6 +301,12 @@ func (h *Handlers) HandleInteractiveTurnNarrativeUpdate(ctx context.Context, c *
 }
 
 func (h *Handlers) HandleInteractiveChat(ctx context.Context, c *app.RequestContext) {
+	bodyBytes := c.Request.Body()
+	runtimeWC, err := DecodeWorldContextTransport(bodyBytes, PolicyChat)
+	if err != nil {
+		h.writeChatBodyDecodeError(c, err)
+		return
+	}
 	var body struct {
 		Mode               string   `json:"mode"`
 		StoryID            string   `json:"story_id"`
@@ -307,7 +315,7 @@ func (h *Handlers) HandleInteractiveChat(ctx context.Context, c *app.RequestCont
 		StyleScenes        []string `json:"style_scenes"`
 		RegenerateFromTurn string   `json:"regenerate_from_turn_id"`
 	}
-	if err := c.BindJSON(&body); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(bodyBytes), &body); err != nil {
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
 		return
 	}
@@ -324,13 +332,20 @@ func (h *Handlers) HandleInteractiveChat(ctx context.Context, c *app.RequestCont
 		return
 	}
 
-	var task *novaApp.Task
-	locale := requestLocale(c)
-	if strings.TrimSpace(body.RegenerateFromTurn) != "" {
-		task = h.app.StartInteractiveRegenerateTask(ctx, body.StoryID, body.Branch, body.RegenerateFromTurn, body.Message, body.StyleScenes, locale)
-	} else {
-		task = h.app.StartInteractiveTask(ctx, body.StoryID, body.Branch, body.Message, body.StyleScenes, locale)
+	in := novaApp.InteractiveTaskInput{
+		StoryID:      body.StoryID,
+		BranchID:     body.Branch,
+		Message:      body.Message,
+		StyleScenes:  body.StyleScenes,
+		Locale:       requestLocale(c),
+		RewindTurnID: body.RegenerateFromTurn,
+		World: novaApp.InteractiveWorldControl{
+			Ref:               runtimeWC.Ref,
+			HasAnalysisHandle: runtimeWC.HasAnalysisHandle,
+			AnalysisHandle:    runtimeWC.AnalysisHandle,
+		},
 	}
+	task := h.app.StartInteractiveTaskWithWorld(ctx, in)
 	if task == nil {
 		writeErrorKey(c, consts.StatusConflict, "api.workspace.noWorkspace")
 		return
@@ -339,6 +354,12 @@ func (h *Handlers) HandleInteractiveChat(ctx context.Context, c *app.RequestCont
 }
 
 func (h *Handlers) HandleInteractiveChatContextAnalysis(ctx context.Context, c *app.RequestContext) {
+	bodyBytes := c.Request.Body()
+	runtimeWC, err := DecodeWorldContextTransport(bodyBytes, PolicyContextAnalysis)
+	if err != nil {
+		h.writeChatBodyDecodeError(c, err)
+		return
+	}
 	var body struct {
 		Mode        string   `json:"mode"`
 		StoryID     string   `json:"story_id"`
@@ -346,7 +367,7 @@ func (h *Handlers) HandleInteractiveChatContextAnalysis(ctx context.Context, c *
 		Message     string   `json:"message"`
 		StyleScenes []string `json:"style_scenes"`
 	}
-	if err := c.BindJSON(&body); err != nil {
+	if err := json.Unmarshal(bytes.TrimSpace(bodyBytes), &body); err != nil {
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
 		return
 	}
@@ -362,7 +383,7 @@ func (h *Handlers) HandleInteractiveChatContextAnalysis(ctx context.Context, c *
 		writeErrorKey(c, consts.StatusBadRequest, "api.interactive.storyModeOnly")
 		return
 	}
-	analysis, err := h.app.AnalyzeInteractiveContext(body.StoryID, body.Branch, body.Message, body.StyleScenes, requestLocale(c))
+	analysis, err := h.app.AnalyzeInteractiveContextWithRef(body.StoryID, body.Branch, body.Message, body.StyleScenes, requestLocale(c), runtimeWC.Ref)
 	if err != nil {
 		writeError(c, consts.StatusConflict, err.Error())
 		return
