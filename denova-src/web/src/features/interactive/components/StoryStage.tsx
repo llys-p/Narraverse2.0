@@ -649,7 +649,16 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
       if (pendingWorldCtxRef.current === null) {
         const pending = gameWorldLaunch.peekGameLaunch()
         if (pending && pending.storyId === storyId && pending.branchId === branchId) {
-          pendingWorldCtxRef.current = gameWorldLaunch.takeGameLaunch()
+          const launch = gameWorldLaunch.takeGameLaunch()
+          if (launch) {
+            // Keep story/branch binding in the in-memory handoff only. The
+            // transport DTO accepts the World ref fields exclusively.
+            pendingWorldCtxRef.current = {
+              worldId: launch.worldId,
+              expectedWorldRevision: launch.expectedWorldRevision,
+              selection: launch.selection,
+            }
+          }
         }
       }
       const worldContextForTurn = pendingWorldCtxRef.current ?? undefined

@@ -60,6 +60,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Phase 3.2-B 修复游戏首次世界背景交接的传输边界：World Console 的 `storyId`/`branchId` 仍只用于宿主内存中的故事绑定，不再混入冻结的 `world_context` DTO；首次游戏请求现在只发送 `worldId`、`expectedWorldRevision` 与 `selection`。新增回归断言并以正式隔离 executable + Edge 验证请求返回 200、页面显示“世界背景已带入”。
+- Phase 3.2-B fixes the first-game world-context transport boundary: `storyId` and `branchId` remain host-side in-memory story bindings and are no longer mixed into the frozen `world_context` DTO. The first game request now sends only `worldId`, `expectedWorldRevision`, and `selection`. A regression assertion was added, and the isolated formal executable plus Edge verified a 200 response and the read-only world-context status in the UI.
+
 - Phase 3.2-A 写作世界背景交接现会响应 Hook 挂载后由 World Console 写入的 pending Ref：`useAgentChat` 监听内存交接状态并一次性取走最新 Ref，避免应用常驻时点击“带入写作”却继续 bare 发送。新增真实时序回归测试，并以正式 Denova 页面确认状态从“将带入”进入“已带入（只读，不回写世界）”。
 - Phase 3.2-A writing world-context handoff now reacts when World Console writes a pending Ref after the chat hook has mounted. `useAgentChat` observes the in-memory handoff and consumes the latest Ref exactly once, preventing a long-lived app from sending bare after “Bring into writing.” A real-timing regression test and a formal Denova page check verify the transition from pending to active read-only world context.
 - Phase 3.2-A 节点复审修复写作 World Context 的三处边界：不存在的 World 可安全降级为 bare，不再把 nil Snapshot 送入 Registry；非窗口类预算超限按冻结契约阻断；mid-run 压缩同时保留临时世界抬头与稳定运行上下文。开发者完整模型输入日志会过滤临时 World 正文，模型实际输入不变。A4 仍须用 pending runContext 的同一份 ModelView bytes 闭合 context-analysis/首次 chat，并在创建 handle 前补齐工作区切换失效。

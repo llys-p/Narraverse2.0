@@ -130,6 +130,8 @@ describe('Phase 3.2-B3 World handoff', () => {
       },
     })
     expect(sendInteractiveMessageMock.mock.calls[0][0]).not.toHaveProperty('analysis_handle')
+    expect(sendInteractiveMessageMock.mock.calls[0][0].world_context).not.toHaveProperty('storyId')
+    expect(sendInteractiveMessageMock.mock.calls[0][0].world_context).not.toHaveProperty('branchId')
   })
 
   it('renders the active/degraded World status emitted before model content', async () => {
