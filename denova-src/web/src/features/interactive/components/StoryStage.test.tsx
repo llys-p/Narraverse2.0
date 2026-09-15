@@ -1,13 +1,15 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Profiler, StrictMode, useState } from 'react'
+import { Profiler, StrictMode, useEffect, useState } from 'react'
 import { VirtuosoMockContext } from 'react-virtuoso'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoryStage } from './StoryStage'
 import { mergeInteractiveTurnPersistedSnapshot, useInteractiveStore } from '../stores/interactive-store'
 import type { InteractiveTurnPersistedEvent, Snapshot, StorySummary, TurnEvent } from '../types'
+import { GameWorldContextLaunchProvider, useGameWorldContextLaunch, type GameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
 
-const { generateInteractiveImageMock, getActiveInteractiveChatMock, runInteractiveDirectorMock, sendInteractiveMessageMock, streamActiveInteractiveChatMock, updateInteractiveTurnNarrativeMock, useSkillCommandsMock } = vi.hoisted(() => ({
+const { analyzeInteractiveContextMock, generateInteractiveImageMock, getActiveInteractiveChatMock, runInteractiveDirectorMock, sendInteractiveMessageMock, streamActiveInteractiveChatMock, updateInteractiveTurnNarrativeMock, useSkillCommandsMock } = vi.hoisted(() => ({
+  analyzeInteractiveContextMock: vi.fn(),
   generateInteractiveImageMock: vi.fn(),
   getActiveInteractiveChatMock: vi.fn(),
   runInteractiveDirectorMock: vi.fn(),
@@ -27,7 +29,7 @@ vi.mock('@/hooks/useSkillCommands', () => ({
 
 vi.mock('../api', () => ({
   abortInteractiveChat: vi.fn(),
-  analyzeInteractiveContext: vi.fn(),
+  analyzeInteractiveContext: analyzeInteractiveContextMock,
   compactInteractiveContext: vi.fn(),
   generateInteractiveImage: generateInteractiveImageMock,
   getActiveInteractiveChat: getActiveInteractiveChatMock,
@@ -46,6 +48,7 @@ beforeEach(() => {
   generateInteractiveImageMock.mockResolvedValue({ enabled: false, skipped: true })
   getActiveInteractiveChatMock.mockReset()
   getActiveInteractiveChatMock.mockResolvedValue({ active: false })
+  analyzeInteractiveContextMock.mockReset()
   runInteractiveDirectorMock.mockReset()
   runInteractiveDirectorMock.mockResolvedValue(directorStatus('running', { completed_docs: 1 }))
   sendInteractiveMessageMock.mockReset()
@@ -54,6 +57,34 @@ beforeEach(() => {
   useSkillCommandsMock.mockReset()
   useSkillCommandsMock.mockReturnValue([])
 })
+
+function GameLaunchSeeder({ launch }: { launch: GameWorldContextLaunch }) {
+  const { launchGame } = useGameWorldContextLaunch()
+  useEffect(() => { launchGame(launch) }, [launch, launchGame])
+  return null
+}
+
+function gameLaunchFixture(): GameWorldContextLaunch {
+  return {
+    worldId: 'world-water-margin',
+    expectedWorldRevision: 'sha256:world-revision',
+    selection: {
+      includeTone: true,
+      ruleIndexes: [0],
+      characterIds: ['character-1'],
+      locationIds: [],
+      factionIds: [],
+      timelineEntryIds: [],
+      bindingIds: [],
+    },
+    storyId: 'story-1',
+    branchId: 'main',
+    worldName: '水浒世界',
+    revisionLabel: 'sha256:world-rev',
+    selectedCount: 2,
+    launchedAt: Date.now(),
+  }
+}
 
 describe('StoryStage store subscriptions', () => {
   it('does not rerender when unrelated interactive store state changes', async () => {
@@ -72,6 +103,85 @@ describe('StoryStage store subscriptions', () => {
     })
 
     expect(commits).toBe(0)
+  })
+})
+
+describe('Phase 3.2-B3 World handoff', () => {
+  it('consumes the World Console launch on the first game message', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    render(
+      <GameWorldContextLaunchProvider>
+        <GameLaunchSeeder launch={gameLaunchFixture()} />
+        <StoryStageHarness />
+      </GameWorldContextLaunchProvider>,
+    )
+
+    await user.type(getStageInput(), '踏入梁山')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    expect(sendInteractiveMessageMock.mock.calls[0][0]).toMatchObject({
+      world_context: {
+        worldId: 'world-water-margin',
+        expectedWorldRevision: 'sha256:world-revision',
+        selection: expect.objectContaining({ characterIds: ['character-1'] }),
+      },
+    })
+    expect(sendInteractiveMessageMock.mock.calls[0][0]).not.toHaveProperty('analysis_handle')
+  })
+
+  it('renders the active/degraded World status emitted before model content', async () => {
+    const user = userEvent.setup()
+    const stream = controllableInteractiveStream()
+    sendInteractiveMessageMock.mockResolvedValue(stream.readable)
+    try {
+      render(<StoryStageHarness />)
+      await user.type(getStageInput(), '查看水泊')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+
+      act(() => {
+        stream.enqueue({ event: 'world_context_state', data: JSON.stringify({ state: 'active', worldName: '水浒世界' }) })
+      })
+      expect(await screen.findByTestId('story-stage-world-context-status')).toHaveTextContent('水浒世界')
+    } finally {
+      stream.close()
+    }
+  })
+
+  it('sends the interactive context-analysis World Ref and retains the returned handle for the next turn', async () => {
+    const user = userEvent.setup()
+    const launch = gameLaunchFixture()
+    analyzeInteractiveContextMock.mockResolvedValue({
+      agent_kind: 'interactive_story', mode: 'interactive', system_prompt: '',
+      system_prompt_parts: [], context_parts: [], context_messages: [], message_count: 0,
+      world_context: { state: 'bound', worldName: '水浒世界', selectedCount: 2 },
+      analysis_handle: 'analysis-handle-123456789012345678901234',
+    })
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([{ event: 'done', data: '{}' }]))
+    render(
+      <GameWorldContextLaunchProvider>
+        <GameLaunchSeeder launch={launch} />
+        <StoryStageHarness />
+      </GameWorldContextLaunchProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: '输入动作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '上下文分析' }))
+    await waitFor(() => expect(analyzeInteractiveContextMock).toHaveBeenCalledWith(expect.objectContaining({
+      world_context: expect.objectContaining({ worldId: launch.worldId }),
+    })))
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    await user.type(getStageInput(), '继续前进')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    expect(sendInteractiveMessageMock.mock.calls[0][0]).toMatchObject({
+      world_context: expect.objectContaining({ worldId: launch.worldId }),
+      analysis_handle: 'analysis-handle-123456789012345678901234',
+    })
   })
 })
 

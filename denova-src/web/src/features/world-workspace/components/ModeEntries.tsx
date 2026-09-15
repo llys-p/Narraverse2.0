@@ -14,13 +14,15 @@ interface ModeEntriesProps {
   /** 以下均为原始回调（不再各自带确认），副作用只允许在 confirmLeave 通过后发生。 */
   onSetMode: (mode: WorkspaceMode) => void
   onQuickSwitchBook: (path: string) => Promise<boolean>
+  /** World Console 的统一游戏交接入口；缺省时保留旧的直接选故事行为。 */
+  onLaunchGame?: () => Promise<void>
   onOpenModule4?: () => void
   onCloseModule4?: () => void
 }
 
 type Pending = 'writing' | 'game' | null
 
-export function ModeEntries({ world, confirmLeave, onSetMode, onQuickSwitchBook, onOpenModule4, onCloseModule4 }: ModeEntriesProps) {
+export function ModeEntries({ world, confirmLeave, onSetMode, onQuickSwitchBook, onLaunchGame, onOpenModule4, onCloseModule4 }: ModeEntriesProps) {
   const { t } = useTranslation()
   const [pending, setPending] = useState<Pending>(null)
 
@@ -46,6 +48,10 @@ export function ModeEntries({ world, confirmLeave, onSetMode, onQuickSwitchBook,
     if (!confirmLeave()) return
     setPending('game')
     try {
+      if (onLaunchGame) {
+        await onLaunchGame()
+        return
+      }
       await selectInteractiveStory(world.primaryInteractiveStoryId)
       onSetMode('interactive')
     } catch {

@@ -16,6 +16,7 @@ import (
 	novaApp "denova/internal/app"
 	"denova/internal/imagepreset"
 	"denova/internal/interactive"
+	"denova/internal/worldcontext"
 )
 
 func (h *Handlers) HandleInteractiveStories(ctx context.Context, c *app.RequestContext) {
@@ -385,10 +386,15 @@ func (h *Handlers) HandleInteractiveChatContextAnalysis(ctx context.Context, c *
 	}
 	analysis, err := h.app.AnalyzeInteractiveContextWithRef(body.StoryID, body.Branch, body.Message, body.StyleScenes, requestLocale(c), runtimeWC.Ref)
 	if err != nil {
-		writeError(c, consts.StatusConflict, err.Error())
+		var domainErr *worldcontext.DomainError
+		if errors.As(err, &domainErr) {
+			writeContextPreviewError(c, err)
+		} else {
+			writeError(c, consts.StatusConflict, err.Error())
+		}
 		return
 	}
-	writeJSON(c, consts.StatusOK, analysis)
+	writeJSON(c, consts.StatusOK, toInteractiveContextAnalysisWire(analysis))
 }
 
 // HandleInteractiveChatStream reconnects to the active game-mode turn and

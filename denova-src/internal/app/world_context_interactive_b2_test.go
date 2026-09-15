@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -41,6 +42,27 @@ func TestInteractiveWorldStateEventDegraded(t *testing.T) {
 	}
 }
 
+func TestInteractiveWorldContextErrorEventIsStableAndRedacted(t *testing.T) {
+	ev := interactiveWorldContextErrorEvent(&worldcontext.DomainError{
+		Code:    worldcontext.ErrRevisionConflict,
+		Field:   "worldId",
+		Message: `D:\secret\world.json should never reach the client`,
+	})
+	if ev.Type != "error" {
+		t.Fatalf("error event type wrong: %s", ev.Type)
+	}
+	data, ok := ev.Data.(map[string]string)
+	if !ok || data["code"] != string(worldcontext.ErrRevisionConflict) {
+		t.Fatalf("error event code wrong: %#v", ev.Data)
+	}
+	if data["message"] != "世界背景无法加载，请修正当前选择后重试" {
+		t.Fatalf("error event message must be stable and user-safe: %#v", data)
+	}
+	if strings.Contains(data["message"], "world.json") || strings.Contains(data["message"], "secret") {
+		t.Fatal("error event must not expose internal paths or error details")
+	}
+}
+
 // 3) state event: nil runContext but non-degraded run -> "none"
 func TestInteractiveWorldStateEventNilRunContext(t *testing.T) {
 	ev := interactiveWorldContextStateEvent(&interactiveWorldRun{
@@ -78,30 +100,47 @@ func TestInteractiveResolveBareReturnsNil(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := svc.resolveInteractiveRun(nil, binding, InteractiveWorldControl{})
+	run, err := svc.resolveInteractiveRun(nil, binding, InteractiveWorldControl{}, "workspace:current|story:s1|branch:main")
 	if err != nil || run != nil {
 		t.Fatalf("bare control must return nil: run=%v err=%v", run, err)
 	}
 }
 
-// 7) resolveInteractiveRun: handle-only (no Ref) in B2 returns degraded
-func TestInteractiveResolveHandleOnlyDegraded(t *testing.T) {
-	svc := &WorldContextService{
-		interactiveRuns: newInteractiveRunRegistry(interactiveRunRegistryConfig{}),
+// 7) resolveInteractiveRun: handle-only must claim, move and consume the pending context.
+func TestInteractiveResolveHandleOnlyClaimsAndConsumes(t *testing.T) {
+	a, worldValue, revision := newWorldContextTestApp(t)
+	svc := newWorldContextService(a)
+	ctx := context.Background()
+	sessionKey := interactiveSessionKey("workspace-1", "s1", "main")
+	ref := worldRef(worldValue, revision)
+	view, _, err := svc.createAnalysisHandleWithRun(ctx, worldcontext.ConsumerGame, sessionKey, ref)
+	if err != nil {
+		t.Fatalf("create pending game analysis handle: %v", err)
 	}
 	binding, err := svc.prepareInteractiveTaskRun("s1", "main", "", "task-handle")
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := svc.resolveInteractiveRun(nil, binding, InteractiveWorldControl{
+	run, err := svc.resolveInteractiveRun(ctx, binding, InteractiveWorldControl{
 		HasAnalysisHandle: true,
-		AnalysisHandle:    strings.Repeat("x", 40),
-	})
+		AnalysisHandle:    view.AnalysisHandle,
+	}, sessionKey)
 	if err != nil {
-		t.Fatalf("handle-only must not error in B2: %v", err)
+		t.Fatalf("handle-only should claim and consume: %v", err)
 	}
-	if run == nil || !run.degraded {
-		t.Fatalf("handle-only should be degraded placeholder: %+v", run)
+	if run == nil || run.runContext == nil || run.degraded {
+		t.Fatalf("handle-only must become active, got: %+v", run)
+	}
+	if run.handleStatus != AnalysisHandleConsumed {
+		t.Fatalf("handle status must be consumed, got %q", run.handleStatus)
+	}
+	state := interactiveWorldContextStateEvent(run)
+	stateData, ok := state.Data.(map[string]any)
+	if !ok || stateData["state"] != "active" || stateData["analysisHandleStatus"] != string(AnalysisHandleConsumed) {
+		t.Fatalf("handle-only active state must expose consumed status: %#v", state.Data)
+	}
+	if got := run.runContext.ModelViewBytes(); len(got) == 0 {
+		t.Fatal("moved pending context must retain model view bytes")
 	}
 }
 

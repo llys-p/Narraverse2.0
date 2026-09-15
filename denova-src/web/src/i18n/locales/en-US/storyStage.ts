@@ -1,4 +1,7 @@
 const storyStage = {
+  'storyStage.worldContext.none': 'No world background was attached to this turn',
+  'storyStage.worldContext.active': 'World background attached: {{name}} (read-only)',
+  'storyStage.worldContext.degraded': 'World background was unavailable; this turn continues without it',
   'storyStage.opening.backToSetup': 'Back to setup',
   'storyStage.replyTarget.compact': '{{count}} chars / turn',
   'storyStage.replyTarget.open': 'Set target chars per turn',

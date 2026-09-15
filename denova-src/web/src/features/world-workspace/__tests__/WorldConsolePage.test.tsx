@@ -21,20 +21,39 @@ const mocks = vi.hoisted(() => {
     getStories: vi.fn(),
     fetchMasterAsset: vi.fn(),
     launchWriting: vi.fn(),
+    launchGame: vi.fn(),
+    selectInteractiveStory: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn() },
   }
 })
 
 vi.mock('sonner', () => ({ toast: mocks.toast }))
 vi.mock('@/features/world-context-runtime/WorldContextLaunchProvider', () => ({
-  // 页面单测不需要真正的内存桥：Provider 透传，hook 返回可断言的 launchWriting spy。
+  // 页面单测不需要真正的内存桥：Provider 透传，hook 返回可断言的 launch spy。
   WorldContextLaunchProvider: ({ children }: { children: React.ReactNode }) => children,
   useWorldContextLaunch: () => ({
     pendingWriting: null,
     launchWriting: mocks.launchWriting,
+    launchGame: mocks.launchGame,
     takeWritingLaunch: vi.fn(),
     peekWritingLaunch: vi.fn(),
     clearWritingLaunch: vi.fn(),
+  }),
+  useGameWorldContextLaunch: () => ({
+    pendingGame: null,
+    launchGame: mocks.launchGame,
+    takeGameLaunch: vi.fn(),
+    peekGameLaunch: vi.fn(),
+    clearGameLaunch: vi.fn(),
+  }),
+}))
+vi.mock('@/features/world-context-runtime/GameWorldContextLaunchProvider', () => ({
+  useGameWorldContextLaunch: () => ({
+    pendingGame: null,
+    launchGame: mocks.launchGame,
+    takeGameLaunch: vi.fn(),
+    peekGameLaunch: vi.fn(),
+    clearGameLaunch: vi.fn(),
   }),
 }))
 vi.mock('../world-api', () => ({
@@ -47,7 +66,7 @@ vi.mock('@/lib/api-client', () => ({
   getBooks: mocks.getBooks,
   fetchMasterAsset: mocks.fetchMasterAsset,
 }))
-vi.mock('@/features/interactive/api', () => ({ getInteractiveStories: mocks.getStories }))
+vi.mock('@/features/interactive/api', () => ({ getInteractiveStories: mocks.getStories, selectInteractiveStory: mocks.selectInteractiveStory }))
 vi.mock('../components/ModeEntries', () => ({ ModeEntries: () => <div data-testid="mode-entries" /> }))
 vi.mock('../components/BindingPicker', () => ({
   WORLD_MATERIAL_SEMANTIC_TYPES: ['world', 'rule', 'item', 'other'],
@@ -663,6 +682,47 @@ describe('WorldConsolePage A5 带入写作', () => {
     await user.click(btn)
     expect(onQuickSwitchBook).not.toHaveBeenCalled()
     expect(mocks.launchWriting).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorldConsolePage B3 带入游戏', () => {
+  it('选择主故事成功后才写入游戏 Ref 并切换 interactive', async () => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [{ id: 'lost-story', title: '主游戏故事' }] })
+    mocks.selectInteractiveStory.mockResolvedValue(undefined)
+    const onSetMode = vi.fn()
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={vi.fn(async () => true)} />)
+
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+    await user.click(screen.getByTestId('context-launch-game'))
+
+    await waitFor(() => expect(mocks.selectInteractiveStory).toHaveBeenCalledWith('lost-story'))
+    expect(mocks.launchGame).toHaveBeenCalledWith(expect.objectContaining({
+      worldId: 'w1', expectedWorldRevision: 'sha256:r1', storyId: 'lost-story', branchId: 'main',
+    }))
+    expect(onSetMode).toHaveBeenCalledWith('interactive')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('选择主故事失败时不写游戏 Ref、不切模式', async () => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [{ id: 'lost-story', title: '主游戏故事' }] })
+    mocks.selectInteractiveStory.mockRejectedValueOnce(new Error('select failed'))
+    const onSetMode = vi.fn()
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={vi.fn(async () => true)} />)
+
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByTestId('context-launch-game'))
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled())
+    expect(mocks.launchGame).not.toHaveBeenCalled()
+    expect(onSetMode).not.toHaveBeenCalledWith('interactive')
   })
 })
 

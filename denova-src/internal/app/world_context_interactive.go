@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"log/slog"
+	"strings"
+	"time"
 
 	"denova/internal/agent"
 	"denova/internal/worldcontext"
@@ -20,6 +22,24 @@ type InteractiveWorldControl struct {
 	HasAnalysisHandle bool
 	// AnalysisHandle 是规范化后的不透明 token；不是 Task、runContext，也不持久化。
 	AnalysisHandle string
+}
+
+// InteractiveWorldContextStatus 是游戏 context-analysis 的脱敏世界状态。
+type InteractiveWorldContextStatus struct {
+	State         string
+	WorldName     string
+	RevisionLabel string
+	SelectedCount int
+	ErrorCode     string
+}
+
+// InteractiveContextAnalysis 保留旧分析响应的扁平字段，并只叠加短期 handle
+// 与世界状态；不暴露 Snapshot、ModelView、Registry 或 InteractiveRun 身份。
+type InteractiveContextAnalysis struct {
+	agent.ContextAnalysis
+	AnalysisHandle  string
+	HandleExpiresAt time.Time
+	World           *InteractiveWorldContextStatus
 }
 
 // Present 报告是否携带任一 World Context 控制字段。
@@ -42,8 +62,20 @@ type InteractiveTaskInput struct {
 type interactiveWorldRun struct {
 	runContext   *worldcontext.RunContext
 	scopeKey     string
+	hasHandle    bool
+	handleStatus AnalysisHandleUseStatus
 	degraded     bool
 	degradedCode string
+}
+
+// interactiveSessionKey 由服务端按当前工作区、故事和分支派生 analysis handle
+// 的归属键。客户端不能提交或覆盖它；切故事/分支自然进入另一条会话边界。
+func interactiveSessionKey(workspace, storyID, branchID string) string {
+	branchID = strings.TrimSpace(branchID)
+	if branchID == "" {
+		branchID = "main"
+	}
+	return "workspace:" + strings.TrimSpace(workspace) + "|story:" + strings.TrimSpace(storyID) + "|branch:" + branchID
 }
 
 // resolveInteractiveRun 完成游戏新回合的 bind-before-start 绑定。
@@ -53,6 +85,7 @@ func (s *WorldContextService) resolveInteractiveRun(
 	ctx context.Context,
 	binding interactiveTaskRunBinding,
 	world InteractiveWorldControl,
+	sessionKey string,
 ) (*interactiveWorldRun, error) {
 	if s == nil || s.interactiveRuns == nil || !world.Present() {
 		return nil, nil
@@ -65,9 +98,13 @@ func (s *WorldContextService) resolveInteractiveRun(
 	}
 	scopeKey := record.scopeKey
 
-	// Ref 优先：读取已保存 World 构建 Snapshot 并 Bind 到 Run scope。
+	// Ref 优先：读取已保存 World 构建 Snapshot，并在同时提交 handle 时
+	// 用 fingerprint 校验两者是否同源。Ref 与 handle 冲突时 Ref 可继续，
+	// 但 handle 必须回滚并显式标记 ignored_conflict。
+	var refSnapshot *worldcontext.Snapshot
+	refFingerprint := ""
 	if world.Ref != nil {
-		rc, _, err := s.BindWorldRun(ctx, consumer, scopeKey, *world.Ref)
+		snap, err := s.loadSnapshot(ctx, consumer, *world.Ref)
 		if err != nil {
 			if isBlockingWorldContextError(err) {
 				return nil, err
@@ -75,25 +112,93 @@ func (s *WorldContextService) resolveInteractiveRun(
 			code := string(worldcontext.CodeOf(err))
 			slog.Warn("world_context game ref degraded to bare",
 				"consumer", string(consumer), "code", code)
-			return &interactiveWorldRun{scopeKey: scopeKey, degraded: true, degradedCode: code}, nil
+			// A valid analysis handle may still carry the already materialized
+			// context. Do not discard it merely because a fresh Ref read is
+			// temporarily unavailable; handle-only claim below remains authoritative.
+			if !world.HasAnalysisHandle {
+				return &interactiveWorldRun{scopeKey: scopeKey, degraded: true, degradedCode: code}, nil
+			}
 		}
-		// 把 runContext 引用绑定到 InteractiveRun（供后续 regenerate Reuse）。
-		if bindErr := s.interactiveRuns.bindContext(binding.runID, rc.ID(), scopeKey); bindErr != nil {
-			slog.Warn("world_context game bindContext failed",
-				"run_id", string(binding.runID), "err", bindErr)
+		if snap != nil {
+			refSnapshot = snap
+			refFingerprint = snap.ContextFingerprint
 		}
-		return &interactiveWorldRun{runContext: rc, scopeKey: scopeKey}, nil
 	}
 
-	// 仅 handle：B2 暂不实现 claim/move（B3 前端完整交接时接入）。
-	// 客户端携带了 handle 但无 Ref，按 degraded 处理。
 	if world.HasAnalysisHandle {
-		slog.Warn("world_context game handle present without ref; ignored in B2",
-			"consumer", string(consumer))
-		return &interactiveWorldRun{scopeKey: scopeKey, degraded: true, degradedCode: "handle_not_supported"}, nil
+		claim, claimStatus := s.claimAnalysisHandle(world.AnalysisHandle, consumer, sessionKey)
+		if claim != nil && claimStatus == AnalysisHandleClaimed {
+			lease := claim.pendingContextLease()
+			moveFingerprint := lease.Fingerprint
+			if refSnapshot != nil && moveFingerprint != refFingerprint {
+				s.rollbackAnalysisClaim(claim)
+				claim = nil
+				claimStatus = AnalysisHandleIgnoredConflict
+			} else {
+				moved, moveErr := s.registry.MoveScopeByID(consumer, lease.RunContextID, lease.PendingScopeKey, scopeKey, moveFingerprint)
+				if moveErr == nil {
+					consumeStatus := s.consumeAnalysisHandle(claim)
+					if bindErr := s.interactiveRuns.bindContext(binding.runID, moved.ID(), scopeKey); bindErr != nil {
+						slog.Warn("world_context game bindContext failed", "run_id", string(binding.runID), "err", bindErr)
+					}
+					return &interactiveWorldRun{
+						runContext:   moved,
+						scopeKey:     scopeKey,
+						hasHandle:    true,
+						handleStatus: consumeStatus,
+					}, nil
+				}
+				s.rollbackAnalysisClaim(claim)
+				if refSnapshot == nil {
+					if isBlockingWorldContextError(moveErr) {
+						return nil, moveErr
+					}
+					return &interactiveWorldRun{scopeKey: scopeKey, degraded: true, degradedCode: string(worldcontext.CodeOf(moveErr))}, nil
+				}
+				claim = nil
+				claimStatus = AnalysisHandleIgnoredConflict
+			}
+		}
+
+		if refSnapshot != nil {
+			rc, err := s.bindWorldSnapshot(scopeKey, refSnapshot)
+			if err != nil {
+				if isBlockingWorldContextError(err) {
+					return nil, err
+				}
+				return &interactiveWorldRun{scopeKey: scopeKey, degraded: true, degradedCode: string(worldcontext.CodeOf(err))}, nil
+			}
+			return &interactiveWorldRun{runContext: rc, scopeKey: scopeKey, hasHandle: true, handleStatus: claimStatus}, nil
+		}
+
+		// 失效 handle 不恢复背景；这是显式的 bare 结果，不伪装成 active/degraded。
+		return nil, nil
 	}
 
-	return nil, nil
+	if refSnapshot == nil {
+		return nil, nil
+	}
+	rc, err := s.bindWorldSnapshot(scopeKey, refSnapshot)
+	if err != nil {
+		if isBlockingWorldContextError(err) {
+			return nil, err
+		}
+		return &interactiveWorldRun{scopeKey: scopeKey, degraded: true, degradedCode: string(worldcontext.CodeOf(err))}, nil
+	}
+	if bindErr := s.interactiveRuns.bindContext(binding.runID, rc.ID(), scopeKey); bindErr != nil {
+		slog.Warn("world_context game bindContext failed", "run_id", string(binding.runID), "err", bindErr)
+	}
+	return &interactiveWorldRun{runContext: rc, scopeKey: scopeKey}, nil
+}
+
+func (s *WorldContextService) bindWorldSnapshot(scopeKey string, snap *worldcontext.Snapshot) (*worldcontext.RunContext, error) {
+	rc, _, err := s.registry.Bind(worldcontext.BindInput{
+		Consumer:  worldcontext.ConsumerGame,
+		ScopeKey:  scopeKey,
+		Snapshot:  snap,
+		UISummary: uiSummaryFromSnapshot(snap),
+	})
+	return rc, err
 }
 
 // reuseInteractiveRunContext 在 regenerate 路径上复用已绑定到 InteractiveRun 的 runContext。
@@ -132,6 +237,9 @@ func interactiveWorldContextStateEvent(run *interactiveWorldRun) agent.Event {
 		if summary.SelectedCount != 0 {
 			data["selectedCount"] = summary.SelectedCount
 		}
+		if run.hasHandle && run.handleStatus != "" {
+			data["analysisHandleStatus"] = string(run.handleStatus)
+		}
 	case run != nil && run.degraded:
 		data["state"] = "degraded"
 		if run.degradedCode != "" {
@@ -141,6 +249,19 @@ func interactiveWorldContextStateEvent(run *interactiveWorldRun) agent.Event {
 		data["state"] = "none"
 	}
 	return agent.Event{Type: "world_context_state", Data: data}
+}
+
+// interactiveWorldContextErrorEvent 把阻断性 World 错误转换成稳定、脱敏的 SSE
+// error 事件。不得把本机路径、World 正文或内部运行身份放进客户端消息。
+func interactiveWorldContextErrorEvent(err error) agent.Event {
+	code := string(worldcontext.CodeOf(err))
+	if code == "" {
+		code = string(worldcontext.ErrContextUnavailable)
+	}
+	return agent.Event{Type: "error", Data: map[string]string{
+		"code":    code,
+		"message": "世界背景无法加载，请修正当前选择后重试",
+	}}
 }
 
 // interactiveEphemeralWorldInput builds the read-only ephemeral world context for

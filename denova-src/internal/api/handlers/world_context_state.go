@@ -28,6 +28,15 @@ type writingContextAnalysisWire struct {
 	AnalysisHandleExpiresAt *time.Time             `json:"analysis_handle_expires_at,omitempty"`
 }
 
+// interactiveContextAnalysisWire mirrors the legacy interactive analysis
+// payload while adding the same safe World status/handle fields as writing.
+type interactiveContextAnalysisWire struct {
+	agent.ContextAnalysis
+	WorldContext            *worldContextStateWire `json:"world_context,omitempty"`
+	AnalysisHandle          string                 `json:"analysis_handle,omitempty"`
+	AnalysisHandleExpiresAt *time.Time             `json:"analysis_handle_expires_at,omitempty"`
+}
+
 func toWorldContextStateWire(s *novaApp.WritingWorldContextStatus) *worldContextStateWire {
 	if s == nil {
 		return nil
@@ -45,6 +54,25 @@ func toWritingContextAnalysisWire(result novaApp.WritingContextAnalysis) writing
 	wire := writingContextAnalysisWire{
 		ContextAnalysis: result.Analysis,
 		WorldContext:    toWorldContextStateWire(result.World),
+	}
+	if result.AnalysisHandle != "" {
+		expiresAt := result.HandleExpiresAt
+		wire.AnalysisHandle = result.AnalysisHandle
+		wire.AnalysisHandleExpiresAt = &expiresAt
+	}
+	return wire
+}
+
+func toInteractiveContextAnalysisWire(result novaApp.InteractiveContextAnalysis) interactiveContextAnalysisWire {
+	wire := interactiveContextAnalysisWire{ContextAnalysis: result.ContextAnalysis}
+	if result.World != nil {
+		wire.WorldContext = &worldContextStateWire{
+			State:         result.World.State,
+			WorldName:     result.World.WorldName,
+			RevisionLabel: result.World.RevisionLabel,
+			SelectedCount: result.World.SelectedCount,
+			ErrorCode:     result.World.ErrorCode,
+		}
 	}
 	if result.AnalysisHandle != "" {
 		expiresAt := result.HandleExpiresAt
