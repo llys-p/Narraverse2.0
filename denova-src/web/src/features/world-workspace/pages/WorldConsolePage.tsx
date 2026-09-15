@@ -25,6 +25,8 @@ import { getWorld, updateWorld } from '../world-api'
 import { useWorldContextPreview } from '../use-world-context-preview'
 import { useWorldContextLaunch } from '@/features/world-context-runtime/WorldContextLaunchProvider'
 import { useGameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
+import { useIframeWorldContextLaunch, type IframeWorldConsumer } from '@/features/world-context-runtime/IframeWorldContextLaunchProvider'
+import { useWorldContextHost } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { WorldContextPanel } from '../components/context/WorldContextPanel'
 import {
   emptyContextSelection,
@@ -86,6 +88,8 @@ export function WorldConsolePage({
   // Phase 3.2-A5：显式「带入写作」交接（纯内存 Provider），切主书进行中的忙态。
   const { launchWriting } = useWorldContextLaunch()
   const { launchGame } = useGameWorldContextLaunch()
+  const iframeLaunches = useIframeWorldContextLaunch()
+  const worldContextHost = useWorldContextHost()
   const [launchPending, setLaunchPending] = useState(false)
   const [gameLaunchPending, setGameLaunchPending] = useState(false)
   // markStale 身份会随 preview 变化，用 ref 让 mutate/save/reload 无需把它列入依赖、避免回调抖动。
@@ -280,6 +284,34 @@ export function WorldConsolePage({
       setGameLaunchPending(false)
     }
   }, [gameLaunchPending, dirty, revision, contextSelection, draft, stories, storiesLoad, t, worldId, contextPreview.preview, launchGame, onSetMode])
+
+  // Narraverse / Module4 只接收同一份已保存 World Ref。consumer 不进入 Ref，
+  // 而由宿主按受控路由固定；iframe 永远看不到 Ref、revision、selection 或运行态 ID。
+  const launchToIframe = useCallback((consumer: IframeWorldConsumer) => {
+    if (dirty) { toast.error(t('worldWorkspace.context.blockedDirty')); return }
+    if (!revision) { toast.error(t('worldWorkspace.context.launchNeedSavedGeneric')); return }
+    if (!isSelectionWithinLimits(contextSelection)) { toast.error(t('worldWorkspace.context.launchOverflowGeneric')); return }
+    if (worldContextHost.state !== 'ready') { toast.error(t('worldWorkspace.context.launchHostUnavailable')); return }
+    if (!draft) return
+    const selectedCount = (contextSelection.includeTone ? 1 : 0)
+      + contextSelection.ruleIndexes.length + contextSelection.characterIds.length + contextSelection.locationIds.length
+      + contextSelection.factionIds.length + contextSelection.timelineEntryIds.length + contextSelection.bindingIds.length
+    iframeLaunches.launch(consumer, {
+      worldId,
+      expectedWorldRevision: revision,
+      selection: contextSelection,
+      worldName: draft.name,
+      revisionLabel: contextPreview.preview?.revisionLabel,
+      selectedCount,
+      launchedAt: Date.now(),
+    })
+    if (consumer === 'module4') {
+      onOpenModule4?.()
+      return
+    }
+    onCloseModule4?.()
+    onSetMode('narraverse')
+  }, [dirty, revision, contextSelection, worldContextHost.state, draft, t, iframeLaunches, worldId, contextPreview.preview, onOpenModule4, onCloseModule4, onSetMode])
 
   // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
   const confirmLeave = useCallback(() => !dirty || window.confirm(t('worldWorkspace.unsavedLeave')), [dirty, t])
@@ -495,6 +527,9 @@ export function WorldConsolePage({
                 launchWritingPending={launchPending}
                 onLaunchGame={() => void launchToGame()}
                 launchGamePending={gameLaunchPending}
+                onLaunchNarraverse={() => launchToIframe('narraverse')}
+                onLaunchModule4={() => launchToIframe('module4')}
+                iframeLaunchDisabled={worldContextHost.state !== 'ready'}
               />
             )}
           </div>

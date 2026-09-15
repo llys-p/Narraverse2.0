@@ -41,8 +41,8 @@ const (
 //
 // currentRevision 由 App 层（后续 P2）从 world.Store.Get 取得后传入。
 func BuildSnapshot(consumer Consumer, ref Ref, currentRevision string, w world.World) (*Snapshot, error) {
-	// 消费者可信边界：3.0B 只允许 writing/game。
-	if consumer != ConsumerWriting && consumer != ConsumerGame {
+	// consumer 的可信性由服务端固定入口保证；领域层只接受冻结的四个枚举。
+	if !supportedConsumer(consumer) {
 		return nil, domainError(ErrConsumerNotTrusted, "consumer", "当前阶段不允许该模式请求世界上下文")
 	}
 	// expectedWorldRevision 形状（§4.11c）。

@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => {
     fetchMasterAsset: vi.fn(),
     launchWriting: vi.fn(),
     launchGame: vi.fn(),
+    iframeLaunch: vi.fn(),
+    hostState: 'ready' as 'checking' | 'ready' | 'unavailable',
     selectInteractiveStory: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn() },
   }
@@ -55,6 +57,17 @@ vi.mock('@/features/world-context-runtime/GameWorldContextLaunchProvider', () =>
     peekGameLaunch: vi.fn(),
     clearGameLaunch: vi.fn(),
   }),
+}))
+vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () => ({
+  useIframeWorldContextLaunch: () => ({
+    pending: { narraverse: null, module4: null },
+    launch: mocks.iframeLaunch,
+    take: vi.fn(),
+    clear: vi.fn(),
+  }),
+}))
+vi.mock('@/features/world-context-runtime/WorldContextHostProvider', () => ({
+  useWorldContextHost: () => ({ state: mocks.hostState, migration: null }),
 }))
 vi.mock('../world-api', () => ({
   getWorld: mocks.getWorld,
@@ -173,7 +186,10 @@ function renderConsoleWith(world: World) {
   )
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.hostState = 'ready'
+})
 
 describe('WorldConsolePage 入口有效性', () => {
   it('失效主书/故事在 select 内保留 disabled 的原值选项', async () => {
@@ -723,6 +739,59 @@ describe('WorldConsolePage B3 带入游戏', () => {
     await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled())
     expect(mocks.launchGame).not.toHaveBeenCalled()
     expect(onSetMode).not.toHaveBeenCalledWith('interactive')
+  })
+})
+
+describe('WorldConsolePage C/D 带入 iframe 运行模式', () => {
+  beforeEach(() => { mocks.hostState = 'ready' })
+
+  it('以同一只读 Ref 带入叙界，不写 World', async () => {
+    const user = userEvent.setup()
+    const onSetMode = vi.fn()
+    const onCloseModule4 = vi.fn()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={vi.fn(async () => true)} onCloseModule4={onCloseModule4} />)
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+    await user.click(screen.getByTestId('context-launch-narraverse'))
+    expect(mocks.iframeLaunch).toHaveBeenCalledWith('narraverse', expect.objectContaining({
+      worldId: 'w1', expectedWorldRevision: 'sha256:r1', worldName: '控制台世界',
+      selection: expect.objectContaining({ characterIds: ['c1'] }),
+    }))
+    expect(onCloseModule4).toHaveBeenCalledTimes(1)
+    expect(onSetMode).toHaveBeenCalledWith('narraverse')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('以同一只读 Ref 打开 Module4，consumer 不进入 Ref', async () => {
+    const user = userEvent.setup()
+    const onOpenModule4 = vi.fn()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} onOpenModule4={onOpenModule4} />)
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByTestId('context-launch-module4'))
+    const launch = mocks.iframeLaunch.mock.calls[0][1]
+    expect(mocks.iframeLaunch).toHaveBeenCalledWith('module4', expect.any(Object))
+    expect(launch).not.toHaveProperty('consumer')
+    expect(launch).not.toHaveProperty('runContextId')
+    expect(launch).not.toHaveProperty('modelView')
+    expect(onOpenModule4).toHaveBeenCalledTimes(1)
+  })
+
+  it('安全宿主不可用时禁用两个 iframe 带入入口', async () => {
+    mocks.hostState = 'unavailable'
+    const user = userEvent.setup()
+    renderConsole()
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    expect(screen.getByTestId('context-launch-narraverse')).toBeDisabled()
+    expect(screen.getByTestId('context-launch-module4')).toBeDisabled()
+    expect(mocks.iframeLaunch).not.toHaveBeenCalled()
   })
 })
 

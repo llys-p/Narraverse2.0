@@ -13,7 +13,7 @@
 
 import type { World } from './types'
 
-/** 可信 consumer：当前阶段仅写作/游戏；narraverse/module4 由后端直接拒绝（403）。 */
+/** World Console 预览选择器只暴露写作/游戏；叙界/Module4 由宿主受控路由固定 consumer。 */
 export type WorldContextConsumer = 'writing' | 'game'
 
 /** 选择器 wire 形态（严格 camelCase，白名单字段），请求与 canonicalSelection 共用同一形状。 */

@@ -161,7 +161,7 @@ func MaterializeModelView(body *ProjectionBody, consumer Consumer, runSalt []byt
 	if body == nil {
 		return nil, domainError(ErrProjectionFailed, "body", "投影体为空")
 	}
-	if consumer != ConsumerWriting && consumer != ConsumerGame {
+	if !supportedConsumer(consumer) {
 		return nil, domainError(ErrConsumerNotTrusted, "consumer", "当前阶段不允许该模式物化模型视图")
 	}
 	if len(runSalt) != 32 {

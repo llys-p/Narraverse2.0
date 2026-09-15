@@ -364,11 +364,17 @@ func TestMoveScopeByID_ValidationFailuresAreAtomic(t *testing.T) {
 	}
 }
 
-func TestBind_RejectsUntrustedConsumerAndEmptyScope(t *testing.T) {
+func TestBind_AcceptsFrozenConsumersAndRejectsUnknownOrEmptyScope(t *testing.T) {
 	r := NewRegistry()
+	for _, consumer := range []Consumer{ConsumerNarraverse, ConsumerModule4} {
+		snap := mustBuild(t, consumer, baseRef(Selection{}), sampleWorld())
+		if _, _, err := r.Bind(BindInput{Consumer: consumer, ScopeKey: "iframe:" + string(consumer), Snapshot: snap}); err != nil {
+			t.Fatalf("%s 应允许绑定，got %v", consumer, err)
+		}
+	}
 	snap := testSnap(t, Selection{})
-	if _, _, err := r.Bind(BindInput{Consumer: ConsumerNarraverse, ScopeKey: "x", Snapshot: snap}); CodeOf(err) != ErrConsumerNotTrusted {
-		t.Fatalf("narraverse 应被拒，got %v", err)
+	if _, _, err := r.Bind(BindInput{Consumer: Consumer("bogus"), ScopeKey: "x", Snapshot: snap}); CodeOf(err) != ErrConsumerNotTrusted {
+		t.Fatalf("未知 consumer 应被拒，got %v", err)
 	}
 	if _, _, err := r.Bind(BindInput{Consumer: ConsumerWriting, ScopeKey: "", Snapshot: snap}); CodeOf(err) != ErrInvalidRequest {
 		t.Fatalf("空 scope 应 invalid_request，got %v", err)

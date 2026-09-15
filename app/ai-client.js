@@ -52,18 +52,27 @@
   api.chat = function (messages, options) {
     if (!isEmbedded()) return Promise.reject(new Error('当前为静态模式，请使用页面本地 API 设置。'));
     var opts = options || {};
-    return jsonRequest('/api/model/chat', {
+    var normalizedMessages = Array.isArray(messages) ? messages.map(function (message) {
+      return { role: message.role, content: message.content };
+    }) : [];
+    var directBare = function () { return jsonRequest('/api/model/chat', {
       method: 'POST',
       body: JSON.stringify({
         module: opts.module || 'narraverse',
-        messages: Array.isArray(messages) ? messages.map(function (message) {
-          return { role: message.role, content: message.content };
-        }) : [],
+        messages: normalizedMessages,
         max_tokens: opts.maxTokens,
         temperature: typeof opts.temperature === 'number' ? opts.temperature : undefined
       })
     }).then(function (data) {
       return String(data && data.content || '');
+    }); };
+    if (typeof root.requestDenovaModel !== 'function') return directBare();
+    return root.requestDenovaModel(normalizedMessages, {
+      maxTokens: opts.maxTokens,
+      temperature: typeof opts.temperature === 'number' ? opts.temperature : undefined
+    }).catch(function (error) {
+      if (error && (error.code === 'host_unavailable' || error.code === 'consumer_not_trusted')) return directBare();
+      throw error;
     });
   };
 }(window));

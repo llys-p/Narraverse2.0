@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -46,8 +47,25 @@ func (h *Handlers) HandleModelTest(ctx context.Context, c *app.RequestContext) {
 // protocol; all four modules nevertheless share the same settings resolution
 // and provider-compatible model transport.
 func (h *Handlers) HandleModelChat(ctx context.Context, c *app.RequestContext) {
+	body := c.Request.Body()
+	var raw map[string]json.RawMessage
+	if len(bytes.TrimSpace(body)) == 0 || json.Unmarshal(body, &raw) != nil || raw == nil {
+		writeError(c, consts.StatusBadRequest, "模型请求格式无效。")
+		return
+	}
+	for _, key := range []string{
+		"world_context", "worldId", "world_id", "revision", "expectedWorldRevision",
+		"expected_world_revision", "selection", "consumer", "scope", "scopeKey", "scope_key",
+		"runContextId", "run_context_id", "sourceRef", "source_ref", "runSalt", "run_salt",
+		"capability", "analysisHandle", "analysis_handle", "modelView", "model_view", "snapshot",
+	} {
+		if _, present := raw[key]; present {
+			c.JSON(consts.StatusForbidden, map[string]string{"code": "consumer_not_trusted", "error": "通用模型入口不接受世界上下文控制字段。"})
+			return
+		}
+	}
 	var req novaApp.ModelGatewayChatRequest
-	if err := c.BindJSON(&req); err != nil {
+	if err := decodeStrictJSON(body, &req); err != nil {
 		writeError(c, consts.StatusBadRequest, "模型请求格式无效。")
 		return
 	}
