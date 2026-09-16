@@ -1,43 +1,30 @@
 # Narraverse2.0 Architecture Roadmap
 
-## Phase 3 — World Foundation
+## Current Position — Phase 3 Closed
 
-Status: In progress.
+Status: Phase 1 through Phase 3.2 have passed their recorded acceptance gates on
+`main` `8b91a0259e1cc63a3143a5a47cf3a2e738156dcb`.
 
-Goal:
+Delivered:
 
-Complete World as a controllable creative foundation.
+- World Console, binding management, Timeline compatibility and Context Preview.
+- Read-only WorldContext runtime delivery to Writing, Game, Narraverse and Module4.
+- Explicit boundary: runtime/story state does not automatically rewrite World.
 
-Includes:
+The previous “Phase 4 — Runtime Integration” label described work that was
+implemented as Phase 3.2. It is retained below only as historical context, not
+as a new unstarted phase.
 
-- World Console
-- Context preview
-- Binding management
-- Timeline compatibility
-- World inspection
-
-Does not include:
-
-- automatic story generation
-- runtime state persistence
-- AI autonomous world modification
-
-Prerequisites:
-
-- World remains the persistent truth.
-- WorldContext boundaries remain frozen.
+For current next-project choices, see [NEXT_PROJECT_BACKLOG.md](NEXT_PROJECT_BACKLOG.md).
 
 ---
 
-## Phase 4 — Runtime Integration
+## Historical Phase 4 Label — Runtime Integration
 
-(Equivalent to previous Phase 3.2 runtime connection plan.)
+Status: Completed under Phase 3.2; archived plans and acceptance records are in
+`archive/2026-09-world-workspace/`.
 
-Goal:
-
-Connect prepared WorldContext into creative experiences.
-
-Order:
+Delivered order:
 
 ```text
 Writing
@@ -51,7 +38,7 @@ Narraverse
 Module4
 ```
 
-Constraints:
+Permanent constraints:
 
 - Runtime reads World context.
 - Runtime does not rewrite World automatically.

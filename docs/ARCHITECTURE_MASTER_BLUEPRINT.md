@@ -1,6 +1,6 @@
 # Narraverse2.0 Architecture Master Blueprint
 
-> Status: Architecture baseline after repository review.
+> Status: Architecture baseline after Phase 3.2 final acceptance on `main` `8b91a0259e1cc63a3143a5a47cf3a2e738156dcb`.
 >
 > Purpose: Separate implemented capability, frozen design, and future planning. This document is not a claim that every planned module exists.
 
@@ -166,17 +166,24 @@ Implemented:
 - Context registry.
 - Analysis handle lifecycle.
 - InteractiveRun foundation.
-- World Console context preview foundation.
+- World Console context preview, selection and inspection workflow.
+- Read-only WorldContext delivery to Writing, Game, Narraverse and Module4.
+- Controlled iframe host boundary for Narraverse and Module4 World Context calls.
 
 Frozen Design:
 
-- Runtime context consumption.
-- Four experience modes reading World context without rewriting World.
+- Knowledge/Obsidian reference shape and graph-as-projection boundary.
+- Future WorldContext consumers must retain the existing read-only contract.
 
 Not yet implemented:
 
-- Full World Console integration.
-- Complete writing/game/Narraverse/Module4 context injection.
+- Knowledge Workspace, automatic book decomposition and relationship graph.
+- World map, automatic simulation, or automatic runtime-to-World writeback.
+- Module4 V2 and any agent autonomy over World facts.
+
+For an operational snapshot and next-project boundary, see
+[PROJECT_STATUS_2026-09-16.md](PROJECT_STATUS_2026-09-16.md) and
+[NEXT_PROJECT_BACKLOG.md](NEXT_PROJECT_BACKLOG.md).
 
 ## 6. Knowledge and Graph Boundaries
 

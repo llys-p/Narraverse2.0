@@ -22,7 +22,7 @@
 3. `DESIGN.md`、`代码指南.md`、`CODE_GUIDE.md`、`平台模块功能总览.md`。
 4. `docs/交付/Narraverse2.0交付清单.md`。
 5. `项目协作日志.md`、`COLLABORATION_LOG.md`。
-6. 与当前任务相关的 `docs/module4/`、源码和测试。
+6. 与当前任务相关的 `docs/archive/2026-09-module4-v1/`、源码和测试（仅在追溯 Module4 v1/V1.5 历史时读取）。
 
 之后执行：
 
