@@ -1,7 +1,7 @@
 # World Workspace Phase 3.2 Final Acceptance
 
-> 验收日期：2026-09-15
-> 结论：**PASS（代码与正式 executable 闭环通过；外部 DeepSeek 凭据需另行补验）**
+> 验收日期：2026-09-15～2026-09-16
+> 结论：**PASS（代码、正式 executable 与外部 DeepSeek 真实生成闭环全部通过）**
 
 ## 1. 验收范围与提交
 
@@ -38,7 +38,7 @@ World（唯一持久化真源）
 
 ## 3. 正式 executable 浏览器验收
 
-使用当前源码构建的正式 Denova executable，在隔离 home、隔离 workspace、端口 `18090` 和独立 Edge profile 中验收。模型上游使用隔离 HTTP mock；该 mock 真实接收宿主发出的 HTTP 模型请求，并断言请求中包含冻结只读抬头和测试 World 内容。
+使用当前源码构建的正式 Denova executable，在隔离 home、隔离 workspace、端口 `18090` 和独立 Edge profile 中验收。第一轮使用隔离 HTTP mock，真实接收宿主发出的 HTTP 模型请求并断言请求中包含冻结只读抬头和测试 World 内容；第二轮使用用户授权的有效 DeepSeek 配置，在相同正式页面路径补跑真实供应商生成。凭据只临时写入隔离验收配置，补验后已移除，不进入源码、Git、日志或本报告。
 
 | 断言 | 结果 |
 | --- | --- |
@@ -54,6 +54,14 @@ World（唯一持久化真源）
 | Module4 可正常打开并保持独立运行态 | PASS |
 
 浏览器控制台错误：0。网络错误：0。
+
+2026-09-16 的真实 DeepSeek 补验结果：
+
+- Denova `/api/model/test` 对 writing、game、narraverse、module4 四个模块均返回连接成功，生效模型为 `deepseek-chat`。
+- Narraverse iframe 在 active World Context 状态下返回指定真实生成标记。
+- Module4 iframe 在 active World Context 状态下返回指定真实生成标记。
+- 同一轮 10 项浏览器断言全部 PASS，浏览器控制台错误 0、网络错误 0。
+- 一次性 bootstrap fragment 使用后清除；iframe 仍无法访问父页面 DOM，直接调用特权宿主路由仍被拒绝。
 
 正式验收期间还发现并修复了两项真实运行缺陷：
 
@@ -103,11 +111,11 @@ World（唯一持久化真源）
 - iframe 不得到 World Ref、scopeKey、runContextId、fingerprint、sourceRef、runSalt、ModelView 或 API Key。
 - 旧 iframe v1 / standalone 模式继续以 bare 方式工作；旧浏览器资料迁移源数据保留，目标非空时不覆盖。
 
-## 7. 外部模型验收边界
+## 7. 外部模型验收
 
-2026-09-15 对当前进程中已配置的 DeepSeek 凭据执行最小生成探针，服务端返回 HTTP 401。探针没有输出、记录或提交密钥。
+2026-09-15 首次探针使用的旧环境凭据返回 HTTP 401，已如实分类为环境凭据问题。2026-09-16 在用户明确授权后，将新凭据仅配置到隔离验收 Denova 数据目录，重新启动正式 executable 并完成补验：四模块共享模型探针全部成功，Narraverse 与 Module4 各完成一条真实 DeepSeek 生成，返回值与预期标记一致。
 
-因此本轮已证明：正式 Denova → 受控宿主路由 → World 临时注入 → HTTP 模型上游 → Narraverse/Module4 返回值的完整代码链路；但没有把当前无效凭据下的外部 DeepSeek 出文写成 PASS。待配置有效凭据后，只需补跑一次 Narraverse 与 Module4 各一条真实供应商生成，不需要再修改架构或 World 数据。
+本次补验完整覆盖：正式 Denova → 一次性宿主 bootstrap → 受控 bind/call → World 临时只读注入 → DeepSeek → iframe 返回值与 active 状态。未把凭据写入源码、Git、协作日志、验收报告或浏览器证据文件；补验结束后已删除隔离配置中的凭据与一次性启动 URL。
 
 ## 8. 最终裁定
 
@@ -116,5 +124,5 @@ World（唯一持久化真源）
 - 代码与正式 executable：**PASS**
 - World 单一真源：**保持**
 - Phase 3.2-A/B/C/D：**实现完成**
-- 外部供应商补验：**待有效 DeepSeek 凭据，属于环境 follow-up，不是代码阻塞**
+- 外部 DeepSeek 真实生成：**PASS**
 - main 合并：尚未执行，需用户明确批准
