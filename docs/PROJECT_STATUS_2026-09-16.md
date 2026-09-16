@@ -48,6 +48,12 @@ World Workspace 的 Phase 1、2A、2B、3.0、3.1 与 3.2 已完成并保留验�
 
 模型凭据属于本地 Settings/运行配置，不应写入代码、文档或 Git。开始任何真实模型验收前，应在 Settings 中单独验证当前 Profile。
 
+## 已完成的本机清理与保留项
+
+- 已删除已合并的 `D:\Narraverse2.0-wt-c0` 工作树：其提交 `669d0d9` 已在 GitHub `main` 中；同时清除了约 4.3GB 的隔离验收目录、可重建的前端依赖、旧静态镜像和运行日志。该目录不含用户 `.denova` 数据。
+- `D:\Narraverse2.0-wt-a1a` 已从 Git worktree 注册表移除；物理残留约 63MB，内容已逐项比对为旧根目录或当前部署已有的知识库、设计预览和文档副本。若不再需要离线备份，可在资源管理器中删除该**无 Git 元数据的重复目录**。
+- 旧根目录的 `.denova`、`denova-src\.denova`、UI v4 设计预览和 `docs\_local-archive` 均为有意保留项；它们不是当前代码真源，也不应在未备份、未按需迁移前删除。
+
 ## 清理后的开发起点
 
 1. 新项目从 GitHub `main` 新建干净 worktree 或 clone，不从旧 `D:\Narraverse2.0` 复制源码、`node_modules`、`dist`、`.denova` 或验收产物。
