@@ -1,5 +1,5 @@
 const worldWorkspace = {
-  'worldWorkspace.title': 'World Workspace',
+  'worldWorkspace.title': 'Organize World',
   'worldWorkspace.subtitle': 'Create, manage and enter your AI worlds',
   'worldWorkspace.back': 'Back',
   'worldWorkspace.close': 'Close',

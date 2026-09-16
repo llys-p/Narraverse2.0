@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- PR #3 统一导航语义：顶部保留四个运行模式，世界入口改名为“梳理世界”，移除世界概览中重复的四模式卡片；同步修正页面标题和响应式测试断言。
+- PR #3 clarifies navigation semantics: the top bar keeps the four runtime modes, the world entry is renamed to “Organize World”, duplicate mode cards are removed from the world overview, and the page title and responsive test assertion are aligned.
+
 ### Added
 - Phase 3.2-C/D 外部 DeepSeek 正式补验通过：在隔离 Denova 数据目录中临时配置用户授权凭据，writing/game/narraverse/module4 四模块共享模型探针全部成功；正式 executable + Edge/CDP 通过 World Console 分别进入 Narraverse 与 Module4，两种 iframe 都在 active World Context 下返回真实 DeepSeek 生成结果。浏览器 10 项断言、console/network 均为全绿，凭据未进入源码、Git、日志或验收报告，并在补验后从隔离配置移除。
 - Phase 3.2-C/D external DeepSeek acceptance passed: an authorized credential was temporarily configured only in the isolated Denova data directory; shared-model probes succeeded for writing, game, narraverse, and module4. The production executable plus Edge/CDP launched Narraverse and Module4 from the World Console, and both iframes returned real DeepSeek output with active World Context. All 10 browser assertions passed with zero console or network errors; the credential was not written to source, Git, logs, or the acceptance report and was removed from the isolated config afterward.
