@@ -121,7 +121,7 @@ describe('WorkbenchShell responsive main content', () => {
     const props = workbenchProps(<div />)
     const { rerender } = render(<WorkbenchShell {...props} />)
 
-    expect(screen.getByRole('group', { name: /模式切换|Mode Switch/ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /运行模式|Runtime Modes/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /写作模式|Writing Mode/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: /游戏模式|Game Mode/ })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: /叙界|Narraverse/ })).toHaveAttribute('aria-pressed', 'false')

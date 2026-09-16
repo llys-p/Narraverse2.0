@@ -1,5 +1,5 @@
 const worldWorkspace = {
-  'worldWorkspace.title': '世界工作区',
+  'worldWorkspace.title': '梳理世界',
   'worldWorkspace.subtitle': '创造、管理并进入你的 AI 世界',
   'worldWorkspace.back': '返回',
   'worldWorkspace.close': '关闭',
