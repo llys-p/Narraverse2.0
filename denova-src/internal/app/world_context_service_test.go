@@ -136,12 +136,17 @@ func TestWorldContext_NotFound(t *testing.T) {
 	}
 }
 
-func TestWorldContext_UntrustedConsumer(t *testing.T) {
+func TestWorldContext_HostConsumersEnabledAfterC0(t *testing.T) {
 	a, w, rev := newWorldContextTestApp(t)
 	svc := newWorldContextService(a)
 	ref := worldRef(w, rev)
-	if _, _, err := svc.BindWorldRun(context.Background(), worldcontext.ConsumerNarraverse, "x:1", ref); worldcontext.CodeOf(err) != worldcontext.ErrConsumerNotTrusted {
-		t.Fatalf("narraverse 应 consumer_not_trusted，got %v", err)
+	for _, consumer := range []worldcontext.Consumer{worldcontext.ConsumerNarraverse, worldcontext.ConsumerModule4} {
+		if _, _, err := svc.BindWorldRun(context.Background(), consumer, "iframe:"+string(consumer), ref); err != nil {
+			t.Fatalf("%s 应在 C0 后允许服务端固定入口绑定，got %v", consumer, err)
+		}
+	}
+	if _, _, err := svc.BindWorldRun(context.Background(), worldcontext.Consumer("bogus"), "x:1", ref); worldcontext.CodeOf(err) != worldcontext.ErrConsumerNotTrusted {
+		t.Fatalf("未知 consumer 应 consumer_not_trusted，got %v", err)
 	}
 }
 

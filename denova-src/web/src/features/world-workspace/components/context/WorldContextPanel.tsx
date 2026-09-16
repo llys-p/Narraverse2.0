@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { PenLine } from 'lucide-react'
+import { Boxes, Gamepad2, Globe2, PenLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { World } from '../../types'
@@ -53,6 +53,13 @@ interface WorldContextPanelProps {
    */
   onLaunchWriting?: () => void
   launchWritingPending?: boolean
+  /** Phase 3.2-B3：选择主故事成功后，把已保存 Ref 交给游戏模式。 */
+  onLaunchGame?: () => void
+  launchGamePending?: boolean
+  /** Phase 3.2-C/D：经受控宿主代理把只读背景带入 iframe；Ref 永不下发 iframe。 */
+  onLaunchNarraverse?: () => void
+  onLaunchModule4?: () => void
+  iframeLaunchDisabled?: boolean
 }
 
 export function WorldContextPanel({
@@ -70,6 +77,11 @@ export function WorldContextPanel({
   onRemoveBinding,
   onLaunchWriting,
   launchWritingPending = false,
+  onLaunchGame,
+  launchGamePending = false,
+  onLaunchNarraverse,
+  onLaunchModule4,
+  iframeLaunchDisabled = false,
 }: WorldContextPanelProps) {
   const { t } = useTranslation()
   const loading = state === 'loading'
@@ -115,6 +127,48 @@ export function WorldContextPanel({
           >
             {launchWritingPending ? <Spinner className="size-3.5" /> : <PenLine className="size-3.5" />}
             {t('worldWorkspace.context.launchWriting')}
+          </Button>
+        ) : null}
+        {onLaunchGame ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-game"
+            disabled={generateDisabled || launchGamePending}
+            onClick={onLaunchGame}
+          >
+            {launchGamePending ? <Spinner className="size-3.5" /> : <Gamepad2 className="size-3.5" />}
+            {t('worldWorkspace.context.launchGame')}
+          </Button>
+        ) : null}
+        {onLaunchNarraverse ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-narraverse"
+            disabled={generateDisabled || iframeLaunchDisabled}
+            onClick={onLaunchNarraverse}
+          >
+            <Globe2 className="size-3.5" />
+            {t('worldWorkspace.context.launchNarraverse')}
+          </Button>
+        ) : null}
+        {onLaunchModule4 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-module4"
+            disabled={generateDisabled || iframeLaunchDisabled}
+            onClick={onLaunchModule4}
+          >
+            <Boxes className="size-3.5" />
+            {t('worldWorkspace.context.launchModule4')}
           </Button>
         ) : null}
       </div>

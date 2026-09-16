@@ -24,6 +24,9 @@ import { agentSubAgentSessionKey, agentViewToRenderMessage, type AgentMessageVie
 import { fetchSettings } from '@/features/settings/api'
 import { useSkillCommands } from '@/hooks/useSkillCommands'
 import { abortInteractiveChat, analyzeInteractiveContext, compactInteractiveContext, generateInteractiveImage, removeInteractiveContextCompaction, runInteractiveDirector, sendInteractiveMessage, streamActiveInteractiveChat, switchInteractiveTurnVersion, updateInteractiveTurnNarrative } from '../api'
+import type { InteractiveWorldContextRef } from '../api'
+import { useGameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
+import { normalizeWorldContextStatus, type WorldContextRunStatus } from '@/features/world-context-runtime/world-context-wire'
 import type { ActiveInteractiveChat } from '../api'
 import { createInteractiveNarrativeFilter, sanitizeStoredNarrative } from '../stream-parser'
 import { emptyStoryStageRun, useInteractiveStore } from '../stores/interactive-store'
@@ -99,6 +102,10 @@ type InteractiveStreamOutcome = {
 
 export function StoryStage({ workspace, styleSceneSuggestions = [], stories = [], story, tellers = [], storyDirectors = [], imagePresets = [], storyId, branchId, snapshot, snapshotLoading = false, loreEmpty = false, bookOpeningPresets = [], narraverseImported = false, directorPanelVisible = true, stateDisplayPreference = DEFAULT_STORY_STATE_DISPLAY, onStorySelect = noop, onStoryCreate = noop, onStorySetupUpdate = noop, onStoryDelete = noop, onDirectorChange = noop, onReplyTargetCharsChange, onImageSettingsChange, onRequestLoreInit, onOpenDirectorConfig, onToggleDirectorPanel, onOpenDirectorState, onStateDisplayPreferenceChange = noopStateDisplayPreferenceChange, onTurnPersisted = noopTurnPersisted, onDone }: StoryStageProps) {
   const { t } = useTranslation()
+  const gameWorldLaunch = useGameWorldContextLaunch()
+  const pendingWorldCtxRef = useRef<InteractiveWorldContextRef | null>(null)
+  const pendingWorldAnalysisHandleRef = useRef<string | null>(null)
+  const previousStageKeyRef = useRef<string | null>(null)
   const isMobile = useIsMobile()
   const keyboardInset = useKeyboardInset()
   const storyStateModel = useMemo(() => buildStoryStateModel(snapshot), [snapshot])
@@ -133,6 +140,22 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
   useEffect(() => {
     setOptimisticInteractiveImages({})
   }, [stageKey])
+
+  // A pending handoff belongs to its story/branch. Preserve it on the first
+  // mount after World Console navigation, then invalidate it on a real switch.
+  useEffect(() => {
+    const previous = previousStageKeyRef.current
+    if (previous !== null && previous !== stageKey) {
+      pendingWorldCtxRef.current = null
+      pendingWorldAnalysisHandleRef.current = null
+      setWorldContextStatus(null)
+      const pending = gameWorldLaunch.peekGameLaunch()
+      if (pending && (pending.storyId !== storyId || pending.branchId !== branchId)) {
+        gameWorldLaunch.clearGameLaunch()
+      }
+    }
+    previousStageKeyRef.current = stageKey
+  }, [branchId, gameWorldLaunch, stageKey, storyId])
   const [replyEditTarget, setReplyEditTarget] = useState<{
     turnId: string
     branchId: string
@@ -159,6 +182,7 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
   const [contextAnalysisLoading, setContextAnalysisLoading] = useState(false)
   const [contextAnalysisError, setContextAnalysisError] = useState<string | null>(null)
   const [contextAnalysis, setContextAnalysis] = useState<ContextAnalysis | null>(null)
+  const [worldContextStatus, setWorldContextStatus] = useState<WorldContextRunStatus | null>(null)
   const [activeSubAgentSessionKey, setActiveSubAgentSessionKey] = useState('')
   const [activeTurnAnchorId, setActiveTurnAnchorId] = useState('')
   const [turnScrollRequest, setTurnScrollRequest] = useState<TurnScrollRequest>()
@@ -621,6 +645,24 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
     const abortController = new AbortController()
     registerStoryRunAbortController(stageKey, abortController)
     try {
+      // B3: consume pending game launch once (first turn after World Console handoff).
+      if (pendingWorldCtxRef.current === null) {
+        const pending = gameWorldLaunch.peekGameLaunch()
+        if (pending && pending.storyId === storyId && pending.branchId === branchId) {
+          const launch = gameWorldLaunch.takeGameLaunch()
+          if (launch) {
+            // Keep story/branch binding in the in-memory handoff only. The
+            // transport DTO accepts the World ref fields exclusively.
+            pendingWorldCtxRef.current = {
+              worldId: launch.worldId,
+              expectedWorldRevision: launch.expectedWorldRevision,
+              selection: launch.selection,
+            }
+          }
+        }
+      }
+      const worldContextForTurn = pendingWorldCtxRef.current ?? undefined
+      const analysisHandleForTurn = pendingWorldAnalysisHandleRef.current ?? undefined
       const stream = await sendInteractiveMessage({
         mode: 'story',
         story_id: storyId,
@@ -628,8 +670,14 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
         message,
         style_scenes: mergedStyleScenes,
         regenerate_from_turn_id: nextRewindTurnId || undefined,
+        ...(worldContextForTurn ? { world_context: worldContextForTurn } : {}),
+        ...(analysisHandleForTurn ? { analysis_handle: analysisHandleForTurn } : {}),
         signal: abortController.signal,
       })
+      // The server has accepted the one-time handoff; do not replay it on a
+      // later turn even if the model subsequently fails.
+      pendingWorldCtxRef.current = null
+      pendingWorldAnalysisHandleRef.current = null
       await completeInteractiveStream(await consumeInteractiveStream(stream))
     } catch (error) {
       handleInteractiveStreamError(error)
@@ -772,6 +820,11 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
           ])
           break
         }
+        case 'world_context_state': {
+          const status = normalizeWorldContextStatus(JSON.parse(value.data))
+          if (status) setWorldContextStatus(status)
+          break
+        }
         case 'done': {
           const { text, reset } = narrativeFilter.flush()
           if (reset) resetAssistantMessage()
@@ -888,13 +941,23 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
     setContextAnalysisError(null)
     setContextAnalysis(null)
     try {
-      setContextAnalysis(await analyzeInteractiveContext({
+      if (pendingWorldCtxRef.current === null) {
+        const pending = gameWorldLaunch.peekGameLaunch()
+        if (pending && pending.storyId === storyId && pending.branchId === branchId) {
+          pendingWorldCtxRef.current = pending
+        }
+      }
+      const result = await analyzeInteractiveContext({
         mode: 'story',
         story_id: storyId,
         branch: branchId,
         message,
         style_scenes: mergedStyleScenes,
-      }))
+        world_context: pendingWorldCtxRef.current ?? undefined,
+      })
+      setContextAnalysis(result)
+      setWorldContextStatus(normalizeWorldContextStatus(result.world_context) || null)
+      pendingWorldAnalysisHandleRef.current = result.analysis_handle || null
     } catch (e) {
       setContextAnalysis(null)
       setContextAnalysisError((e as Error).message)
@@ -1216,6 +1279,19 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
             </div>
           </div>
         )}
+
+        {worldContextStatus ? (
+          <div
+            data-testid="story-stage-world-context-status"
+            className={`border-b px-4 py-1.5 text-[11px] ${worldContextStatus.state === 'degraded' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-[var(--nova-border)] bg-[var(--nova-surface)] text-[var(--nova-text-muted)]'}`}
+          >
+            {worldContextStatus.state === 'degraded'
+              ? t('storyStage.worldContext.degraded')
+              : worldContextStatus.state === 'none'
+                ? t('storyStage.worldContext.none')
+                : t('storyStage.worldContext.active', { name: worldContextStatus.worldName || t('chat.worldContext.unnamed') })}
+          </div>
+        ) : null}
 
         <div className="nova-story-stage-content flex min-h-0 flex-1 overflow-hidden bg-[var(--nova-surface-2)]">
           <TurnNavigator items={turnNavigationItems} activeAnchorId={activeTurnAnchorId} onSelect={handleTurnNavigationSelect} />

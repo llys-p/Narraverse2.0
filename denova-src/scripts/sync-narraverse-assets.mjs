@@ -14,6 +14,8 @@ const runtimeEntries = [
   'ai-client.js',
   'app.js',
   'bridge.js',
+  'migration.html',
+  'origin-migration.js',
   'game_engine.js',
   'local_library.js',
   'presets.js',

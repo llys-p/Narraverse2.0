@@ -95,16 +95,16 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.POST("/books/sort-mode", apiHandlers.HandleBookSortMode)
 		api.GET("/books/info", apiHandlers.HandleBookInfo)
 		api.PUT("/books/info", apiHandlers.HandleUpdateBookInfo)
-	// World Workspace：世界工作区（跨书，存储于全局数据目录 worlds/）。
-	api.GET("/worlds", apiHandlers.HandleWorldList)
-	api.POST("/worlds", apiHandlers.HandleWorldCreate)
-	api.GET("/worlds/:id", apiHandlers.HandleWorldGet)
-	api.PUT("/worlds/:id", apiHandlers.HandleWorldReplace)
-	api.POST("/worlds/:id/archive", apiHandlers.HandleWorldArchive)
-	// World Workspace 3.1A1：只读世界上下文预览（无写入、不建 runContext、不占 Registry）。
-	api.POST("/worlds/:id/context-preview", apiHandlers.HandleWorldContextPreview)
-	// World Workspace 2B.2：创建向导受控 AI 结构提案（前端不得直调 /api/model/chat）。
-	api.POST("/world-proposals", apiHandlers.HandleWorldProposal)
+		// World Workspace：世界工作区（跨书，存储于全局数据目录 worlds/）。
+		api.GET("/worlds", apiHandlers.HandleWorldList)
+		api.POST("/worlds", apiHandlers.HandleWorldCreate)
+		api.GET("/worlds/:id", apiHandlers.HandleWorldGet)
+		api.PUT("/worlds/:id", apiHandlers.HandleWorldReplace)
+		api.POST("/worlds/:id/archive", apiHandlers.HandleWorldArchive)
+		// World Workspace 3.1A1：只读世界上下文预览（无写入、不建 runContext、不占 Registry）。
+		api.POST("/worlds/:id/context-preview", apiHandlers.HandleWorldContextPreview)
+		// World Workspace 2B.2：创建向导受控 AI 结构提案（前端不得直调 /api/model/chat）。
+		api.POST("/world-proposals", apiHandlers.HandleWorldProposal)
 		api.GET("/lore/items", apiHandlers.HandleLoreItems)
 		api.POST("/lore/items", apiHandlers.HandleLoreItemCreate)
 		api.PATCH("/lore/items/:id", apiHandlers.HandleLoreItemUpdate)
@@ -246,6 +246,17 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.GET("/model/status", apiHandlers.HandleModelStatus)
 		api.POST("/model/test", apiHandlers.HandleModelTest)
 		api.POST("/model/chat", apiHandlers.HandleModelChat)
+		// Phase 3.2-C/D：仅顶层宿主可访问的跨源 iframe 模型代理。
+		// consumer 由路由固定，iframe 不能直接携带 World Ref 或运行字段。
+		api.POST("/world-context/host/bootstrap", apiHandlers.HandleWorldContextHostBootstrap)
+		api.POST("/world-context/host/status", apiHandlers.HandleWorldContextHostStatus)
+		api.POST("/world-context/host/revoke", apiHandlers.HandleWorldContextHostRevoke)
+		api.POST("/world-context/host/narraverse/bind", apiHandlers.HandleWorldContextHostNarraverseBind)
+		api.POST("/world-context/host/narraverse/call", apiHandlers.HandleWorldContextHostNarraverseCall)
+		api.POST("/world-context/host/narraverse/unbind", apiHandlers.HandleWorldContextHostNarraverseUnbind)
+		api.POST("/world-context/host/module4/bind", apiHandlers.HandleWorldContextHostModule4Bind)
+		api.POST("/world-context/host/module4/call", apiHandlers.HandleWorldContextHostModule4Call)
+		api.POST("/world-context/host/module4/unbind", apiHandlers.HandleWorldContextHostModule4Unbind)
 		api.GET("/update/check", apiHandlers.HandleUpdateCheck)
 		api.POST("/update/install", apiHandlers.HandleUpdateInstall)
 		api.POST("/update/install/stream", apiHandlers.HandleUpdateInstallStream)

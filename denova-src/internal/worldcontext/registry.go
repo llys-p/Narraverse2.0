@@ -214,8 +214,8 @@ type BindInput struct {
 //   - 同 scope 但 fingerprint 不同 → 替换（释放旧 body 引用，建新 run）；
 //   - 无绑定 → 新建（body 命中缓存则共享，否则由 Snapshot 投影并缓存）。
 func (r *Registry) Bind(in BindInput) (*RunContext, BindOutcome, error) {
-	if in.Consumer != ConsumerWriting && in.Consumer != ConsumerGame {
-		return nil, "", domainError(ErrConsumerNotTrusted, "consumer", "当前阶段只允许 writing/game 注册 runContext")
+	if !supportedConsumer(in.Consumer) {
+		return nil, "", domainError(ErrConsumerNotTrusted, "consumer", "consumer 不受支持")
 	}
 	if in.ScopeKey == "" {
 		return nil, "", domainError(ErrInvalidRequest, "scopeKey", "服务端内部 scopeKey 不能为空")
@@ -445,8 +445,8 @@ func (r *Registry) releaseBodyLocked(fp string) {
 // 命中则复用同一 salt/最终字节并刷新 idle 计时、置 active；不重建、不重新随机化。
 // expectedFingerprint 非空且与绑定不一致时返回 context_ref_mismatch（不静默二选一）。
 func (r *Registry) Reuse(consumer Consumer, scope, expectedFingerprint string) (*RunContext, error) {
-	if consumer != ConsumerWriting && consumer != ConsumerGame {
-		return nil, domainError(ErrConsumerNotTrusted, "consumer", "当前阶段只允许 writing/game")
+	if !supportedConsumer(consumer) {
+		return nil, domainError(ErrConsumerNotTrusted, "consumer", "consumer 不受支持")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -501,8 +501,8 @@ func (r *Registry) MoveScopeByID(
 	targetScope string,
 	expectedFingerprint string,
 ) (*RunContext, error) {
-	if consumer != ConsumerWriting && consumer != ConsumerGame {
-		return nil, domainError(ErrConsumerNotTrusted, "consumer", "当前阶段只允许 writing/game")
+	if !supportedConsumer(consumer) {
+		return nil, domainError(ErrConsumerNotTrusted, "consumer", "consumer 不受支持")
 	}
 	if runContextID == "" || expectedFromScope == "" || targetScope == "" || expectedFingerprint == "" {
 		return nil, domainError(ErrInvalidRequest, "scopeMove", "runContextId、原 scope、目标 scope 与 fingerprint 均不能为空")

@@ -292,6 +292,13 @@ func ideRuntimeContextSources(contexts IDEWorkspaceRuntimeContexts) []agentconte
 }
 
 func BuildInteractiveStoryContextAnalysis(cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, bookService *book.Service, req ChatRequest, compaction *interactive.ContextCompactionEvent, prepareMessages func(originalMessage, agentMessage string) ([]*schema.Message, error)) (ContextAnalysis, error) {
+	return BuildInteractiveStoryContextAnalysisWithWorld(cfg, state, teller, bookService, req, compaction, prepareMessages, EphemeralWorldContextInput{})
+}
+
+// BuildInteractiveStoryContextAnalysisWithWorld mirrors the exact interactive
+// model-input assembly while optionally showing the ephemeral read-only World
+// message. The zero value is byte-for-byte compatible with the legacy analysis.
+func BuildInteractiveStoryContextAnalysisWithWorld(cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, bookService *book.Service, req ChatRequest, compaction *interactive.ContextCompactionEvent, prepareMessages func(originalMessage, agentMessage string) ([]*schema.Message, error), ephemeral EphemeralWorldContextInput) (ContextAnalysis, error) {
 	if len(teller.StyleRules) == 0 && len(req.StyleRules) > 0 {
 		teller.StyleRules = req.StyleRules
 	}
@@ -302,6 +309,11 @@ func BuildInteractiveStoryContextAnalysis(cfg *config.Config, state *book.State,
 	if err != nil {
 		return ContextAnalysis{}, err
 	}
+	worldLeadingCount := 0
+	if ephemeral.Present() {
+		messages = ephemeral.PrependTo(messages)
+		worldLeadingCount = 1
+	}
 	contextMessages := make([]ContextAnalysisPart, 0, len(messages))
 	compactionEpoch := 0
 	for i, msg := range messages {
@@ -311,6 +323,12 @@ func BuildInteractiveStoryContextAnalysis(cfg *config.Config, state *book.State,
 		source := "互动历史回合"
 		title := fmt.Sprintf("历史回合消息 %d", i+1)
 		switch {
+		case i < worldLeadingCount:
+			part := contextAnalysisPartFromMessage("world_context", "世界背景（只读）", "World Background · Read Only", msg)
+			part.Kind = "world_context"
+			part.Role = string(msg.Role)
+			contextMessages = append(contextMessages, part)
+			continue
 		case isContextCompactionMessage(msg):
 			source = "上下文压缩"
 			title = "模型可见历史检查点"

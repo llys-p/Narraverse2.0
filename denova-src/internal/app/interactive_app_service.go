@@ -12,6 +12,7 @@ import (
 	"denova/internal/book"
 	"denova/internal/imagepreset"
 	"denova/internal/interactive"
+	"denova/internal/worldcontext"
 )
 
 // InteractiveAppService 负责互动故事、剧情分支、导演和互动 Agent 任务。
@@ -549,7 +550,7 @@ func (a *App) StartInteractiveTask(ctx context.Context, storyID, branchID, messa
 }
 
 func (s *InteractiveAppService) StartInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, locale string) *Task {
-	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, "", locale)
+	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, "", locale, InteractiveWorldControl{})
 }
 
 func (a *App) StartInteractiveRegenerateTask(ctx context.Context, storyID, branchID, turnID, message string, styleScenes []string, locale string) *Task {
@@ -557,19 +558,96 @@ func (a *App) StartInteractiveRegenerateTask(ctx context.Context, storyID, branc
 }
 
 func (s *InteractiveAppService) StartInteractiveRegenerateTask(ctx context.Context, storyID, branchID, turnID, message string, styleScenes []string, locale string) *Task {
-	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, turnID, locale)
+	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, turnID, locale, InteractiveWorldControl{})
+}
+
+// StartInteractiveTaskWithWorld is the B1 entry that carries WorldContext control.
+// B1 passes world through but does not bind it (B2 adds resolveInteractiveRun).
+func (a *App) StartInteractiveTaskWithWorld(ctx context.Context, in InteractiveTaskInput) *Task {
+	return a.interactiveService().StartInteractiveTaskWithWorld(ctx, in)
+}
+
+func (s *InteractiveAppService) StartInteractiveTaskWithWorld(ctx context.Context, in InteractiveTaskInput) *Task {
+	return s.startInteractiveTask(ctx, in.StoryID, in.BranchID, in.Message, in.StyleScenes, in.RewindTurnID, in.Locale, in.World)
 }
 
 func (a *App) AnalyzeInteractiveContext(storyID, branchID, message string, styleScenes []string, locale string) (agent.ContextAnalysis, error) {
 	return a.interactiveService().AnalyzeInteractiveContext(storyID, branchID, message, styleScenes, locale)
 }
 
+// AnalyzeInteractiveContextWithRef is the game context-analysis entry. When a Ref
+// is present it creates a short-lived pending runContext and returns a one-time
+// handle; the same ModelView bytes are used by the first game turn.
+func (a *App) AnalyzeInteractiveContextWithRef(storyID, branchID, message string, styleScenes []string, locale string, ref *worldcontext.Ref) (InteractiveContextAnalysis, error) {
+	return a.interactiveService().AnalyzeInteractiveContextWithRef(storyID, branchID, message, styleScenes, locale, ref)
+}
+
+func (s *InteractiveAppService) AnalyzeInteractiveContextWithRef(storyID, branchID, message string, styleScenes []string, locale string, ref *worldcontext.Ref) (InteractiveContextAnalysis, error) {
+	runtime, req, err := s.interactiveAnalysisRuntime(storyID, branchID, message, styleScenes, locale)
+	if err != nil {
+		return InteractiveContextAnalysis{}, err
+	}
+	result := InteractiveContextAnalysis{}
+	ephemeral := agent.EphemeralWorldContextInput{}
+	if ref != nil {
+		sessionKey := interactiveSessionKey(runtime.workspace, storyID, branchID)
+		view, pendingRun, handleErr := s.app.worldContext().createAnalysisHandleWithRun(
+			context.Background(), worldcontext.ConsumerGame, sessionKey, *ref,
+		)
+		switch {
+		case handleErr == nil:
+			ephemeral = agent.NewEphemeralWorldContextInput(pendingRun.ModelViewBytes())
+			summary := pendingRun.UISummary()
+			result.AnalysisHandle = view.AnalysisHandle
+			result.HandleExpiresAt = view.ExpiresAt
+			result.World = &InteractiveWorldContextStatus{
+				State: "bound", WorldName: summary.WorldName,
+				RevisionLabel: summary.RevisionLabel, SelectedCount: summary.SelectedCount,
+			}
+		case isBlockingWorldContextError(handleErr):
+			return InteractiveContextAnalysis{}, handleErr
+		default:
+			result.World = &InteractiveWorldContextStatus{State: "degraded", ErrorCode: string(worldcontext.CodeOf(handleErr))}
+		}
+	}
+	analysis, err := s.buildInteractiveContextAnalysis(runtime, req, ephemeral)
+	if err != nil {
+		if result.AnalysisHandle != "" {
+			s.app.worldContext().invalidateAnalysisHandle(result.AnalysisHandle, worldcontext.ConsumerGame)
+		}
+		return InteractiveContextAnalysis{}, err
+	}
+	result.ContextAnalysis = analysis
+	return result, nil
+}
+
 func (s *InteractiveAppService) AnalyzeInteractiveContext(storyID, branchID, message string, styleScenes []string, locale string) (agent.ContextAnalysis, error) {
+	runtime, req, err := s.interactiveAnalysisRuntime(storyID, branchID, message, styleScenes, locale)
+	if err != nil {
+		return agent.ContextAnalysis{}, err
+	}
+	return s.buildInteractiveContextAnalysis(runtime, req, agent.EphemeralWorldContextInput{})
+}
+
+type interactiveAnalysisRuntime struct {
+	state        *book.State
+	bookService  *book.Service
+	runtimeCfg   config.Config
+	workspace    string
+	storyCtx     interactive.StoryContext
+	conversation *interactiveConversation
+	teller       interactive.Teller
+	styleRules   []agent.StyleRule
+}
+
+// interactiveAnalysisRuntime prepares the exact story/teller inputs once so
+// context-analysis with a pending World handle uses the same request assembly.
+func (s *InteractiveAppService) interactiveAnalysisRuntime(storyID, branchID, message string, styleScenes []string, locale string) (interactiveAnalysisRuntime, agent.ChatRequest, error) {
 	a := s.app
 	a.mu.RLock()
 	if a.interactive == nil || a.bookState == nil || a.cfg == nil {
 		a.mu.RUnlock()
-		return agent.ContextAnalysis{}, ErrNoWorkspace
+		return interactiveAnalysisRuntime{}, agent.ChatRequest{}, ErrNoWorkspace
 	}
 	store := a.interactive
 	state := a.bookState
@@ -589,7 +667,7 @@ func (s *InteractiveAppService) AnalyzeInteractiveContext(storyID, branchID, mes
 
 	storyCtx, err := store.StoryContext(storyID, branchID)
 	if err != nil {
-		return agent.ContextAnalysis{}, err
+		return interactiveAnalysisRuntime{}, agent.ChatRequest{}, err
 	}
 	teller := loadInteractiveTeller(novaDir, storyCtx.Meta.StoryTellerID)
 	runtimeCfg.InteractiveReplyTargetChars = storyCtx.Meta.ReplyTargetChars
@@ -601,7 +679,24 @@ func (s *InteractiveAppService) AnalyzeInteractiveContext(storyID, branchID, mes
 		Locale:      locale,
 	}
 	conversation := newInteractiveConversation(store, novaDir, workspace, storyID, branchID, message, runtimeCfg.InteractiveReplyTargetChars, &runtimeCfg).bindDirectorRuntime(a.directorTasksForWorkspace(workspace), a.interactiveDirectorGenerator())
-	return agent.BuildInteractiveStoryContextAnalysis(&runtimeCfg, state, interactiveStoryTellerSystemInput(teller, styleRules), bookService, req, storyCtx.Snapshot.ContextCompaction, conversation.PrepareMessages)
+	return interactiveAnalysisRuntime{
+		state: state, bookService: bookService, runtimeCfg: runtimeCfg,
+		workspace: workspace, storyCtx: storyCtx,
+		conversation: conversation, teller: teller, styleRules: styleRules,
+	}, req, nil
+}
+
+func (s *InteractiveAppService) buildInteractiveContextAnalysis(runtime interactiveAnalysisRuntime, req agent.ChatRequest, ephemeral agent.EphemeralWorldContextInput) (agent.ContextAnalysis, error) {
+	return agent.BuildInteractiveStoryContextAnalysisWithWorld(
+		&runtime.runtimeCfg,
+		runtime.state,
+		interactiveStoryTellerSystemInput(runtime.teller, runtime.styleRules),
+		runtime.bookService,
+		req,
+		runtime.storyCtx.Snapshot.ContextCompaction,
+		runtime.conversation.PrepareMessages,
+		ephemeral,
+	)
 }
 
 func (a *App) AnalyzeInteractiveDirectorContext(storyID, branchID, turnID string, locale string) (agent.ContextAnalysis, error) {
@@ -746,7 +841,7 @@ func (s *InteractiveAppService) RemoveInteractiveContextCompaction(storyID, bran
 	return true, nil
 }
 
-func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, rewindTurnID string, locale string) *Task {
+func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, rewindTurnID string, locale string, world InteractiveWorldControl) *Task {
 	a := s.app
 	a.mu.Lock()
 	if a.interactive == nil || a.bookState == nil || a.cfg == nil {
@@ -827,13 +922,61 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 	task := newPendingTask()
 	worldContexts := a.worldContext()
 	runBinding, runErr := worldContexts.prepareInteractiveTaskRun(storyID, storyCtx.Snapshot.BranchID, rewindTurnID, task.ID())
+	var worldContextErr error
 	if runErr != nil {
-		// InteractiveRun is derived coordination state. Failure must not make the
-		// existing game path depend on World Context; continue as an untracked run.
-		log.Printf("[interactive-agent-task] interactive run unavailable; continue untracked task_id=%s err=%v", task.ID(), runErr)
+		if world.Present() {
+			worldContextErr = runErr
+		} else {
+			// Bare turns retain the legacy path when only the derived run index is
+			// unavailable; there is no World request to report as silently degraded.
+			log.Printf("[interactive-agent-task] interactive run unavailable for bare task_id=%s err=%v", task.ID(), runErr)
+		}
 	}
+	sessionKey := interactiveSessionKey(workspace, storyID, storyCtx.Snapshot.BranchID)
+
+	// B2: bind-before-start. New turn with Ref -> resolve & bind to Run scope.
+	// Regenerate -> reuse the Run's already-bound context (no re-read of World).
+	var worldRun *interactiveWorldRun
+	if worldContextErr == nil && runBinding.tracked {
+		if strings.TrimSpace(rewindTurnID) != "" {
+			// regenerate: reuse existing context on the persisted-turn-mapped Run.
+			// This is server-side recovery and must not depend on the client
+			// resending world_context after an edit/reload.
+			if rc := worldContexts.reuseInteractiveRunContext(runBinding); rc != nil {
+				record, _ := worldContexts.interactiveRuns.snapshot(runBinding.runID)
+				scopeKey := ""
+				if record != nil {
+					scopeKey = record.scopeKey
+				}
+				worldRun = &interactiveWorldRun{runContext: rc, scopeKey: scopeKey}
+			}
+		} else if world.Present() {
+			// new turn: resolve Ref/handle and bind to Run scope.
+			wr, werr := worldContexts.resolveInteractiveRun(ctx, runBinding, world, sessionKey)
+			if werr != nil {
+				if isBlockingWorldContextError(werr) {
+					worldContextErr = werr
+				} else {
+					log.Printf("[interactive-agent-task] world context resolve degraded task_id=%s code=%s", task.ID(), worldcontext.CodeOf(werr))
+					worldRun = &interactiveWorldRun{degraded: true, degradedCode: string(worldcontext.CodeOf(werr))}
+				}
+			} else {
+				worldRun = wr
+			}
+		}
+	}
+	if worldContextErr != nil {
+		worldContexts.rollbackInteractiveTaskRun(runBinding, task.ID())
+	}
+
 	runTask := func(ctx context.Context, task *Task, emit func(agent.Event)) {
 		defer worldContexts.markInteractiveTaskTerminal(runBinding, task.ID())
+		if worldContextErr != nil {
+			emit(interactiveWorldContextErrorEvent(worldContextErr))
+			return
+		}
+		// B2: emit world_context_state before any model content (active/degraded/none).
+		emit(interactiveWorldContextStateEvent(worldRun))
 		log.Printf("[interactive-agent-task] run begin id=%s story_id=%s branch_id=%s rewind_turn_id=%s message_len=%d style_scenes=%d", task.ID(), storyID, branchID, rewindTurnID, len(message), len(styleScenes))
 		if strings.TrimSpace(rewindTurnID) != "" {
 			if err := store.RewindToTurnParent(storyID, interactive.RewindTurnRequest{BranchID: branchID, TurnID: rewindTurnID}); err != nil {
@@ -900,15 +1043,16 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 			emit(event)
 		}
 		chatService.RunWithOptions(ctx, runner, conversation, bookService, req, agent.RunOptions{
-			AgentKind:          agent.AgentKindInteractiveStory,
-			TaskID:             task.ID(),
-			StoryID:            storyID,
-			BranchID:           conversation.branchID,
-			Workspace:          workspace,
-			Mode:               "interactive",
-			IdleTimeout:        agentIdleTimeout(runtimeCfg),
-			ToolResultMaxBytes: agentToolResultMaxBytes(runtimeCfg),
-			SystemPromptLog:    agent.BuildInteractiveStoryInstructionComposition(&runtimeCfg, state, tellerSystemInput),
+			AgentKind:             agent.AgentKindInteractiveStory,
+			TaskID:                task.ID(),
+			StoryID:               storyID,
+			BranchID:              conversation.branchID,
+			Workspace:             workspace,
+			Mode:                  "interactive",
+			IdleTimeout:           agentIdleTimeout(runtimeCfg),
+			ToolResultMaxBytes:    agentToolResultMaxBytes(runtimeCfg),
+			SystemPromptLog:       agent.BuildInteractiveStoryInstructionComposition(&runtimeCfg, state, tellerSystemInput),
+			EphemeralWorldContext: interactiveEphemeralWorldInput(worldRun),
 			OnMutationsVerified: a.verifiedWorkspaceMutationCallback(
 				"interactive_agent_post_run",
 				versionService,

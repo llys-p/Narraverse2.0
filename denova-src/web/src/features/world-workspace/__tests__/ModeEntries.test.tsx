@@ -112,6 +112,16 @@ describe('ModeEntries 统一单次 preflight（M1）', () => {
     await vi.waitFor(() => expect(btn).not.toBeDisabled())
   })
 
+  it('世界控制台提供统一游戏交接时，不再绕过 launchGame 直接选故事', async () => {
+    const user = userEvent.setup()
+    const onLaunchGame = vi.fn(async () => {})
+    render(<ModeEntries world={worldFixture()} confirmLeave={() => true} onSetMode={vi.fn()}
+      onQuickSwitchBook={vi.fn(async () => true)} onLaunchGame={onLaunchGame} />)
+    await user.click(screen.getByRole('button', { name: /游戏模式/ }))
+    await vi.waitFor(() => expect(onLaunchGame).toHaveBeenCalledTimes(1))
+    expect(mocks.selectInteractiveStory).not.toHaveBeenCalled()
+  })
+
   it('叙界：confirmLeave 通过后只确认一次，先关 Module4 再切 narraverse', async () => {
     const user = userEvent.setup()
     const confirmLeave = vi.fn(() => true)

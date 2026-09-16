@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"strconv"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
@@ -55,7 +57,10 @@ type App struct {
 	// worldContextSvc 仅持有进程内派生状态（Snapshot 投影 / runContext Registry），
 	// 不进入 config、workspace 或任务事件等任何持久结构；App 重建即为空、不自动恢复。
 	worldContextSvc *WorldContextService
-	servicesOnce    sync.Once
+	// worldContextHostSvc 持有 C0 冻结的宿主 bootstrap/session/frame 绑定；
+	// 仅存在进程内，绝不写入 World、配置、会话或剧情存档。
+	worldContextHostSvc *WorldContextHostService
+	servicesOnce        sync.Once
 
 	mu sync.RWMutex
 }
@@ -144,6 +149,7 @@ func (a *App) ensureServices() {
 		a.skillsApp = &SkillsAppService{app: a}
 		a.imageApp = &ImageAppService{app: a}
 		a.worldContextSvc = newWorldContextService(a)
+		a.worldContextHostSvc = newWorldContextHostService(a, a.worldContextSvc)
 	})
 }
 
@@ -193,6 +199,12 @@ func (a *App) worldContext() *WorldContextService {
 	return a.worldContextSvc
 }
 
+// worldContextHost 返回进程内宿主信任与 iframe 运行绑定服务。
+func (a *App) worldContextHost() *WorldContextHostService {
+	a.ensureServices()
+	return a.worldContextHostSvc
+}
+
 func (a *App) applyRuntime(runtime *runtimeState) {
 	a.workspace = runtime.workspace
 	a.bookState = runtime.bookState
@@ -239,6 +251,9 @@ func (a *App) directorTasksForWorkspace(workspace string) *workspaceDirectorTask
 // Close stops background work owned by the current workspace runtime.
 func (a *App) Close() {
 	a.ensureServices()
+	if a.worldContextHostSvc != nil {
+		a.worldContextHostSvc.Close()
+	}
 	if a.automationTriggers != nil {
 		a.automationTriggers.Close()
 	}
@@ -266,6 +281,17 @@ func (a *App) RemoteAccessConfig() config.RemoteAccessConfig {
 		return config.RemoteAccessConfig{}
 	}
 	return a.cfg.RemoteAccessConfig()
+}
+
+// RuntimeHostOrigin is the canonical top-level browser origin for the current
+// process. It is used only to validate the C0 host trust boundary.
+func (a *App) RuntimeHostOrigin() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.cfg == nil || a.cfg.RuntimeWebPort <= 0 {
+		return ""
+	}
+	return (&url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(a.cfg.RuntimeWebPort)}).String()
 }
 
 // HideChapterBodyLiveOutput reports whether real-time SSE output should
