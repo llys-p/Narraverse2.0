@@ -23,4 +23,18 @@ describe('LibrarySourcePicker', () => {
     })))
     expect(onCreate.mock.calls[0][0]).not.toHaveProperty('content')
   })
+
+  it('records a manually identified legacy source as a pointer without a body', async () => {
+    const onCreate = vi.fn(async (_input: WorkLibraryItemInput) => true)
+    render(<LibrarySourcePicker onCreate={onCreate} onClose={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText('来源类型'), { target: { value: 'lore' } })
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: '旧作品人物' } })
+    fireEvent.change(screen.getByLabelText('来源条目 ID'), { target: { value: 'old-1' } })
+    fireEvent.change(screen.getByLabelText('来源版本'), { target: { value: 'sha256:old' } })
+    fireEvent.click(screen.getByRole('button', { name: '建立只读引用' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+      origin: 'reference', name: '旧作品人物', source: expect.objectContaining({ kind: 'lore', id: 'old-1', revision: 'sha256:old' }),
+    })))
+    expect(onCreate.mock.calls[0][0]).not.toHaveProperty('content')
+  })
 })

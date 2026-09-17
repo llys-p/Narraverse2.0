@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Save, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import type { WorkLibraryItem, WorkLibraryItemInput, WorkLibraryVocabulary } from '@/lib/api-client'
+import type { WorkLibraryEventDetail, WorkLibraryItem, WorkLibraryItemInput, WorkLibraryVocabulary } from '@/lib/api-client'
 import { fieldsToRows, formatListInput, parseListInput, rowsToFields } from '../library-errors'
+import { LibraryEventFields } from './LibraryEventFields'
 
 // 条目详情表单：字段与 L1 契约一一对应。
 //
@@ -19,13 +20,16 @@ interface LibraryItemFormProps {
   /** 只读引用条目：正文与名称以来源为准。 */
   readOnlyBody: boolean
   onDirtyChange?: (dirty: boolean) => void
+  allItems?: WorkLibraryItem[]
 }
 
 const inputClass = 'h-8 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2.5 text-sm outline-none focus:border-[var(--nova-ring)]'
 const areaClass = 'min-h-40 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-2.5 text-sm leading-6 outline-none focus:border-[var(--nova-ring)]'
 const labelClass = 'text-[11px] font-medium text-muted-foreground'
 
-export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, readOnlyBody, onDirtyChange }: LibraryItemFormProps) {
+const EMPTY_EVENT: WorkLibraryEventDetail = { order: 0, era: '', category: 'background', participantItemIds: [], locationItemId: '' }
+
+export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, readOnlyBody, onDirtyChange, allItems = [] }: LibraryItemFormProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(item.name)
   const [type, setType] = useState(item.type)
@@ -38,6 +42,7 @@ export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, re
   const [keywords, setKeywords] = useState(formatListInput(item.keywords))
   const [origin, setOrigin] = useState(item.origin)
   const [fields, setFields] = useState(fieldsToRows(item.fields))
+  const [eventDetail, setEventDetail] = useState<WorkLibraryEventDetail>(item.event ?? EMPTY_EVENT)
   const bodyReadOnly = readOnlyBody && origin === 'reference'
 
   // 只在条目身份或服务端版本变化时重置草稿；保存失败不重置。
@@ -53,8 +58,9 @@ export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, re
     setKeywords(formatListInput(item.keywords))
     setOrigin(item.origin)
     setFields(fieldsToRows(item.fields))
+    setEventDetail(item.event ?? EMPTY_EVENT)
   }, [item.id, item.updatedAt, item.name, item.type, item.importance, item.loadMode, item.enabled,
-      item.briefDescription, item.content, item.tags, item.keywords, item.origin, item.fields])
+      item.briefDescription, item.content, item.tags, item.keywords, item.origin, item.fields, item.event])
 
   const dirty = useMemo(() => (
     name !== item.name
@@ -68,7 +74,8 @@ export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, re
     || keywords !== formatListInput(item.keywords)
     || origin !== item.origin
     || JSON.stringify(fields) !== JSON.stringify(fieldsToRows(item.fields))
-  ), [name, type, importance, loadMode, enabled, brief, content, tags, keywords, origin, fields, item])
+    || (type === 'event' && JSON.stringify(eventDetail) !== JSON.stringify(item.event ?? EMPTY_EVENT))
+  ), [name, type, importance, loadMode, enabled, brief, content, tags, keywords, origin, fields, eventDetail, item])
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
 
   const submit = () => {
@@ -84,6 +91,7 @@ export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, re
       keywords: parseListInput(keywords),
       origin,
       ...(bodyReadOnly ? {} : { fields: rowsToFields(fields) ?? (fields.length === 0 ? {} : null) }),
+      ...(type === 'event' ? { event: eventDetail } : {}),
       // 条目级并发基线：与磁盘 updatedAt 不一致时服务端返回 409。
       baseUpdatedAt: item.updatedAt,
     })
@@ -109,7 +117,7 @@ export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, re
         </label>
         <label className="flex flex-col gap-1">
           <span className={labelClass}>{t('workLibrary.item.type')}</span>
-          <select className={inputClass} value={type} onChange={(event) => setType(event.target.value)}>
+          <select className={inputClass} value={type} disabled={item.type === 'event'} onChange={(event) => setType(event.target.value)}>
             {itemTypes.map((value) => (
               <option key={value} value={value}>{t(`workLibrary.type.${value}`, { defaultValue: value })}</option>
             ))}
@@ -223,6 +231,8 @@ export function LibraryItemForm({ item, vocabulary, saving, onSave, onDelete, re
           </Button>
         </section>
       ) : null}
+
+      {type === 'event' ? <LibraryEventFields value={eventDetail} onChange={setEventDetail} items={allItems} readOnly={bodyReadOnly} /> : null}
 
       <dl className="grid grid-cols-1 gap-1 text-[11px] text-muted-foreground sm:grid-cols-2">
         <div className="flex gap-1">

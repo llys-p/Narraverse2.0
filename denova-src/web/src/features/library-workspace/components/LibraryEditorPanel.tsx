@@ -5,12 +5,15 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { EmptyState } from '@/components/common/EmptyState'
 import { InlineErrorNotice } from '@/components/common/inline-error-notice'
 import { Button } from '@/components/ui/button'
-import type { WorkLibraryItem, WorkLibraryItemInput, WorkLibraryMetaPatch, WorkLibraryVocabulary } from '@/lib/api-client'
+import { getWorkLibraryItemImpact, type WorkLibraryImpact, type WorkLibraryItem, type WorkLibraryItemInput, type WorkLibraryMetaPatch, type WorkLibraryVocabulary } from '@/lib/api-client'
 import { filterItems, itemNameLookup, residentRuleItems, sortItems } from '../library-draft'
 import { LibraryItemForm } from './LibraryItemForm'
 import { LibraryConflictBanner } from './LibraryConflictBanner'
 import { LibraryLoadSettings } from './LibraryLoadSettings'
 import { LibrarySourcePicker } from './LibrarySourcePicker'
+import { LibraryRelationsPanel } from './LibraryRelationsPanel'
+import { LibraryTimelinePanel } from './LibraryTimelinePanel'
+import { LibraryDeleteImpact } from './LibraryDeleteImpact'
 import type { WorkLibraryEditorState } from '../use-work-library'
 
 // 单个设定库的编辑面板：背景总览 / 条目。
@@ -18,7 +21,7 @@ import type { WorkLibraryEditorState } from '../use-work-library'
 // 草稿与冲突：库元信息草稿保存在本组件内，只在「重新加载」或「保存成功」时同步；
 // 409 时显示横幅并提供重新加载，草稿与服务端数据都不丢（L1.2 验收要求）。
 
-type EditorTab = 'overview' | 'items' | 'settings'
+type EditorTab = 'overview' | 'items' | 'settings' | 'relations' | 'timeline'
 
 interface LibraryEditorPanelProps {
   editor: WorkLibraryEditorState
@@ -40,10 +43,12 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
   const [savingItem, setSavingItem] = useState(false)
   const [savingMeta, setSavingMeta] = useState(false)
   const [confirmDeleteItem, setConfirmDeleteItem] = useState<WorkLibraryItem | null>(null)
+  const [deleteImpact, setDeleteImpact] = useState<WorkLibraryImpact | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [sourceOpen, setSourceOpen] = useState(false)
   const [itemDirty, setItemDirty] = useState(false)
   const [settingsDirty, setSettingsDirty] = useState(false)
+  const [relationsDirty, setRelationsDirty] = useState(false)
 
   // 库元信息草稿：仅在「换了库」或「重新加载/保存成功」后同步。
   const [meta, setMeta] = useState<WorkLibraryMetaPatch>({})
@@ -81,7 +86,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
     || (meta.tone ?? '') !== (library!.tone ?? '')
     || (meta.startingPoint ?? '') !== (library!.startingPoint ?? '')
   )
-  const hasDraft = Boolean(metaDirty || itemDirty || settingsDirty)
+  const hasDraft = Boolean(metaDirty || itemDirty || settingsDirty || relationsDirty)
   useEffect(() => onDirtyChange?.(hasDraft), [hasDraft, onDirtyChange])
   const guardLeave = () => !hasDraft || window.confirm(t('workLibrary.reloadConfirm'))
 
@@ -105,18 +110,31 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
     if (saved) setNotice(t('workLibrary.saved'))
   }
 
-  const removeItem = async (cascade: boolean) => {
+  const requestDelete = async (item: WorkLibraryItem) => {
+    if (!library) return
+    try {
+      const impact = await getWorkLibraryItemImpact(library.id, item.id)
+      setDeleteImpact(impact)
+      setConfirmDeleteItem(item)
+    } catch {
+      setNotice(t('workLibrary.loadError'))
+    }
+  }
+
+  const removeItem = async () => {
     if (!confirmDeleteItem) return false
+    if (!deleteImpact) return false
+    const cascade = deleteImpact.relations.length > 0 || deleteImpact.events.length > 0
     const outcome = await editor.deleteItem(confirmDeleteItem.id, cascade)
     if (outcome.status === 'deleted') {
       setNotice(t('workLibrary.item.deleted'))
       setSelectedItemId(null)
       setConfirmDeleteItem(null)
+      setDeleteImpact(null)
       return true
     }
-    setConfirmDeleteItem(null)
     if (outcome.status === 'in_use') {
-      setNotice(t('workLibrary.itemInUse.title'))
+      setDeleteImpact(outcome.impact ?? deleteImpact)
     }
     return false
   }
@@ -132,6 +150,14 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
       setSelectedItemId(created.id)
       setTab('items')
     }
+  }
+
+  const createEvent = async () => {
+    const created = await editor.createItem({
+      type: 'event', name: t('workLibrary.timeline.new'), loadMode: 'auto', importance: 'important',
+      event: { order: 0, era: '', category: 'background', participantItemIds: [], locationItemId: '' },
+    })
+    if (created) { setSelectedItemId(created.id); setTab('items') }
   }
 
   return (
@@ -193,7 +219,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
       ) : null}
 
       <div className="flex shrink-0 items-center gap-1 border-b border-[var(--nova-border)] px-3 py-1">
-        {(['overview', 'items', 'settings'] as EditorTab[]).map((value) => (
+        {(['overview', 'items', 'relations', 'timeline', 'settings'] as EditorTab[]).map((value) => (
           <button
             key={value}
             type="button"
@@ -201,6 +227,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
               if (value === tab || !guardLeave()) return
               setItemDirty(false)
               setSettingsDirty(false)
+              setRelationsDirty(false)
               setTab(value)
             }}
             className={`rounded-[var(--radius-sm)] px-2 py-1 text-[11px] transition-colors ${tab === value ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -290,6 +317,14 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
         <LibraryLoadSettings key={library.id} items={library.items}
           onSave={async (itemId, patch) => Boolean(await editor.saveItem(itemId, patch))}
           onDirtyChange={setSettingsDirty} />
+      ) : tab === 'relations' && library ? (
+        <LibraryRelationsPanel items={library.items} relations={library.relations} vocabulary={vocabulary}
+          onCreate={async (input) => Boolean(await editor.createRelation(input))}
+          onUpdate={async (id, input) => Boolean(await editor.saveRelation(id, input))}
+          onDelete={editor.deleteRelation} onDirtyChange={setRelationsDirty} />
+      ) : tab === 'timeline' ? (
+        <LibraryTimelinePanel timeline={editor.timeline} onCreate={() => void createEvent()}
+          onOpen={(itemId) => { if (guardLeave()) { setSelectedItemId(itemId); setTab('items') } }} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
           <div className="flex max-h-64 w-full shrink-0 flex-col border-b border-[var(--nova-border)] sm:max-h-none sm:w-64 sm:border-b-0 sm:border-r">
@@ -351,7 +386,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
           </div>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {sourceOpen ? <LibrarySourcePicker onClose={() => setSourceOpen(false)} onCreate={async (input) => {
+          {sourceOpen ? <LibrarySourcePicker vocabulary={vocabulary} onClose={() => setSourceOpen(false)} onCreate={async (input) => {
             if (!guardLeave()) return false
             const created = await editor.createItem(input)
             if (!created) return false
@@ -361,11 +396,12 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
           {selectedItem ? (
             <LibraryItemForm
               item={selectedItem}
+              allItems={items}
               vocabulary={vocabulary}
               saving={savingItem}
               readOnlyBody={selectedItem.origin === 'reference'}
               onSave={(input) => void saveItem(input)}
-              onDelete={() => setConfirmDeleteItem(selectedItem)}
+              onDelete={() => void requestDelete(selectedItem)}
               onDirtyChange={setItemDirty}
             />
           ) : (
@@ -384,15 +420,17 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
       )}
 
       <ConfirmDialog
-        open={confirmDeleteItem !== null}
+        open={confirmDeleteItem !== null && deleteImpact !== null}
         onOpenChange={(open) => {
-          if (!open) setConfirmDeleteItem(null)
+          if (!open) { setConfirmDeleteItem(null); setDeleteImpact(null) }
         }}
         title={t('workLibrary.item.delete')}
         description={t('workLibrary.item.deleteConfirm')}
+        detailContent={deleteImpact ? <LibraryDeleteImpact impact={deleteImpact} /> : null}
         tone="danger"
-        confirmLabel={t('workLibrary.confirm')}
-        onConfirm={() => removeItem(false)}
+        confirmLabel={deleteImpact && (deleteImpact.relations.length || deleteImpact.events.length)
+          ? t('workLibrary.itemInUse.cascade') : t('workLibrary.confirm')}
+        onConfirm={removeItem}
       />
     </div>
   )

@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - PR #3 clarifies navigation semantics: the top bar keeps the four runtime modes, the world entry is renamed to “Organize World”, duplicate mode cards are removed from the world overview, and the page title and responsive test assertion are aligned.
 
 ### Added
+- L1.4 增加库内稳定 ID 关系编辑、事件条目字段与只读派生时间线；删除条目前先读取关系/事件影响，再由用户显式确认级联。补齐旧作品资料、旧世界和相对文件等非 Master 来源的手动版本指针入口，不读取或复制来源正文。
+- L1.4 adds stable-ID relation editing, event fields and a read-only derived timeline. Item deletion now previews affected relations and events before explicit cascade confirmation. Also completes manual version pointers for legacy lore, worlds and relative file sources without reading or copying source bodies.
 - L1.3 在作品设定库中加入 Master 来源选择、版本化只读引用、显式创建本库改编、类型专用字段与独立三档加载设置；切分区、返回与关闭时保护未保存草稿。来源正文不复制，三档设置暂不触发模型读取。
 - L1.3 adds Master source selection, versioned read-only references, explicit local adaptations, type-specific fields, and a dedicated three-mode load settings view. Unsaved drafts are guarded when switching sections, returning, or closing. Source bodies are not copied and load settings do not trigger model reads yet.
 - L1.2 接入独立作品设定库的 HTTP 与前端创建、列表、编辑、保存闭环；旧公共素材仍可访问。补齐失败重试、保留新建草稿、并发冲突提示及前端测试。三档加载本阶段仅保存与展示，不授权模型读取。

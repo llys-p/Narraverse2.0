@@ -10,6 +10,11 @@ const reference: WorkLibraryItem = {
   }, createdAt: 'a', updatedAt: 'b',
 }
 
+const eventItem: WorkLibraryItem = {
+  ...reference, id: 'evt', name: '聚义', type: 'event', origin: 'original', source: null,
+  event: { order: 1, era: '北宋', category: 'historical', participantItemIds: [], locationItemId: '' },
+}
+
 describe('LibraryItemForm provenance', () => {
   it('keeps the source body and name read-only until the user explicitly adapts it', () => {
     const onSave = vi.fn()
@@ -33,5 +38,19 @@ describe('LibraryItemForm provenance', () => {
       onDelete={vi.fn()} readOnlyBody onDirtyChange={onDirtyChange} />)
     fireEvent.change(screen.getByLabelText('标签'), { target: { value: '梁山' } })
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
+  })
+
+  it('saves event details with participant and location stable IDs', () => {
+    const onSave = vi.fn()
+    const character = { ...reference, id: 'linchong', origin: 'original' as const }
+    const location = { ...reference, id: 'liangshan', name: '梁山泊', type: 'location', origin: 'original' as const }
+    render(<LibraryItemForm item={eventItem} allItems={[eventItem, character, location]} vocabulary={null}
+      saving={false} onSave={onSave} onDelete={vi.fn()} readOnlyBody={false} />)
+    fireEvent.click(screen.getByLabelText(/林冲.*linchong/))
+    fireEvent.change(screen.getByLabelText('地点'), { target: { value: 'liangshan' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ event: expect.objectContaining({
+      participantItemIds: ['linchong'], locationItemId: 'liangshan', category: 'historical',
+    }) }))
   })
 })
