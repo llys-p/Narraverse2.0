@@ -1104,14 +1104,24 @@ func normalizeLoreImportance(v string) string {
 }
 
 func normalizeLoreLoadMode(v, importance string) string {
-	switch strings.TrimSpace(v) {
-	case LoreLoadModeResident, LoreLoadModeAuto, LoreLoadModeManual:
-		return strings.TrimSpace(v)
+	if explicit, ok := explicitLoreLoadMode(v); ok {
+		return explicit
 	}
 	if normalizeLoreImportance(importance) == "major" {
 		return LoreLoadModeResident
 	}
 	return LoreLoadModeAuto
+}
+
+// explicitLoreLoadMode 只识别三种档位字面量，未知/空值返回 ok=false。
+// 旧 Lore 的 major→常驻升级规则与 library 的严格收敛共用这一个判定（见 lore_vocabulary.go）。
+func explicitLoreLoadMode(v string) (string, bool) {
+	switch strings.TrimSpace(v) {
+	case LoreLoadModeResident, LoreLoadModeAuto, LoreLoadModeManual:
+		return strings.TrimSpace(v), true
+	default:
+		return "", false
+	}
 }
 
 func normalizeLoreTags(tags []string) []string {
