@@ -20,6 +20,7 @@ interface LibraryWorkspaceRouteProps {
 export function LibraryWorkspaceRoute({ workspace, onClose }: LibraryWorkspaceRouteProps) {
   const { t } = useTranslation()
   const [section, setSection] = useState<LibrarySection>('mine')
+  const [dirty, setDirty] = useState(false)
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
@@ -33,7 +34,12 @@ export function LibraryWorkspaceRoute({ workspace, onClose }: LibraryWorkspaceRo
             type="button"
             role="tab"
             aria-selected={section === value}
-            onClick={() => setSection(value)}
+            onClick={() => {
+              if (value === section) return
+              if (dirty && !window.confirm(t('workLibrary.reloadConfirm'))) return
+              setDirty(false)
+              setSection(value)
+            }}
             className={`rounded-[var(--radius-sm)] px-2 py-0.5 transition-colors ${section === value ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {t(value === 'mine' ? 'workLibrary.section.mine' : 'workLibrary.section.public')}
@@ -42,7 +48,7 @@ export function LibraryWorkspaceRoute({ workspace, onClose }: LibraryWorkspaceRo
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         {section === 'mine' ? (
-          <LibraryWorkspacePage onClose={onClose} />
+          <LibraryWorkspacePage onClose={onClose} onDirtyChange={setDirty} />
         ) : (
           <Suspense fallback={null}>
             <LibraryView workspace={workspace} onClose={onClose} />

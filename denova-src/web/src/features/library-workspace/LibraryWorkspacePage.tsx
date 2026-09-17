@@ -13,12 +13,14 @@ import { useWorkLibraryCreation, useWorkLibraryEditor, useWorkLibraryList, useWo
 
 interface LibraryWorkspacePageProps {
   onClose: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }
 
-export function LibraryWorkspacePage({ onClose }: LibraryWorkspacePageProps) {
+export function LibraryWorkspacePage({ onClose, onDirtyChange }: LibraryWorkspacePageProps) {
   const { t } = useTranslation()
   const [openId, setOpenId] = useState<string | null>(null)
   const [listToken, setListToken] = useState(0)
+  const [dirty, setDirty] = useState(false)
 
   const list = useWorkLibraryList(listToken)
   const vocabulary = useWorkLibraryVocabulary()
@@ -30,13 +32,24 @@ export function LibraryWorkspacePage({ onClose }: LibraryWorkspacePageProps) {
       icon={Library}
       title={t('workLibrary.title')}
       subtitle={t('workLibrary.subtitle')}
-      onClose={onClose}
+      onClose={() => {
+        if (dirty && !window.confirm(t('workLibrary.reloadConfirm'))) return
+        setDirty(false)
+        onDirtyChange?.(false)
+        onClose()
+      }}
     >
       {openId ? (
         <LibraryEditorPanel
           editor={editor}
           vocabulary={vocabulary}
+          onDirtyChange={(value) => {
+            setDirty(value)
+            onDirtyChange?.(value)
+          }}
           onBack={() => {
+            setDirty(false)
+            onDirtyChange?.(false)
             setOpenId(null)
             setListToken((value) => value + 1)
           }}
