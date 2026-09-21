@@ -10,7 +10,7 @@ import { CommandPalette } from '@/components/common/command-palette'
 import { useWorkspace } from '@/hooks/useWorkspace'
 import { useAgentChat } from '@/hooks/useAgentChat'
 import { useWorkspaceHotkeys } from '@/hooks/use-workspace-hotkeys'
-import { useWorkspaceStore, type ContentMode, type RightPanel, type WorkspaceMode } from '@/stores/workspace-store'
+import { useWorkspaceStore, WORKSPACE_FREE_MODES, type ContentMode, type RightPanel, type WorkspaceMode } from '@/stores/workspace-store'
 import { useInteractiveStore } from '@/features/interactive/stores/interactive-store'
 import type { ChapterSummary } from '@/lib/api'
 import { toast } from 'sonner'
@@ -326,8 +326,9 @@ function App() {
     setOpenTabs([])
     setActiveTabKey(null)
     clearSelectedFile()
-    // 写作和游戏依赖当前书籍；叙界是自包含内容模式，无书籍时也必须可直接进入。
-    if (mode !== 'books' && mode !== 'narraverse' && mode !== 'worlds') setMode('books')
+    // 写作和游戏依赖当前书籍；书库/资料库/技能/智能体/自动化/世界/叙界都是自包含模式，
+    // 无书籍时也必须可直接进入，否则入口会在渲染后被静默弹回 books。
+    if (!WORKSPACE_FREE_MODES.includes(mode)) setMode('books')
   }, [clearSelectedFile, mode, setMode, workspace, workspaceLoaded])
 
   useEffect(() => {

@@ -80,6 +80,11 @@ vi.mock('@/features/world-context-runtime/WorldContextHostProvider', () => ({
   useWorldContextHost: () => ({ state: 'ready', migration: null }),
 }))
 
+vi.mock('@/features/library-workspace/LibraryWorkspacePage', () => ({
+  LibraryWorkspacePage: () => <div data-testid="library-workspace-page">work library</div>,
+}))
+vi.mock('@/features/library/LibraryView', () => ({ LibraryView: () => <div>public materials</div> }))
+
 vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () => ({
   useIframeWorldContextLaunch: () => ({
     pending: { narraverse: null, module4: null },
@@ -253,6 +258,19 @@ describe('ModeRouter autosave navigation policy', () => {
     view.rerender(<ModeRouter {...props} mode="narraverse" />)
     expect(view.container.querySelector('iframe')).toBe(iframe)
     expect(iframe?.closest('section')).not.toHaveAttribute('hidden')
+  })
+
+  it('shows the work library page without an open book', async () => {
+    // 作品设定库是自包含的共享模式：没有当前书籍时也必须可见，
+    // 不能被「无书籍 → 回落到 books」的守卫弹回书库。
+    // 库路由是 lazy 的，需要等 Suspense 落地。
+    render(
+      <ModeRouter {...modeRouterProps({ mode: 'library', workspace: '', currentBookName: '' })} />,
+    )
+    const page = await screen.findByTestId('library-workspace-page')
+
+    expect(page).toBeInTheDocument()
+    expect(page.closest('section')).not.toHaveAttribute('hidden')
   })
 })
 
