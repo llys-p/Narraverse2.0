@@ -105,6 +105,22 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.POST("/worlds/:id/context-preview", apiHandlers.HandleWorldContextPreview)
 		// World Workspace 2B.2：创建向导受控 AI 结构提案（前端不得直调 /api/model/chat）。
 		api.POST("/world-proposals", apiHandlers.HandleWorldProposal)
+		// 作品设定库 L1：独立于书籍与 World 的设定库（全局数据目录 libraries/）。
+		// 与上方 /library/*（Master 公共素材）分属不同命名空间；本组不要求 workspace。
+		api.GET("/work-libraries/vocabulary", apiHandlers.HandleWorkLibraryVocabulary)
+		api.GET("/work-libraries", apiHandlers.HandleWorkLibraryList)
+		api.POST("/work-libraries", apiHandlers.HandleWorkLibraryCreate)
+		api.GET("/work-libraries/:id", apiHandlers.HandleWorkLibraryGet)
+		api.PATCH("/work-libraries/:id", apiHandlers.HandleWorkLibraryUpdateMeta)
+		api.DELETE("/work-libraries/:id", apiHandlers.HandleWorkLibraryDelete)
+		api.GET("/work-libraries/:id/timeline", apiHandlers.HandleWorkLibraryTimeline)
+		api.POST("/work-libraries/:id/items", apiHandlers.HandleWorkLibraryItemCreate)
+		api.PATCH("/work-libraries/:id/items/:itemId", apiHandlers.HandleWorkLibraryItemUpdate)
+		api.DELETE("/work-libraries/:id/items/:itemId", apiHandlers.HandleWorkLibraryItemDelete)
+		api.GET("/work-libraries/:id/items/:itemId/impact", apiHandlers.HandleWorkLibraryItemImpact)
+		api.POST("/work-libraries/:id/relations", apiHandlers.HandleWorkLibraryRelationCreate)
+		api.PATCH("/work-libraries/:id/relations/:relationId", apiHandlers.HandleWorkLibraryRelationUpdate)
+		api.DELETE("/work-libraries/:id/relations/:relationId", apiHandlers.HandleWorkLibraryRelationDelete)
 		api.GET("/lore/items", apiHandlers.HandleLoreItems)
 		api.POST("/lore/items", apiHandlers.HandleLoreItemCreate)
 		api.PATCH("/lore/items/:id", apiHandlers.HandleLoreItemUpdate)

@@ -10,6 +10,20 @@ type BottomPanel = 'versions' | 'problems' | null
 export type WorkspaceMode = 'ide' | 'interactive' | 'narraverse' | 'books' | 'worlds' | 'library' | 'skills' | 'agents' | 'automations'
 /** 内容模式：写作、游戏、叙界三选一的顶层导航目标。 */
 export type ContentMode = 'ide' | 'interactive' | 'narraverse'
+/**
+ * 不依赖「当前书籍」即可进入的模式。
+ *
+ * books / worlds / library / skills / agents / automations 都是自包含的共享模式：
+ * 它们管理的是各自的独立资料（书库、世界、作品设定库、技能、智能体、自动化），
+ * 没有打开任何书籍时也能正常使用。narraverse 同理，是自包含的内容模式。
+ * 其余模式（ide / interactive）以当前书籍为上下文，无书籍时需要回落到 books。
+ *
+ * 无书籍守卫（App.tsx）依赖此常量：新增「不依赖书籍」的模式时必须同步登记，
+ * 否则该模式会在无书籍状态下被静默弹回 books，入口看上去「点了没反应」。
+ */
+export const WORKSPACE_FREE_MODES: readonly WorkspaceMode[] = [
+  'books', 'worlds', 'library', 'skills', 'agents', 'automations', 'narraverse',
+]
 
 const MODE_STORAGE_KEY = 'nova:mode'
 const CONTENT_MODE_STORAGE_KEY = 'nova:content-mode'

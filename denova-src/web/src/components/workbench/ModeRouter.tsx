@@ -38,7 +38,8 @@ const HomeView = lazy(() => import('@/components/Home/HomeView').then((module) =
 const AgentsView = lazy(() => import('@/features/agents/AgentsView').then((module) => ({ default: module.AgentsView })))
 const AutomationsView = lazy(() => import('@/features/automations/AutomationsView').then((module) => ({ default: module.AutomationsView })))
 const SkillsView = lazy(() => import('@/features/skills/SkillsView').then((module) => ({ default: module.SkillsView })))
-const LibraryView = lazy(() => import('@/features/library/LibraryView').then((module) => ({ default: module.LibraryView })))
+// 资料库入口：新的作品设定库 + 既有公共素材（Master）两个分区，默认进入作品设定库。
+const LibraryWorkspaceRoute = lazy(() => import('@/features/library-workspace/LibraryWorkspaceRoute').then((module) => ({ default: module.LibraryWorkspaceRoute })))
 const WorldWorkspace = lazy(() => import('@/features/world-workspace/WorldWorkspace').then((module) => ({ default: module.WorldWorkspace })))
 const SettingsView = lazy(() => import('@/features/settings/SettingsView').then((module) => ({ default: module.SettingsView })))
 // 叙界以持久 iframe 嵌入工作区，模式切换只改变可见性、不卸载。
@@ -754,7 +755,9 @@ export function ModeRouter(props: ModeRouterProps) {
       )}
       {mountedRoutes.has('library') && (
         <MainRouteLayer visible={visibleMainRoute === 'library'}>
-          <LibraryView workspace={workspace} onClose={() => onSetMode(booksReturnMode)} />
+          <Suspense fallback={null}>
+            <LibraryWorkspaceRoute workspace={workspace} onClose={() => onSetMode(booksReturnMode)} />
+          </Suspense>
         </MainRouteLayer>
       )}
       {mountedRoutes.has('worlds') && (
