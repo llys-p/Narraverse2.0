@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>素材地图 · Narraverse 与 E:\AI工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f5f6f8; color: #1f2329; padding: 16px; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { font-size: 12px; color: #6b7280; margin-bottom: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .d-truth { background: #16a34a; } .d-mirror { background: #2563eb; } .d-legacy { background: #f59e0b; }
+  .d-warn { background: #dc2626; } .d-ref { background: #9ca3af; }
+  .wrap { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+  .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; flex: 1 1 320px; min-width: 320px; }
+  .panel h2 { font-size: 14px; margin-bottom: 8px; }
+  ul.tree { list-style: none; font-size: 13px; line-height: 1.7; }
+  ul.tree ul { list-style: none; margin-left: 16px; border-left: 1px dashed #d1d5db; padding-left: 8px; }
+  .node { display: flex; align-items: center; gap: 5px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+  .node:hover { background: #f3f4f6; }
+  .node.selected { background: #e0e7ff; outline: 1px solid #818cf8; }
+  .caret { display: inline-block; width: 14px; text-align: center; color: #9ca3af; flex: none; }
+  .caret.empty { visibility: hidden; }
+  .nm { font-weight: 500; }
+  .badge { font-size: 10px; padding: 0 6px; border-radius: 8px; color: #fff; flex: none; }
+  .b-truth { background: #16a34a; } .b-mirror { background: #2563eb; } .b-legacy { background: #f59e0b; }
+  .b-warn { background: #dc2626; } .b-ref { background: #9ca3af; }
+  .leaf { color: #374151; }
+  #detail { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 10px; min-height: 40px; font-size: 13px; }
+  #detail b { color: #111827; }
+  #detail .p { color: #6b7280; font-family: Consolas, monospace; font-size: 12px; word-break: break-all; }
+</style>
+</head>
+<body>
+<h1>素材地图 · Narraverse 与 E:\AI工具</h1>
+<div class="sub">2026-09-21 梳理 · 点击任意节点查看说明 · 收起/展开：点击节点名左侧三角</div>
+<div class="legend">
+  <span><i class="dot d-truth"></i>现行真源</span>
+  <span><i class="dot d-mirror"></i>镜像/派生</span>
+  <span><i class="dot d-legacy"></i>旧版/遗留</span>
+  <span><i class="dot d-warn"></i>待处理/问题</span>
+  <span><i class="dot d-ref"></i>参考</span>
+</div>
+<div class="wrap">
+  <div class="panel" id="p1"><h2>D:\Narraverse2.0 · 项目真源</h2><ul class="tree"></ul></div>
+  <div class="panel" id="p2"><h2>E:\AI工具 · 素材工具集</h2><ul class="tree"></ul></div>
+  <div class="panel" id="p3"><h2>旧副本 / 旁路（非真源）</h2><ul class="tree"></ul></div>
+</div>
+<div id="detail">点击节点查看详情。</div>
+<script>
+(function(){
+  var BADGE = { truth:["b-truth","真源"], mirror:["b-mirror","镜像"], legacy:["b-legacy","旧版"], warn:["b-warn","待处理"], ref:["b-ref","参考"] };
+  var DATA = [
+    { panel:"p1", nodes:[
+      { n:"根目录文档", st:"truth", d:"项目协作日志(555KB)/代码指南(100KB)/README/DESIGN/平台模块功能总览/全功能模块/叙界-Denova-1.0三件套/迁移清单与启动脚本", c:[
+        { n:"项目协作日志.md", st:"truth", d:"协作记录，最新在上（2026-09-17 最新条）" },
+        { n:"代码指南.md · CODE_GUIDE.md", st:"truth", d:"代码指南（含 3.0B 章节 §1.15）；英文版为历史并行" },
+        { n:"README.md · DESIGN.md", st:"truth", d:"四模块说明、端口(8080/5173/5174)、设计基线" },
+        { n:"叙界-Denova-1.0 主文档/实现事实/项目总览", st:"truth", d:"Denova 1.0 历史背景三件套" }
+      ]},
+      { n:"docs/ · 架构·计划·交付", st:"truth", d:"架构总蓝图+路线图(2026-09-14)、plans/（Phase3 架构 v2.7 等 5 份计划）、交付/（交接指南/交付清单/协作决策原则）、acceptance/、reports/、reviews/、归档/ 等", c:[
+        { n:"ARCHITECTURE_MASTER_BLUEPRINT.md", st:"truth", d:"架构总蓝图：四态分类（已实现/冻结设计/未来/未批准）" },
+        { n:"ARCHITECTURE_ROADMAP.md", st:"truth", d:"Phase 3 World → 4 运行时 → 5 知识工作区 → 6 图谱 → 7 Agent" },
+        { n:"plans/ · 5 份实施计划", st:"truth", d:"WORLD_WORKSPACE_PHASE3_ARCHITECTURE_PLAN(162KB v2.7) 等；另有一份未跟踪的 3.0B 计划" },
+        { n:"交付/ · 3 份交接材料", st:"truth", d:"交接指南（端口表+换机清单）、交付清单、AI协作决策原则" }
+      ]},
+      { n:"knowledge-base/ · 设定库真源", st:"truth", d:"平台数据源：世界观设定 ×51、角色卡 ×62（39 JSON+23 PNG）、设定集元数据.json、说明文档.md、草稿、修复前备份 ×20", c:[
+        { n:"世界观设定/ · 51 个", st:"truth", d:"lorebook 设定书，含 chub-* 下载 16 个；生成脚本只扫本目录 .json" },
+        { n:"角色卡/ · 62 个", st:"truth", d:"39 JSON 文本卡 + 23 PNG 内嵌卡；NSFW 平台默认隐藏" },
+        { n:"设定集元数据.json", st:"truth", d:"全部设定书/角色卡中文简介、分类标签、NSFW 标记与 category 字段" }
+      ]},
+      { n:"denova-src/ · 源码+作品库", st:"truth", d:"Go 后端(cmd/internal/config)+React/Vite 前端(web/)；.denova/ 运行时数据；denova.exe 可执行入口", c:[
+        { n:".denova/projects/ · 25 个项目", st:"truth", d:"narraverse-master-library 总库、《水浒传》/武松×2、火影忍者×2、申鹤、流浪汉、摘心人、外星人的阴谋、长夜执灯、阿尔西安娜、美食小店 等" },
+        { n:"internal/ · worldcontext 领域核心", st:"truth", d:"Phase 3.0B：Snapshot/双投影/Registry/analysisHandle/InteractiveRun" },
+        { n:"web/ · 前端", st:"truth", d:"features/world-workspace（World Console、Context Preview）、i18n 双语" }
+      ]},
+      { n:"design-previews/ · 6 版 UI 原型", st:"mirror", d:"2026-09-06 起至 2026-09-15 ui-v4（模式双入口方案，含截图与说明）；纯设计稿，未触碰 app/" },
+      { n:"artifacts/ · Dify 角色卡分类 yml ×3", st:"mirror", d:"narraverse-dify-character-card-format-classification v1/v2/v3" },
+      { n:"app/ · tools/ · 旧前端与生成脚本", st:"truth", d:"app/（含 module4、game_engine.js、packs）；tools/（gen_local_library_v2.py 等）" },
+      { n:"旁路产物（.acceptance-*/.phase2b-*/.codex-review-*）", st:"legacy", d:"验收/审查/流程产物，非当前真源" }
+    ]},
+    { panel:"p2", nodes:[
+      { n:"AI-Novel-Writing-Assistant/", st:"truth", d:"开源长篇小说 AI 创作系统（pnpm monorepo：client/desktop/server/shared/site；LangChain/LangGraph + Qdrant RAG）；pnpm dev → localhost:5173；另有桌面版与 Ani Book Skill" },
+      { n:"Obsidian素材库/ · 镜像+创作区", st:"mirror", d:"00-欢迎页/01-收件箱/02-世界观设定35/03-角色卡11/04-小说MOC/05-酒馆MOC/06-素材MOC/07-模板5/08-索引/附件（原始文件+10头像）；⚠ 生成源已失效、内容滞后（35/11 vs 真源 51/62）", c:[
+        { n:"02-世界观设定 · 35", st:"mirror", d:"落后于 D:\\Narraverse2.0\\knowledge-base（51）" },
+        { n:"03-角色卡 · 11", st:"mirror", d:"落后于真源（62）" },
+        { n:"07-模板 · 5", st:"mirror", d:"世界观/角色卡/小说项目/章节/酒馆冒险模板" },
+        { n:"AGENTS.md · 协作契约", st:"mirror", d:"生成区(02/03/08/附件)勿手改；创作区(01/04/05/06/07)自由" }
+      ]},
+      { n:"Obsidian参考库/ · 英文模板 ×4", st:"ref", d:"obsidian-just-write、novel-starter-vault、worldbuilding-template、ttrpg-campaign-vault；参考用，可删" },
+      { n:"Skill库/ · 协作 Skill ×6", st:"truth", d:"text-adventure-collab、prompt-protocol、headless-frontend-regression、knowledge-base-governance、stickman-tuning、kb-summary-sync；⚠ README 引用的运行时镜像 E:\\文字冒险平台\\.workbuddy\\skills\\ 已不存在" },
+      { n:"人物三视图/", st:"truth", d:"4 张参考图 + 成年女性三视图提示词.txt + 反向提取/OIP-C.webp" },
+      { n:"小说/ · 3 篇散稿", st:"truth", d:"①酒馆故事角色扮演设定（申鹤题材）②小说-申鹤-2026-08-27（74KB）③心殿·光绪甲午晚清同人（30KB）；与 denova 项目「申鹤」呼应" },
+      { n:"文字冒险平台/ai知识库/", st:"warn", d:"残留副本：仅剩 世界观设定/ 子目录；真源已迁至 D:\\Narraverse2.0\\knowledge-base" },
+      { n:"未处理/ · 3 个文件", st:"warn", d:"①main_aiko-c63008e6_spec_v2.json（chub 角色卡）②影缚与圣源双职业设定.txt ③Denova 养成攻略模式.txt；待分类入库" },
+      { n:"说明.md", st:"warn", d:"2026-08-11 索引，已过时：所载 Denova 目录已不存在、项目已整合进 Narraverse2.0" }
+    ]},
+    { panel:"p3", nodes:[
+      { n:"E:\\Narraverse · 旧版部署", st:"legacy", d:"含 denova-src/app/knowledge-base/backup/Narraverse-release-module4-p0/设计预览；资料源保留" },
+      { n:"D:\\Narraverse2.0-main-deploy · -wt-*", st:"legacy", d:"旧 worktree/部署，2026-09-16 合并清理后保留为本地资料源" },
+      { n:"C:\\Users\\11\\.workbuddy\\projects\\{d-Narraverse2.0, e-Narraverse}", st:"legacy", d:"WorkBuddy 工具工作区快照，非素材真源" },
+      { n:"C:\\Users\\11\\.codex\\staging\\Narraverse2.0-*", st:"legacy", d:"Codex 导入/验证暂存，非素材真源" },
+      { n:"C:\\Users\\11\\Videos\\黑袍\\ai知识库", st:"legacy", d:"已退化为下载杂项（备份/安装包/图片），不再是知识库" }
+    ]}
+  ];
+  var detail = document.getElementById("detail");
+  function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+  function renderList(ul, items){
+    items.forEach(function(it){
+      var li = document.createElement("li");
+      var hasKids = it.c && it.c.length;
+      var row = document.createElement("div");
+      row.className = "node" + (it.st==="warn"?"":"");
+      var caret = document.createElement("span");
+      caret.className = "caret" + (hasKids?"":" empty");
+      caret.textContent = hasKids ? "▾" : "·";
+      row.appendChild(caret);
+      var nm = document.createElement("span");
+      nm.className = "nm" + (hasKids?"":" leaf");
+      nm.textContent = it.n;
+      row.appendChild(nm);
+      if (BADGE[it.st]){ var b = document.createElement("span"); b.className = "badge " + BADGE[it.st][0]; b.textContent = BADGE[it.st][1]; row.appendChild(b); }
+      li.appendChild(row);
+      var childUl = null;
+      if (hasKids){
+        childUl = document.createElement("ul");
+        renderList(childUl, it.c);
+        li.appendChild(childUl);
+      }
+      row.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        document.querySelectorAll(".node.selected").forEach(function(x){ x.classList.remove("selected"); });
+        row.classList.add("selected");
+        detail.innerHTML = "<b>" + esc(it.n) + "</b> · " + (BADGE[it.st]?BADGE[it.st][1]:"") + "<br><span class=\"p\">" + esc(it.d||"") + "</span>";
+        if (hasKids){
+          var show = childUl.style.display === "none";
+          childUl.style.display = show ? "block" : "none";
+          caret.textContent = show ? "▾" : "▸";
+        }
+      });
+    });
+  }
+  DATA.forEach(function(grp){
+    var ul = document.querySelector("#" + grp.panel + " ul.tree");
+    if (ul) renderList(ul, grp.nodes);
+  });
+})();
+</script>
+</body>
+</html>

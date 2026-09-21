@@ -535,6 +535,18 @@
       "lang": "zh",
       "category": "通用系统",
       "tags": []
+    },
+    "影缚与圣源双职业": {
+      "summary": "影缚与圣源双职业设定（NSFW）：整合《邪术召唤咒典》八法术与通用限制规则（奇幻法力系统 / 校园注意值系统 / 共鸣标记），含影缚术士（隐蔽控制渗透）与圣源牧者（肉欲圣礼类宗教）双职业技能树、联动建议与使用备注。",
+      "tags": [
+        "NSFW",
+        "职业",
+        "规则",
+        "咒典"
+      ],
+      "nsfw": true,
+      "lang": "zh",
+      "category": "NSFW"
     }
   },
   "cards": {
@@ -926,6 +938,94 @@
         "战斗"
       ],
       "nsfw": true,
+      "category": "NSFW角色"
+    },
+    "万能世界生成器": {
+      "summary": "世界生成器系统卡（SFW）：输入西幻/仙侠/校园/科幻等类型创建新世界或读取已有世界，AI 作为系统管理进程、讲述故事并扮演除玩家外的所有角色，语言风格高雅。",
+      "tags": [
+        "SFW",
+        "系统卡",
+        "世界生成"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "一般角色"
+    },
+    "Yes, My Liege": {
+      "summary": "开放世界王国经营模拟卡（SFW）：与 Guilder 交战、抵御北方蛮族与掠夺者，经营王国的策略冒险（原名 Yes, My Liege）。",
+      "tags": [
+        "SFW",
+        "经营",
+        "RPG",
+        "Fantasy"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "一般角色"
+    },
+    "仙侠模拟器": {
+      "summary": "中文修仙题材模拟卡（SFW）：{{user}} 穿越仙侠世界，可加入宗派或独行修真；含凡人→凝气→筑基→结丹→元婴→化神→合道→真仙完整境界体系（每境界分初期/中期/巅峰），慢节奏修仙经营冒险。",
+      "tags": [
+        "SFW",
+        "修仙",
+        "模拟器"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "一般角色"
+    },
+    "修仙世界系统": {
+      "summary": "修仙玄幻世界 RPG 系统卡（SFW）：{{char}} 是游戏系统而非特定角色，{{user}} 是玩家，循序渐进揭示剧情与游戏法则。",
+      "tags": [
+        "SFW",
+        "修仙",
+        "RPG系统"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "一般角色"
+    },
+    "Dungeon Core Simulator": {
+      "summary": "地牢核心经营模拟卡（SFW）：{{user}} 作为地牢核心，消耗法力扩张、改造、填充地牢并应对冒险者。",
+      "tags": [
+        "SFW",
+        "Dungeon",
+        "模拟器",
+        "RPG"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "一般角色"
+    },
+    "豆之RPG": {
+      "summary": "豆之 RPG 系统卡（SFW）：{{char}} 是 RPG 系统而非角色，剧情以单元剧本、交互式电影形式推进，描写细致增强代入感。",
+      "tags": [
+        "SFW",
+        "RPG系统"
+      ],
+      "nsfw": false,
+      "lang": "zh",
+      "category": "一般角色"
+    },
+    "Ei": {
+      "summary": "《原神》雷电影角色卡（SFW，原名 Ei）：稻妻现任统治者、永恒之神的傀儡容器，含「影与将军」双角色。",
+      "tags": [
+        "SFW",
+        "原神",
+        "Genshin Impact"
+      ],
+      "nsfw": false,
+      "lang": "en",
+      "category": "一般角色"
+    },
+    "爱子（姐姐）-aiko-c63008e6": {
+      "summary": "姐姐型角色卡（NSFW，原名 Aiko）：26 岁中学教师姐姐，婚后渴望子女但丈夫不孕，对弟弟过度依赖，患持续性性唤起障碍。",
+      "tags": [
+        "NSFW",
+        "姐姐"
+      ],
+      "nsfw": true,
+      "lang": "en",
       "category": "NSFW角色"
     }
   }

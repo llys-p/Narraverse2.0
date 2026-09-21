@@ -1,0 +1,364 @@
+version: 0.5.0
+kind: app
+app:
+  description: 使用本地 hy-mt 翻译和清洗角色卡，再用内置代码节点稳定整理字段与条目分类，输出可供 Narraverse 总资料库导入的角色卡。
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: Narraverse 角色卡翻译清洗（格式与分类·稳定版）
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/ollama:0.1.3@66e156c4f612964c131c49168882e78c2cdfe366879506b97ad855b23c5d6d98
+    version: null
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1788868888476--1788869002316-target
+      source: '1788868888476'
+      sourceHandle: source
+      target: '1788869002316'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: 1788869002316--1788869500000-target
+      source: '1788869002316'
+      sourceHandle: source
+      target: '1788869500000'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: 1788869500000--1788869271602-target
+      source: '1788869500000'
+      sourceHandle: source
+      target: '1788869271602'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: 角色设定卡文本
+          max_length: 50000
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: character_card
+        - default: 中文
+          hint: ''
+          label: 目标语言
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: target_language
+      height: 135
+      id: '1788868888476'
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            max_tokens: 4096
+            temperature: 0.1
+          mode: chat
+          name: hy-mt1.5:1.8b-q4_k_m
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: d47b3a50-9205-425c-b780-274883783c2e
+          role: system
+          text: |
+            你是 Narraverse 的角色设定卡翻译与字段整理器。
+
+            任务：读取原始角色卡，翻译到指定目标语言，清理噪声，并只输出一个紧凑、完整、合法的 JSON 对象。
+
+            重要规则：
+            1. 只使用原始角色卡已有信息，不虚构事实；不确定或缺失内容使用空字符串或空数组，并把缺失/冲突写入 warnings。
+            2. 输入可能是 chara_card_v2 JSON。只读取 data 中的角色设定字段；忽略 extensions、avatar、creator、character_version、mes_example 等元数据和示例对话，不要原样复制这些字段。
+            3. 清理 HTML、控制字符、重复空格、重复段落和模板噪声；保留 {{char}}、{{user}} 等宏变量，但把它们翻译成目标语言时不要破坏变量结构。
+            4. 所有可见自然语言值翻译到目标语言；JSON 键必须保持英文。
+            5. first_mes 必须是单个字符串；alternate_greetings 和 tags 必须是字符串数组；不要输出 sections，后续代码节点会负责格式整理和分类。
+            6. 不要输出 Markdown 围栏、解释、注释、extensions 或 JSON 之外的任何文字。
+
+            必须严格使用以下字段；不要新增其它字段：
+            {"name":"","description":"","personality":"","appearance":"","identity":"","relationships":"","background":"","worldview":"","behavior":"","speech_style":"","abilities":"","boundaries":"","scenario":"","first_mes":"","alternate_greetings":[],"tags":[],"creator_notes":"","system_prompt":"","post_history_instructions":"","warnings":[]}
+
+            字段含义：identity 为身份、年龄、职业等；appearance 为外观；relationships 为人物关系；background 为经历；worldview 为世界观；behavior 为行为规则；speech_style 为说话风格；abilities 为能力；boundaries 为边界与限制。每个事实只放入最合适的字段。
+        - id: 69074a32-1a51-4e4a-914e-edab3ceb97e9
+          role: user
+          text: |
+            目标语言：{{#1788868888476.target_language#}}
+
+            原始角色卡：
+            {{#1788868888476.character_card#}}
+        selected: false
+        title: 翻译与字段整理
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: '1788869002316'
+      position:
+        x: 382
+        y: 282
+      positionAbsolute:
+        x: 382
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code_language: python3
+        variables:
+        - variable: llm_text
+          value_selector:
+          - '1788869002316'
+          - text
+        - variable: target_language
+          value_selector:
+          - '1788868888476'
+          - target_language
+        code: |
+          import json
+
+          def text_value(value):
+              if value is None:
+                  return ""
+              if isinstance(value, list):
+                  values = [text_value(item) for item in value]
+                  return "\\n\\n".join(item for item in values if item)
+              if isinstance(value, dict):
+                  return json.dumps(value, ensure_ascii=False)
+              return str(value).strip()
+
+          def string_list(value):
+              if value is None:
+                  return []
+              if isinstance(value, list):
+                  return [text_value(item) for item in value if text_value(item)]
+              value = text_value(value)
+              return [value] if value else []
+
+          def load_json(raw):
+              raw = text_value(raw).strip()
+              if raw.startswith("```"):
+                  raw = raw.replace("```json", "", 1).replace("```", "")
+              start = raw.find("{")
+              end = raw.rfind("}")
+              if start < 0 or end < start:
+                  raise ValueError("LLM output does not contain a JSON object")
+              return json.loads(raw[start:end + 1])
+
+          def main(llm_text: str, target_language: str):
+              warnings = []
+              try:
+                  source = load_json(llm_text)
+              except Exception:
+                  source = {}
+                  warnings.append("模型输出不是完整 JSON，已返回空字段结构")
+
+              scalar_fields = [
+                  "name", "description", "personality", "appearance", "identity",
+                  "relationships", "background", "worldview", "behavior", "speech_style",
+                  "abilities", "boundaries", "scenario", "first_mes", "creator_notes",
+                  "system_prompt", "post_history_instructions",
+              ]
+              card = {field: text_value(source.get(field, "")) for field in scalar_fields}
+              card["alternate_greetings"] = string_list(source.get("alternate_greetings"))
+              card["tags"] = string_list(source.get("tags"))
+              warnings.extend(string_list(source.get("warnings")))
+
+              english = text_value(target_language).lower().startswith(("en", "英语", "英文"))
+              titles = {
+                  "identity": "Identity" if english else "身份信息",
+                  "appearance": "Appearance" if english else "外观",
+                  "personality": "Personality" if english else "性格",
+                  "relationships": "Relationships" if english else "关系",
+                  "background": "Background" if english else "背景",
+                  "worldview": "Worldview" if english else "世界观",
+                  "scenario": "Scenario" if english else "场景",
+                  "behavior": "Behavior and rules" if english else "行为与规则",
+                  "speech_style": "Speech style" if english else "说话风格",
+                  "abilities": "Abilities" if english else "能力",
+                  "boundaries": "Boundaries" if english else "边界",
+                  "other": "Other" if english else "其他",
+              }
+              labels = {
+                  "name": "Name" if english else "姓名",
+                  "identity": "Identity details" if english else "身份细节",
+                  "description": "Overview" if english else "概述",
+                  "appearance": "Appearance details" if english else "外观细节",
+                  "personality": "Personality traits" if english else "性格特点",
+                  "relationships": "Relationships" if english else "人物关系",
+                  "background": "Background" if english else "经历背景",
+                  "worldview": "Worldview" if english else "世界观",
+                  "scenario": "Scenario" if english else "场景设定",
+                  "first_mes": "First message" if english else "首条消息",
+                  "behavior": "Behavior rules" if english else "行为规则",
+                  "speech_style": "Speech style" if english else "说话风格",
+                  "abilities": "Abilities" if english else "能力",
+                  "boundaries": "Boundaries" if english else "边界",
+                  "creator_notes": "Creator notes" if english else "作者备注",
+                  "system_prompt": "System prompt" if english else "系统提示",
+                  "post_history_instructions": "Post-history instructions" if english else "历史消息后指令",
+                  "tags": "Tags" if english else "标签",
+              }
+              sections = []
+
+              def add_section(category, pairs):
+                  items = []
+                  for key, value in pairs:
+                      value = text_value(value)
+                      if value:
+                          items.append({"key": key, "label": labels.get(key, key), "value": value})
+                  if items:
+                      sections.append({"category": category, "title": titles[category], "items": items})
+
+              add_section("identity", [("name", card["name"]), ("identity", card["identity"]), ("description", card["description"])])
+              add_section("appearance", [("appearance", card["appearance"])])
+              add_section("personality", [("personality", card["personality"])])
+              add_section("relationships", [("relationships", card["relationships"])])
+              add_section("background", [("background", card["background"])])
+              add_section("worldview", [("worldview", card["worldview"])])
+              add_section("scenario", [("scenario", card["scenario"]), ("first_mes", card["first_mes"])])
+              add_section("behavior", [("behavior", card["behavior"]), ("system_prompt", card["system_prompt"]), ("post_history_instructions", card["post_history_instructions"])])
+              add_section("speech_style", [("speech_style", card["speech_style"])])
+              add_section("abilities", [("abilities", card["abilities"])])
+              add_section("boundaries", [("boundaries", card["boundaries"])])
+              add_section("other", [("creator_notes", card["creator_notes"]), ("tags", ", ".join(card["tags"]))])
+
+              card["sections"] = sections
+              card["warnings"] = warnings
+              return {"normalized_card": json.dumps(card, ensure_ascii=False)}
+        outputs:
+          normalized_card:
+            type: string
+        selected: false
+        title: 格式整理与条目分类
+        type: code
+      height: 88
+      id: '1788869500000'
+      position:
+        x: 684
+        y: 282
+      positionAbsolute:
+        x: 684
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1788869500000'
+          - normalized_card
+          value_type: string
+          variable: normalized_card
+        selected: true
+        title: 输出标准化角色卡
+        type: end
+      height: 88
+      id: '1788869271602'
+      position:
+        x: 986
+        y: 282
+      positionAbsolute:
+        x: 986
+        y: 282
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -521
+      y: 94
+      zoom: 1

@@ -1,0 +1,211 @@
+version: 0.5.0
+kind: app
+app:
+  description: 将角色设定卡翻译、清洗、格式整理并按条目分类，输出可供 Narraverse 总资料库导入的标准化角色卡。
+  icon: 🤖
+  icon_background: '#FFEAD5'
+  mode: workflow
+  name: Narraverse 角色卡翻译清洗（格式与分类）
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/ollama:0.1.3@66e156c4f612964c131c49168882e78c2cdfe366879506b97ad855b23c5d6d98
+    version: null
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+      - .JPG
+      - .JPEG
+      - .PNG
+      - .GIF
+      - .WEBP
+      - .SVG
+      allowed_file_types:
+      - image
+      allowed_file_upload_methods:
+      - local_file
+      - remote_url
+      enabled: false
+      fileUploadConfig:
+        attachment_image_file_size_limit: 2
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        file_upload_limit: 20
+        image_file_batch_limit: 10
+        image_file_size_limit: 10
+        single_chunk_attachment_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+        number_limits: 3
+        transfer_methods:
+        - local_file
+        - remote_url
+      number_limits: 3
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: 1788868888476--1788869002316-target
+      source: '1788868888476'
+      sourceHandle: source
+      target: '1788869002316'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: end
+      id: 1788869002316--1788869271602-target
+      source: '1788869002316'
+      sourceHandle: source
+      target: '1788869271602'
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        selected: false
+        title: 用户输入
+        type: start
+        variables:
+        - default: ''
+          hint: ''
+          label: 角色设定卡文本
+          max_length: 50000
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: character_card
+        - default: 中文
+          hint: ''
+          label: 目标语言
+          options: []
+          placeholder: ''
+          required: true
+          type: text-input
+          variable: target_language
+      height: 135
+      id: '1788868888476'
+      position:
+        x: 80
+        y: 282
+      positionAbsolute:
+        x: 80
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: hy-mt1.5:1.8b-q4_k_m
+          provider: langgenius/ollama/ollama
+        prompt_template:
+        - id: d47b3a50-9205-425c-b780-274883783c2e
+          role: system
+          text: |
+            你是 Narraverse 的角色设定卡翻译、清洗、格式整理与条目分类器。
+
+            任务：把用户提供的角色设定卡翻译到指定目标语言，清理噪声，并整理成稳定、可供总资料库导入的 JSON。
+
+            处理规则：
+            1. 只使用原始角色卡中已有的信息，不虚构事实；不确定或缺失内容保留为空，并把问题写入 warnings 数组。
+            2. 清理 HTML 标签、控制字符、重复空格、无意义标题、重复段落和模板噪声；不要改变原始事实、人物关系、世界观、边界或行为倾向。
+            3. 以下字段固定保留，并将自然语言翻译到目标语言：name、description、personality、scenario、first_mes、alternate_greetings、creator_notes、system_prompt、post_history_instructions。
+            4. tags 必须是字符串数组；alternate_greetings 必须是字符串数组；其他标准字段必须是字符串；warnings 必须是字符串数组。
+            5. 新增 sections 用于格式整理和条目分类。只输出有内容的分类，并按以下顺序组织：identity（身份信息）、appearance（外观）、personality（性格）、relationships（关系）、background（背景）、worldview（世界观）、scenario（场景）、behavior（行为与规则）、speech_style（说话风格）、abilities（能力）、boundaries（边界）、other（其他）。
+            6. 每个 sections 元素必须是 {"category":"固定英文分类码","title":"目标语言分类标题","items":[{"key":"简短英文键","label":"目标语言条目名","value":"目标语言条目内容"}]}。一个事实只放入最合适的分类；原文已有条目尽量逐条保留，不要把多个无关事实合并成一句。
+            7. 专有名词、作品名、占位符和宏变量尽量保持原样；不要把 JSON 键翻译，不要添加原文没有的标签。
+            8. 输出必须是合法 JSON，不要输出 Markdown 围栏、解释、注释或 JSON 之外的文字。
+
+            JSON 输出结构必须包含：
+            {"name":"","description":"","personality":"","scenario":"","first_mes":"","alternate_greetings":[],"tags":[],"creator_notes":"","system_prompt":"","post_history_instructions":"","sections":[],"warnings":[]}
+
+            缺失字段使用空字符串或空数组；sections 中没有内容的分类不要输出。所有可见自然语言内容都翻译到目标语言。
+        - id: 69074a32-1a51-4e4a-914e-edab3ceb97e9
+          role: user
+          text: |
+            目标语言：{{#1788868888476.target_language#}}
+
+            原始角色卡：
+            {{#1788868888476.character_card#}}
+        selected: false
+        title: 翻译、格式整理与分类
+        type: llm
+        vision:
+          enabled: false
+      height: 88
+      id: '1788869002316'
+      position:
+        x: 382
+        y: 282
+      positionAbsolute:
+        x: 382
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        outputs:
+        - value_selector:
+          - '1788869002316'
+          - text
+          value_type: string
+          variable: normalized_card
+        selected: true
+        title: 输出标准化角色卡
+        type: end
+      height: 88
+      id: '1788869271602'
+      position:
+        x: 684
+        y: 282
+      positionAbsolute:
+        x: 684
+        y: 282
+      selected: true
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    viewport:
+      x: -521
+      y: 94
+      zoom: 1
