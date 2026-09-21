@@ -1,26 +1,41 @@
 /* =============================================================================
- * app/bridge.js — Denova 宿主协议 v1
+ * app/bridge.js — Denova 宿主协议 v2
  * -----------------------------------------------------------------------------
- * Denova 是唯一顶层宿主；叙界在同源 iframe 中运行，仅交换宿主级事件：
+ * Denova 是唯一顶层宿主；叙界在 localhost 跨源 iframe 中运行，仅交换宿主级事件：
  * ready / switch-mode / theme-changed / locale-changed / visibility-changed。
  * standalone 模式仍保留旧套壳入口，但必须由用户显式配置 Denova 地址。
  * ========================================================================== */
 
-const NARRAVERSE_BRIDGE_VERSION = 1;
+const NARRAVERSE_BRIDGE_VERSION = 2;
+const denovaModelRequests = new Map();
 
 function isEmbeddedInDenova() {
   return window.parent !== window &&
     new URLSearchParams(window.location.search).get('embedded') === 'denova';
 }
 
+function getDenovaHostOrigin() {
+  if (!isEmbeddedInDenova()) return '';
+  const configured = new URLSearchParams(window.location.search).get('host_origin') || '';
+  try {
+    const parsed = new URL(configured);
+    return parsed.protocol === 'http:' && parsed.hostname === '127.0.0.1' && parsed.port === window.location.port
+      ? parsed.origin : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function postNarraverseHostMessage(type, payload) {
   if (!isEmbeddedInDenova()) return false;
+  const hostOrigin = getDenovaHostOrigin();
+  if (!hostOrigin) return false;
   window.parent.postMessage({
     source: 'narraverse',
     version: NARRAVERSE_BRIDGE_VERSION,
     type: type,
     payload: payload || {}
-  }, window.location.origin);
+  }, hostOrigin);
   return true;
 }
 
@@ -42,9 +57,9 @@ function applyDenovaLocale(locale) {
 
 function handleDenovaHostMessage(event) {
   if (!isEmbeddedInDenova()) return;
-  if (event.source !== window.parent || event.origin !== window.location.origin) return;
+  if (event.source !== window.parent || event.origin !== getDenovaHostOrigin()) return;
   const message = event.data;
-  if (!message || message.source !== 'denova' || message.version !== NARRAVERSE_BRIDGE_VERSION) return;
+  if (!message || message.source !== 'denova' || (message.version !== 1 && message.version !== NARRAVERSE_BRIDGE_VERSION)) return;
   if (message.type === 'theme-changed') {
     applyDenovaTheme(message.payload && message.payload.theme);
   } else if (message.type === 'locale-changed') {
@@ -56,12 +71,66 @@ function handleDenovaHostMessage(event) {
     }
   } else if (message.type === 'visibility-changed' && message.payload && message.payload.visible) {
     if (typeof pullCurrentAdventureSync === 'function') pullCurrentAdventureSync();
+  } else if (message.version === 2 && message.type === 'world-context-changed') {
+    var contextPayload = message.payload && typeof message.payload === 'object' ? message.payload : { state: 'none' };
+    window.NarraverseWorldContextStatus = contextPayload;
+    document.documentElement.dataset.worldContextState = String(contextPayload.state || 'none');
+    window.dispatchEvent(new CustomEvent('narraverse-world-context-changed', { detail: contextPayload }));
+  } else if (message.version === 2 && message.type === 'model-call-result') {
+    const payload = message.payload || {};
+    const pending = denovaModelRequests.get(String(payload.requestId || ''));
+    if (!pending) return;
+    denovaModelRequests.delete(String(payload.requestId));
+    window.clearTimeout(pending.timer);
+    if (payload.ok) pending.resolve(String(payload.content || ''));
+    else {
+      const error = new Error(String(payload.message || '共享模型请求失败'));
+      error.code = String(payload.code || 'upstream_error');
+      pending.reject(error);
+    }
   }
 }
 
 function announceNarraverseReady() {
-  postNarraverseHostMessage('ready');
+  postNarraverseHostMessage('ready', { capabilities: ['host-model-proxy-v2'] });
 }
+
+function randomBridgeRequestId() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode.apply(null, bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function requestDenovaModel(messages, options) {
+  if (!isEmbeddedInDenova() || !getDenovaHostOrigin()) {
+    return Promise.reject(new Error('Denova 宿主模型代理不可用'));
+  }
+  const requestId = randomBridgeRequestId();
+  return new Promise(function (resolve, reject) {
+    const timer = window.setTimeout(function () {
+      denovaModelRequests.delete(requestId);
+      reject(new Error('共享模型请求超时'));
+    }, 125000);
+    denovaModelRequests.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+    const sent = postNarraverseHostMessage('model-call-request', {
+      requestId: requestId,
+      messages: Array.isArray(messages) ? messages.map(function (message) {
+        return { role: message.role, content: message.content };
+      }) : [],
+      options: {
+        maxTokens: options && options.maxTokens,
+        temperature: options && options.temperature
+      }
+    });
+    if (!sent) {
+      window.clearTimeout(timer);
+      denovaModelRequests.delete(requestId);
+      reject(new Error('Denova 宿主模型代理不可用'));
+    }
+  });
+}
+
+window.requestDenovaModel = requestDenovaModel;
 
 function getStandaloneDenovaOrigin() {
   let configured = '';
@@ -83,7 +152,7 @@ function postToDenova(cmd, payload) {
 }
 
 function queryDenova() {
-  return Promise.reject(new Error('Denova query bridge is not available in host protocol v1'));
+  return Promise.reject(new Error('Denova query bridge is not available in host protocol v2'));
 }
 
 /* ---------- standalone 兼容套壳 ---------- */

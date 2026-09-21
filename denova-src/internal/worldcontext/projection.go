@@ -161,7 +161,7 @@ func MaterializeModelView(body *ProjectionBody, consumer Consumer, runSalt []byt
 	if body == nil {
 		return nil, domainError(ErrProjectionFailed, "body", "投影体为空")
 	}
-	if consumer != ConsumerWriting && consumer != ConsumerGame {
+	if !supportedConsumer(consumer) {
 		return nil, domainError(ErrConsumerNotTrusted, "consumer", "当前阶段不允许该模式物化模型视图")
 	}
 	if len(runSalt) != 32 {
@@ -192,6 +192,24 @@ func MaterializeModelView(body *ProjectionBody, consumer Consumer, runSalt []byt
 		mv.Sources = append(mv.Sources, ModelSource{Ref: ref, Kind: s.RefKind, Label: s.Label})
 	}
 	return mv, nil
+}
+
+// MaterializeModelViewBytes 是纯函数：ProjectionBody + runSalt → ModelView 及其稳定序列化字节，
+// 并执行最终 ModelView 96KiB 门禁。它不触碰 Registry，供“不创建/不占用 runContext”的同字节
+// 装配场景（如 context-analysis 展示）使用，保证与 runContext.ModelViewBytes() 走同一物化与序列化路径。
+func MaterializeModelViewBytes(body *ProjectionBody, consumer Consumer, runSalt []byte) (*ModelView, []byte, error) {
+	mv, err := MaterializeModelView(body, consumer, runSalt)
+	if err != nil {
+		return nil, nil, err
+	}
+	raw, err := marshalStable(mv)
+	if err != nil {
+		return nil, nil, domainError(ErrProjectionFailed, "modelView", "最终 ModelView 序列化失败")
+	}
+	if len(raw) > MaxFinalModelViewBytes {
+		return nil, nil, budgetError(string(LayerModelBytes), "最终模型视图超过 96KiB 上限")
+	}
+	return mv, raw, nil
 }
 
 // sourceRef = base64url( HMAC-SHA256(runSalt, consumer|refKind|refValue)[0:16] )（v2.7 §4.4）。

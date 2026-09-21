@@ -233,6 +233,73 @@ func TestSessionConversationKeepsStableContextBeforeCompactionSummary(t *testing
 	}
 }
 
+func TestSessionConversationKeepsWorldAndStableContextsBeforeCompactionSummary(t *testing.T) {
+	previous := summarizeContextForCompaction
+	defer func() { summarizeContextForCompaction = previous }()
+	summarizeContextForCompaction = func(_ context.Context, _ *config.Config, _ string, _ string, source []*schema.Message, _ string, _ int, _ contextCompactionPolicy, _ func(int, string)) (string, int, error) {
+		for _, message := range source {
+			if isEphemeralWorldContextMessage(message) {
+				t.Fatal("ephemeral world context must not enter compaction source")
+			}
+		}
+		return "压缩摘要：旧对话已合并。", 100, nil
+	}
+
+	store, err := session.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.GetOrCreate("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.UserMessage("旧用户请求")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sess.Append(schema.AssistantMessage("旧助手回复", nil)); err != nil {
+		t.Fatal(err)
+	}
+	conversation := NewSessionConversationForAgentWithRuntimeContexts(
+		sess,
+		&config.Config{},
+		config.AgentKindIDE,
+		"稳定作品上下文",
+		"## 当前大纲\n\n主角进入废城。",
+		"本轮动态作品状态",
+		"## 当前进度\n\n刚抵达废城。",
+	)
+	history, err := conversation.PrepareMessages("继续写", "继续写")
+	if err != nil {
+		t.Fatal(err)
+	}
+	world := NewEphemeralWorldContextInput([]byte(`{"identity":{"name":"水浒世界"}}`))
+	modelHistory := ModelInputMessages(history, world)
+
+	compacted, result, err := conversation.CompactContextIfNeeded(context.Background(), ContextCompactionInput{
+		Messages:                     modelHistory,
+		ReservedEphemeralWorldTokens: world.EstimatedTokens(),
+		Force:                        true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Triggered {
+		t.Fatalf("expected compaction to trigger: %#v", result)
+	}
+	if len(compacted) < 4 {
+		t.Fatalf("compacted messages too short: %#v", compacted)
+	}
+	if !isEphemeralWorldContextMessage(compacted[0]) {
+		t.Fatalf("world context must remain first after compaction: %#v", messageContents(compacted))
+	}
+	if !strings.Contains(compacted[1].Content, "# 稳定作品上下文") {
+		t.Fatalf("stable context must remain after world context: %#v", messageContents(compacted))
+	}
+	if !isContextCompactionMessage(compacted[2]) {
+		t.Fatalf("compaction summary must follow leading contexts: %#v", messageContents(compacted))
+	}
+}
+
 func TestSessionConversationCompactsOnlyMessagesAfterPreviousCompaction(t *testing.T) {
 	previous := summarizeContextForCompaction
 	defer func() { summarizeContextForCompaction = previous }()

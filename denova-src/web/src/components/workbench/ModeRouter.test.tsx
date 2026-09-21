@@ -76,6 +76,19 @@ vi.mock('@/features/document-review/use-document-review', () => ({
   useDocumentReview: useDocumentReviewMock,
 }))
 
+vi.mock('@/features/world-context-runtime/WorldContextHostProvider', () => ({
+  useWorldContextHost: () => ({ state: 'ready', migration: null }),
+}))
+
+vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () => ({
+  useIframeWorldContextLaunch: () => ({
+    pending: { narraverse: null, module4: null },
+    launch: vi.fn(),
+    take: vi.fn(),
+    clear: vi.fn(),
+  }),
+}))
+
 vi.mock('./WorkbenchShell', () => ({
   WorkbenchShell: ({ onQuickSwitchBook, main, rightPanelContent }: {
     onQuickSwitchBook: (path: string) => Promise<boolean>
@@ -226,7 +239,12 @@ describe('ModeRouter autosave navigation policy', () => {
     const view = render(<ModeRouter {...props} />)
     const iframe = view.container.querySelector('iframe')
 
-    expect(iframe).toHaveAttribute('src', '/narraverse/index.html?embedded=denova&v=20260906-model-gateway-v1')
+    const iframeURL = new URL(iframe?.getAttribute('src') || '')
+    expect(iframeURL.hostname).toBe('localhost')
+    expect(iframeURL.pathname).toBe('/narraverse/index.html')
+    expect(iframeURL.searchParams.get('embedded')).toBe('denova')
+    expect(iframeURL.searchParams.get('host_origin')).toBe(window.location.origin)
+    expect(iframeURL.searchParams.get('v')).toBe('20260915-host-proxy-v2')
 
     view.rerender(<ModeRouter {...props} mode="ide" />)
     expect(view.container.querySelector('iframe')).toBe(iframe)

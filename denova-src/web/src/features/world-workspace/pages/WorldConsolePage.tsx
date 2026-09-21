@@ -8,7 +8,7 @@ import { FeaturePageShell } from '@/components/layout/feature-page-shell'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { APIError, getBooks, type BookRecord } from '@/lib/api-client'
-import { getInteractiveStories } from '@/features/interactive/api'
+import { getInteractiveStories, selectInteractiveStory } from '@/features/interactive/api'
 import { cn } from '@/lib/utils'
 import { BindingPicker, WORLD_MATERIAL_SEMANTIC_TYPES } from '../components/BindingPicker'
 import { BindingAvatar } from '../components/BindingAvatar'
@@ -23,9 +23,14 @@ import { characterFromBinding, emptyCharacter, factionFromBinding, locationFromB
 import { addWorldBinding, findDraftIssue, removeWorldBinding, removeWorldEntity } from '../world-ops'
 import { getWorld, updateWorld } from '../world-api'
 import { useWorldContextPreview } from '../use-world-context-preview'
+import { useWorldContextLaunch } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import { useGameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
+import { useIframeWorldContextLaunch, type IframeWorldConsumer } from '@/features/world-context-runtime/IframeWorldContextLaunchProvider'
+import { useWorldContextHost } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { WorldContextPanel } from '../components/context/WorldContextPanel'
 import {
   emptyContextSelection,
+  isSelectionWithinLimits,
   pruneContextSelection,
   remapSelectionAfterRuleRemoval,
   type WorldConsoleSectionId,
@@ -80,6 +85,13 @@ export function WorldConsolePage({
   const contextPreview = useWorldContextPreview()
   const [contextConsumer, setContextConsumer] = useState<WorldContextConsumer>('writing')
   const [contextSelection, setContextSelection] = useState<ContextSelection>(emptyContextSelection)
+  // Phase 3.2-A5：显式「带入写作」交接（纯内存 Provider），切主书进行中的忙态。
+  const { launchWriting } = useWorldContextLaunch()
+  const { launchGame } = useGameWorldContextLaunch()
+  const iframeLaunches = useIframeWorldContextLaunch()
+  const worldContextHost = useWorldContextHost()
+  const [launchPending, setLaunchPending] = useState(false)
+  const [gameLaunchPending, setGameLaunchPending] = useState(false)
   // markStale 身份会随 preview 变化，用 ref 让 mutate/save/reload 无需把它列入依赖、避免回调抖动。
   const markContextStaleRef = useRef(contextPreview.markStale)
   markContextStaleRef.current = contextPreview.markStale
@@ -198,6 +210,108 @@ export function WorldConsolePage({
     markContextStaleRef.current()
     setContextConsumer(next)
   }, [])
+
+  // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
+  // Phase 3.2-A5：把当前已保存 World + Selection 显式带入写作。
+  // 守卫顺序与 ModeEntries.enterWriting 一致：先校验可带入条件 → 一次离开确认 → 成功切主书后
+  // 才写入内存 Ref 并切到写作模式；任何一步失败都留在原页、无副作用（不写 Ref、不切模式）。
+  const launchToWriting = useCallback(async () => {
+    if (launchPending) return
+    if (dirty) { toast.error(t('worldWorkspace.context.blockedDirty')); return }
+    if (!revision) { toast.error(t('worldWorkspace.context.launchNeedSaved')); return }
+    if (!isSelectionWithinLimits(contextSelection)) { toast.error(t('worldWorkspace.context.launchOverflow')); return }
+    if (!draft?.primaryBookPath) { toast.error(t('worldWorkspace.modes.noPrimaryBook')); return }
+    // 与 confirmLeave 同一套单次离开确认（此处内联以保证声明顺序，杜绝双重确认）。
+    if (dirty && !window.confirm(t('worldWorkspace.unsavedLeave'))) return
+    setLaunchPending(true)
+    try {
+      const ok = await onQuickSwitchBook(draft.primaryBookPath)
+      if (!ok) { toast.error(t('worldWorkspace.modes.switchBookFailed')); return }
+      const selection = contextSelection
+      const selectedCount = (selection.includeTone ? 1 : 0)
+        + selection.ruleIndexes.length + selection.characterIds.length + selection.locationIds.length
+        + selection.factionIds.length + selection.timelineEntryIds.length + selection.bindingIds.length
+      // 只在切书成功后写入；Ref 只含已保存 revision 与选择，绝不携带草稿或运行态对象。
+      launchWriting({
+        worldId,
+        expectedWorldRevision: revision,
+        selection,
+        worldName: draft.name,
+        revisionLabel: contextPreview.preview?.revisionLabel,
+        selectedCount,
+        launchedAt: Date.now(),
+      })
+      onSetMode('ide')
+    } finally {
+      setLaunchPending(false)
+    }
+  }, [launchPending, dirty, revision, contextSelection, draft, t, onQuickSwitchBook, worldId, contextPreview.preview, launchWriting, onSetMode])
+
+  // 游戏交接与写作交接使用同一份已保存 World Ref；先完成故事选择，再写入
+  // 进程内一次性 Provider，任何失败都不切模式、不留下待消费 Ref。
+  const launchToGame = useCallback(async () => {
+    if (gameLaunchPending) return
+    if (dirty) { toast.error(t('worldWorkspace.context.blockedDirty')); return }
+    if (!revision) { toast.error(t('worldWorkspace.context.launchGameNeedSaved')); return }
+    if (!isSelectionWithinLimits(contextSelection)) { toast.error(t('worldWorkspace.context.launchGameOverflow')); return }
+    const storyId = draft?.primaryInteractiveStoryId
+    if (!storyId) { toast.error(t('worldWorkspace.modes.noPrimaryStory')); return }
+    if (storiesLoad !== 'ok' || !stories.some((story) => story.id === storyId)) {
+      toast.error(t('worldWorkspace.modes.loadStoryFailed'))
+      return
+    }
+    setGameLaunchPending(true)
+    try {
+      await selectInteractiveStory(storyId)
+      const selectedCount = (contextSelection.includeTone ? 1 : 0)
+        + contextSelection.ruleIndexes.length + contextSelection.characterIds.length + contextSelection.locationIds.length
+        + contextSelection.factionIds.length + contextSelection.timelineEntryIds.length + contextSelection.bindingIds.length
+      launchGame({
+        worldId,
+        expectedWorldRevision: revision,
+        selection: contextSelection,
+        storyId,
+        branchId: 'main',
+        worldName: draft.name,
+        revisionLabel: contextPreview.preview?.revisionLabel,
+        selectedCount,
+        launchedAt: Date.now(),
+      })
+      onSetMode('interactive')
+    } catch {
+      toast.error(t('worldWorkspace.modes.loadStoryFailed'))
+    } finally {
+      setGameLaunchPending(false)
+    }
+  }, [gameLaunchPending, dirty, revision, contextSelection, draft, stories, storiesLoad, t, worldId, contextPreview.preview, launchGame, onSetMode])
+
+  // Narraverse / Module4 只接收同一份已保存 World Ref。consumer 不进入 Ref，
+  // 而由宿主按受控路由固定；iframe 永远看不到 Ref、revision、selection 或运行态 ID。
+  const launchToIframe = useCallback((consumer: IframeWorldConsumer) => {
+    if (dirty) { toast.error(t('worldWorkspace.context.blockedDirty')); return }
+    if (!revision) { toast.error(t('worldWorkspace.context.launchNeedSavedGeneric')); return }
+    if (!isSelectionWithinLimits(contextSelection)) { toast.error(t('worldWorkspace.context.launchOverflowGeneric')); return }
+    if (worldContextHost.state !== 'ready') { toast.error(t('worldWorkspace.context.launchHostUnavailable')); return }
+    if (!draft) return
+    const selectedCount = (contextSelection.includeTone ? 1 : 0)
+      + contextSelection.ruleIndexes.length + contextSelection.characterIds.length + contextSelection.locationIds.length
+      + contextSelection.factionIds.length + contextSelection.timelineEntryIds.length + contextSelection.bindingIds.length
+    iframeLaunches.launch(consumer, {
+      worldId,
+      expectedWorldRevision: revision,
+      selection: contextSelection,
+      worldName: draft.name,
+      revisionLabel: contextPreview.preview?.revisionLabel,
+      selectedCount,
+      launchedAt: Date.now(),
+    })
+    if (consumer === 'module4') {
+      onOpenModule4?.()
+      return
+    }
+    onCloseModule4?.()
+    onSetMode('narraverse')
+  }, [dirty, revision, contextSelection, worldContextHost.state, draft, t, iframeLaunches, worldId, contextPreview.preview, onOpenModule4, onCloseModule4, onSetMode])
 
   // 统一离开 preflight：有未保存修改时确认一次，返回是否允许离开。页面内各出口与 ModeEntries 共用它，杜绝双重确认。
   const confirmLeave = useCallback(() => !dirty || window.confirm(t('worldWorkspace.unsavedLeave')), [dirty, t])
@@ -334,7 +448,7 @@ export function WorldConsolePage({
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
             {section === 'overview' && <Overview world={draft} t={t} books={books} stories={stories}
               booksLoad={booksLoad} storiesLoad={storiesLoad} mutate={mutate} confirmLeave={confirmLeave}
-              onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />}
+              onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onLaunchGame={launchToGame} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />}
 
             {section === 'setting' && <SettingEditor world={draft} mutate={mutate} onRemoveRule={removeRule} t={t} />}
 
@@ -409,6 +523,13 @@ export function WorldConsolePage({
                 onGenerate={generateContext}
                 onJumpSection={jumpToSection}
                 onRemoveBinding={removeBinding}
+                onLaunchWriting={() => void launchToWriting()}
+                launchWritingPending={launchPending}
+                onLaunchGame={() => void launchToGame()}
+                launchGamePending={gameLaunchPending}
+                onLaunchNarraverse={() => launchToIframe('narraverse')}
+                onLaunchModule4={() => launchToIframe('module4')}
+                iframeLaunchDisabled={worldContextHost.state !== 'ready'}
               />
             )}
           </div>
@@ -454,7 +575,7 @@ export function WorldConsolePage({
 type Mutator = (fn: (w: World) => World) => void
 type TFn = (k: string, o?: Record<string, unknown>) => string
 
-function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, confirmLeave, onSetMode, onQuickSwitchBook, onOpenModule4, onCloseModule4 }: {
+function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, confirmLeave, onSetMode, onQuickSwitchBook, onLaunchGame, onOpenModule4, onCloseModule4 }: {
   world: World
   t: TFn
   books: BookRecord[]
@@ -465,6 +586,7 @@ function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, co
   confirmLeave: () => boolean
   onSetMode: (mode: WorkspaceMode) => void
   onQuickSwitchBook: (path: string) => Promise<boolean>
+  onLaunchGame?: () => Promise<void>
   onOpenModule4?: () => void
   onCloseModule4?: () => void
 }) {
@@ -521,7 +643,7 @@ function Overview({ world, t, books, stories, booksLoad, storiesLoad, mutate, co
         </label>
       </div>
 
-      <ModeEntries world={world} confirmLeave={confirmLeave} onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />
+      <ModeEntries world={world} confirmLeave={confirmLeave} onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} onLaunchGame={onLaunchGame} onOpenModule4={onOpenModule4} onCloseModule4={onCloseModule4} />
     </div>
   )
 }

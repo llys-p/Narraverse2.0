@@ -35,6 +35,8 @@ const (
 	AnalysisHandleIgnoredInvalid  AnalysisHandleUseStatus = "ignored_invalid"
 	AnalysisHandleIgnoredExpired  AnalysisHandleUseStatus = "ignored_expired"
 	AnalysisHandleIgnoredConsumed AnalysisHandleUseStatus = "ignored_consumed"
+	// AnalysisHandleIgnoredConflict：Ref 与 handle 同现但 fingerprint 不一致，Ref 优先、handle 作废。
+	AnalysisHandleIgnoredConflict AnalysisHandleUseStatus = "ignored_conflict"
 )
 
 // AnalysisHandleInvalidateOutcome 区分取消方是否获得了 pending context 的清理责任。
@@ -174,18 +176,18 @@ func (r *analysisHandleRegistry) createOrReuse(
 	sessionKey string,
 	snapshot *worldcontext.Snapshot,
 	uiSummary worldcontext.UIViewSummary,
-) (AnalysisHandleView, error) {
+) (AnalysisHandleView, *worldcontext.RunContext, error) {
 	if r == nil || r.contexts == nil {
-		return AnalysisHandleView{}, fmt.Errorf("analysis handle registry is not initialized")
+		return AnalysisHandleView{}, nil, fmt.Errorf("analysis handle registry is not initialized")
 	}
 	if consumer != worldcontext.ConsumerWriting && consumer != worldcontext.ConsumerGame {
-		return AnalysisHandleView{}, &worldcontext.DomainError{Code: worldcontext.ErrConsumerNotTrusted, Field: "consumer", Message: "当前阶段只允许 writing/game"}
+		return AnalysisHandleView{}, nil, &worldcontext.DomainError{Code: worldcontext.ErrConsumerNotTrusted, Field: "consumer", Message: "当前阶段只允许 writing/game"}
 	}
 	if strings.TrimSpace(sessionKey) == "" {
-		return AnalysisHandleView{}, &worldcontext.DomainError{Code: worldcontext.ErrInvalidRequest, Field: "sessionKey", Message: "服务端 sessionKey 不能为空"}
+		return AnalysisHandleView{}, nil, &worldcontext.DomainError{Code: worldcontext.ErrInvalidRequest, Field: "sessionKey", Message: "服务端 sessionKey 不能为空"}
 	}
 	if snapshot == nil || snapshot.ContextFingerprint == "" {
-		return AnalysisHandleView{}, &worldcontext.DomainError{Code: worldcontext.ErrInvalidRequest, Field: "snapshot", Message: "analysis 必须提供已构建的 Snapshot"}
+		return AnalysisHandleView{}, nil, &worldcontext.DomainError{Code: worldcontext.ErrInvalidRequest, Field: "snapshot", Message: "analysis 必须提供已构建的 Snapshot"}
 	}
 
 	r.mu.Lock()
@@ -195,8 +197,9 @@ func (r *analysisHandleRegistry) createOrReuse(
 	key := analysisHandleKey{consumer: consumer, sessionKey: sessionKey, fingerprint: snapshot.ContextFingerprint}
 	if handleID, ok := r.byKey[key]; ok {
 		if existing := r.handles[handleID]; existing != nil && existing.state == analysisHandlePending && now.Before(existing.expiresAt) {
-			if _, err := r.contexts.GetByID(existing.pendingContextID, consumer); err == nil {
-				return AnalysisHandleView{AnalysisHandle: existing.handleID, ExpiresAt: existing.expiresAt}, nil
+			if existingRun, err := r.contexts.GetByID(existing.pendingContextID, consumer); err == nil {
+				// 幂等复用：返回同一 pending runContext（同一 runSalt/ModelView bytes），不延长 TTL。
+				return AnalysisHandleView{AnalysisHandle: existing.handleID, ExpiresAt: existing.expiresAt}, existingRun, nil
 			}
 			r.invalidatePendingLocked(existing)
 		}
@@ -206,16 +209,16 @@ func (r *analysisHandleRegistry) createOrReuse(
 		r.pruneSettledLocked()
 	}
 	if len(r.handles) >= r.maxHandles {
-		return AnalysisHandleView{}, &worldcontext.DomainError{Code: worldcontext.ErrContextUnavailable, Field: "analysisHandle", Message: "analysis 上下文容量已满，请稍后重试"}
+		return AnalysisHandleView{}, nil, &worldcontext.DomainError{Code: worldcontext.ErrContextUnavailable, Field: "analysisHandle", Message: "analysis 上下文容量已满，请稍后重试"}
 	}
 
 	handleID, err := r.uniqueTokenLocked()
 	if err != nil {
-		return AnalysisHandleView{}, fmt.Errorf("generate analysis handle: %w", err)
+		return AnalysisHandleView{}, nil, fmt.Errorf("generate analysis handle: %w", err)
 	}
 	pendingID, err := r.newToken()
 	if err != nil {
-		return AnalysisHandleView{}, fmt.Errorf("generate pending context reference: %w", err)
+		return AnalysisHandleView{}, nil, fmt.Errorf("generate pending context reference: %w", err)
 	}
 	pendingScopeKey := "analysis:" + pendingID
 	run, _, err := r.contexts.Bind(worldcontext.BindInput{
@@ -225,7 +228,7 @@ func (r *analysisHandleRegistry) createOrReuse(
 		UISummary: uiSummary,
 	})
 	if err != nil {
-		return AnalysisHandleView{}, err
+		return AnalysisHandleView{}, nil, err
 	}
 
 	record := &analysisHandleRecord{
@@ -239,7 +242,7 @@ func (r *analysisHandleRegistry) createOrReuse(
 	}
 	r.handles[handleID] = record
 	r.byKey[key] = handleID
-	return AnalysisHandleView{AnalysisHandle: handleID, ExpiresAt: record.expiresAt}, nil
+	return AnalysisHandleView{AnalysisHandle: handleID, ExpiresAt: record.expiresAt}, run, nil
 }
 
 // pruneSettledLocked 仅在容量压力下提前移除已完成 tombstone；不触碰 pending/claimed。
@@ -271,12 +274,13 @@ func (r *analysisHandleRegistry) uniqueTokenLocked() (string, error) {
 	return "", fmt.Errorf("failed to generate unique opaque token")
 }
 
-func (r *analysisHandleRegistry) claim(handleID string, consumer worldcontext.Consumer) (*AnalysisHandleClaim, AnalysisHandleUseStatus) {
+func (r *analysisHandleRegistry) claim(handleID string, consumer worldcontext.Consumer, expectedSessionKey string) (*AnalysisHandleClaim, AnalysisHandleUseStatus) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
 	record := r.handles[handleID]
-	if record == nil || record.key.consumer != consumer {
+	// 必须同时匹配 consumer 与服务端当前会话/工作区归属；仅凭 token 存在不得跨会话采用。
+	if record == nil || record.key.consumer != consumer || record.key.sessionKey != expectedSessionKey {
 		return nil, AnalysisHandleIgnoredInvalid
 	}
 	if !now.Before(record.expiresAt) {
@@ -383,6 +387,33 @@ func (r *analysisHandleRegistry) rollback(claim *AnalysisHandleClaim) bool {
 	return true
 }
 
+// invalidateForSession 使某 consumer+sessionKey 下所有尚未 settled 的 pending/claimed handle
+// 失效并释放其 pending runContext（恰好一次）。用于会话/工作区切换，避免旧会话残留可被 claim 的句柄。
+// 已 consumed/settled 的句柄所有权已迁移，不在此处理。返回失效句柄数（仅诊断计数）。
+func (r *analysisHandleRegistry) invalidateForSession(consumer worldcontext.Consumer, sessionKey string) int {
+	if r == nil || sessionKey == "" {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed := 0
+	for handleID, record := range r.handles {
+		if record.contextSettled {
+			continue
+		}
+		if record.key.consumer != consumer || record.key.sessionKey != sessionKey {
+			continue
+		}
+		delete(r.byKey, record.key)
+		// releasePendingLocked 置 settled 并 Destroy pending scope（幂等，不会重复 refCount--）。
+		r.releasePendingLocked(record)
+		record.state = analysisHandleInvalidated
+		delete(r.handles, handleID)
+		removed++
+	}
+	return removed
+}
+
 func (r *analysisHandleRegistry) sweep() AnalysisHandleSweepResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -434,18 +465,31 @@ func (s *WorldContextService) createAnalysisHandle(
 	sessionKey string,
 	ref worldcontext.Ref,
 ) (AnalysisHandleView, error) {
+	view, _, err := s.createAnalysisHandleWithRun(ctx, consumer, sessionKey, ref)
+	return view, err
+}
+
+// createAnalysisHandleWithRun 创建/幂等复用 pending runContext 并同时返回其运行上下文，
+// 使 context-analysis 展示的 ModelView bytes 与首次 chat 迁移后送模的 bytes 同源
+// （MoveScopeByID 不重投影、不换 salt、不复制 bytes）。
+func (s *WorldContextService) createAnalysisHandleWithRun(
+	ctx context.Context,
+	consumer worldcontext.Consumer,
+	sessionKey string,
+	ref worldcontext.Ref,
+) (AnalysisHandleView, *worldcontext.RunContext, error) {
 	snapshot, err := s.loadSnapshot(ctx, consumer, ref)
 	if err != nil {
-		return AnalysisHandleView{}, err
+		return AnalysisHandleView{}, nil, err
 	}
 	return s.analysisHandles.createOrReuse(consumer, sessionKey, snapshot, uiSummaryFromSnapshot(snapshot))
 }
 
-func (s *WorldContextService) claimAnalysisHandle(handleID string, consumer worldcontext.Consumer) (*AnalysisHandleClaim, AnalysisHandleUseStatus) {
+func (s *WorldContextService) claimAnalysisHandle(handleID string, consumer worldcontext.Consumer, expectedSessionKey string) (*AnalysisHandleClaim, AnalysisHandleUseStatus) {
 	if s == nil || s.analysisHandles == nil {
 		return nil, AnalysisHandleIgnoredInvalid
 	}
-	return s.analysisHandles.claim(handleID, consumer)
+	return s.analysisHandles.claim(handleID, consumer, expectedSessionKey)
 }
 
 func (s *WorldContextService) consumeAnalysisHandle(claim *AnalysisHandleClaim) AnalysisHandleUseStatus {
@@ -464,6 +508,14 @@ func (s *WorldContextService) invalidateAnalysisHandle(handleID string, consumer
 
 func (s *WorldContextService) rollbackAnalysisClaim(claim *AnalysisHandleClaim) bool {
 	return s != nil && s.analysisHandles != nil && s.analysisHandles.rollback(claim)
+}
+
+// invalidateWritingHandlesForSession 使指定写作会话键下未结算的 handle 失效（会话/工作区切换时调用）。
+func (s *WorldContextService) invalidateWritingHandlesForSession(sessionKey string) int {
+	if s == nil || s.analysisHandles == nil || strings.TrimSpace(sessionKey) == "" {
+		return 0
+	}
+	return s.analysisHandles.invalidateForSession(worldcontext.ConsumerWriting, sessionKey)
 }
 
 func (s *WorldContextService) sweepAnalysisHandles() AnalysisHandleSweepResult {

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { Boxes, Gamepad2, Globe2, PenLine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import type { World } from '../../types'
@@ -45,6 +46,20 @@ interface WorldContextPanelProps {
    * 未提供时 BindingOverview 不显示移除入口，控制台真实链路必须提供。
    */
   onRemoveBinding?: (bindingId: string) => void
+  /**
+   * Phase 3.2-A5：显式「带入写作」。由 WorldConsolePage 实现：dirty/超限/无已保存
+   * revision/无主书时不应提供；切主书成功后才写入 LaunchProvider 并切到写作模式。
+   * 未提供时不显示入口（普通预览不强制进入运行态）。
+   */
+  onLaunchWriting?: () => void
+  launchWritingPending?: boolean
+  /** Phase 3.2-B3：选择主故事成功后，把已保存 Ref 交给游戏模式。 */
+  onLaunchGame?: () => void
+  launchGamePending?: boolean
+  /** Phase 3.2-C/D：经受控宿主代理把只读背景带入 iframe；Ref 永不下发 iframe。 */
+  onLaunchNarraverse?: () => void
+  onLaunchModule4?: () => void
+  iframeLaunchDisabled?: boolean
 }
 
 export function WorldContextPanel({
@@ -60,12 +75,22 @@ export function WorldContextPanel({
   onGenerate,
   onJumpSection,
   onRemoveBinding,
+  onLaunchWriting,
+  launchWritingPending = false,
+  onLaunchGame,
+  launchGamePending = false,
+  onLaunchNarraverse,
+  onLaunchModule4,
+  iframeLaunchDisabled = false,
 }: WorldContextPanelProps) {
   const { t } = useTranslation()
   const loading = state === 'loading'
   const overflow = selectionBlocksPreview(selection)
   const generateDisabled = loading || overflow || dirty
   const showDetail = (state === 'ready' || state === 'stale') && preview
+  // 只在写作 consumer 下提供「带入写作」；dirty/超限/切书进行中禁用。
+  const showLaunch = consumer === 'writing' && Boolean(onLaunchWriting)
+  const launchDisabled = generateDisabled || launchWritingPending
 
   return (
     <div data-testid="world-context-panel" className="mx-auto flex max-w-3xl flex-col gap-4">
@@ -85,11 +110,67 @@ export function WorldContextPanel({
         </p>
       ) : null}
 
-      <div>
+      <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" disabled={generateDisabled} onClick={onGenerate}>
           {loading ? <Spinner className="mr-1.5 h-3.5 w-3.5" /> : null}
           {loading ? t('worldWorkspace.context.generating') : t('worldWorkspace.context.generate')}
         </Button>
+        {showLaunch ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-writing"
+            disabled={launchDisabled}
+            onClick={onLaunchWriting}
+          >
+            {launchWritingPending ? <Spinner className="size-3.5" /> : <PenLine className="size-3.5" />}
+            {t('worldWorkspace.context.launchWriting')}
+          </Button>
+        ) : null}
+        {onLaunchGame ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-game"
+            disabled={generateDisabled || launchGamePending}
+            onClick={onLaunchGame}
+          >
+            {launchGamePending ? <Spinner className="size-3.5" /> : <Gamepad2 className="size-3.5" />}
+            {t('worldWorkspace.context.launchGame')}
+          </Button>
+        ) : null}
+        {onLaunchNarraverse ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-narraverse"
+            disabled={generateDisabled || iframeLaunchDisabled}
+            onClick={onLaunchNarraverse}
+          >
+            <Globe2 className="size-3.5" />
+            {t('worldWorkspace.context.launchNarraverse')}
+          </Button>
+        ) : null}
+        {onLaunchModule4 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-icon="inline-start"
+            data-testid="context-launch-module4"
+            disabled={generateDisabled || iframeLaunchDisabled}
+            onClick={onLaunchModule4}
+          >
+            <Boxes className="size-3.5" />
+            {t('worldWorkspace.context.launchModule4')}
+          </Button>
+        ) : null}
       </div>
 
       {showDetail ? (

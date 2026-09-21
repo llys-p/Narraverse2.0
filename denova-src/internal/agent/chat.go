@@ -328,7 +328,9 @@ func (r *Runtime) Run(
 			Messages:     history,
 			AgentMessage: agentMessage,
 			Phase:        contextCompactionPhasePreRun,
-			Emit:         emit,
+			// 世界背景只计入预算门禁，不进入压缩 source/summary（见 EphemeralWorldContextInput）。
+			ReservedEphemeralWorldTokens: options.EphemeralWorldContext.EstimatedTokens(),
+			Emit:                         emit,
 		})
 		if compactErr != nil {
 			runLogger.Error("context_compaction_failed", slog.Any("error", compactErr), slog.Int("tokens_before", compactionResult.TokensBefore), slog.Int("context_window_tokens", compactionResult.ContextWindowTokens))
@@ -413,7 +415,17 @@ func (r *Runtime) Run(
 	if checkpointID != "" {
 		runOptions = append(runOptions, adk.WithCheckPointID(checkpointID))
 	}
-	events := runner.Run(runCtx, history, runOptions...)
+	// 临时只读世界背景只前置到“真正送入模型”的消息副本；history 本身不变，
+	// 因此上面的 ledger / context 日志 / display / 持久化都看不到世界正文。
+	modelHistory := ModelInputMessages(history, options.EphemeralWorldContext)
+	if options.EphemeralWorldContext.Present() {
+		runLogger.Info("ephemeral_world_context",
+			slog.Int("model_view_bytes", options.EphemeralWorldContext.ModelViewByteLen()),
+			slog.Int("estimated_tokens", options.EphemeralWorldContext.EstimatedTokens()),
+			slog.Int("history_messages", len(history)),
+			slog.Int("model_messages", len(modelHistory)))
+	}
+	events := runner.Run(runCtx, modelHistory, runOptions...)
 	var fullContent strings.Builder
 	var fullThinking strings.Builder
 	var planParser *planProtocolParser

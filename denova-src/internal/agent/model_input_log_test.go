@@ -95,6 +95,54 @@ func TestLogFullModelInputWritesUntruncatedMessages(t *testing.T) {
 	}
 }
 
+func TestLogFullModelInputExcludesEphemeralWorldContext(t *testing.T) {
+	oldPath := modelInputLogPath
+	oldSeq := modelInputLogSeq.Load()
+	oldEnabled := modelInputLogEnabled.Load()
+	modelInputLogPath = filepath.Join(t.TempDir(), "llm-inputs.jsonl")
+	modelInputLogSeq.Store(0)
+	modelInputLogEnabled.Store(true)
+	t.Cleanup(func() {
+		modelInputLogWG.Wait()
+		modelInputLogPath = oldPath
+		modelInputLogSeq.Store(oldSeq)
+		modelInputLogEnabled.Store(oldEnabled)
+	})
+
+	const marker = "WORLD-SECRET-MARKER"
+	history := []*schema.Message{schema.SystemMessage("system"), schema.UserMessage("ordinary user input")}
+	modelMessages := ModelInputMessages(history, NewEphemeralWorldContextInput([]byte(`{"secret":"`+marker+`"}`)))
+	if len(modelMessages) != 3 || !strings.Contains(modelMessages[0].Content, marker) {
+		t.Fatal("test precondition: model input must contain ephemeral world context")
+	}
+	logFullModelInput(modelInputLogOptions{
+		AgentKind: "test_agent",
+		Source:    "test",
+		Mode:      "generate",
+		Config:    openai.ChatModelConfig{Model: "test-model"},
+		Messages:  modelMessages,
+	})
+	modelInputLogWG.Wait()
+
+	payload, err := os.ReadFile(modelInputLogPath)
+	if err != nil {
+		t.Fatalf("read model input log: %v", err)
+	}
+	if strings.Contains(string(payload), marker) || strings.Contains(string(payload), ephemeralWorldContextHeader) {
+		t.Fatal("ephemeral world context must never be persisted in full model input logs")
+	}
+	var record modelInputLogRecord
+	if err := json.Unmarshal(payload, &record); err != nil {
+		t.Fatalf("unmarshal model input log: %v", err)
+	}
+	if record.MessageCount != len(history) || len(record.Messages) != len(history) {
+		t.Fatalf("logged messages must exclude only ephemeral context: count=%d len=%d", record.MessageCount, len(record.Messages))
+	}
+	if modelMessages[0] == nil || !strings.Contains(modelMessages[0].Content, marker) {
+		t.Fatal("logging must not mutate the actual model input")
+	}
+}
+
 func TestModelInputLogCacheAttributionFingerprintsToolSchema(t *testing.T) {
 	messages := []*schema.Message{
 		schema.SystemMessage("system"),

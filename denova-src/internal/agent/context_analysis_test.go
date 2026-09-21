@@ -253,6 +253,7 @@ func TestIDEContextAnalysisShowsExactModelVisibleToolContext(t *testing.T) {
 		nil,
 		nil,
 		ChatRequest{Message: "继续"},
+		EphemeralWorldContextInput{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -294,6 +295,7 @@ func TestIDEContextAnalysisShowsStyleRulesAsSystemPromptParts(t *testing.T) {
 			Message:    "续写第三章",
 			StyleRules: []StyleRule{{Scene: "激烈打斗", StyleContents: []string{"短句留白"}}},
 		},
+		EphemeralWorldContextInput{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -444,6 +446,7 @@ func TestIDEContextAnalysisSplitsStableAndDynamicWorkspaceState(t *testing.T) {
 				OpenFiles:   []string{"chapters/ch0001-开局.md", "setting/progress.md"},
 			},
 		},
+		EphemeralWorldContextInput{},
 	)
 	if err != nil {
 		t.Fatal(err)

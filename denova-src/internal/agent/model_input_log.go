@@ -162,6 +162,7 @@ func logFullModelInput(opts modelInputLogOptions) string {
 		callID = newModelInputCallID()
 	}
 
+	logMessages := messagesWithoutEphemeralWorldContext(opts.Messages)
 	input := modelInputLogInputJob{
 		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
 		CallID:       callID,
@@ -171,9 +172,9 @@ func logFullModelInput(opts modelInputLogOptions) string {
 		Source:       opts.Source,
 		Mode:         opts.Mode,
 		Config:       opts.Config,
-		MessageCount: len(opts.Messages),
+		MessageCount: len(logMessages),
 		ToolCount:    len(opts.Tools),
-		Messages:     append([]*schema.Message(nil), opts.Messages...),
+		Messages:     logMessages,
 		Tools:        cloneToolInfos(opts.Tools),
 	}
 
@@ -183,6 +184,25 @@ func logFullModelInput(opts modelInputLogOptions) string {
 	}
 	log.Printf("[llm-input-log] queued agent=%s source=%s mode=%s call_id=%s path=%s messages=%d tools=%d", opts.AgentKind, opts.Source, opts.Mode, callID, modelInputLogPath, input.MessageCount, input.ToolCount)
 	return callID
+}
+
+// messagesWithoutEphemeralWorldContext keeps the opt-in full-input log useful for
+// developer diagnostics without persisting the temporary World ModelView body.
+// The actual model input is not modified.
+func messagesWithoutEphemeralWorldContext(messages []*schema.Message) []*schema.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	filtered := make([]*schema.Message, 0, len(messages))
+	for index, message := range messages {
+		// A3 only injects this message at the head. Limiting the filter to index 0
+		// avoids hiding an ordinary later user message that happens to quote the header.
+		if index == 0 && isEphemeralWorldContextMessage(message) {
+			continue
+		}
+		filtered = append(filtered, message)
+	}
+	return filtered
 }
 
 func logModelProviderRequestID(agentKind, source, mode, modelName, runID string, callIndex int, msg *schema.Message) string {

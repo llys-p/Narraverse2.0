@@ -14,6 +14,7 @@ import (
 	"denova/internal/interactive"
 	"denova/internal/session"
 	"denova/internal/styleref"
+	"denova/internal/worldcontext"
 )
 
 // ChatAppService 负责普通创作 Agent 任务与会话管理。
@@ -332,11 +333,25 @@ func (a *App) AnalyzeContext(ctx context.Context, req agent.ChatRequest) (agent.
 	return a.chat().AnalyzeContext(ctx, req)
 }
 
+// AnalyzeWritingContext 为写作 context-analysis 建立 pending 世界背景并签发短期 analysisHandle。
+func (a *App) AnalyzeWritingContext(ctx context.Context, req agent.ChatRequest, ref *worldcontext.Ref) (WritingContextAnalysis, error) {
+	return a.chat().AnalyzeWritingContext(ctx, req, ref)
+}
+
 func (s *ChatAppService) AnalyzeContext(ctx context.Context, req agent.ChatRequest) (agent.ContextAnalysis, error) {
+	return s.analyzeContextWithWorld(ctx, req, agent.EphemeralWorldContextInput{})
+}
+
+func (s *ChatAppService) analyzeContextWithWorld(ctx context.Context, req agent.ChatRequest, ephemeral agent.EphemeralWorldContextInput) (agent.ContextAnalysis, error) {
 	runtime, req, err := s.prepareIDEChatRuntime(ctx, req, false)
 	if err != nil {
 		return agent.ContextAnalysis{}, err
 	}
+	return s.buildContextAnalysis(runtime, req, ephemeral)
+}
+
+// buildContextAnalysis 基于已准备好的 runtime 装配 context-analysis，避免 A4 建立 pending 后二次准备运行时。
+func (s *ChatAppService) buildContextAnalysis(runtime ideChatRuntime, req agent.ChatRequest, ephemeral agent.EphemeralWorldContextInput) (agent.ContextAnalysis, error) {
 	var pending *session.Interruption
 	if shouldResume := strings.TrimSpace(req.Message); shouldResume != "" {
 		pending = runtime.sess.PendingInterruption()
@@ -345,7 +360,7 @@ func (s *ChatAppService) AnalyzeContext(ctx context.Context, req agent.ChatReque
 	if record, ok := runtime.sess.LatestContextCompaction(config.AgentKindIDE); ok {
 		compaction = &record
 	}
-	return agent.BuildIDEContextAnalysis(&runtime.cfg, runtime.state, runtime.ideTeller, runtime.bookService, runtime.sess.GetEffectiveMessages(), runtime.sess.MessageCountTotal(), compaction, pending, req)
+	return agent.BuildIDEContextAnalysis(&runtime.cfg, runtime.state, runtime.ideTeller, runtime.bookService, runtime.sess.GetEffectiveMessages(), runtime.sess.MessageCountTotal(), compaction, pending, req, ephemeral)
 }
 
 func (a *App) CompactContext(ctx context.Context) (agent.ContextCompactionResult, error) {
@@ -623,5 +638,10 @@ func (s *ChatAppService) abortActiveTaskLocked() {
 	if s.app.activeTask != nil && s.app.activeTask.Status() == TaskRunning {
 		log.Printf("[agent-task] abort due to session switch/delete id=%s", s.app.activeTask.ID())
 		s.app.activeTask.Abort()
+	}
+	// 会话/工作区切换（此刻 a.session 仍是即将离开的旧会话）：让旧写作会话下尚未结算的
+	// analysis handle 与其 pending runContext 一并失效，避免它们在新会话被错误 claim。
+	if cur := s.app; cur.session != nil && cur.worldContextSvc != nil {
+		cur.worldContextSvc.invalidateWritingHandlesForSession(writingSessionKey(cur.workspace, cur.session.ID))
 	}
 }

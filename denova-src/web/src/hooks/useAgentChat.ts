@@ -25,6 +25,14 @@ import {
 } from '@/lib/agent-ui'
 import { agentViewContent, buildAgentMessageViews, isPlanProtocolToolName, type AgentMessageView, type AgentPartRef } from '@/lib/agent-message-view'
 import { isWorkspaceChangeForWorkspace, type WorkspaceChangeEvent } from '@/features/changes/types'
+import { useWorldContextLaunch, type WritingWorldContextRef } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import {
+  normalizeWorldContextStatus,
+  toWorldContextRequestBody,
+  type AnalysisHandleStatus,
+  type WorldContextRunState,
+} from '@/features/world-context-runtime/world-context-wire'
+import { useWorldContextRun } from '@/features/world-context-runtime/WorldContextRunProvider'
 
 interface ChatOptions {
   workspace?: string
@@ -57,6 +65,49 @@ export function useAgentChat(options: ChatOptions = {}) {
   const { t } = useTranslation()
   const { workspace = '', onAgentFileChange, onWorkspaceChange } = options
   const transport = useMemo(() => new AgentChatTransport(), [])
+  // Phase 3.2-A6：写作世界背景运行态（纯组件内存，不持久化、不进 Zustand）。
+  const { pendingWriting, takeWritingLaunch } = useWorldContextLaunch()
+  // 只取稳定引用：setView 是 useState setter、registerClear 是 useCallback，均不随 view 变化，
+  // 避免同步 effect 依赖会变化的 context value 而触发 setView→重渲染→effect 的无限循环。
+  const { setView: setRunView, registerClear: registerRunClear } = useWorldContextRun()
+  const [boundWorldRef, setBoundWorldRef] = useState<WritingWorldContextRef | null>(null)
+  const boundWorldRefRef = useRef<WritingWorldContextRef | null>(null)
+  const [boundWorldSummary, setBoundWorldSummary] = useState<{
+    worldName?: string
+    revisionLabel?: string
+    selectedCount?: number
+  } | null>(null)
+  const [worldContextState, setWorldContextState] = useState<WorldContextRunState>('none')
+  const [worldErrorCode, setWorldErrorCode] = useState<string | null>(null)
+  const [analysisHandleStatus, setAnalysisHandleStatus] = useState<AnalysisHandleStatus | null>(null)
+  // handle 一次性：成功启动后立即清空，不长期保存；用 ref 保证 send 闭包读到最新值。
+  const analysisHandleRef = useRef<string | null>(null)
+  const [, setAnalysisHandleState] = useState<string | null>(null)
+  const setAnalysisHandle = useCallback((handle: string | null) => {
+    analysisHandleRef.current = handle
+    setAnalysisHandleState(handle)
+  }, [])
+  useEffect(() => {
+    // World Console 可能在本 Hook 挂载后才写入交接 Ref；pendingWriting 变化时立即一次性取走。
+    // 刷新/重挂载后 Provider 为空，仍保持 bare。
+    if (!pendingWriting) return
+    const launch = takeWritingLaunch()
+    if (!launch) return
+    const ref: WritingWorldContextRef = {
+      worldId: launch.worldId,
+      expectedWorldRevision: launch.expectedWorldRevision,
+      selection: launch.selection,
+    }
+    boundWorldRefRef.current = ref
+    setBoundWorldRef(ref)
+    setBoundWorldSummary({
+      worldName: launch.worldName,
+      revisionLabel: launch.revisionLabel,
+      selectedCount: launch.selectedCount,
+    })
+    setWorldContextState('bound')
+    setWorldErrorCode(null)
+  }, [pendingWriting, takeWritingLaunch])
   const {
     messages: uiMessages,
     setMessages: setUIMessages,
@@ -68,6 +119,20 @@ export function useAgentChat(options: ChatOptions = {}) {
     transport,
     throttle: 60,
     onData: (part) => {
+      if (part.type === 'data-world-context-state') {
+        // 模型内容前恰好一次的世界背景状态；只更新展示，不修改任何已发送请求或 World。
+        const status = normalizeWorldContextStatus((part as { data?: unknown }).data)
+        if (!status) return
+        setWorldContextState(status.state)
+        setWorldErrorCode(status.errorCode ?? null)
+        setAnalysisHandleStatus(status.analysisHandleStatus ?? null)
+        setBoundWorldSummary((prev) => ({
+          worldName: status.worldName ?? prev?.worldName,
+          revisionLabel: status.revisionLabel ?? prev?.revisionLabel,
+          selectedCount: status.selectedCount ?? prev?.selectedCount,
+        }))
+        return
+      }
       if (part.type !== 'data-agent-workspace-change') return
       const event = part.data as WorkspaceChangeEvent
       if (!isWorkspaceChangeForWorkspace(event, workspace)) return
@@ -301,6 +366,17 @@ export function useAgentChat(options: ChatOptions = {}) {
       })),
     } as Parameters<typeof buildAgentChatRequestBody>[0] & { message: string }) as Record<string, unknown>
     body.message = prepared.message
+    // A6：携带已保存 Ref（后续新 run 持续复用，直到用户清除）与一次性 analysisHandle。
+    // reconnect 走 GET /api/chat/stream（无 body），因此天然不会提交这两个字段。
+    const activeWorldRef = boundWorldRefRef.current
+    const pendingHandle = analysisHandleRef.current
+    if (pendingHandle) {
+      // 先分析后首次发送：handle 已锁定同一 pending runContext，首次只带 handle（不再重复带 Ref）。
+      body.analysis_handle = pendingHandle
+    } else if (activeWorldRef) {
+      // 直接发送：携带已保存 Ref；后续新 run 持续复用，直到用户主动清除。
+      body.world_context = toWorldContextRequestBody(activeWorldRef)
+    }
 
     const userReferences = buildUserMessageReferences(prepared, sendOptions)
     let submissionStarted = false
@@ -318,6 +394,13 @@ export function useAgentChat(options: ChatOptions = {}) {
       setStyleScenes((current) => current.filter((item) => !prepared.composerStyleScenes.includes(item)))
       setTextSelections((current) => current.filter((item) => !prepared.composerTextSelections.includes(item)))
       submissionStarted = true
+      // 成功启动后 handle 即一次性消费，绝不长期保存；Ref 保留供后续新 run，直到用户主动清除。
+      if (pendingHandle) setAnalysisHandle(null)
+      if (activeWorldRef) {
+        setWorldContextState('bound')
+        setWorldErrorCode(null)
+        setAnalysisHandleStatus(null)
+      }
       sendOptions.onSubmissionStart?.()
       await pendingRequest
       return true
@@ -337,8 +420,37 @@ export function useAgentChat(options: ChatOptions = {}) {
   const analyzeContext = useCallback(async (input: string, sendOptions: ChatSendOptions = {}): Promise<ContextAnalysis> => {
     if (isStreaming) throw new Error(t('chat.contextAnalysis.streamingUnavailable'))
     const prepared = prepareAgentRequest(input)
-    return analyzeChatContext(prepared.message, prepared.references, prepared.loreReferences, prepared.styleScenes, prepared.textSelections, prepared.planMode, sendOptions.writingSkill, sendOptions.ideContext, sendOptions.imagePresetId, sendOptions.tellerId)
-  }, [isStreaming, prepareAgentRequest, t])
+    const result = await analyzeChatContext(
+      prepared.message,
+      prepared.references,
+      prepared.loreReferences,
+      prepared.styleScenes,
+      prepared.textSelections,
+      prepared.planMode,
+      sendOptions.writingSkill,
+      sendOptions.ideContext,
+      sendOptions.imagePresetId,
+      sendOptions.tellerId,
+      boundWorldRefRef.current,
+    )
+    // 分析只建立 pending 背景并签发一次性 handle；不启动模型、不创建 Task。
+    if (result.analysis_handle) {
+      setAnalysisHandle(result.analysis_handle)
+    }
+    if (result.world_context) {
+      const wc = result.world_context
+      if (wc.worldName || wc.revisionLabel || wc.selectedCount !== undefined) {
+        setBoundWorldSummary((prev) => ({
+          worldName: wc.worldName ?? prev?.worldName,
+          revisionLabel: wc.revisionLabel ?? prev?.revisionLabel,
+          selectedCount: wc.selectedCount ?? prev?.selectedCount,
+        }))
+      }
+      setWorldContextState(wc.state === 'degraded' ? 'degraded' : 'bound')
+      setWorldErrorCode(wc.errorCode ?? null)
+    }
+    return result
+  }, [isStreaming, prepareAgentRequest, setAnalysisHandle, t])
 
   const submitPlanQuestion = useCallback((ref: AgentPartRef, content: string, _preview: string) => {
     setUIMessages(prev => markPlanUIMessageAction(prev, ref, 'answered'))
@@ -376,6 +488,34 @@ export function useAgentChat(options: ChatOptions = {}) {
     void abortChat()
     stopAIStream()
   }, [stopAIStream])
+
+  // 清除「后续新 run」的世界背景：清 Ref/handle/状态，但不影响当前已开始的运行，也不修改 World。
+  const clearWorldContext = useCallback(() => {
+    boundWorldRefRef.current = null
+    setBoundWorldRef(null)
+    setBoundWorldSummary(null)
+    setAnalysisHandle(null)
+    setAnalysisHandleStatus(null)
+    setWorldErrorCode(null)
+    setWorldContextState('none')
+  }, [setAnalysisHandle])
+
+  // 把运行状态同步给 AgentPanel 的展示桥；clear 由 useAgentChat 执行以保证状态真源唯一。
+  useEffect(() => {
+    setRunView({
+      state: worldContextState,
+      hasBound: boundWorldRef !== null,
+      worldName: boundWorldSummary?.worldName,
+      revisionLabel: boundWorldSummary?.revisionLabel,
+      selectedCount: boundWorldSummary?.selectedCount,
+      errorCode: worldErrorCode ?? undefined,
+      analysisHandleStatus: analysisHandleStatus ?? undefined,
+    })
+  }, [worldContextState, boundWorldRef, boundWorldSummary, worldErrorCode, analysisHandleStatus, setRunView])
+  useEffect(() => {
+    registerRunClear(clearWorldContext)
+    return () => registerRunClear(null)
+  }, [registerRunClear, clearWorldContext])
 
   const createChatSession = useCallback(async (title?: string) => {
     const session = await createSession(title)
@@ -427,6 +567,12 @@ export function useAgentChat(options: ChatOptions = {}) {
     styleScenes,
     textSelections,
     planMode: activePlanMode,
+    worldContextState,
+    worldContextSummary: boundWorldSummary,
+    worldErrorCode,
+    analysisHandleStatus,
+    hasBoundWorldContext: boundWorldRef !== null,
+    clearWorldContext,
     setPlanMode: setActivePlanMode,
     togglePlanMode,
     send,

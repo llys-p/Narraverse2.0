@@ -1,4 +1,7 @@
 const storyStage = {
+  'storyStage.worldContext.none': '本回合未带入世界背景',
+  'storyStage.worldContext.active': '世界背景已带入：{{name}}（只读）',
+  'storyStage.worldContext.degraded': '世界背景未带入，本回合按无背景继续',
   'storyStage.opening.backToSetup': '返回上一步',
   'storyStage.replyTarget.compact': '每轮 {{count}} 字',
   'storyStage.replyTarget.open': '设置每轮目标字数',

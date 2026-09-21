@@ -626,6 +626,29 @@ async function loadState() {
   }
 }
 
+// 跨源迁移若在目标写入期间被浏览器/进程中断，manifest 会停在 incomplete。
+// 目标在迁移前已确认为空，因此这些键只可能是未完成的复制品；正常应用启动前先
+// 清除它们，避免把半份 Narraverse/Module4 数据当成可用存档。
+async function recoverIncompleteOriginMigration() {
+  const manifestKey = 'narraverse:origin-migration:manifest';
+  let manifest = null;
+  try { manifest = JSON.parse(localStorage.getItem(manifestKey) || 'null'); } catch (_) { manifest = null; }
+  if (!manifest || manifest.state !== 'incomplete') return;
+  const prefixes = ['adventureAI_', 'narraverse:', 'og_ai_'];
+  Object.keys(localStorage).forEach(function (key) {
+    if (key !== manifestKey && prefixes.some(function (prefix) { return key.indexOf(prefix) === 0; })) {
+      localStorage.removeItem(key);
+    }
+  });
+  await new Promise(function (resolve) {
+    try {
+      const request = indexedDB.deleteDatabase('adventureAI_db');
+      request.onsuccess = request.onerror = request.onblocked = function () { resolve(); };
+    } catch (_) { resolve(); }
+  });
+  try { localStorage.removeItem(manifestKey); } catch (_) { /* ignore */ }
+}
+
 let storageWarned = false;
 let idbSaveTimer = null;
 let lastSaveJson = null;
@@ -8598,6 +8621,7 @@ function copyNovelAll() {
 
 /* ==================== 初始化 ==================== */
 document.addEventListener('DOMContentLoaded', async function () {
+  await recoverIncompleteOriginMigration();
   await loadState();
   initTheme();
   initRightTab();

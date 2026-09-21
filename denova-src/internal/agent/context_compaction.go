@@ -89,8 +89,10 @@ type ContextCompactionInput struct {
 	// before the next model/tool step.
 	ReservedCompletionTokens int
 	ReservedToolResultTokens int
-	ReferenceContext         string
-	KeepLatestUser           bool
+	// ReservedEphemeralWorldTokens 计入压缩预算门禁；世界背景本身绝不进入压缩 source/summary。
+	ReservedEphemeralWorldTokens int
+	ReferenceContext             string
+	KeepLatestUser               bool
 }
 
 type contextCompactionContextKey struct{}
@@ -253,7 +255,7 @@ func withDefaultContextProjectionReserves(cfg *config.Config, agentKind string, 
 }
 
 func projectedContextTokens(promptTokens int, input ContextCompactionInput) int {
-	return max(1, promptTokens+max(0, input.ReservedCompletionTokens)+max(0, input.ReservedToolResultTokens))
+	return max(1, promptTokens+max(0, input.ReservedCompletionTokens)+max(0, input.ReservedToolResultTokens)+max(0, input.ReservedEphemeralWorldTokens))
 }
 
 func compactionSourceBaseMessages(input ContextCompactionInput) []*schema.Message {

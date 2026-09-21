@@ -10,7 +10,13 @@ import (
 
 func TestBuildSnapshot_ConsumerBoundary(t *testing.T) {
 	sel := Selection{}
-	for _, c := range []Consumer{ConsumerNarraverse, ConsumerModule4, Consumer("bogus")} {
+	for _, c := range []Consumer{ConsumerWriting, ConsumerGame, ConsumerNarraverse, ConsumerModule4} {
+		snapshot, err := BuildSnapshot(c, baseRef(sel), testRevision, sampleWorld())
+		if err != nil || snapshot.Consumer != c {
+			t.Fatalf("consumer=%q 应允许构建，snapshot=%v err=%v", c, snapshot, err)
+		}
+	}
+	for _, c := range []Consumer{"", Consumer("bogus")} {
 		_, err := BuildSnapshot(c, baseRef(sel), testRevision, sampleWorld())
 		if CodeOf(err) != ErrConsumerNotTrusted {
 			t.Fatalf("consumer=%q 应 consumer_not_trusted，got %v", c, err)

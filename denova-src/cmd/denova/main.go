@@ -124,11 +124,20 @@ func main() {
 		go startViteDev(frontendPort, listenHost, port)
 	}
 	if !noOpen {
+		openURL := url
 		if dev {
-			go openBrowser(frontendURL)
-		} else {
-			go openBrowser(url)
+			openURL = frontendURL
 		}
+		// 仅自动打开的本机顶层页面取得一次性 fragment secret；手工 URL、
+		// --no-open 与 LAN 页面保持 bare，secret 不进入请求、日志或配置。
+		if !cfg.AllowLANAccess {
+			if secret, secretErr := application.NewWorldContextHostBootstrapSecret(); secretErr == nil {
+				openURL += "#denova-host-bootstrap=" + secret
+			} else {
+				log.Printf("[world-context-host] bootstrap secret unavailable; opening bare host")
+			}
+		}
+		go openBrowser(openURL)
 	}
 
 	srv.Run()

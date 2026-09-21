@@ -26,9 +26,18 @@ type Consumer string
 const (
 	ConsumerWriting    Consumer = "writing"
 	ConsumerGame       Consumer = "game"
-	ConsumerNarraverse Consumer = "narraverse" // 3.0B 仅保留枚举兼容，不允许构建
-	ConsumerModule4    Consumer = "module4"    // 同上，3.2-C0 安全门通过后才启用
+	ConsumerNarraverse Consumer = "narraverse"
+	ConsumerModule4    Consumer = "module4"
 )
+
+func supportedConsumer(consumer Consumer) bool {
+	switch consumer {
+	case ConsumerWriting, ConsumerGame, ConsumerNarraverse, ConsumerModule4:
+		return true
+	default:
+		return false
+	}
+}
 
 // ErrorCode 是 v2.7 §9.2 冻结的稳定领域错误码；P0 只产生领域错误，不做 HTTP 映射。
 type ErrorCode string

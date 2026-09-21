@@ -20,11 +20,55 @@ const mocks = vi.hoisted(() => {
     getBooks: vi.fn(),
     getStories: vi.fn(),
     fetchMasterAsset: vi.fn(),
+    launchWriting: vi.fn(),
+    launchGame: vi.fn(),
+    iframeLaunch: vi.fn(),
+    hostState: 'ready' as 'checking' | 'ready' | 'unavailable',
+    selectInteractiveStory: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn() },
   }
 })
 
 vi.mock('sonner', () => ({ toast: mocks.toast }))
+vi.mock('@/features/world-context-runtime/WorldContextLaunchProvider', () => ({
+  // 页面单测不需要真正的内存桥：Provider 透传，hook 返回可断言的 launch spy。
+  WorldContextLaunchProvider: ({ children }: { children: React.ReactNode }) => children,
+  useWorldContextLaunch: () => ({
+    pendingWriting: null,
+    launchWriting: mocks.launchWriting,
+    launchGame: mocks.launchGame,
+    takeWritingLaunch: vi.fn(),
+    peekWritingLaunch: vi.fn(),
+    clearWritingLaunch: vi.fn(),
+  }),
+  useGameWorldContextLaunch: () => ({
+    pendingGame: null,
+    launchGame: mocks.launchGame,
+    takeGameLaunch: vi.fn(),
+    peekGameLaunch: vi.fn(),
+    clearGameLaunch: vi.fn(),
+  }),
+}))
+vi.mock('@/features/world-context-runtime/GameWorldContextLaunchProvider', () => ({
+  useGameWorldContextLaunch: () => ({
+    pendingGame: null,
+    launchGame: mocks.launchGame,
+    takeGameLaunch: vi.fn(),
+    peekGameLaunch: vi.fn(),
+    clearGameLaunch: vi.fn(),
+  }),
+}))
+vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () => ({
+  useIframeWorldContextLaunch: () => ({
+    pending: { narraverse: null, module4: null },
+    launch: mocks.iframeLaunch,
+    take: vi.fn(),
+    clear: vi.fn(),
+  }),
+}))
+vi.mock('@/features/world-context-runtime/WorldContextHostProvider', () => ({
+  useWorldContextHost: () => ({ state: mocks.hostState, migration: null }),
+}))
 vi.mock('../world-api', () => ({
   getWorld: mocks.getWorld,
   updateWorld: mocks.updateWorld,
@@ -35,7 +79,7 @@ vi.mock('@/lib/api-client', () => ({
   getBooks: mocks.getBooks,
   fetchMasterAsset: mocks.fetchMasterAsset,
 }))
-vi.mock('@/features/interactive/api', () => ({ getInteractiveStories: mocks.getStories }))
+vi.mock('@/features/interactive/api', () => ({ getInteractiveStories: mocks.getStories, selectInteractiveStory: mocks.selectInteractiveStory }))
 vi.mock('../components/ModeEntries', () => ({ ModeEntries: () => <div data-testid="mode-entries" /> }))
 vi.mock('../components/BindingPicker', () => ({
   WORLD_MATERIAL_SEMANTIC_TYPES: ['world', 'rule', 'item', 'other'],
@@ -142,7 +186,10 @@ function renderConsoleWith(world: World) {
   )
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.hostState = 'ready'
+})
 
 describe('WorldConsolePage 入口有效性', () => {
   it('失效主书/故事在 select 内保留 disabled 的原值选项', async () => {
@@ -574,6 +621,177 @@ describe('WorldConsolePage Context 分区（B3）', () => {
     await openContextTab(user)
     expect(setItem).not.toHaveBeenCalled()
     expect(mocks.fetchMasterAsset).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorldConsolePage A5 带入写作', () => {
+  function renderLaunch(quickSwitch: (path: string) => Promise<boolean>) {
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    const onSetMode = vi.fn()
+    const onQuickSwitchBook = vi.fn(quickSwitch)
+    const view = render(
+      <WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+        onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} />,
+    )
+    return { onSetMode, onQuickSwitchBook, view }
+  }
+
+  async function openContextAndPickCharacter(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+  }
+
+  it('成功：切主书成功后才写入已保存 Ref 并切到 ide，且不发 PUT', async () => {
+    const user = userEvent.setup()
+    const { onSetMode, onQuickSwitchBook } = renderLaunch(async () => true)
+    await openContextAndPickCharacter(user)
+    await user.click(screen.getByTestId('context-launch-writing'))
+    await waitFor(() => expect(mocks.launchWriting).toHaveBeenCalledTimes(1))
+    expect(onQuickSwitchBook).toHaveBeenCalledWith('/lost-book.md')
+    const arg = mocks.launchWriting.mock.calls[0][0]
+    expect(arg).toMatchObject({ worldId: 'w1', expectedWorldRevision: 'sha256:r1', worldName: '控制台世界' })
+    expect(arg.selection.characterIds).toEqual(['c1'])
+    expect(onSetMode).toHaveBeenCalledWith('ide')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('切主书失败：不写 Ref、不切模式、留在原页并提示', async () => {
+    const user = userEvent.setup()
+    const { onSetMode, onQuickSwitchBook } = renderLaunch(async () => false)
+    await openContextAndPickCharacter(user)
+    await user.click(screen.getByTestId('context-launch-writing'))
+    await waitFor(() => expect(onQuickSwitchBook).toHaveBeenCalledTimes(1))
+    expect(mocks.launchWriting).not.toHaveBeenCalled()
+    expect(onSetMode).not.toHaveBeenCalled()
+    expect(mocks.toast.error).toHaveBeenCalled()
+  })
+
+  it('无主书：阻断，不切书、不写 Ref', async () => {
+    const user = userEvent.setup()
+    const noBook = worldFixture()
+    noBook.primaryBookPath = undefined
+    mocks.getWorld.mockResolvedValue({ world: noBook, revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    const onSetMode = vi.fn()
+    const onQuickSwitchBook = vi.fn(async () => true)
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={onQuickSwitchBook} />)
+    await openContextAndPickCharacter(user)
+    await user.click(screen.getByTestId('context-launch-writing'))
+    expect(onQuickSwitchBook).not.toHaveBeenCalled()
+    expect(mocks.launchWriting).not.toHaveBeenCalled()
+    expect(onSetMode).not.toHaveBeenCalled()
+  })
+
+  it('dirty 时硬阻断：按钮禁用，零切书、零 Ref', async () => {
+    const user = userEvent.setup()
+    const { onQuickSwitchBook } = renderLaunch(async () => true)
+    await user.click(await screen.findByRole('button', { name: '角色' }))
+    await user.click(screen.getByRole('button', { name: '手动新建' }))
+    await screen.findByText('新角色') // 产生未保存修改
+    await user.click(screen.getByRole('button', { name: '世界上下文' }))
+    const btn = screen.getByTestId('context-launch-writing')
+    expect(btn).toBeDisabled()
+    await user.click(btn)
+    expect(onQuickSwitchBook).not.toHaveBeenCalled()
+    expect(mocks.launchWriting).not.toHaveBeenCalled()
+  })
+})
+
+describe('WorldConsolePage B3 带入游戏', () => {
+  it('选择主故事成功后才写入游戏 Ref 并切换 interactive', async () => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [{ id: 'lost-story', title: '主游戏故事' }] })
+    mocks.selectInteractiveStory.mockResolvedValue(undefined)
+    const onSetMode = vi.fn()
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={vi.fn(async () => true)} />)
+
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+    await user.click(screen.getByTestId('context-launch-game'))
+
+    await waitFor(() => expect(mocks.selectInteractiveStory).toHaveBeenCalledWith('lost-story'))
+    expect(mocks.launchGame).toHaveBeenCalledWith(expect.objectContaining({
+      worldId: 'w1', expectedWorldRevision: 'sha256:r1', storyId: 'lost-story', branchId: 'main',
+    }))
+    expect(onSetMode).toHaveBeenCalledWith('interactive')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('选择主故事失败时不写游戏 Ref、不切模式', async () => {
+    const user = userEvent.setup()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [{ id: 'lost-story', title: '主游戏故事' }] })
+    mocks.selectInteractiveStory.mockRejectedValueOnce(new Error('select failed'))
+    const onSetMode = vi.fn()
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={vi.fn(async () => true)} />)
+
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByTestId('context-launch-game'))
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled())
+    expect(mocks.launchGame).not.toHaveBeenCalled()
+    expect(onSetMode).not.toHaveBeenCalledWith('interactive')
+  })
+})
+
+describe('WorldConsolePage C/D 带入 iframe 运行模式', () => {
+  beforeEach(() => { mocks.hostState = 'ready' })
+
+  it('以同一只读 Ref 带入叙界，不写 World', async () => {
+    const user = userEvent.setup()
+    const onSetMode = vi.fn()
+    const onCloseModule4 = vi.fn()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={onSetMode} onQuickSwitchBook={vi.fn(async () => true)} onCloseModule4={onCloseModule4} />)
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByRole('checkbox', { name: '角色一' }))
+    await user.click(screen.getByTestId('context-launch-narraverse'))
+    expect(mocks.iframeLaunch).toHaveBeenCalledWith('narraverse', expect.objectContaining({
+      worldId: 'w1', expectedWorldRevision: 'sha256:r1', worldName: '控制台世界',
+      selection: expect.objectContaining({ characterIds: ['c1'] }),
+    }))
+    expect(onCloseModule4).toHaveBeenCalledTimes(1)
+    expect(onSetMode).toHaveBeenCalledWith('narraverse')
+    expect(mocks.updateWorld).not.toHaveBeenCalled()
+  })
+
+  it('以同一只读 Ref 打开 Module4，consumer 不进入 Ref', async () => {
+    const user = userEvent.setup()
+    const onOpenModule4 = vi.fn()
+    mocks.getWorld.mockResolvedValue({ world: worldFixture(), revision: 'sha256:r1' })
+    mocks.getBooks.mockResolvedValue([])
+    mocks.getStories.mockResolvedValue({ stories: [] })
+    render(<WorldConsolePage worldId="w1" onBack={vi.fn()} onOpenCharacter={vi.fn()} onWorldChanged={vi.fn()}
+      onSetMode={vi.fn()} onQuickSwitchBook={vi.fn(async () => true)} onOpenModule4={onOpenModule4} />)
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    await user.click(screen.getByTestId('context-launch-module4'))
+    const launch = mocks.iframeLaunch.mock.calls[0][1]
+    expect(mocks.iframeLaunch).toHaveBeenCalledWith('module4', expect.any(Object))
+    expect(launch).not.toHaveProperty('consumer')
+    expect(launch).not.toHaveProperty('runContextId')
+    expect(launch).not.toHaveProperty('modelView')
+    expect(onOpenModule4).toHaveBeenCalledTimes(1)
+  })
+
+  it('安全宿主不可用时禁用两个 iframe 带入入口', async () => {
+    mocks.hostState = 'unavailable'
+    const user = userEvent.setup()
+    renderConsole()
+    await user.click(await screen.findByRole('button', { name: '世界上下文' }))
+    expect(screen.getByTestId('context-launch-narraverse')).toBeDisabled()
+    expect(screen.getByTestId('context-launch-module4')).toBeDisabled()
+    expect(mocks.iframeLaunch).not.toHaveBeenCalled()
   })
 })
 

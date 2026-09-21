@@ -1,5 +1,7 @@
 import { fetchAPI, jsonHeaders, parseSSEStream, requestJSON } from '@/lib/api-client'
 import type { ContextAnalysis, InteractiveImage } from '@/lib/api-client'
+import type { WorldContextSelection } from '@/features/world-workspace/world-context'
+import type { WorldContextRunStatus } from '@/features/world-context-runtime/world-context-wire'
 import type { ActorStateModule, ActorTraitRollRequest, ActorTraitRollResult, BranchSummary, DirectorPlan, DirectorPlanStatus, EventPackageModule, ImagePreset, InitialActorTraitRoll, InteractiveSSEEvent, RuleResolution, RuleResolutionRerollInput, RuleSystemModule, Snapshot, StoryDirector, StoryDirectorModuleRefs, StoryDirectorRunPolicy, StoryStateSchemaPolicy, StyleReference, StyleReferenceFileDocument, StoryImageSettings, StoryIndex, StoryOpeningConfig, StorySummary, Teller, UpdateDirectorPlanInput, UpdateTurnNarrativeResult } from './types'
 
 function presetMutationBody<T extends object>(input: T, baseRevision?: string, workspace?: string) {
@@ -351,7 +353,13 @@ export function generateInteractiveImage(storyId: string, input: { branch_id?: s
   })
 }
 
-export async function sendInteractiveMessage(input: { mode: 'story' | 'setting'; story_id: string; branch?: string; message: string; style_scenes?: string[]; regenerate_from_turn_id?: string; signal?: AbortSignal }): Promise<ReadableStream<InteractiveSSEEvent>> {
+export interface InteractiveWorldContextRef {
+  worldId: string
+  expectedWorldRevision: string
+  selection: WorldContextSelection
+}
+
+export async function sendInteractiveMessage(input: { mode: 'story' | 'setting'; story_id: string; branch?: string; message: string; style_scenes?: string[]; regenerate_from_turn_id?: string; world_context?: InteractiveWorldContextRef; analysis_handle?: string; signal?: AbortSignal }): Promise<ReadableStream<InteractiveSSEEvent>> {
   const res = await fetchAPI('/api/interactive/chat', {
     method: 'POST',
     headers: jsonHeaders,
@@ -391,7 +399,13 @@ function interactiveChatQuery(storyId: string, branchId?: string, taskId?: strin
   return params.toString()
 }
 
-export function analyzeInteractiveContext(input: { mode: 'story'; story_id: string; branch?: string; message: string; style_scenes?: string[] }): Promise<ContextAnalysis> {
+export interface InteractiveContextAnalysisResult extends ContextAnalysis {
+  world_context?: WorldContextRunStatus
+  analysis_handle?: string
+  analysis_handle_expires_at?: string
+}
+
+export function analyzeInteractiveContext(input: { mode: 'story'; story_id: string; branch?: string; message: string; style_scenes?: string[]; world_context?: InteractiveWorldContextRef }): Promise<InteractiveContextAnalysisResult> {
   return requestJSON('/api/interactive/chat/context-analysis', {
     method: 'POST',
     headers: jsonHeaders,
