@@ -9,9 +9,21 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
     environment: 'jsdom',
+    // 与运行时保持一致：应用会在 localhost 上重定向到规范回环地址 127.0.0.1
+    // （见 src/main.tsx 的 redirectLocalhostToCanonicalLoopback）。
+    // jsdom 默认 URL 是 http://localhost:3000/，会命中该重定向并跳过整个启动流程，
+    // 使 main.test.tsx 必然失败。这里用规范地址，避免测试环境制造假红灯。
+    environmentOptions: {
+      jsdom: { url: 'http://127.0.0.1:3000/' },
+    },
     setupFiles: './src/test/setup.ts',
     globals: true,
     css: true,
+    // 默认 5s 对大型组件树偏紧：本机冷启动时单纯 import 一个页面级模块
+    // 就可能花掉数秒（同时跑 200+ 测试文件时更明显），会让「断言其实没问题」
+    // 的用例随机超时，制造与代码无关的红灯。这里给足预算，断言标准不变。
+    testTimeout: 20000,
+    hookTimeout: 20000,
   },
   resolve: {
     alias: {
