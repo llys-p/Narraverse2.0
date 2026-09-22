@@ -40,6 +40,7 @@ const workLibrary = {
   'workLibrary.create.submit': 'Create',
   'workLibrary.create.creating': 'Creating…',
   'workLibrary.create.error': 'Failed to create',
+  'workLibrary.create.nameRequired': 'Please enter a library name',
 
   'workLibrary.tab.overview': 'Background',
   'workLibrary.tab.items': 'Entries',
@@ -100,6 +101,7 @@ const workLibrary = {
   'workLibrary.item.createError': 'Failed to create the entry',
   'workLibrary.item.saveError': 'Failed to save the entry',
   'workLibrary.item.requiredName': 'An entry name is required',
+  'workLibrary.item.idCreateHint': 'The stable id is derived from the name submitted at creation; renaming the entry later keeps the same id.',
 
   'workLibrary.loadMode.label': 'Load mode',
   'workLibrary.loadMode.hint': 'The load mode decides how this material is read at runtime. L1 only stores and displays it; model read authorization arrives in a later phase.',

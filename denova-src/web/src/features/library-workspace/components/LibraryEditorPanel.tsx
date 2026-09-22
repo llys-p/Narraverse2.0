@@ -23,6 +23,18 @@ import type { WorkLibraryEditorState } from '../use-work-library'
 
 type EditorTab = 'overview' | 'items' | 'settings' | 'relations' | 'timeline'
 
+interface NewItemDraft {
+  name: string
+  type: string
+  importance: string
+  missing: boolean
+}
+
+// 新建条目时的默认类型词表（服务端未下发词表时的兜底，取值对齐 L1 契约）。
+const FALLBACK_ITEM_TYPES = ['character', 'world', 'location', 'faction', 'rule', 'item', 'ability', 'event', 'other']
+const FALLBACK_IMPORTANCE = ['major', 'important', 'minor']
+const EMPTY_EVENT_INPUT = { order: 0, era: '', category: 'background', participantItemIds: [], locationItemId: '' }
+
 interface LibraryEditorPanelProps {
   editor: WorkLibraryEditorState
   vocabulary: WorkLibraryVocabulary | null
@@ -46,6 +58,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
   const [deleteImpact, setDeleteImpact] = useState<WorkLibraryImpact | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [sourceOpen, setSourceOpen] = useState(false)
+  const [newDraft, setNewDraft] = useState<NewItemDraft | null>(null)
   const [itemDirty, setItemDirty] = useState(false)
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [relationsDirty, setRelationsDirty] = useState(false)
@@ -139,25 +152,36 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
     return false
   }
 
-  const createItem = async () => {
+  // 新建条目必须先让用户给出真实名称：稳定 ID 在创建时由名称派生，
+  // 不能用「新建条目」占位名落库后再改名（ID 一经分配永不改变）。
+  const openNewItem = (type: string) => {
+    setSourceOpen(false)
+    setNewDraft({ name: '', type, importance: 'important', missing: false })
+    setTab('items')
+  }
+
+  const submitNewItem = async () => {
+    if (!newDraft) return
+    const trimmed = newDraft.name.trim()
+    if (!trimmed) {
+      setNewDraft({ ...newDraft, missing: true })
+      return
+    }
+    setSavingItem(true)
     const created = await editor.createItem({
-      type: 'character',
-      name: t('workLibrary.items.new'),
+      type: newDraft.type,
+      name: trimmed,
       loadMode: 'auto',
-      importance: 'important',
+      importance: newDraft.importance,
+      ...(newDraft.type === 'event' ? { event: { ...EMPTY_EVENT_INPUT } } : {}),
     })
+    setSavingItem(false)
     if (created) {
+      setNewDraft(null)
+      setItemDirty(false)
       setSelectedItemId(created.id)
       setTab('items')
     }
-  }
-
-  const createEvent = async () => {
-    const created = await editor.createItem({
-      type: 'event', name: t('workLibrary.timeline.new'), loadMode: 'auto', importance: 'important',
-      event: { order: 0, era: '', category: 'background', participantItemIds: [], locationItemId: '' },
-    })
-    if (created) { setSelectedItemId(created.id); setTab('items') }
   }
 
   return (
@@ -228,6 +252,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
               setItemDirty(false)
               setSettingsDirty(false)
               setRelationsDirty(false)
+              setNewDraft(null)
               setTab(value)
             }}
             className={`rounded-[var(--radius-sm)] px-2 py-1 text-[11px] transition-colors ${tab === value ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -323,7 +348,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
           onUpdate={async (id, input) => Boolean(await editor.saveRelation(id, input))}
           onDelete={editor.deleteRelation} onDirtyChange={setRelationsDirty} />
       ) : tab === 'timeline' ? (
-        <LibraryTimelinePanel timeline={editor.timeline} onCreate={() => void createEvent()}
+        <LibraryTimelinePanel timeline={editor.timeline} onCreate={() => openNewItem('event')}
           onOpen={(itemId) => { if (guardLeave()) { setSelectedItemId(itemId); setTab('items') } }} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
@@ -350,10 +375,10 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
               </select>
             </div>
             <div className="shrink-0 px-2 py-1">
-              <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => void createItem()}>
+              <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => openNewItem('character')}>
                 {t('workLibrary.items.new')}
               </Button>
-              <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => setSourceOpen((value) => !value)}>
+              <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => { setNewDraft(null); setSourceOpen((value) => !value) }}>
                 {t('workLibrary.items.newFromSource')}
               </Button>
             </div>
@@ -365,6 +390,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
                   onClick={() => {
                     if (item.id === selectedItemId || !guardLeave()) return
                     setItemDirty(false)
+                    setNewDraft(null)
                     setSelectedItemId(item.id)
                   }}
                     className={`flex w-full items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1.5 text-left text-[11px] transition-colors ${selectedItemId === item.id ? 'bg-[var(--nova-surface-2)] text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -393,7 +419,68 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
             setSelectedItemId(created.id)
             return true
           }} /> : null}
-          {selectedItem ? (
+          {newDraft ? (
+            <div className="m-3 space-y-3 rounded-[var(--radius-lg)] border border-[var(--nova-border)] p-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex flex-col gap-1">
+                  <span className={labelClass}>{t('workLibrary.item.name')}</span>
+                  <input
+                    className={inputClass}
+                    value={newDraft.name}
+                    maxLength={120}
+                    autoFocus
+                    aria-invalid={newDraft.missing}
+                    placeholder={t('workLibrary.item.namePlaceholder')}
+                    onChange={(event) => setNewDraft((current) => current
+                      ? { ...current, name: event.target.value, missing: event.target.value.trim() ? false : current.missing }
+                      : current)}
+                    onKeyDown={(event) => { if (event.key === 'Enter') void submitNewItem() }}
+                  />
+                  {newDraft.missing ? (
+                    <span role="alert" className="text-[11px] text-[var(--nova-danger)]">{t('workLibrary.item.requiredName')}</span>
+                  ) : null}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex flex-col gap-1">
+                    <span className={labelClass}>{t('workLibrary.item.type')}</span>
+                    <select
+                      className={inputClass}
+                      value={newDraft.type}
+                      disabled={newDraft.type === 'event'}
+                      onChange={(event) => setNewDraft((current) => current ? { ...current, type: event.target.value } : current)}
+                    >
+                      {(vocabulary?.itemTypes ?? FALLBACK_ITEM_TYPES).map((value) => (
+                        <option key={value} value={value}>{t(`workLibrary.type.${value}`, { defaultValue: value })}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1">
+                    <span className={labelClass}>{t('workLibrary.item.importance')}</span>
+                    <select
+                      className={inputClass}
+                      value={newDraft.importance}
+                      onChange={(event) => setNewDraft((current) => current ? { ...current, importance: event.target.value } : current)}
+                    >
+                      {(vocabulary?.importanceLevels ?? FALLBACK_IMPORTANCE).map((value) => (
+                        <option key={value} value={value}>{t(`workLibrary.importance.${value}`, { defaultValue: value })}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <p className="text-[11px] leading-5 text-muted-foreground">{t('workLibrary.item.idCreateHint')}</p>
+              <div className="flex items-center gap-2">
+                <Button type="button" size="sm" disabled={savingItem || !newDraft.name.trim()} onClick={() => void submitNewItem()}>
+                  {savingItem ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                  {savingItem ? t('workLibrary.saving') : t('workLibrary.create.submit')}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setNewDraft(null)}>
+                  {t('workLibrary.cancel')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {selectedItem && !newDraft ? (
             <LibraryItemForm
               item={selectedItem}
               allItems={items}
@@ -411,7 +498,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
                 variant="dashed"
                 title={t('workLibrary.items.empty.title')}
                 description={t('workLibrary.items.selectHint')}
-                action={{ label: t('workLibrary.items.new'), onClick: () => void createItem() }}
+                action={{ label: t('workLibrary.items.new'), onClick: () => openNewItem('character') }}
               />
             </div>
           )}

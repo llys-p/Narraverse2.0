@@ -42,17 +42,27 @@ export function LibraryListPanel({
   const [name, setName] = useState('')
   const [summary, setSummary] = useState('')
   const [purpose, setPurpose] = useState('any')
+  const [nameMissing, setNameMissing] = useState(false)
 
   const purposes = vocabulary?.purposes ?? ['any', 'writing', 'game', 'narraverse', 'sandbox', 'mixed']
 
-  const submit = async () => {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    const created = await onCreate({ name: trimmed, summary: summary.trim() || undefined, purpose })
-    if (created === false) return
+  const resetForm = () => {
     setName('')
     setSummary('')
     setPurpose('any')
+    setNameMissing(false)
+  }
+
+  const submit = async () => {
+    const trimmed = name.trim()
+    // 按钮禁用时 Enter 仍会触发：给出行内提示，不能静默无响应。
+    if (!trimmed) {
+      setNameMissing(true)
+      return
+    }
+    const created = await onCreate({ name: trimmed, summary: summary.trim() || undefined, purpose })
+    if (created === false) return
+    resetForm()
     setCreatingOpen(false)
   }
 
@@ -60,7 +70,10 @@ export function LibraryListPanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--nova-border)] px-3 py-2">
         <span className="text-xs text-muted-foreground">{t('workLibrary.list.description')}</span>
-        <Button type="button" size="sm" className="ml-auto" onClick={() => setCreatingOpen((open) => !open)}>
+        <Button type="button" size="sm" className="ml-auto" onClick={() => {
+          setCreatingOpen((open) => !open)
+          setNameMissing(false)
+        }}>
           <Plus className="size-3.5" />
           {t('workLibrary.create.submit')}
         </Button>
@@ -76,12 +89,19 @@ export function LibraryListPanel({
                 value={name}
                 maxLength={120}
                 autoFocus
+                aria-invalid={nameMissing}
                 placeholder={t('workLibrary.create.namePlaceholder')}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  setName(event.target.value)
+                  if (nameMissing && event.target.value.trim()) setNameMissing(false)
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') void submit()
                 }}
               />
+              {nameMissing ? (
+                <span role="alert" className="text-[11px] text-[var(--nova-danger)]">{t('workLibrary.create.nameRequired')}</span>
+              ) : null}
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-medium text-muted-foreground">{t('workLibrary.create.purpose')}</span>
@@ -107,7 +127,7 @@ export function LibraryListPanel({
               {creating ? <Loader2 className="size-3.5 animate-spin" /> : null}
               {creating ? t('workLibrary.create.creating') : t('workLibrary.create.submit')}
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setCreatingOpen(false)}>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setCreatingOpen(false); resetForm() }}>
               {t('workLibrary.cancel')}
             </Button>
           </div>

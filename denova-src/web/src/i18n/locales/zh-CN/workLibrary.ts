@@ -40,6 +40,7 @@ const workLibrary = {
   'workLibrary.create.submit': '创建',
   'workLibrary.create.creating': '创建中…',
   'workLibrary.create.error': '创建失败',
+  'workLibrary.create.nameRequired': '请填写库名称',
 
   'workLibrary.tab.overview': '背景总览',
   'workLibrary.tab.items': '条目',
@@ -100,6 +101,7 @@ const workLibrary = {
   'workLibrary.item.createError': '新建条目失败',
   'workLibrary.item.saveError': '保存条目失败',
   'workLibrary.item.requiredName': '请填写条目名称',
+  'workLibrary.item.idCreateHint': '稳定 ID 按创建时提交的名称生成；创建之后再改名，ID 也不会变化。',
 
   'workLibrary.loadMode.label': '加载档位',
   'workLibrary.loadMode.hint': '档位决定这条资料在运行时怎么被读取；L1 只保存与展示，真正的模型读取授权在后续阶段接入。',
