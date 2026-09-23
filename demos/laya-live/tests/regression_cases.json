@@ -1,5 +1,13 @@
 {
   "_readme": [
+    "★★ 已被 tests/cases/ 取代（Phase3 Task4，2026-09-23）。本文件保留为 legacy 参考：",
+    "   · 它把「依赖隐藏真相」的用例（轻微/明显撒谎、诱骗、身份凭证）和可观测用例**混在一起**，",
+    "     于是「方向准确率 49.5%」这个数把两类完全不同的能力揉成了一个数。",
+    "     剔掉依赖隐藏真相的 16 条后，typed-decisions 0.4949→0.5663、english 0.5152→0.6145。",
+    "   · 新架构见 tests/cases/{observable,contextual,hidden_truth}.json（50 / 30 / 20 条），",
+    "     指标与分级见 python laya_bridge.py signalmetrics，主结论**逐 signal**，不用总体准确率。",
+    "   · cmd_signaltest 仍能跑本文件（旧口径对照用），但新实验一律用 signalmetrics。",
+    "",
     "决策方向回归矩阵（§14）。16 个类别 × 3 条不同措辞 = 48 条。",
     "",
     "★ 这里断言的是 **决策方向**，不是「NPC 必须选某个唯一动作」。",

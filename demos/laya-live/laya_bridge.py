@@ -813,7 +813,20 @@ def _signal_meta():
 
 
 def _signal_kind(name):
-    return (_signal_meta().get(name) or {}).get("kind", "prob")
+    """prob（0~1 概率）还是 level（0~4 强度）。
+
+    ★ 为什么不能只看 signals.meta：6 个 score 位移题（trust_shift / doubt_shift …）
+      与 investigate 都是 level 型，但*_shift 那几个**不在** signals.meta 里
+      （它们刻意不上信号面板，见 SHIFT_IDS 的注释）。
+      只查 meta 会让它们退回默认 "prob"，于是拿 0~4 的值去和 0.5 比大小 ——
+      判据整个错掉，而且错得很安静。
+    """
+    k = (_signal_meta().get(name) or {}).get("kind")
+    if k:
+        return k
+    if name == "investigate" or name.endswith("_shift"):
+        return "level"
+    return "prob"
 
 
 def signal_snapshot(answers):
@@ -2718,6 +2731,476 @@ def cmd_signaltest():
     return 0
 
 
+# ==========================================================================
+# 11.5 逐 signal 指标 + 可用性分级（Phase3 Task6 / Task7）
+# ==========================================================================
+# 为什么必须逐 signal，不许用总体 accuracy：
+#   「方向断言 49.5%」这个数字本身没有行动价值 —— 它把 15 个维度混成一个数，
+#   于是「哪些维度其实有信号、哪些纯噪声」全看不出来。上一轮实测里只有 3/15
+#   维度超过了噪声底，但总体准确率把这件事完全掩盖了。
+#   主结论必须按 signal 给，总体数只作为附注。
+#
+# 分级规则（Task7）**写在代码里**，不写在文档里 —— 否则「A/B/C/D」会随人变。
+_NOISE_FLOOR = 0.05          # 实测噪声底：设备漂移 0.033 / 翻译抖动 0.055
+_BOOT_SEED = 20260923        # bootstrap 固定种子：同输入必须给同结论
+_BOOT_N = 2000
+
+
+def _auc(pairs):
+    """AUC = P(高分组 > 低分组)，用**秩和法**算（不依赖 sklearn）。
+
+    pairs: [(value, label)]，label ∈ {"high", "low"}。
+    返回 (auc, n_high, n_low)；样本不足返回 (None, 0, 0)。
+
+    ★ 为什么是秩和而不是双重循环（2026-09-23 踩到）：
+      朴素写法 O(n_hi·n_lo)。单次没问题，但 bootstrap 要重采样 2000 次、
+      15 个 signal —— 60×60 的配对就是 2000×15×3600 ≈ 1 亿次 Python 循环，
+      实测就是把命令挂在那儿几十分钟不动。秩和法 O(n log n)，秒级。
+      两种写法结果完全等价，不是近似。
+
+    并列（差值 < 1e-12）用**中位秩**，等价于并列各记 0.5 —— 必须这样，
+    否则 noul 这种全挤在 0.5 附近的信号会因为「并列算赢」而虚高。
+    """
+    hi = [v for v, l in pairs if l == "high"]
+    lo = [v for v, l in pairs if l == "low"]
+    if not hi or not lo:
+        return None, len(hi), len(lo)
+    pool = sorted(v for v, _ in pairs)
+    rank_of = {}
+    i = 0
+    while i < len(pool):
+        j = i
+        while j + 1 < len(pool) and abs(pool[j + 1] - pool[i]) < 1e-12:
+            j += 1
+        midrank = (i + j) / 2.0 + 1.0          # 1-based 中位秩
+        rank_of[pool[i]] = midrank
+        i = j + 1
+    r_hi = sum(rank_of[v] for v in hi)
+    n1, n2 = len(hi), len(lo)
+    auc = (r_hi - n1 * (n1 + 1) / 2.0) / (n1 * n2)
+    return auc, n1, n2
+
+
+def _best_threshold(pairs):
+    """在候选阈值上扫一遍，取平衡准确率最高的那个。返回 (thr, bal_acc, acc)。"""
+    vals = sorted(set(v for v, _ in pairs))
+    if len(vals) < 2:
+        return None, None, None
+    cands = [(vals[i] + vals[i + 1]) / 2.0 for i in range(len(vals) - 1)]
+    best = (None, -1.0, None)
+    for t in cands:
+        tp = sum(1 for v, l in pairs if v >= t and l == "high")
+        fn = sum(1 for v, l in pairs if v < t and l == "high")
+        tn = sum(1 for v, l in pairs if v < t and l == "low")
+        fp = sum(1 for v, l in pairs if v >= t and l == "low")
+        tpr = tp / max(1, tp + fn)
+        tnr = tn / max(1, tn + fp)
+        bal = (tpr + tnr) / 2.0
+        acc = (tp + tn) / max(1, tp + tn + fp + fn)
+        if bal > best[1]:
+            best = (round(t, 4), round(bal, 4), round(acc, 4))
+    return best
+
+
+def _boot(pairs, stat, n=_BOOT_N, seed=_BOOT_SEED):
+    """bootstrap 95% 置信区间。stat 接收重采样后的 pairs，返回 float 或 None。"""
+    rng = random.Random(seed)
+    vals = []
+    m = len(pairs)
+    if m < 4:
+        return None
+    for _ in range(n):
+        sample = [pairs[rng.randrange(m)] for _ in range(m)]
+        r = stat(sample)
+        if r is not None:
+            vals.append(r)
+    if len(vals) < n // 2:
+        return None
+    vals.sort()
+    return (round(vals[int(0.025 * len(vals))], 4),
+            round(vals[int(0.975 * len(vals)) - 1], 4))
+
+
+def grade_signal(metrics):
+    """Task7：把逐 signal 指标打 A/B/C/D（外加 N = 样本不足，R = 稳定反向）。
+
+    ★ 规则固定在这里，运行结果才可复现。判据全部基于 **AUC 的点估计与
+      bootstrap 区间下界**，不看总体准确率、不看均值差（均值差受量纲影响，
+      不同 signal 之间不可比；AUC 可比）。
+
+      N  样本不足（high 或 low 任一组 < 10）—— 不下结论，不许写成「差」
+      R  CI 上界 < 0.50 —— **稳定反向**。它比噪声更危险：噪声不会骗人，
+        反向会。要用必须先查清是「用例期望写反了」还是「信号语义相反」，
+        查清之后只能**反向**使用，禁止按原方向写阈值。
+      A  CI 下界 > 0.50 且 AUC ≥ 0.70 —— 可以作为行为的直接输入
+      B  CI 下界 > 0.50 且 AUC ≥ 0.60 —— 可作强提示，但上层必须有规则约束
+      C  AUC ≥ 0.55（区间不稳）     —— 只能当合取项，禁止单独定行为
+      D  AUC < 0.55                 —— 不可用，不要拿它写阈值
+
+    ★ 合并规则：一个 signal 的最终等级 = min(判别等级, 上下文等级)。
+      理由：Projection Layer 的意义就是「随世界状态变化」。一个只能靠固定
+      阈值把两组人分开、但对前文完全无反应的信号，无法承担这个职责 ——
+      它更像一个常量偏置。所以两者取较差的那个。
+    """
+    auc = metrics.get("auc")
+    ci = metrics.get("auc_ci")
+    n_hi, n_lo = metrics.get("n_high") or 0, metrics.get("n_low") or 0
+    if auc is None or n_hi < 10 or n_lo < 10:
+        return "N", "样本不足（high=%d / low=%d，各需 ≥10）" % (n_hi, n_lo)
+    # ★ 反向要先判：CI 整段落在 0.5 以下 = 「高分组的值反而更低」，这不是噪声
+    if ci and ci[1] < 0.50:
+        return "R", "AUC=%.3f，CI %s 整体 <0.50 —— 高分组反而更低，**方向反了**" % (auc, ci)
+    if ci and ci[0] > 0.50 and auc >= 0.70:
+        return "A", "AUC=%.3f，CI 下界 %.3f>0.50" % (auc, ci[0])
+    if ci and ci[0] > 0.50 and auc >= 0.60:
+        return "B", "AUC=%.3f，CI 下界 %.3f>0.50" % (auc, ci[0])
+    if auc >= 0.55:
+        return "C", "AUC=%.3f，但 CI %s 不稳" % (auc, ci)
+    return "D", "AUC=%.3f < 0.55（CI %s）" % (auc, ci)
+
+
+def grade_context(delta_stat):
+    """Task7 的上下文维度：一个 signal 对前文有没有反应。
+
+    与 grade_signal 分开算，因为这是**另一种能力**：
+      判别 = 能不能把两类输入分开（静态）
+      上下文 = 同一句话在不同前文下会不会变（动态）
+    只看判别会把「常量偏置」误当成能力。
+
+    ★ 只用 **signed**（期望方向上的增量）统计，不用裸 Δ ——
+      同一个 signal 既有期望 up 的配对又有期望 down 的配对，
+      裸 Δ 的均值会因为方向相反而互相抵消，把「有反应」算成「没动」。
+
+      N  可配对样本 < 10
+      R  稳定反向：CI 不含 0 且 越噪声底 ≥60% 且 **方向对率 ≤25%**
+         —— 反应是真的，但方向与设计预期相反。必须先去查「是用例期望写反了，
+         还是信号语义相反」，查清后只能反向使用。这条规则是必须的：
+         第一版把它判成了 B（「有反应就是好」），而可靠地反向比噪声更危险。
+      B  CI 不含 0 且 越噪声底 ≥60% 且 方向对率 ≥60% —— 有真实上下文响应
+      C  越噪声底 ≥30% —— 弱反应，只能当合取项
+      D  其余
+    """
+    n = delta_stat.get("n") or 0
+    if n < 10:
+        return "N", "可配对样本 %d < 10" % n
+    share = delta_stat.get("share_beyond") or 0.0
+    sign_rate = delta_stat.get("sign_rate") or 0.0
+    ci = delta_stat.get("mean_ci")
+    sig_ci = bool(ci and (ci[0] > 0 or ci[1] < 0))
+    if sig_ci and share >= 0.60:
+        if sign_rate <= 0.25:
+            return "R", ("%.0f%% 的增量越过噪声底、均值 CI %s 不含 0，但**方向对率只有 %.0f%%** "
+                         "—— 稳定反向，先去查用例与信号语义"
+                         % (share * 100, ci, sign_rate * 100))
+        if sign_rate >= 0.60:
+            return "B", ("%.0f%% 的增量越过噪声底、均值 CI %s 不含 0、方向对率 %.0f%%"
+                         % (share * 100, ci, sign_rate * 100))
+        return "C", "有反应但方向不稳（越噪声底 %.0f%%、方向对率 %.0f%%）" % (share * 100, sign_rate * 100)
+    if share >= 0.30:
+        return "C", "%.0f%% 的增量越过噪声底（方向对率 %.0f%%）" % (share * 100, sign_rate * 100)
+    return "D", "只有 %.0f%% 的增量越过噪声底（要求 ≥30%%）" % (share * 100)
+
+
+# 严重度排序（用于 combine_grades 取差）。★ R 排在 C 与 D 之间而不是最差：
+#   「稳定反向」是可以被利用的（反向使用即可），而 D 是纯噪声、什么也做不了。
+#   但两者都比 C 差 —— C 至少方向是对的，只是不稳。
+_GRADE_ORDER = {"A": 4, "B": 3, "C": 2, "R": 1, "D": 0, "N": -1}
+
+
+def combine_grades(g_disc, g_ctx):
+    """min(判别, 上下文)。任一为 N 时不参与取小（缺数据 ≠ 差）。"""
+    if g_disc == "N":
+        return g_ctx
+    if g_ctx == "N":
+        return g_disc
+    return g_disc if _GRADE_ORDER[g_disc] <= _GRADE_ORDER[g_ctx] else g_ctx
+
+
+def _load_case_sets():
+    """读三组用例。返回 {组名: (元信息, [cases])}；缺文件就报出来，不静默跳过。"""
+    out = {}
+    for key in ("observable", "contextual", "hidden_truth"):
+        p = TESTS_DIR / "cases" / ("%s.json" % key)
+        try:
+            blob = json.loads(p.read_text(encoding="utf-8"))
+            out[key] = (blob, list(blob.get("cases") or []))
+        except Exception as e:
+            print("读取 %s 失败：%r" % (p, e))
+            out[key] = ({}, [])
+    return out
+
+
+def cmd_signalmetrics():
+    """Phase3 Task6/7：逐 signal 指标 + bootstrap CI + A/B/C/D 分级。
+
+    用法：
+        python laya_bridge.py signalmetrics                # 三组全跑，默认检查点
+        python laya_bridge.py signalmetrics 8              # 每组只跑前 8 条（看形状）
+        LAYA_MODEL=english python laya_bridge.py signalmetrics
+        LAYA_SETS=observable,contextual python laya_bridge.py signalmetrics   # 排除隐藏真相组
+
+    ★ 主结论是**逐 signal**的表格：high/low 组均值、mean/median gap、AUC、
+      最佳阈值、阈值准确率、bootstrap CI，最后给等级。
+      总体 accuracy 只在末尾作为附注出现，且**隐藏真相组不计入**。
+    """
+    sets = _load_case_sets()
+    want = [x.strip() for x in (os.environ.get("LAYA_SETS") or "").split(",") if x.strip()]
+    if want:
+        sets = dict((k, v) for k, v in sets.items() if k in want)
+    lim = next((int(a) for a in sys.argv[2:] if a.isdigit()), None)
+
+    ENGINE.init()
+    if not ENGINE.ready:
+        print("laya 未就绪，先跑 probe 看原因。")
+        return 1
+    model = DEFAULT_MODEL_NAME
+    qs = build_laya_questions(CFG["questions"])
+    cache = {}
+    try:
+        cache = json.loads(_XLATE_DISK.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    def run_one(doc):
+        dt, rows, by_name = _run_signals(model, doc, qs)
+        return dt, by_name
+
+    def make_doc(text, history_entries):
+        text_en = _cached_translate(text, cache) if LANG == "en" else text
+        return build_state_doc(CFG["actor"], text, [], CFG.get("scene"), None,
+                               player_input_en=text_en,
+                               decision_history=history_entries)
+
+    FRESH = [{"type": "start", "summary": "scene begins"}]
+    sig_order = list((CFG.get("signals") or {}).get("order") or [])
+    all_names = sig_order + [s for s in SHIFT_IDS if s not in sig_order]
+
+    print("=" * 92)
+    print("逐 signal 指标 ｜ 检查点=%s ｜ 设备=%s" % (model, ENGINE.device_label()))
+    print("bootstrap n=%d seed=%d ｜ 噪声底=%.2f ｜ 等级规则见 grade_signal() 的 docstring"
+          % (_BOOT_N, _BOOT_SEED, _NOISE_FLOOR))
+    print("=" * 92)
+
+    # ---- 收集：判别用 high/low 配对 -------------------------------------
+    # ★★ 这里**只能**用 observable。第一版把 hidden_truth 一起并进来算了，
+    #    是错的：那些用例的期望方向依赖 NPC 观察不到的事实，模型**原理上**
+    #    不可能满足，并进来会系统性压低 AUC —— 这正是 Task4 说的
+    #    「绝不混进主 accuracy」。hidden_truth 单独一段出，只当参考上限。
+    obs_meta, obs_cases = sets.get("observable") or ({}, [])
+    ht_meta, ht_cases = sets.get("hidden_truth") or ({}, [])
+    if lim:
+        obs_cases = obs_cases[:lim]
+        ht_cases = ht_cases[:lim]
+
+    pairs = dict((n, []) for n in all_names)
+    ht_pairs = dict((n, []) for n in all_names)
+    obs_runs = {}
+
+    def collect(cases, bucket, keep_runs=None):
+        ok_n = 0
+        for c in cases:
+            try:
+                _dt, by_name = run_one(make_doc(c["text"], FRESH))
+            except Exception as e:
+                print("  [%s] 失败：%r" % (c["id"], e))
+                continue
+            if keep_runs is not None:
+                keep_runs[c["id"]] = by_name
+            for name, want_dir in (c.get("expected_direction") or {}).items():
+                row = by_name.get(name)
+                if row is None:
+                    continue
+                if want_dir in ("high", "positive"):
+                    bucket[name].append((float(row["value"]), "high"))
+                    ok_n += 1
+                elif want_dir in ("low", "negative"):
+                    bucket[name].append((float(row["value"]), "low"))
+                    ok_n += 1
+                # neutral 不参与 AUC：它不是「两类中的一类」，混进来会把
+                # 阈值扫描带偏，也会让 AUC 失去「可分性」的含义。
+        return ok_n
+
+    n_obs_assert = collect(obs_cases, pairs, obs_runs)
+    n_ht_assert = collect(ht_cases, ht_pairs)
+
+    # ---- 逐 signal 主表 -------------------------------------------------
+    grades, report = {}, {}
+
+    def disc_table(the_pairs, title, note):
+        print("\n" + title)
+        print("  %-12s %-5s %4s %4s %8s %8s %8s %7s %7s %7s %-18s %s"
+              % ("signal", "kind", "nHi", "nLo", "均值Hi", "均值Lo", "meanGap", "medGap",
+                 "AUC", "thrAcc", "bestThr", "AUC 95%CI"))
+        rows = {}
+        for name in all_names:
+            p = the_pairs.get(name) or []
+            hi = [v for v, l in p if l == "high"]
+            lo = [v for v, l in p if l == "low"]
+            auc, n_hi, n_lo = _auc(p)
+            if auc is None:
+                print("  %-12s %-5s %4d %4d   —— %s" % (name, _signal_kind(name), n_hi, n_lo, note))
+                rows[name] = {"n_high": n_hi, "n_low": n_lo, "auc": None, "grade": "N",
+                              "grade_reason": "两组不齐（%s）" % note}
+                continue
+            mh, ml = sum(hi) / len(hi), sum(lo) / len(lo)
+            sh, sl = sorted(hi), sorted(lo)
+
+            def med(a):
+                return a[len(a) // 2] if len(a) % 2 else (a[len(a) // 2 - 1] + a[len(a) // 2]) / 2.0
+
+            gap, mgap = mh - ml, med(sh) - med(sl)
+            thr, bal, tacc = _best_threshold(p)
+            ci = _boot(p, lambda s: _auc(s)[0])
+            m = {"n_high": n_hi, "n_low": n_lo, "mean_high": round(mh, 4), "mean_low": round(ml, 4),
+                 "mean_gap": round(gap, 4), "median_gap": round(mgap, 4), "auc": round(auc, 4),
+                 "auc_ci": ci, "best_threshold": thr, "threshold_balanced_acc": bal,
+                 "threshold_accuracy": tacc, "kind": _signal_kind(name), "boot_n": _BOOT_N,
+                 "boot_seed": _BOOT_SEED}
+            g, why = grade_signal(m)
+            m["grade"] = g
+            m["grade_reason"] = why
+            rows[name] = m
+            print("  %-12s %-5s %4d %4d %8.3f %8.3f %+8.3f %+7.3f %7.3f %7s %-18s %-18s  %s"
+                  % (name, m["kind"], n_hi, n_lo, mh, ml, gap, mgap, auc, tacc or "—",
+                     "%s/%.2f" % (thr, bal) if thr is not None else "—", "%s" % (ci,), g))
+        return rows
+
+    report = disc_table(pairs, "── 主结论：逐 signal 判别力（**仅 observable**，%d 条断言）"
+                        % n_obs_assert + "─" * 12,
+                        "observable 组两组不齐，无法算 AUC")
+    grades = dict((k, (v.get("grade", "N"), v.get("grade_reason", ""))) for k, v in report.items())
+
+    ht_report = disc_table(ht_pairs, "── 参考（**不计入任何主结论**）：hidden_truth 组的判别力"
+                           "（%d 条断言）" % n_ht_assert + "─" * 12,
+                           "hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，"
+                           "数字只作上限参考")
+    for k in ht_report:
+        ht_report[k]["counts_in_main_accuracy"] = False
+        ht_report[k]["note"] = ("本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。"
+                                "放进来的唯一目的是对照「若把真相喂进去会怎样」。")
+
+    # ---- 上下文维度 -----------------------------------------------------
+    print("\n── 上下文维度：同一句话在有/无前文下的增量（成对）" + "─" * 30)
+    meta_c, ctx_cases = sets.get("contextual") or ({}, [])
+    if lim:
+        ctx_cases = ctx_cases[:lim]
+    deltas = dict((n, []) for n in all_names)
+    for c in ctx_cases:
+        try:
+            _d1, base = run_one(make_doc(c["text"], FRESH))
+            prior = c.get("prior") or {}
+            dh = prior.get("decision_history") or FRESH
+            _d2, withp = run_one(make_doc(c["text"], dh))
+        except Exception as e:
+            print("  [%s] 失败：%r" % (c["id"], e))
+            continue
+        for name, want_dir in (c.get("expect_delta") or {}).items():
+            if name not in base or name not in withp:
+                continue
+            d = float(withp[name]["value"]) - float(base[name]["value"])
+            signed = d if want_dir == "up" else -d
+            deltas[name].append({"delta": round(d, 4), "want": want_dir,
+                                 "signed": round(signed, 4),
+                                 "beyond": abs(d) >= _NOISE_FLOOR, "id": c["id"]})
+    print("  %-12s %4s %9s %9s %9s %9s %-18s %-14s %s"
+          % ("signal", "n", "均Δ(定向)", "中位Δ", "方向对", "越噪声底", "均值 95%CI", "等级", "说明"))
+    ctx_grades, ctx_report = {}, {}
+    for name in all_names:
+        ds = deltas.get(name) or []
+        if not ds:
+            continue
+        # ★★ 统计量必须是 **signed**（期望方向上的增量），不能用裸 Δ。
+        #    第一版这里算的是裸 Δ 的均值，而同一个 signal 既有期望 up 的配对、
+        #    也有期望 down 的配对 —— 两者会互相抵消，于是「有反应」被算成
+        #    「平均没动」。这是把方向信息丢掉之后又假装在测效应，必须修。
+        sv = [x["signed"] for x in ds]
+        mv = sum(sv) / len(sv)
+        srt = sorted(sv)
+        med = srt[len(srt) // 2] if len(srt) % 2 else (srt[len(srt) // 2 - 1] + srt[len(srt) // 2]) / 2.0
+        sign_ok = sum(1 for x in ds if x["signed"] > 0)
+        share = sum(1 for x in ds if x["beyond"]) / len(ds)
+        ci = _boot([(x["signed"], x["want"]) for x in ds], lambda s: sum(v for v, _ in s) / len(s))
+        st = {"n": len(ds), "mean_signed": round(mv, 4), "median_signed": round(med, 4),
+              "sign_ok": sign_ok, "sign_rate": round(sign_ok / len(ds), 4),
+              "share_beyond": round(share, 4), "mean_ci": ci,
+              "n_up": sum(1 for x in ds if x["want"] == "up"),
+              "n_down": sum(1 for x in ds if x["want"] == "down"),
+              "cases": [{k: x[k] for k in ("id", "delta", "want", "signed", "beyond")} for x in ds]}
+        g, why = grade_context(st)
+        st["grade"] = g
+        st["grade_reason"] = why
+        ctx_grades[name] = (g, why)
+        ctx_report[name] = st
+        print("  %-12s %4d %+8.3f %+8.3f %7d/%-3d %9.0f%% %-18s %-14s %s"
+              % (name, len(ds), mv, med, sign_ok, len(ds), share * 100,
+                 "%s" % (ci,), g, why))
+
+    # ---- 合并等级 -------------------------------------------------------
+    print("\n── 最终等级：min(判别, 上下文)（N 表示该维度样本不足，不参与取小）" + "─" * 16)
+    final = {}
+    for name in all_names:
+        if name not in report and name not in ctx_report:
+            continue
+        gd = grades.get(name, ("N", "无判别数据"))[0]
+        gc = ctx_grades.get(name, ("N", "无上下文数据"))[0]
+        g = combine_grades(gd, gc)
+        final[name] = {"discrimination": gd, "context": gc, "final": g,
+                       "disc_reason": grades.get(name, ("N", ""))[1],
+                       "ctx_reason": ctx_grades.get(name, ("N", ""))[1]}
+        print("  %-12s 判别=%-2s 上下文=%-2s → **%s**" % (name, gd, gc, g))
+
+    # ---- 附注：总体准确率（不含隐藏真相组）-----------------------------
+    # ★ 复用上面已经跑过的 obs_runs，不重跑 —— 重跑既浪费又会引入随机差异
+    #   （noul 输出对上下文/批处理敏感），会让「同一份数据算出的两个数对不上」。
+    print("\n── 附注：总体方向准确率（**仅 observable**，隐藏真相组不计入）" + "─" * 18)
+    o = b = 0
+    for c in obs_cases:
+        by_name = obs_runs.get(c["id"])
+        if by_name is None:
+            continue
+        k, bad = _check_direction(by_name, c.get("expected_direction"))
+        o += k
+        b += len(bad)
+    print("  observable  %d/%d = %.1f%%（%d 条用例）" % (o, o + b, 100.0 * o / max(1, o + b), len(obs_cases)))
+    print("  ★ 这个数**不能**和上一轮的 49.5% / 51.5% 直接比 —— 用例集换了，")
+    print("    旧口径里混着 16 条依赖隐藏真相的用例，且断言分布不同。")
+    print("    要看趋势必须用同一套用例重跑旧版本，或看逐 signal 的表。")
+    if ht_cases:
+        print("  hidden_truth %d 条 —— **不计入上面的数字**，单列于上方的参考段" % len(ht_cases))
+
+    # ---- 落盘 -----------------------------------------------------------
+    out = {"_readme": ["由 python laya_bridge.py signalmetrics 生成。不要手改。",
+                       "主结论 = discrimination 段（**仅 observable**）与 contextual 段。",
+                       "hidden_truth 段只是参考上限，绝不用来给 signal 定级或定阈值。",
+                       "总体 accuracy 只在 observable_accuracy 里，且不与旧口径可比。"],
+           "model": model, "device": ENGINE.device_label(),
+           "noise_floor": _NOISE_FLOOR, "bootstrap": {"n": _BOOT_N, "seed": _BOOT_SEED},
+           "discrimination": report, "contextual": ctx_report, "final_grades": final,
+           "hidden_truth_reference": ht_report,
+           "observable_accuracy": {"passed": o, "total": o + b,
+                                   "rate": round(o / max(1, o + b), 4),
+                                   "n_cases": len(obs_cases),
+                                   "comparable_with_previous_round": False,
+                                   "why": "用例集已重建，与第二轮 48 条口径不可直接比较。"},
+           "counts": dict((k, len(v[1])) for k, v in sets.items()),
+           "n_assertions": {"observable": n_obs_assert, "hidden_truth": n_ht_assert}}
+    try:
+        p = TESTS_DIR / "signal_metrics.json"
+        try:
+            blob = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            blob = {}
+        blob.setdefault("runs", {})[model] = out
+        for k, v in out.items():
+            if k != "runs":
+                blob[k] = v
+        p.write_text(json.dumps(blob, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("\n逐 signal 指标已写入 tests/signal_metrics.json（检查点键：%s）" % model)
+    except Exception as e:
+        print("\n写入 tests/signal_metrics.json 失败：%r" % e)
+    return 0
+
+
 def _infer_n_assertions(run):
     """从 direction_accuracy 与 failures 长度反推断言总数。
 
@@ -3679,6 +4162,8 @@ def main():
         return cmd_sanity()
     if len(sys.argv) > 1 and sys.argv[1] == "signaltest":
         return cmd_signaltest()
+    if len(sys.argv) > 1 and sys.argv[1] == "signalmetrics":
+        return cmd_signalmetrics()
     if len(sys.argv) > 1 and sys.argv[1] == "ckptcompare":
         return cmd_ckptcompare()
     if len(sys.argv) > 1 and sys.argv[1] == "personatest":
@@ -3728,7 +4213,8 @@ def main():
     print("  POST /reset     清空累积历史（dialogue history + decision_history）")
     print("  POST /predict   原始透传，直接调 Laya")
     print("\n演示页：%s/demo    （?auto=7 会触发门限/策略改写，最适合看那套机制）" % url)
-    print("自检：qcheck 问题集预算 ｜ signaltest 决策方向回归 ｜ personatest 人格对照 ｜ bench 性能")
+    print("自检：qcheck 问题集预算 ｜ signaltest 决策方向回归 ｜ signalmetrics 逐 signal 指标+分级 "
+          "｜ personatest 人格对照 ｜ ckptcompare 检查点对照 ｜ bench 性能")
     print("按 Ctrl+C 停止。\n")
 
     if os.environ.get("OPEN_BROWSER") == "1":

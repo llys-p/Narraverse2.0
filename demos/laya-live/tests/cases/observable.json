@@ -1,0 +1,110 @@
+{
+  "_readme": [
+    "Phase3 Task4 —— 可观测组（observable）。",
+    "判定标准：expected_direction 必须**完全由 NPC 能观察到的东西推出** ——",
+    "玩家说出口的话、能看到的动作/物件。不依赖任何「话是真是假」的隐藏事实。",
+    "凡是要先知道玩家在撒谎/凭证是真是假才能判方向的用例，都不属于本组，",
+    "去 hidden_truth.json（带 omniscient 标签，绝不混进主准确率）。",
+    "",
+    "expected_direction 判据（与 laya_bridge._check_direction 一致）：",
+    "  prob 型信号：high = v>=0.50 ｜ low = v<=0.50 ｜ neutral = 0.30~0.70",
+    "  level 型（investigate / *_shift）：positive >2.20 ｜ negative <1.80 ｜ neutral 1.80~2.20",
+    "",
+    "★★ 平衡性要求（第一版踩到的坑）：",
+    "  每个待评维度必须**同时**有 high 侧和 low 侧样本，否则算不出 AUC，",
+    "  只能报「两组不齐」。第一版只写了方向性期望（如 cooperation 全是 high），",
+    "  结果 15 个维度里 12 个因为缺 low 组而无法评价 —— 那是**用例集的缺陷**，",
+    "  不是模型的发现。现在每个维度两侧各 ≥10 条断言。",
+    "",
+    "★ 本组断言的是「人会怎么预判」，不是为了让它通过而调松。",
+    "  失败率本身就是 Task6/Task7 要评价的东西。"
+  ],
+  "visibility": "observable",
+  "model_target": "any",
+  "cases": [
+    {"id": "obs_smalltalk_1", "category": "正常寒暄", "text": "今晚的雨下得真大，路上都没什么人了。", "expected_direction": {"hostility": "low", "danger": "low", "doubt": "low", "confront": "low", "withdraw": "low", "cooperation": "high", "alert_shift": "negative", "doubt_shift": "negative", "investigate": "negative", "goal_shift": "negative"}},
+    {"id": "obs_smalltalk_2", "category": "正常寒暄", "text": "这酒不错，比我在南边喝过的好。", "expected_direction": {"hostility": "low", "danger": "low", "doubt": "low", "confront": "low", "withdraw": "low", "cooperation": "high", "alert_shift": "negative", "doubt_shift": "negative", "investigate": "negative", "goal_shift": "negative"}},
+    {"id": "obs_smalltalk_3", "category": "正常寒暄", "text": "炉火烧得旺，坐着暖和。", "expected_direction": {"hostility": "low", "danger": "low", "doubt": "low", "confront": "low", "withdraw": "low", "cooperation": "high", "alert_shift": "negative", "doubt_shift": "negative", "investigate": "negative", "goal_shift": "negative"}},
+    {"id": "obs_smalltalk_4", "category": "正常寒暄", "text": "你今天看着比上次精神。", "expected_direction": {"hostility": "low", "danger": "low", "doubt": "low", "confront": "low", "withdraw": "low", "cooperation": "high", "alert_shift": "negative", "doubt_shift": "negative", "investigate": "negative", "goal_shift": "negative"}},
+    {"id": "obs_smalltalk_5", "category": "正常寒暄", "text": "雨天客人少，你也难得清静一会儿。", "expected_direction": {"hostility": "low", "danger": "low", "doubt": "low", "confront": "low", "withdraw": "low", "cooperation": "high", "alert_shift": "negative", "doubt_shift": "negative", "investigate": "negative", "goal_shift": "negative"}},
+
+    {"id": "obs_direction_1", "category": "陌生问路", "text": "请问去下一个镇子走哪条路？", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "investigate": "positive", "alert_shift": "negative", "doubt_shift": "negative", "goal_shift": "negative"}},
+    {"id": "obs_direction_2", "category": "陌生问路", "text": "北边的关口现在还能过吗？", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "investigate": "positive", "alert_shift": "negative", "doubt_shift": "negative", "goal_shift": "negative"}},
+    {"id": "obs_direction_3", "category": "陌生问路", "text": "我车轴断了，最近的修车匠在哪？", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "investigate": "positive", "alert_shift": "negative", "doubt_shift": "negative", "goal_shift": "negative"}},
+    {"id": "obs_direction_4", "category": "陌生问路", "text": "这附近有能过夜的地方吗？", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "investigate": "positive", "alert_shift": "negative", "doubt_shift": "negative", "goal_shift": "negative"}},
+    {"id": "obs_direction_5", "category": "陌生问路", "text": "打扰一下，教堂往哪个方向走？", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "investigate": "positive", "alert_shift": "negative", "doubt_shift": "negative", "goal_shift": "negative"}},
+
+    {"id": "obs_help_1", "category": "友好帮助", "text": "你的马在门口受惊了，我帮你牵住了。", "expected_direction": {"hostility": "low", "doubt": "low", "cooperation": "high", "trust": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive", "doubt_shift": "negative", "investigate": "negative"}},
+    {"id": "obs_help_2", "category": "友好帮助", "text": "刚才那几个人不怀好意，我把他们劝走了。", "expected_direction": {"hostility": "low", "doubt": "low", "cooperation": "high", "trust": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive", "doubt_shift": "negative", "investigate": "negative"}},
+    {"id": "obs_help_3", "category": "友好帮助", "text": "这桌酒钱我一起付了，不用客气。", "expected_direction": {"hostility": "low", "doubt": "low", "cooperation": "high", "trust": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive", "doubt_shift": "negative", "investigate": "negative"}},
+    {"id": "obs_help_4", "category": "友好帮助", "text": "你的披风破了，我这儿有针线。", "expected_direction": {"hostility": "low", "doubt": "low", "cooperation": "high", "trust": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive", "doubt_shift": "negative", "investigate": "negative"}},
+    {"id": "obs_help_5", "category": "友好帮助", "text": "门口那伙人我认识，我替你说一声，今晚不会有人来烦你。", "expected_direction": {"hostility": "low", "doubt": "low", "cooperation": "high", "trust": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive", "doubt_shift": "negative", "investigate": "negative"}},
+
+    {"id": "obs_plea_1", "category": "求助", "text": "我被人盯上了，能不能让我在你这里躲一晚上？", "expected_direction": {"hostility": "low", "danger": "low", "cooperation": "high", "trust": "high", "fondness_shift": "positive"}},
+    {"id": "obs_plea_2", "category": "求助", "text": "我妹妹病了，城里的大夫都不肯出诊，你能帮我想想办法吗？", "expected_direction": {"hostility": "low", "danger": "low", "cooperation": "high", "trust": "high", "fondness_shift": "positive"}},
+    {"id": "obs_plea_3", "category": "求助", "text": "我身上没钱了，能不能先赊一顿饭？", "expected_direction": {"hostility": "low", "danger": "low", "cooperation": "high", "trust": "high", "fondness_shift": "positive"}},
+    {"id": "obs_plea_4", "category": "求助", "text": "我迷路了，天太黑，能不能指我一条能走的路？", "expected_direction": {"hostility": "low", "danger": "low", "cooperation": "high", "trust": "high", "fondness_shift": "positive"}},
+
+    {"id": "obs_weak_1", "category": "示弱", "text": "我打不过他们，我承认。我只是想活着走出去。", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "fondness_shift": "positive"}},
+    {"id": "obs_weak_2", "category": "示弱", "text": "我手在抖，一路都是跑过来的。", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "fondness_shift": "positive"}},
+    {"id": "obs_weak_3", "category": "示弱", "text": "钱都给你，我什么都不要了，让我走就行。", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "fondness_shift": "positive"}},
+    {"id": "obs_weak_4", "category": "示弱", "text": "我认输。你要问什么我都答。", "expected_direction": {"hostility": "low", "danger": "low", "withdraw": "low", "confront": "low", "fondness_shift": "positive"}},
+
+    {"id": "obs_provoke_1", "category": "轻微挑衅", "text": "你这酒里是不是掺水了？喝着一股井水味。", "expected_direction": {"hostility": "high", "confront": "high", "doubt": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "doubt_shift": "positive", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative"}},
+    {"id": "obs_provoke_2", "category": "轻微挑衅", "text": "一个女人守这种地方，能镇得住谁？", "expected_direction": {"hostility": "high", "confront": "high", "doubt": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "doubt_shift": "positive", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative"}},
+    {"id": "obs_provoke_3", "category": "轻微挑衅", "text": "铸剑为犁的人，就是打不动了才这么说吧。", "expected_direction": {"hostility": "high", "confront": "high", "doubt": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "doubt_shift": "positive", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative"}},
+    {"id": "obs_provoke_4", "category": "轻微挑衅", "text": "你们这种人收钱办事，钱到不到位全看心情。", "expected_direction": {"hostility": "high", "confront": "high", "doubt": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "doubt_shift": "positive", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative"}},
+    {"id": "obs_provoke_5", "category": "轻微挑衅", "text": "这店里连个像样的客人都没有，生意够惨的。", "expected_direction": {"hostility": "high", "confront": "high", "doubt": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "doubt_shift": "positive", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative"}},
+
+    {"id": "obs_insult_1", "category": "严重辱骂", "text": "你们骑士团就是一帮满嘴谎话的贼。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative", "doubt_shift": "positive"}},
+    {"id": "obs_insult_2", "category": "严重辱骂", "text": "我往地上啐了一口。你这种人，死了也是活该。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative", "doubt_shift": "positive"}},
+    {"id": "obs_insult_3", "category": "严重辱骂", "text": "你们那位大团长，听说是个卖屁股爬上来的。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative", "doubt_shift": "positive"}},
+    {"id": "obs_insult_4", "category": "严重辱骂", "text": "你守的这条规矩，不过是给废物找的台阶。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative", "doubt_shift": "positive"}},
+    {"id": "obs_insult_5", "category": "严重辱骂", "text": "你连自己的名字都不敢说，还敢自称骑士？", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "respect_shift": "negative", "fondness_shift": "negative", "trust_shift": "negative", "doubt_shift": "positive"}},
+
+    {"id": "obs_threat_1", "category": "威胁", "text": "你要是不说，我就不客气了。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_threat_2", "category": "威胁", "text": "外面那几个人是我的人，我一句话就能把这儿拆了。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_threat_3", "category": "威胁", "text": "我知道你住哪儿。你最好想清楚。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_threat_4", "category": "威胁", "text": "你今天要是不松口，明天这店还开不开得成就难说了。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_threat_5", "category": "威胁", "text": "我也不想动粗，但你别逼我。", "expected_direction": {"hostility": "high", "confront": "high", "danger": "high", "withdraw": "high", "doubt": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+
+    {"id": "obs_attack_1", "category": "持械攻击", "text": "我抽出刀，告诉她不说就死在这儿。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_attack_2", "category": "持械攻击", "text": "我把匕首拍在桌上，刀尖朝着她。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_attack_3", "category": "持械攻击", "text": "我一步跨过去，手按在剑柄上。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+    {"id": "obs_attack_4", "category": "持械攻击", "text": "我先动了手，一拳打在她肩上。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "cooperation": "low", "trust": "low", "disclose": "low", "alert_shift": "positive"}},
+
+    {"id": "obs_bond_1", "category": "关系推进", "text": "这几晚多谢你。下次路过，我还来喝你这口酒。", "expected_direction": {"hostility": "low", "doubt": "low", "trust": "high", "disclose": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive"}},
+    {"id": "obs_bond_2", "category": "关系推进", "text": "我叫雷恩。你愿意告诉我你叫什么吗？", "expected_direction": {"hostility": "low", "doubt": "low", "trust": "high", "disclose": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive"}},
+    {"id": "obs_bond_3", "category": "关系推进", "text": "这地方你守了很多年吧？说说你自己。", "expected_direction": {"hostility": "low", "doubt": "low", "trust": "high", "disclose": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive"}},
+    {"id": "obs_bond_4", "category": "关系推进", "text": "不管别人怎么说，我觉得你做的事有道理。", "expected_direction": {"hostility": "low", "doubt": "low", "trust": "high", "disclose": "high", "trust_shift": "positive", "respect_shift": "positive", "fondness_shift": "positive"}},
+
+    {"id": "obs_secret_1", "category": "要求NPC泄密", "text": "灰鸦到底藏在哪？你一定知道，现在告诉我。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "confront": "high", "doubt": "high", "disclose": "low", "trust": "low", "investigate": "positive", "alert_shift": "positive", "goal_shift": "positive"}},
+    {"id": "obs_secret_2", "category": "要求NPC泄密", "text": "你们骑士团的密令写了什么？别跟我说你没看过。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "confront": "high", "doubt": "high", "disclose": "low", "trust": "low", "investigate": "positive", "alert_shift": "positive", "goal_shift": "positive"}},
+    {"id": "obs_secret_3", "category": "要求NPC泄密", "text": "把你知道的全说出来，一个字都不许留。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "confront": "high", "doubt": "high", "disclose": "low", "trust": "low", "investigate": "positive", "alert_shift": "positive", "goal_shift": "positive"}},
+    {"id": "obs_secret_4", "category": "要求NPC泄密", "text": "你上次跟那个戴兜帽的人说了什么？我要听原话。", "expected_direction": {"hostility": "high", "danger": "high", "withdraw": "high", "confront": "high", "doubt": "high", "disclose": "low", "trust": "low", "investigate": "positive", "alert_shift": "positive", "goal_shift": "positive"}},
+
+    {"id": "obs_exchange_1", "category": "真诚交换", "text": "我先说我的：我在替人送一封信，不知道里面写了什么。换你一句，你手上那封信又是谁的？", "expected_direction": {"doubt": "low", "cooperation": "high", "trust": "high", "disclose": "high", "trust_shift": "positive"}},
+    {"id": "obs_exchange_2", "category": "真诚交换", "text": "我不瞒你，我身上也有麻烦。你要是愿意说你的，我也说我的。", "expected_direction": {"doubt": "low", "cooperation": "high", "trust": "high", "disclose": "high", "trust_shift": "positive"}},
+    {"id": "obs_exchange_3", "category": "真诚交换", "text": "咱们换一句实话：你告诉我你在等谁，我告诉你我在躲谁。", "expected_direction": {"doubt": "low", "cooperation": "high", "trust": "high", "disclose": "high", "trust_shift": "positive"}},
+    {"id": "obs_exchange_4", "category": "真诚交换", "text": "我把我的事说了。现在轮到你——你为什么会一个人待在这儿？", "expected_direction": {"doubt": "low", "cooperation": "high", "trust": "high", "disclose": "high", "trust_shift": "positive"}},
+    {"id": "obs_exchange_5", "category": "真诚交换", "text": "这事我只跟你一个人说。你也跟我说一句真的，行吗？", "expected_direction": {"doubt": "low", "cooperation": "high", "trust": "high", "disclose": "high", "trust_shift": "positive"}},
+    {"id": "obs_exchange_6", "category": "真诚交换", "text": "我不问你信里写了什么。我只问你，你自己想不想把这封信送出去？", "expected_direction": {"doubt": "low", "cooperation": "high", "trust": "high", "disclose": "high", "trust_shift": "positive"}},
+
+    {"id": "obs_anomaly_1", "category": "异常线索", "text": "你袖口上有血，而且不是今天的。", "expected_direction": {"hostility": "low", "danger": "low", "investigate": "positive", "alert_shift": "positive"}},
+    {"id": "obs_anomaly_2", "category": "异常线索", "text": "这店里有两把椅子是新搬来的，摆在没人坐的角落。", "expected_direction": {"hostility": "low", "danger": "low", "investigate": "positive", "alert_shift": "positive"}},
+    {"id": "obs_anomaly_3", "category": "异常线索", "text": "你刚才看门口看了三次。是在等人吗？", "expected_direction": {"hostility": "low", "danger": "low", "investigate": "positive", "alert_shift": "positive"}},
+    {"id": "obs_anomaly_4", "category": "异常线索", "text": "柜台下面压着一张撕了一半的告示，上面有你的名字。", "expected_direction": {"hostility": "low", "danger": "low", "investigate": "positive", "alert_shift": "positive"}},
+
+    {"id": "obs_respect_1", "category": "尊重她的规矩", "text": "我不催你。你什么时候想说，什么时候说。", "expected_direction": {"hostility": "low", "cooperation": "high", "respect_shift": "positive", "fondness_shift": "positive"}},
+    {"id": "obs_respect_2", "category": "尊重她的规矩", "text": "这是你的店，规矩你定。我在门口等就行。", "expected_direction": {"hostility": "low", "cooperation": "high", "respect_shift": "positive", "fondness_shift": "positive"}},
+    {"id": "obs_respect_3", "category": "尊重她的规矩", "text": "你说了不算数的事就别说了，我不逼人。", "expected_direction": {"hostility": "low", "cooperation": "high", "respect_shift": "positive", "fondness_shift": "positive"}},
+    {"id": "obs_respect_4", "category": "尊重她的规矩", "text": "你要是不方便说，那就不说。我另想办法。", "expected_direction": {"hostility": "low", "cooperation": "high", "respect_shift": "positive", "fondness_shift": "positive"}},
+
+    {"id": "obs_crow_1", "category": "灰鸦线索", "text": "我在东门看见一个人，走路的样子跟你说的灰鸦很像。", "expected_direction": {"hostility": "low", "doubt": "low", "confront": "high", "investigate": "positive", "goal_shift": "positive"}},
+    {"id": "obs_crow_2", "category": "灰鸦线索", "text": "有人告诉我灰鸦上个月在西边出现过，但那人自己也不确定。", "expected_direction": {"hostility": "low", "doubt": "low", "confront": "high", "investigate": "positive", "goal_shift": "positive"}},
+    {"id": "obs_crow_3", "category": "灰鸦线索", "text": "灰鸦手上有块旧疤，是从左边脸颊一直划到下巴的。", "expected_direction": {"hostility": "low", "doubt": "low", "confront": "high", "investigate": "positive", "goal_shift": "positive"}},
+    {"id": "obs_crow_4", "category": "灰鸦线索", "text": "我听说灰鸦换了名字，现在用的是北边口音。", "expected_direction": {"hostility": "low", "doubt": "low", "confront": "high", "investigate": "positive", "goal_shift": "positive"}},
+    {"id": "obs_crow_5", "category": "灰鸦线索", "text": "三天前有人在河对岸的废磨坊里生过火，灰鸦可能在那儿待过。", "expected_direction": {"hostility": "low", "doubt": "low", "confront": "high", "investigate": "positive", "goal_shift": "positive"}},
+    {"id": "obs_crow_6", "category": "灰鸦线索", "text": "我在赏金榜上看见灰鸦的名字了，赏格翻了一倍。", "expected_direction": {"hostility": "low", "doubt": "low", "confront": "high", "investigate": "positive", "goal_shift": "positive"}}
+  ]
+}

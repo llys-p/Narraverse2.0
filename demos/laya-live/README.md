@@ -178,16 +178,32 @@ LAYA_DEVICE=cuda ./.venv-cuda/Scripts/python.exe laya_bridge.py serve
 | GET | `/demo` | 演示页面 |
 | GET | `/health` | 引擎、模型、设备、state 预算、policy 状态、ticks |
 | GET | `/config` | 当前决策模型（脱敏） |
-| POST | `/decide` | 只跑 Laya：决策信号 + Policy 裁决 + 状态建议 |
-| POST | `/narrate` | 跑 Laya 再让 LLM 出台词；**省略 `behavior` 会自动先跑 `decide`** |
+| POST | `/decide` | 只跑 Laya：决策信号 + Policy 裁决 + 状态建议。**只 propose，不写历史** |
+| POST | `/commit` | 确认本轮被上游采纳 → 才写入决策历史（`behavior=null` 的轮次会被拒） |
+| POST | `/narrate` | 跑 Laya 再让 LLM 出台词；省略 `behavior` 会自动先跑 `decide` |
 | POST | `/world` | 世界事件推进（独立 tick） |
-| GET | `/history` | 决策历史 |
-| POST | `/reset` | 清空进程内历史 |
+| GET | `/history` | 决策历史（按 `session_id` / `actor_id` 分桶） |
+| POST | `/reset` | 清历史。给 `session_id` 只清那一桶；都不给才是全清 |
+
+### 决策历史：三道门 + 分桶
+
+历史**不再**是一个进程级全局列表（那会让两个 NPC / 两个冒险 / 两个浏览器会话共用同一条，
+且完全静默）。现在按 `(session_id, actor_id)` 分桶，且必须过三道门：
+
+```
+proposed  →  /decide 只登记候选（_PENDING），不写历史
+accepted  →  上游（Story / Director）确认可用
+committed →  POST /commit 才真正写进桶   ← 只有这一步会写
+```
+
+**`behavior=null` 的轮次永远无法提交** —— 没有行为就没有可确认的事实。
+调用方**必须传** `session_id` + `actor_id`，否则历史会退到 `default` 桶
+（响应里的 `turn.history_isolation=false` 会明确报出来，不静默）。
 
 ```bash
 curl -s http://127.0.0.1:8130/narrate \
   -H 'Content-Type: application/json' \
-  -d '{"player_input":"我是圣殿派来的，带了一封火漆印的信。"}'
+  -d '{"player_input":"我是圣殿派来的，带了一封火漆印的信。","session_id":"s1","actor_id":"莉亚"}'
 ```
 
 关键返回字段：
@@ -197,10 +213,20 @@ curl -s http://127.0.0.1:8130/narrate \
 | `decision_signals` | 9 个信号（`signal` / `label` / `kind` / `value` / `range`） |
 | `policy` | `behavior` / `source` / `reasons` / `choice_baseline` / `confidence_level` / `fallback` |
 | `decision.behavior` | 最终行为 + `choice_argmax` + `gated_baseline` + 可选 `gated_by` |
+| `decision.awaiting_upstream` | **`true` = 本轮判为歧义，桥不给行为**，交上游裁决 |
+| `decision.behavior_null_reason` | 为什么没给行为（歧义是正常裁决，不是故障） |
+| `decision.choice_baseline.adopted` | choice argmax 是否被采纳（歧义轮次恒为 `false`） |
+| `turn.turn_id` / `turn.history_isolation` | 提交要用的编号 / 历史是否真隔离 |
+| `history_gate` | 本轮历史处于哪道门（`proposed`） |
 | `state_budget` | state token 数 / 余量 / **是否溢出** |
 | `proposed_deltas` | 状态增量**建议**（不是 Actor State 真值） |
 | `tick` | `npc` 或 `world` |
 | `input_key` / `input_warning` | 本轮吃到的输入键 / 输入为空告警 |
+
+★ **`behavior=null` 的含义**：Laya 判出「没有哪个信号有把握」时，桥**不代选行为**，
+`/narrate` 也**不生成台词**（返回 `awaiting_upstream`）。前端显示
+「Laya 不确定 · 交由上游模型裁决」。旧实现在这里偷偷用 choice argmax 兜底，
+于是「其实没人拍板」在界面上和「正常决策」长得一样 —— 那是**假交接**。
 
 ★ `proposed_deltas` 是 proposal。正式链路必须是
 **Laya Proposal → 后端 Validate → State Transition → Commit**；
@@ -214,16 +240,47 @@ curl -s http://127.0.0.1:8130/narrate \
 PY=.venv/Scripts/python.exe          # 一律用项目自带 venv，不要裸 python
 
 $PY laya_bridge.py qcheck       # ★ 改配置后必跑：token 预算 / 温度桶 / state 溢出
-$PY laya_bridge.py signaltest   # ★★ 主回归：48 用例 / 99 条决策方向断言
+$PY laya_bridge.py signalmetrics # ★★ 主实验：逐 signal 判别力 + 上下文响应 + A/B/C/D/R 分级
+$PY laya_bridge.py signaltest   # 旧口径回归（48 用例 / 99 断言，legacy 对照用）
 $PY laya_bridge.py ckptcompare  # 检查点同条件对照（两个进程各跑一次 signaltest）
 $PY laya_bridge.py personatest  # 人格 A/B 对照（LAYA_PERSONA_STYLE=polarity 换写法）
 $PY laya_bridge.py bench        # 性能基准（CPU / GPU 各跑一次）
 $PY laya_bridge.py selftest     # 不起模型，验证 fallback 引擎
 $PY laya_bridge.py llmtest      # 验证密钥与模型 id
 $PY laya_bridge.py langtest     # 旧版 4 句极端输入区分度测试
+
+$PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶 + 提交门控，需先起桥）
 ```
 
-诊断子集（结果单独存放，不影响正式对照）：`LAYA_QSET=signals`、`LAYA_CASES=id1,id2`。
+诊断子集（结果单独存放，不影响正式对照）：
+`LAYA_QSET=signals`、`LAYA_CASES=id1,id2`、`LAYA_SETS=observable,contextual`（排除隐藏真相组）。
+
+### `signalmetrics`：为什么主结论必须是逐 signal
+
+「方向准确率 53.1%」这个数**不能用来判断能不能用** —— 它把 15 个维度揉成一个数。
+真正有行动价值的是逐 signal 的表（`tests/signal_metrics.json`）。当前结论：
+
+| kind | AUC 均值 | 说明 |
+|---|---|---|
+| `level`（score，0~4） | **0.755** | 7 个里 4 个达 A 级，可作行为输入 |
+| `prob`（noul，0~1） | **0.621** | 8 个里 0 个 A 级，且全部挤在 0.5 附近、最佳阈值落在 0.35~0.53 |
+
+**noul 分支的输出缺少动态范围**（与上游 issue #156 一致）——
+所以它**不能**当概率用。这正是任务清单里「不把 noul 数值称为真实概率」的本机数据依据。
+
+分级：`N` 样本不足 ｜ `A` CI 下界>0.5 且 AUC≥0.70 ｜ `B` CI 下界>0.5 且 AUC≥0.60 ｜
+`C` AUC≥0.55 但区间不稳（只能当合取项）｜ `R` **稳定反向**（比噪声更危险）｜ `D` AUC<0.55。
+最终等级 = `min(判别, 上下文)`，规则见 `grade_signal()` / `grade_context()` 的 docstring。
+
+**两个必须知道的限制**：
+
+1. bootstrap CI 只覆盖**单次运行内**的重采样方差。实测三次同条件独立运行，
+   AUC 中位极差 0.013、**最大 0.073**（`doubt_shift` / `goal_shift`）。
+   → **任何阈值都不可能靠单次实验定下来。**
+2. 8 个 noul 信号里没有一个的上下文效应超过噪声底；唯一测到的 `investigate`
+   是**反向**的（−0.151，9/10 配对下降）。它只能反向使用，且须先查清是
+   「用例期望写反了」还是「信号语义相反」。
+
 
 `qcheck` 值得单独说：Laya 的 `build_sequence` 对选项有 48 token 上限，且所有选项必须塞进
 `head_max_len`，塞不下会**静默压缩**；state 超预算会被 `st[:room]` **静默截断**
@@ -239,8 +296,9 @@ state 塞太满，都会在无声无息中失效。
 | `laya_bridge.py` | HTTP 桥 + 决策编排 + CLI 自检（纯标准库） |
 | `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals` |
 | `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent |
-| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 是第二轮全部结论与架构判定，必读** |
-| `tests/` | 实验证据（`regression_cases.json` 48 用例 / `thresholds.json` 逐用例全维度观测 / `personality_personas.json` / 4 个结果 JSON）。**这些是证据，要提交** |
+| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级** |
+| `tests/cases/` | **三组用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率） |
+| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py`）。**这些是证据，要提交** |
 | `启动Laya桥.bat` | Windows 一键启动（**GBK 编码**，由 `_gen_bat.py` 生成，勿手改） |
 | `.env.example` | 配置样例，**由 `_gen_env_example.py` 生成，手改会被下次生成覆盖** |
 | `.gitignore` / `.gitattributes` | 排除 `.env`、虚拟环境、检查点权重；`.bat` 标为 binary 防止换行改写 |
