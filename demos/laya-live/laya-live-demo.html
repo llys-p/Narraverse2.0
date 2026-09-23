@@ -112,6 +112,11 @@
   .msg.me .bubble{background:#1b2333;border:1px solid #2a3550;color:#c8d3e8;border-bottom-right-radius:4px}
   .msg.npc .bubble{background:linear-gradient(180deg,rgba(124,92,255,.09),rgba(124,92,255,.03));
     border:1px solid rgba(167,139,250,.28);color:#fff;border-bottom-left-radius:4px}
+  /* 系统裁决：Laya 不确定时的显式中断态。刻意**不像** NPC 气泡 ——
+     不能让人误以为「这也是一句正常台词」。 */
+  .msg.sys .bubble{max-width:100%;background:rgba(245,158,11,.07);border:1px dashed rgba(245,158,11,.42);
+    color:#fcd9a0;border-radius:10px;font-size:13px}
+  .who.sys .mk{background:rgba(245,158,11,.18);color:#fcd9a0}
   .deco{margin-top:6px;font-size:10.5px;color:var(--dim2);font-family:var(--fm);display:flex;flex-wrap:wrap;gap:6px 13px}
   .deco b{color:var(--laya);font-weight:600}
   .deco .src-llm{color:var(--story)} .deco .src-pool{color:var(--dim2)}
@@ -311,6 +316,17 @@ const Q = new URLSearchParams(location.search);
 let BRIDGE = Q.get('bridge') || localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130';
 let CFG = null, actor = null, worldState = null, history = [], turn = 0, useLLM = true, busy = false;
 
+/* ★ 历史分桶（Phase3-Task2）：session_id 标识一次冒险 / 一个浏览器会话，
+   actor_id 标识当前 NPC。不传这两个字段，桥会把历史退到 default 桶 ——
+   换 NPC、开新局都会读到上一条，而且是**静默**的。
+   演示里也必须传，否则这次演示的结果不能当作「隔离有效」的证据。 */
+const SESSION_ID_INIT = Q.get('session') || ('demo-' + Math.random().toString(36).slice(2, 8));
+let SESSION_ID = SESSION_ID_INIT;
+function newSessionId(){ return 'demo-' + Math.random().toString(36).slice(2, 8); }
+function envelope(extra){
+  return Object.assign({ session_id: SESSION_ID, actor_id: actor && actor.name }, extra || {});
+}
+
 const $ = id => document.getElementById(id);
 const chat = $('chat'), panel = $('panel');
 
@@ -384,9 +400,10 @@ function renderActor(){
 /* ---------- 渲染：对话 ---------- */
 function pushMsg(side, who, text, deco){
   const el = document.createElement('div');
-  el.className = 'msg ' + (side==='me' ? 'me' : '');
-  const mk = side==='me' ? '你' : '她';
-  el.innerHTML = `<div class="who ${side==='me'?'player':'npc'}"><span class="mk">${mk}</span>${who}</div>
+  const cls = side === 'me' ? 'me' : (side === 'sys' ? 'sys' : 'npc');
+  el.className = 'msg ' + cls;
+  const mk = side === 'me' ? '你' : (side === 'sys' ? '!' : '她');
+  el.innerHTML = `<div class="who ${cls === 'me' ? 'player' : cls}"><span class="mk">${mk}</span>${who}</div>
     <div class="bubble">${text}</div>${deco||''}`;
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
@@ -657,9 +674,9 @@ async function send(text){
   const t0 = performance.now();
 
   try{
-    const out = await api('/decide', {
+    const out = await api('/decide', envelope({
       actor, world_state: worldState, player_input: text, history: history.slice(-8)
-    });
+    }));
     if(out.error){ throw new Error(out.error); }
 
     // 1) 应用状态建议（proposed_deltas 是新字段名，deltas 仅作旧后端兼容）
@@ -673,21 +690,55 @@ async function send(text){
     renderPanel(out);
     // 标签把「谁裁决的」带出来：policy 命中 / 回落 choice baseline / 判为歧义。
     // 只写「Laya · 22 题」看不出这一轮到底是谁定的行为。
-    const srcTag = {policy:'Policy', choice_baseline:'choice 兜底', ambiguous:'歧义'}[out.policy && out.policy.source] || '—';
+    const srcTag = {policy:'Policy', choice_baseline:'choice 兜底', ambiguous:'歧义 · 无行为'}[out.policy && out.policy.source] || '—';
     $('panelTag').textContent = (out.engine==='laya'?'Laya':'回退') + ' · ' + out.question_count + ' 题 · ' + srcTag;
     $('stQ').textContent = out.question_count;
     $('stLat').textContent = out.latency_ms.toFixed(1) + ' ms';
     $('stRoute').textContent = out.routing ? (out.routing.model||'—') : '—';
 
     // 3) 台词
+    // ★★ Phase3-Task1：behavior=null 时**不生成台词**，也不写 NPC 历史。
+    //    旧实现在这里 `const b = out.decision.behavior || {id:null}` 之后就不再管，
+    //    而桥内早已用 choice argmax 悄悄补了一个行为 —— 于是「其实没人拍板」
+    //    在界面上和「正常决策」长得一模一样。现在必须显式可见。
     const b = (out.decision.behavior) || {id:null};
+    const awaiting = !!(out.decision && out.decision.awaiting_upstream);
+    if(awaiting){
+      dropPending();
+      const cb = out.decision.choice_baseline || {};
+      pushMsg('sys', 'Laya 不确定 · 交由上游模型裁决',
+        esc(out.decision.behavior_null_reason || '本轮判为歧义，桥不代选行为，也不生成台词。'),
+        `<div class="deco">
+           <span>behavior = <b>null</b></span>
+           <span>fallback = ${esc(String(out.decision.fallback || '—'))}</span>
+           <span>source = ${esc(String(out.decision.source || '—'))}</span>
+           <span>choice 首选 ${esc(cb.name || '—')}（<b>未被采纳</b>，仅审计）</span>
+           <span>${out.question_count} 题 / ${out.latency_ms.toFixed(1)}ms</span>
+           <span>turn ${esc(String((out.turn||{}).turn_id || '—'))}</span>
+         </div>`);
+      // 只记玩家一句：这一轮没有 NPC 行为，不能凭空写一条 NPC 历史。
+      history.push({role:'player', text, text_en: out.player_input_en || text});
+      return;
+    }
     let line = null;
     if(b.id){
-      const nr = await api('/narrate', {
+      const nr = await api('/narrate', envelope({
         actor, behavior:{id:b.id}, player_input:text, history:history.slice(-8),
-        state_line: out.state_line, use_llm: useLLM
-      }, 70000);
+        state_line: out.state_line, use_llm: useLLM,
+        turn_id: (out.turn||{}).turn_id
+      }), 70000);
       line = nr;
+      // ★ 提交门（Phase3-Task3）：上游（这里就是 Story Agent）真的按这个行为写出台词了，
+      //   才算这轮决策「被采纳」→ 才允许写进决策历史。
+      //   没被采纳就**不提交**：没采纳的决策不该影响下一轮 state。
+      //   注意这是 Demo 的简化语义 —— 正式链路里 /commit 的调用方应是 Director，
+      //   而不是「写了台词」这个前端事件。
+      if(nr && !nr.error){
+        try{
+          const c = await api('/commit', {turn_id: (out.turn||{}).turn_id});
+          out.history_gate = {stage: c.ok ? 'committed' : 'rejected', committed: !!c.ok, note: c.note};
+        }catch(e){ /* 提交失败不影响本轮展示，只是历史不会被写入 */ }
+      }
     }
     dropPending();
     const srcLabel = line && line.source==='llm' ? 'LLM 生成' : '台词池';
@@ -842,6 +893,12 @@ $('inp').addEventListener('keydown', e=>{
 $('btnWorld').onclick = worldTick;
 $('btnSettings').onclick = openSettings;
 $('btnReset').onclick = ()=>{
+  // ★ 开新局必须连**服务端**这个 session 的历史桶一起清（Phase3-Task2）。
+  //   只清前端 history 不够：桥里那个桶还在，下一轮 state 里会继续带上上一局的
+  //   决策记录，而且完全静默。清完再换一个新 session id（新冒险 = 新桶）。
+  const oldSession = SESSION_ID;
+  SESSION_ID = newSessionId();
+  api('/reset', {session_id: oldSession}).catch(()=>{});
   history = []; turn = 0; $('stTurn').textContent = 0;
   chat.innerHTML = '<div class="msg"><div class="who npc"><span class="mk">·</span>系统</div><div class="bubble" style="background:none;border:1px dashed var(--line2);color:var(--dim);font-size:12.5px">重开一局。酒馆还在那里，这次她会怎么看你，取决于你说什么。</div></div>';
   $('log').innerHTML = '<tr><td colspan="5" style="color:var(--dim2);padding:12px 9px">等待第一轮…</td></tr>';

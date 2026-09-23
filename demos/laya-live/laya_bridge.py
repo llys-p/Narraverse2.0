@@ -79,6 +79,7 @@ import inspect
 import subprocess
 import urllib.request
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -916,6 +917,30 @@ def assess_ambiguity(values):
                          "band": [mid_lo, mid_hi], "margin": margin}, info]
 
 
+def _why_text(reasons):
+    """把 reasons 压成一句人能读的话。
+
+    ★ 为什么必须有这个函数（实测踩到，2026-09-23）：
+      reasons 有**三种形状**混在一起 ——
+        · {why: "...", signals: [...]}   规则命中 / 歧义判据
+        · "纯文本"                       旧版遗留
+        · [[k, v], ...]                  嵌套明细
+      而 assess_ambiguity() 返回的是一个**字典列表**（不是字符串列表）。
+      直接 `"；".join(ambiguity_reasons)` 会在歧义轮次抛
+      `TypeError: sequence item 0: expected str instance, dict found`
+      —— 也就是说：**越该进歧义分支的时候越会崩**，正常轮次反而看不出来。
+    """
+    out = []
+    for r in reasons or []:
+        if isinstance(r, dict):
+            out.append(str(r.get("why") or ""))
+        elif isinstance(r, (list, tuple)):
+            out.append(_why_text(r))
+        else:
+            out.append(str(r))
+    return "；".join([x for x in out if x])
+
+
 def policy_resolve(values, choice_baseline):
     """Decision Signals → Behavior Candidate，输出必须可审计。
 
@@ -923,10 +948,16 @@ def policy_resolve(values, choice_baseline):
     source ∈ {"policy", "choice_baseline", "ambiguous"}
 
     求值顺序（★ 改动过，别改回去）：
-        1. policy.enabled=false      → 一律回落 choice baseline（当前默认状态）
+        1. policy.enabled=false      → 一律回落 choice baseline
         2. 逐条规则 {when: 阈值合取} → 命中即 source=policy
-        3. 无规则命中且判为歧义       → source=ambiguous，fallback=story_agent，不硬选
+        3. 无规则命中且判为歧义       → source=ambiguous，**behavior=None**，
+                                       fallback=story_agent —— 真的不选，交上游
         4. 其余                       → source=choice_baseline
+
+    ★ Phase3-Task1（2026-09-23）：第 3 条以前返回的是 choice_baseline，
+      只额外标了个 fallback=story_agent。而 /narrate 与前端都只认 behavior，
+      于是「交回上游」在实现上不成立 —— 歧义轮次照样产出具体行为并生成台词。
+      现在 behavior 为 None，`decision.behavior` 就是 null，上游必须自己决定。
     """
     pol = CFG.get("policy") or {}
     level, amb_reasons = assess_ambiguity(values)
@@ -951,10 +982,13 @@ def policy_resolve(values, choice_baseline):
                     "fallback": None}
 
     if level == "ambiguous":
-        return {"behavior": choice_baseline, "source": "ambiguous",
+        return {"behavior": None, "source": "ambiguous",
                 "reasons": amb_reasons, "choice_baseline": choice_baseline,
                 "confidence_level": level, "ambiguity_reasons": amb_reasons,
-                "fallback": "story_agent"}      # ★ 交 Story/Director，不硬选
+                "fallback": "story_agent",
+                # ★ 把「候选但未采纳」显式写出来，免得下游把 choice_baseline 字段误当成结果
+                "note": ("判为歧义 → 不选行为（behavior=null），交 Story/Director。"
+                         "choice_baseline 只是审计信息，**未被采纳**，也不得写入 Decision History。")}
 
     return {"behavior": choice_baseline, "source": "choice_baseline",
             "reasons": [{"why": "没有规则命中，回落 choice baseline"}],
@@ -1445,8 +1479,11 @@ def state_line(actor):
 # ==========================================================================
 # 7. 决策主流程
 # ==========================================================================
-# 桥内累积的结构化决策历史（供不显式传 decision_history 的客户端用）
-_DECISION_HISTORY = []
+# ★ 已删除：`_DECISION_HISTORY`（进程级全局滚动窗口）。
+#   它让两个 NPC / 两个冒险 / 两个浏览器会话共用同一条历史，且完全静默。
+#   实测复现：同一句台词在 live（HTTP 层累加）与 CLI 直调（不累加）下行为不同。
+#   替代品见下面 §7.5 的 _HISTORY_BUCKETS（按 (session_id, actor_id) 分桶 + 提交门控）。
+#   如果哪里还引用到 _DECISION_HISTORY，那是漏改 —— 会直接 NameError，不静默。
 
 # 检查点预算缓存：{模型名: (max_len, head_max_len, tokenizer)}
 _BUDGET_CACHE = {}
@@ -1527,9 +1564,106 @@ def payload_text(payload):
     return (payload.get("player_input") or payload.get("message") or "").strip()
 
 
+# ==========================================================================
+# 决策历史：按 (session_id, actor_id) 分桶 + 提交门控
+# ==========================================================================
+# 为什么必须改（Phase3-Task2/Task3，2026-09-23）：
+#   旧实现是 `_DECISION_HISTORY = []` 一个进程级全局列表 ——
+#   两个 NPC、两个冒险、两个浏览器会话共用同一条历史。实测已复现：
+#   同一句台词在 live（HTTP 层累加历史）与 CLI 直调（不累加）下得到不同行为。
+#   多角色场景下，B 的 state_doc 里会出现 A 的历史，而这是**静默**的。
+#
+# 三道门（Task3）：
+#   proposed  —— /decide 产出，只登记在 _PENDING，**不进历史**
+#   accepted  —— 上游（本 Demo 里是 Story Agent 真的写出台词）确认可用
+#   committed —— /commit 明确提交，**只有这一步才写进桶**
+#   ambiguous / behavior=null 的轮次**永远无法提交**：没有行为就没有可确认的事实。
+_HISTORY_BUCKETS = {}      # (session_id, actor_id) -> [{"type","summary"}, ...]
+_HISTORY_MAX = 12          # 每桶保留条数（每轮 2 条：player_* + npc_*）
+_TURN_SEQ = {}             # (session_id, actor_id) -> 已发号数
+_PENDING = {}              # turn_id -> {"session","actor","behavior","intent","entries","decision_source"}
+
+
+def bucket_key(session_id, actor_id):
+    return (str(session_id or "default"), str(actor_id or "default"))
+
+
+def history_for(session_id, actor_id):
+    """取某个 (session, actor) 已提交的历史（副本）。"""
+    return list(_HISTORY_BUCKETS.get(bucket_key(session_id, actor_id), []))
+
+
+def next_turn_id(session_id, actor_id):
+    k = bucket_key(session_id, actor_id)
+    _TURN_SEQ[k] = _TURN_SEQ.get(k, 0) + 1
+    return "%s/%s#%d" % (k[0], k[1], _TURN_SEQ[k])
+
+
+def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source):
+    """登记一个待确认的决策。**不写历史**。"""
+    _PENDING[turn_id] = {
+        "session": str(session_id or "default"), "actor": str(actor_id or "default"),
+        "behavior": behavior_id, "intent": intent_id, "source": source,
+        "entries": decision_history_entries(intent_id, behavior_id),
+    }
+    # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
+    if len(_PENDING) > 200:
+        for k in list(_PENDING)[:100]:
+            _PENDING.pop(k, None)
+    return _PENDING[turn_id]
+
+
+def commit_turn(turn_id):
+    """把某轮决策标记为 committed 并写入对应桶。返回 (ok, note)。"""
+    p = _PENDING.get(turn_id)
+    if p is None:
+        return False, "未知 turn_id（未被 propose 过，或已被提交/淘汰）"
+    if not p.get("behavior"):
+        # ambiguous 轮次没有行为 —— 没有可确认的事实，不许进历史
+        return False, "该轮没有行为（ambiguous / behavior=null），不是已确认事实，拒绝写入历史"
+    k = bucket_key(p["session"], p["actor"])
+    bucket = _HISTORY_BUCKETS.setdefault(k, [])
+    bucket.extend(p["entries"])
+    del bucket[:-_HISTORY_MAX]
+    _PENDING.pop(turn_id, None)
+    return True, "已提交，该桶现有 %d 条" % len(bucket)
+
+
+def reset_history(session_id=None, actor_id=None):
+    """清历史。三个参数都不给 = 全清；给 session = 清该 session 下所有 actor。"""
+    hit = []
+    for k in list(_HISTORY_BUCKETS):
+        if session_id is not None and k[0] != str(session_id):
+            continue
+        if actor_id is not None and k[1] != str(actor_id):
+            continue
+        _HISTORY_BUCKETS.pop(k, None)
+        hit.append("%s/%s" % k)
+    for k in list(_TURN_SEQ):
+        if (session_id is None or k[0] == str(session_id)) and (actor_id is None or k[1] == str(actor_id)):
+            _TURN_SEQ.pop(k, None)
+    for tid, p in list(_PENDING.items()):
+        if (session_id is None or p["session"] == str(session_id)) and \
+           (actor_id is None or p["actor"] == str(actor_id)):
+            _PENDING.pop(tid, None)
+    # 注意：不在这里清 `_HISTORY`（HTTP 层的人读展示日志）。那是展示用滚动窗口，
+    # 跟 Laya 读的历史是两码事 —— 混在一起清，会出现「桶清了但展示还在」的假象。
+    return hit
+
+
 def decide(payload):
     actor = payload.get("actor") or CFG["actor"]
     history = payload.get("history") or []
+    # ★ 历史分桶键（Phase3-Task2）：不传就退到 "default"，但会**报出来**，
+    #   不让调用方以为自己在用隔离的历史。
+    session_id = payload.get("session_id") or "default"
+    actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
+    turn_id = next_turn_id(session_id, actor_id)
+    # ★ 是否真的隔离（Phase3-Task2）：只有调用方显式传了 session_id **和** actor 标识才算。
+    #   退到 default 桶时不报错（单角色 Demo 必须能用），但要在本轮输出里**标出来**，
+    #   否则会有人把「多角色共用一条历史」的演示结果当成隔离证据。
+    history_isolated = bool(payload.get("session_id")
+                            and (payload.get("actor_id") or (actor or {}).get("name")))
     # ★ 键名陷阱（2026-09-23 实测踩到，别再踩）：
     #   /decide 读的是 `player_input`，但直觉和 README 里的 curl 示例都写成 `message`。
     #   旧实现对未知键**静默忽略**：传 {"message": "刀抵在你喉咙上"} 会得到「空玩家输入」，
@@ -1562,7 +1696,7 @@ def decide(payload):
         player_input_en, xlate_src = translate_to_en(player_input)
         xlate_ms = (time.perf_counter() - tx0) * 1000
 
-    decision_history = build_decision_history(payload, _DECISION_HISTORY)
+    decision_history = build_decision_history(payload, history_for(session_id, actor_id))
 
     state_doc = build_state_doc(actor, player_input, history, CFG.get("scene"), world_state,
                                 player_input_en=player_input_en,
@@ -1620,9 +1754,22 @@ def decide(payload):
     signal_rows, signal_values = signal_snapshot(answers)
     policy = policy_resolve(signal_values, choice_argmax)
 
-    final_id = policy.get("behavior") or choice_argmax
-    bh = next((b for b in CFG["behaviors"] if b["id"] == final_id), None)
-    if bh is None:
+    # ★ 最终行为的取值规则（Phase3-Task1 后）：
+    #   · source=ambiguous → **不给行为**（behavior=None），由上游 Story/Director 决定。
+    #     这里绝不能用 `or choice_argmax` 兜底 —— 那正是被修掉的假交接：
+    #     旧代码 final_id = policy.get("behavior") or choice_argmax，
+    #     而歧义分支的 behavior 恰好就是 choice_baseline，于是"不硬选"变成了"硬选"。
+    #   · 其余情况 policy.behavior 一定非空（规则命中 或 choice_baseline）。
+    #   · 只有「policy 给出不在 behaviors 里的行为名」这一种错配才回落 choice，并写明原因。
+    final_id = policy.get("behavior")
+    if final_id is None and policy.get("source") != "ambiguous":
+        # 不该发生：policy 既没给行为、又不是歧义。显式记下来，别静默兜底。
+        policy = dict(policy, behavior=choice_argmax, source="choice_baseline",
+                      reasons=[{"why": "policy 未给出行为且 source 不是 ambiguous → 回落 choice baseline"
+                                "（配置异常，值得查）"}])
+        final_id = choice_argmax
+    bh = next((b for b in CFG["behaviors"] if b["id"] == final_id), None) if final_id else None
+    if final_id is not None and bh is None:
         # policy 配错行为名时不要静默挑一个 —— 记下原因再回落
         policy = dict(policy, behavior=choice_argmax, source="choice_baseline",
                       reasons=[{"why": "policy 给出的行为不在 behaviors 里，已回落 choice baseline",
@@ -1645,6 +1792,19 @@ def decide(payload):
 
     conf = answers.get("npc_behavior", {}).get("confidence")
     prob = answers.get("npc_behavior", {}).get("_probabilities")
+
+    # ★ behavior=null 的原因（Phase3-Task1）：必须能用一句话说清「为什么没给行为」。
+    #   上游拿到一个裸 null 只能猜；而且歧义是**正常裁决**，不是故障，两者要分开。
+    if bh is not None:
+        behavior_null_reason = None
+    elif policy.get("source") == "ambiguous":
+        behavior_null_reason = ("判为歧义 → 本桥不选行为，交 Story / Director 裁决。依据：%s"
+                                % (_why_text(policy.get("ambiguity_reasons")
+                                             or policy.get("reasons")) or "（无明细）"))
+    else:
+        behavior_null_reason = ("policy 未产出行为，且 source 不是 ambiguous —— 属配置异常"
+                                "（查 signals / policy 规则），本轮无行为，同样不许代选")
+
     return {
         "engine": engine_used,
         "engine_detail": ENGINE.detail if engine_used == "laya" else (ENGINE.detail or "未安装 laya"),
@@ -1683,6 +1843,21 @@ def decide(payload):
                      "浏览器端 applyDeltas() 只是本 Demo 的演示手段，**不是状态权威**。"),
         },
         "director": director,
+        # ★ 本轮身份（Phase3-Task2/Task3）：/commit 要用 turn_id；history_isolation=false
+        #   表示调用方没传 session_id / actor_id，历史退到了 default 桶 —— 单角色演示可用，
+        #   但**不能**当隔离证据用。history_gate 说明本轮历史处于哪道门。
+        "turn": {
+            "session_id": session_id,
+            "actor_id": actor_id,
+            "turn_id": turn_id,
+            "history_bucket": "%s/%s" % (session_id, actor_id),
+            "history_isolation": history_isolated,
+            "history_bucket_entries": len(history_for(session_id, actor_id)),
+            "note": ("历史按 (session_id, actor_id) 隔离。"
+                     if history_isolated else
+                     "未传 session_id / actor_id → 历史落在 default 桶，多角色会互相污染。"
+                     "单角色 Demo 可用；并发 / 多 NPC 必须先传这两个字段。"),
+        },
         "decision": {
             # 最终行为由 Policy Resolver 决定；choice 只是 baseline
             "behavior": None if not bh else {
@@ -1703,11 +1878,27 @@ def decide(payload):
                 "conflict": bool(policy.get("source") == "policy"
                                  and policy.get("behavior") != choice_argmax),
             },
+            # ★ Phase3-Task1：behavior=null 不再是「异常」，而是**明确裁决**。
+            #   这一层字段是给上游 Story / Director 的唯一接口：
+            #     behavior_is_null=true + fallback="story_agent" → 请上游自己决定
+            #   choice_baseline 仍然给出（审计用），但它**没有被采纳**，
+            #   本桥任何路径都不会再回退到它。要证明这一点，看 awaiting_upstream 与
+            #   choice_baseline.adopted 两个字段即可，不必读代码。
+            "behavior_is_null": bh is None,
+            "behavior_null_reason": behavior_null_reason,
+            "awaiting_upstream": bh is None,
+            "source": policy.get("source"),
+            "fallback": policy.get("fallback"),
             "choice_baseline": None if not baseline_bh else {
                 "id": baseline_bh["id"], "name": baseline_bh["name"],
                 "argmax": choice_argmax,
                 "confidence": conf,
                 "probabilities": prob,
+                # ★ 这一项是审计信息，**不是**本轮行为。旧实现的 bug 就是让它当了行为。
+                "adopted": bool(bh is not None and bh["id"] == baseline_bh["id"]
+                                and policy.get("source") == "policy"),
+                "note": ("仅审计：choice argmax 供对比。判为歧义时它**未被采纳**，"
+                         "最终行为由上游 Story / Director 决定。"),
             },
             "player_intent": {
                 "id": pick("player_intent"),
@@ -1848,11 +2039,29 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return self.wfile.write(body)
         if path == "/history":
-            return self._json({"turns": [d for d in _HISTORY],
-                               "decision_history": [d for d in _DECISION_HISTORY]})
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sid = (qs.get("session_id") or [None])[0]
+            aid = (qs.get("actor_id") or [None])[0]
+            if sid is not None:
+                buckets = {"%s/%s" % (sid, aid or k[1]): v
+                           for k, v in _HISTORY_BUCKETS.items()
+                           if k[0] == sid and (aid is None or k[1] == aid)}
+            else:
+                buckets = {"%s/%s" % k: v for k, v in _HISTORY_BUCKETS.items()}
+            return self._json({
+                "turns": [d for d in _HISTORY],
+                # ★ Phase3-Task2 后历史按 (session_id, actor_id) 分桶。
+                #   这里不再暴露那条**已废弃的进程级全局** _DECISION_HISTORY ——
+                #   暴露它等于鼓励人继续依赖「所有角色共用一条历史」的旧行为。
+                "buckets": buckets,
+                "pending": len(_PENDING),
+                "note": ("每桶只含 **已 commit** 的轮次。proposed 未提交的轮次不在里面，"
+                         "behavior=null 的轮次永远进不来。"),
+                "filter": {"session_id": sid, "actor_id": aid},
+            })
         return self._json({"error": "not found",
-                           "try": ["/health", "/config", "/demo", "/decide", "/narrate", "/world",
-                                   "/reset", "/predict"]}, 404)
+                           "try": ["/health", "/config", "/demo", "/history", "/decide", "/commit",
+                                   "/narrate", "/world", "/reset", "/predict"]}, 404)
 
     def do_POST(self):
         path = self.path.split("?")[0]
@@ -1865,27 +2074,56 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": repr(e)}, 500)
             dec = out.get("decision") or {}
             beh = dec.get("behavior") or {}
+            turn = out.get("turn") or {}
             intent_id = (dec.get("player_intent") or {}).get("id")
             # ★ 历史日志也用统一取值，否则用 message 调用的轮次会被记成 player=None。
-            #   注意 _DECISION_HISTORY 是**进程级滚动窗口**（上一条见下），
-            #   它让「连续两次独立 /decide」并非彼此独立 —— 单角色 Demo 够用，
-            #   多角色/并发场景必须改成按 actor 分桶。
             _HISTORY.append({"t": time.time(), "player": payload_text(payload),
                              "engine": out["engine"], "behavior": beh.get("id"),
-                             "source": beh.get("source")})
+                             "source": beh.get("source"),
+                             "turn_id": turn.get("turn_id"),
+                             "bucket": turn.get("history_bucket")})
             del _HISTORY[:-50]
-            # ★ 把本轮压成结构化决策历史，供下一轮的 Laya state 用（§8）。
-            #   客户端自己带了 decision_history 就不再累积 —— 免得两套历史互相打架。
+            # ★ 三轮门控（Phase3-Task2/Task3）：/decide 只 **propose**，绝不直接写历史。
+            #   旧实现在这里 extend _DECISION_HISTORY —— 于是「判了歧义、上游根本没采纳」
+            #   的轮次也会污染下一轮 state，而且完全静默。现在只有 /commit 才进桶。
             if not payload.get("decision_history"):
-                _DECISION_HISTORY.extend(decision_history_entries(intent_id, beh.get("id")))
-                del _DECISION_HISTORY[:-12]
+                propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
+                             beh.get("id"), intent_id, dec.get("source"))
+            out = dict(out, history_gate={
+                "stage": "proposed",
+                "committed": False,
+                "turn_id": turn.get("turn_id"),
+                "note": ("/decide 只登记候选，未写入历史。确认本轮真的被采纳后调 POST /commit"
+                         "（turn_id 见 turn.turn_id）。behavior=null 的轮次无法提交 —— "
+                         "没有行为就没有可确认的事实。"),
+            })
             return self._json(out)
 
+        if path == "/commit":
+            # ★ 提交门（Phase3-Task3）：只有这一步才把决策写进 (session, actor) 桶。
+            #   语义上＝「上游 Story / Director 真的采纳了这轮行为」。
+            tid = payload.get("turn_id") or (payload.get("turn") or {}).get("turn_id")
+            if not tid:
+                return self._json({"error": "缺少 turn_id",
+                                   "hint": "turn_id 来自 /decide 响应里的 turn.turn_id"}, 400)
+            ok, note = commit_turn(tid)
+            return self._json({"ok": ok, "turn_id": tid, "note": note,
+                               "stage": "committed" if ok else "rejected"}, 200 if ok else 409)
+
         if path == "/reset":
-            # 清掉累积历史：换场景 / 开新局时调用。
-            del _HISTORY[:]
-            del _DECISION_HISTORY[:]
-            return self._json({"ok": True, "cleared": ["history", "decision_history"]})
+            # ★ 按桶清（Phase3-Task2）：传 session_id（+可选 actor_id）只清那一个桶，
+            #   都不传 = 全清（保留旧行为，单角色演示方便）。
+            sid = payload.get("session_id")
+            aid = payload.get("actor_id")
+            hit = reset_history(sid, aid)
+            cleared = []
+            if sid is None and aid is None:
+                del _HISTORY[:]
+                cleared.append("history_display")
+            return self._json({"ok": True, "cleared": cleared,
+                               "buckets_cleared": hit,
+                               "scope": ("全部" if sid is None and aid is None
+                                         else "session=%s actor=%s" % (sid, aid))})
 
         if path == "/world":
             try:
@@ -1898,18 +2136,34 @@ class Handler(BaseHTTPRequestHandler):
             bid = (payload.get("behavior") or {}).get("id")
             pre = None
             if not bid:
-                # ★ 没带 behavior 就自己先跑一次 decide。
-                #   原来这里直接 400（unknown behavior: None）—— 客户端必须先 /decide 再 /narrate，
-                #   两步都得传 state_line / actor 保持一致，很容易漏。既然"实时输入"是主要用法，
-                #   就让一次请求把决策和台词都办完；带了 behavior 仍然走原路径（不重复算）。
+                # ★ 没带 behavior 就自己先跑一次 decide（"实时输入"的主要用法）。
+                #   带了 behavior 仍走原路径，不重复算。
                 try:
                     pre = decide(payload)
                 except Exception as e:
                     return self._json({"error": "decide failed: %r" % e}, 500)
-                bh_pre = (pre.get("decision") or {}).get("behavior") or {}
+                dec_pre = pre.get("decision") or {}
+                bh_pre = dec_pre.get("behavior") or {}
                 bid = bh_pre.get("id")
                 if not bid:
-                    return self._json({"error": "decide 未给出行为", "decide": pre}, 500)
+                    # ★★ Phase3-Task1 的核心：这里**绝不再**拿 choice argmax 当指定行为。
+                    #    旧实现在这一步隐含「反正要一个行为」——那正是被修掉的假交接：
+                    #    歧义轮次本该交上游，却在桥内被悄悄代选了，调用方只看到一个
+                    #    正常响应，完全看不出「其实没人拍板」。
+                    #    现在显式返回 awaiting_upstream，让上游 Story / Director 决定；
+                    #    本桥不生成台词（没有行为就没有台词）。
+                    return self._json({
+                        "ok": False,
+                        "awaiting_upstream": True,
+                        "reason": "Laya 不确定 · 交由上游模型裁决",
+                        "behavior": None,
+                        "fallback": dec_pre.get("fallback"),
+                        "behavior_null_reason": dec_pre.get("behavior_null_reason"),
+                        "decision_source": dec_pre.get("source"),
+                        "turn": pre.get("turn"),
+                        "line": None,
+                        "decision": pre,
+                    })
             bh = next((b for b in CFG["behaviors"] if b["id"] == bid), None)
             if bh is None:
                 return self._json({"error": "unknown behavior: %s" % bid,
