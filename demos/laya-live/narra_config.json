@@ -1,0 +1,310 @@
+{
+  "_readme": [
+    "Narraverse × Laya 决策配置。改这个文件就能改决策模型，不需要动任何代码。",
+    "questions 段直接就是 Laya 的 questions 参数：type=choice|score|noul，一次 predict 全部答完（单次前向传播）。",
+    "",
+    "★★ 本文件的写法是在真机上 A/B/C/D 四轮对照实测出来的，不是照直觉写的。三条硬规矩：",
+    "  ① instructions 必须用反引号引用 state 里的键名（`message` `npc` `relationship` `scene`）。",
+    "     写 \"this sentence\" 这种无锚点指代，模型不知道指的是什么，退化成先验。",
+    "     同一个输入换四种极端语义，行为 argmax 都不动 —— 这是实测结论，不是猜测。",
+    "  ② score 的 criteria 必须是**领域化的档位描述**（\"trust drops sharply\"），",
+    "     六个评分题共用 \"much lower/much higher\" 这种通用词时，期望值跨度只有 0.01~0.19 档；",
+    "     改成领域化档位后跨度张到 0.74~0.82 档，且方向正确。",
+    "  ③ choice 的选项**必须是 3~5 个词的短标签**。长描述（\"asks a direct question, cornering",
+    "     the other person on one specific contradiction in what they said\"）会让某一个选项",
+    "     变成先验吸引子：实测 7 个长选项下，\"她主动交出秘密\" 对 \"玩家拔刀要杀她\" 和",
+    "     \"玩家朝地上吐口水辱骂骑士团\" 都是 argmax。压成短标签后 argmax 才开始随输入移动。",
+    "",
+    "  ★ choice vs noul 的分工（实测得出的用法）：",
+    "     score / noul 是 Laya 可靠的两种原语（校准过的有序期望值 / 校准过的 P(true)）；",
+    "     choice 即使改对了，区分度也偏弱 → 所以用它出**基础分布**，",
+    "     再用 gates 段的 noul 做**阈值覆盖**（noul 是校准概率，天然适合当门限）。",
+    "     这样最终行为 = choice 的分布，但被明确的强信号截断。",
+    "",
+    "★ 语言分工：喂给 Laya 的 state 文档与 questions 一律用英文。typed-decisions 检查点是",
+    "  英文 ModernBERT，中文属非拉丁脚本会静默失效；而 multilingual 检查点在决策任务上接近随机。",
+    "  中文只用于 UI 展示和 LLM 台词。laya_language=en 时用英文决策文档，zh 时用中文（仅用于对照实测）。",
+    "",
+    "state_format：compact（默认）= 短键、少字段、带 `message` 锚点；full = 早期的 12 字段 JSON 形态（留作对照）。",
+    "behaviors 段是 NPC 的行为候选集。short_en 就是喂给 Laya choice 的选项文本，务必保持 3~5 个词。",
+    "state_shift 段把 Laya 的 score 期望值插值成实际的状态增量，attribution 让同一事件对不同人格产生不同结果。"
+  ],
+
+  "laya_language": "en",
+  "state_format": "compact",
+
+  "scene": {
+    "name": "铁壶酒馆",
+    "time": "深夜",
+    "note": "玩家自称行商，声称带了不方便在城里说的货。莉亚是圣殿骑士，正在秘密追查一个代号「灰鸦」的人。",
+    "name_en": "The Iron Kettle Tavern",
+    "time_en": "late night",
+    "note_en": "The player claims to be a merchant from the north carrying goods he cannot discuss inside the city. Lia is a Templar knight secretly hunting a person codenamed Grey Crow."
+  },
+
+  "actor": {
+    "name": "莉亚",
+    "name_en": "Lia",
+    "identity": "圣殿骑士，奉命北上，真实目的是秘密追查代号「灰鸦」的人",
+    "identity_en": "a Templar knight sent north under orders, secretly hunting a man codenamed Grey Crow",
+    "personality": { "extraversion": -0.35, "intuition": 0.25, "thinking": 0.55, "judging": 0.70 },
+    "traits": { "justice": 0.85, "caution": 0.70, "loyalty": 0.60, "suspicion": 0.35 },
+    "emotion": { "alert": 0.45, "fondness": 0.35, "fatigue": 0.20 },
+    "relationship": { "trust": 60, "respect": 45, "doubt": 30, "reliance": 10 },
+    "goals": { "identify_player": 0.80, "complete_order": 0.62 },
+    "situation": { "place": "铁壶酒馆", "time": "深夜", "risk": 0.55,
+                   "place_en": "The Iron Kettle Tavern", "time_en": "late night" }
+  },
+
+  "behaviors": [
+    {
+      "id": "ask", "name": "直接发问",
+      "short_en": "asks a direct question",
+      "desc": "用具体的矛盾点逼问对方的身份",
+      "desc_en": "asks a direct question, cornering the other person on one specific contradiction in what they said",
+      "instr": "抓对方话里的具体矛盾点回击，句式短、不留接话空隙；不直接指控。禁止写心理活动，只用台词和外部动作。",
+      "fallback_lines": [
+        "「你说话的方式，不像个商人。」她把杯子转了半圈，「北边的哪座城？」",
+        "「三句话里有两句含糊。」她放下杯子，「就当我是多心——你叫什么？」"
+      ]
+    },
+    {
+      "id": "observe", "name": "沉默观察",
+      "short_en": "stays silent and watches",
+      "desc": "不追问，只用沉默观察对方",
+      "desc_en": "does not follow up, staying silent and reading the other person's body language and physical details",
+      "instr": "不接话，只写她的视线落点、手上的小动作、和你身上露出的破绽；让读者自己察觉异常。",
+      "fallback_lines": [
+        "她没接话。只是垂下眼，扫过你按在桌面上的手——虎口有旧茧，不是搬货磨出来的。",
+        "她没有回答，把酒杯推回原处，指尖在杯口停了一瞬。雨声把这段沉默填得更长。"
+      ]
+    },
+    {
+      "id": "probe", "name": "迂回试探",
+      "short_en": "probes indirectly",
+      "desc": "用一段无关的旧事测试对方反应",
+      "desc_en": "tests the other person indirectly by telling an apparently unrelated old story and watching the reaction",
+      "instr": "讲一段看似无关的旧事，实际是试探；重点写对方的反应而不是故事本身。",
+      "fallback_lines": [
+        "「也好。那我说个故事——去年冬天，王都来了一支队伍，领头的不肯报名字。」她说完，盯着你的手。",
+        "「北边的商道今年断了两次。」她像在自言自语，「断的地方，都在同一座桥。」"
+      ]
+    },
+    {
+      "id": "leave", "name": "结束对话",
+      "short_en": "ends the conversation",
+      "desc": "起身离开，不继续纠缠",
+      "desc_en": "stands up and ends the conversation, letting the matter go for now",
+      "instr": "用动作结束对话，留一个未说出口的理由；不解释、不回顾、不挽留。",
+      "fallback_lines": [
+        "「那就不打扰了。」她起身，把没动过的酒留在桌上，斗篷扫过椅背。",
+        "她站起来，把钱压在杯底。「酒我请。下次再谈，先说名字。」"
+      ]
+    },
+    {
+      "id": "confide", "name": "交出秘密",
+      "short_en": "reveals her own secret",
+      "desc": "主动说出自己真正的目的",
+      "desc_en": "volunteers her own secret or her real purpose",
+      "instr": "这是长期伏笔的打开点：给出一个新名字或新线索，但不给任何解释；收束在本轮，不要展开。",
+      "fallback_lines": [
+        "「……我不是在找货。」她压低声音，「我在找人。“灰鸦”这个名字，你听着耳熟吗？」",
+        "「我告诉你一件事，你就当没听见。」她说，「北上的命令是假的。我给自己找了个差事。」"
+      ]
+    },
+    {
+      "id": "ally", "name": "提出结盟",
+      "short_en": "proposes an alliance",
+      "desc": "把关系推进到并肩行动",
+      "desc_en": "proposes an alliance, moving the relationship to acting side by side",
+      "instr": "把关系推进藏在具体的行动指令里；用动作顺序体现信任变化，不写心理活动。",
+      "fallback_lines": [
+        "「站我背后。」她拔剑比说话快，「你的事，等活下来再谈。」",
+        "「你带的货，我替你过城门。」她把手搭在剑柄上，「代价是路上听我的。」"
+      ]
+    },
+    {
+      "id": "distance", "name": "保持距离",
+      "short_en": "politely keeps her distance",
+      "desc": "承认善意但拒绝关系推进",
+      "desc_en": "politely acknowledges the goodwill shown but refuses to let the relationship advance",
+      "instr": "承认对方的帮助，但不接受关系跃迁；用退开的物理距离收尾，保持张力。",
+      "fallback_lines": [
+        "「多谢。」她收剑，退开半步，「但你我还是陌生人。天亮之后，各走各的。」",
+        "「这份情我记下了。」她站起身，「记下不等于认下。别跟着我。」"
+      ]
+    }
+  ],
+
+  "questions": {
+    "npc_behavior": {
+      "type": "choice",
+      "instructions": "Given `npc`, `relationship`, `scene` and `message`, which single action does `npc` take next?",
+      "criteria_source": "behaviors",
+      "criteria_zh": {
+        "ask": "直接发问，用具体矛盾点逼问对方身份",
+        "observe": "不追问，用沉默观察对方的身体语言和细节",
+        "probe": "用一段无关的旧事迂回试探对方反应",
+        "leave": "起身结束对话，不再纠缠",
+        "confide": "主动交出自己的秘密或真实目的",
+        "ally": "提出结盟或并肩行动",
+        "distance": "礼貌地承认善意，但拒绝关系推进"
+      }
+    },
+    "player_intent": {
+      "type": "choice",
+      "instructions": "What is the player's real intent in `message`? Judge only from `message`.",
+      "criteria": {
+        "evade": "dodges the question",
+        "lie": "says a falsifiable lie",
+        "sincere": "gives real information openly",
+        "kind": "shows goodwill or offers help",
+        "threaten": "threatens or pressures her",
+        "probe": "probes her own background back",
+        "smalltalk": "idle chat with no clear intent"
+      },
+      "criteria_zh": {
+        "evade": "回避、转移话题、不给实质信息",
+        "lie": "说了一句可以被证伪的假话",
+        "sincere": "坦诚给出真实信息",
+        "kind": "对角色示好、提供帮助或表达关心",
+        "threaten": "威胁、施压、逼迫对方",
+        "probe": "反过来试探角色的底细",
+        "smalltalk": "只是随口闲聊，没有明确意图"
+      }
+    },
+
+    "trust_shift": {
+      "type": "score",
+      "instructions": "How does `message` change the trust that `npc` has in the player?",
+      "criteria": ["trust drops sharply", "trust drops a little", "trust is unchanged",
+                   "trust rises a little", "trust rises sharply"],
+      "mapping": [-10, -4, 0, 4, 9]
+    },
+    "respect_shift": {
+      "type": "score",
+      "instructions": "How does `message` change how much `npc` respects the player?",
+      "criteria": ["respect drops sharply", "respect drops a little", "respect is unchanged",
+                   "respect rises a little", "respect rises sharply"],
+      "mapping": [-6, -2, 0, 3, 7]
+    },
+    "doubt_shift": {
+      "type": "score",
+      "instructions": "How does `message` change how much `npc` suspects the player?",
+      "criteria": ["suspicion falls sharply", "suspicion falls a little", "suspicion is unchanged",
+                   "suspicion rises a little", "suspicion rises sharply"],
+      "mapping": [-12, -5, 0, 6, 14]
+    },
+    "fondness_shift": {
+      "type": "score",
+      "instructions": "How does `message` change how much `npc` likes the player?",
+      "criteria": ["liking falls sharply", "liking falls a little", "liking is unchanged",
+                   "liking rises a little", "liking rises sharply"],
+      "mapping": [-12, -4, 0, 4, 10]
+    },
+    "alert_shift": {
+      "type": "score",
+      "instructions": "How does `message` change how alert `npc` is to danger right now?",
+      "criteria": ["much less alert", "slightly less alert", "no change in her alertness",
+                   "slightly more alert", "much more alert"],
+      "mapping": [-10, -3, 0, 5, 12]
+    },
+    "goal_shift": {
+      "type": "score",
+      "instructions": "How does `message` change how urgently `npc` wants to find out who the player really is?",
+      "criteria": ["much less urgent", "slightly less urgent", "no change in her urgency",
+                   "slightly more urgent", "much more urgent"],
+      "mapping": [-8, -2, 0, 3, 8]
+    },
+
+    "betrayal_intent": {
+      "type": "noul",
+      "instructions": "Is `npc` forming the intention to abandon, betray or turn against the player?"
+    },
+    "hidden_event": {
+      "type": "noul",
+      "instructions": "Given `scene` and `message`, is a third party (an assassin, guards, someone tailing them, an unexpected arrival) about to enter this scene?"
+    },
+
+    "gate_leave": {
+      "type": "noul",
+      "instructions": "Is `npc` about to end this conversation and walk away from the player?"
+    },
+    "gate_confide": {
+      "type": "noul",
+      "instructions": "Is `npc` about to reveal her own secret or her real purpose to the player?"
+    },
+    "gate_ally": {
+      "type": "noul",
+      "instructions": "Is `npc` about to propose acting together with the player as allies?"
+    }
+  },
+
+  "gates": {
+    "_note": [
+      "★ choice 给基础分布，noul 做阈值覆盖。noul 是校准过的 P(true)，天然适合当门限；",
+      "  choice 的 argmax 会偏离，但校准概率不会。命中时把最终行为改成 gate.behavior，",
+      "  并在返回里标 gated_by=（gate 名 + 概率），方便前端显示「这是被门限改写的」。",
+      "",
+      "★ 阈值现状（实测，样本很少，按观察到的分布先定，必须随真实对局重标）：",
+      "  gate_ally    同袍相助 0.527 / 0.625 / 0.637（三次不同措辞的英译）",
+      "               非结盟 陌生问路 0.344 / 羞辱 0.333 / 持刀 0.233",
+      "               → 方向正确、两组不重叠。阈值取 0.45：低于结盟组最小值 0.527，",
+      "                 高于非结盟组最大值 0.344，两侧各留约 0.08 余量。",
+      "               ☆ 为什么不用 0.55：0.55 正好落在噪声带里 —— 同一句中文因为",
+      "                 翻译措辞不同（Templar / Temple's，Grey Crow / Gray Crows），",
+      "                 gate_ally 会在 0.527~0.637 之间跳，0.55 会时灵时不灵。",
+      "                 这提醒一件事：凡是拿英文 noul 当门限，都必须把翻译抖动算进余量。",
+      "  gate_confide 同袍 0.637 / 羞辱 0.618 / 持刀 0.571 / 陌生 0.543",
+      "               → 最大与次大只差 0.02，没有安全阈值，暂设 0.85（不生效）。",
+      "  gate_leave   羞辱 0.257 / 持刀 0.237 / 陌生 0.189 / 同袍 0.185",
+      "               → 方向可疑：按语义「玩家拔刀要杀她」最该离开，实测却不是最高。",
+      "                  暂设 0.70（不生效），先不要用它做剧情转折。",
+      "  跑 python laya_bridge.py langtest 会把每个门限的「观察最大 P / 阈值 / 是否在生效」",
+      "  直接列出来 —— 死门限必须显形，留着假装在工作比删掉更糟。"
+    ],
+    "gate_leave": { "behavior": "leave", "threshold": 0.70, "_status": "未验证（方向可疑），暂不生效" },
+    "gate_ally": { "behavior": "ally", "threshold": 0.45, "_status": "实测两组不重叠，已生效" },
+    "gate_confide": { "behavior": "confide", "threshold": 0.85, "_status": "观察分布无安全阈值，暂不生效" }
+  },
+
+  "state_shift": {
+    "_note": "Laya 的 score 期望值在 mapping 上线性插值得到增量；attribution 让同一句话对不同人格产生不同结果。",
+    "paths": {
+      "trust_shift": { "target": "relationship.trust", "range": [0, 100], "label": "信任" },
+      "respect_shift": { "target": "relationship.respect", "range": [0, 100], "label": "尊敬" },
+      "doubt_shift": { "target": "relationship.doubt", "range": [0, 100], "label": "怀疑" },
+      "fondness_shift": { "target": "emotion.fondness", "range": [0, 1], "scale": 0.01, "label": "好感" },
+      "alert_shift": { "target": "emotion.alert", "range": [0, 1], "scale": 0.01, "label": "警觉" },
+      "goal_shift": { "target": "goals.identify_player", "range": [0, 1], "scale": 0.01, "label": "查明身份" }
+    },
+    "attribution": {
+      "enabled": true,
+      "_note": "正向系数 k=0.5+(1-多疑)，负向系数 k'=0.5+多疑。关掉则完全由 Laya 判断。",
+      "positive_keys": ["trust_shift", "respect_shift", "fondness_shift", "goal_shift"],
+      "trait": "traits.suspicion"
+    }
+  },
+
+  "director": {
+    "event_threshold": 0.75,
+    "_note": "hidden_event 概率超过阈值 → 交后台导演排期进入剧情；以下各项只写入状态，不直接触发。"
+  },
+
+  "world": {
+    "state": {
+      "border_tension": 0.80,
+      "grain_price": 0.72,
+      "crown_prestige": 0.41,
+      "cult_involvement": 0.55,
+      "trade_volume": 0.66,
+      "weather_stress": 0.30
+    },
+    "questions": {
+      "war_outbreak": { "type": "noul", "instructions": "Judging from `world_state`, how likely is a war to break out within the next month?" },
+      "caravan_drop": { "type": "noul", "instructions": "Judging from `world_state`, how likely is a marked drop in northern caravan traffic within the next month?" },
+      "blackmarket": { "type": "noul", "instructions": "Judging from `world_state`, how likely is a sizable black market to appear within the next month?" }
+    },
+    "names": { "war_outbreak": "战争爆发", "caravan_drop": "商队减少", "blackmarket": "黑市出现" }
+  }
+}

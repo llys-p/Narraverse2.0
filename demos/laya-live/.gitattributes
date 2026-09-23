@@ -1,0 +1,9 @@
+# 启动脚本是 GBK 编码，禁止任何行尾转换，否则写入后中文提示会乱码
+*.bat -text
+
+# 其余按文本处理（入库统一 LF，检出时行尾由 core.autocrlf 决定）
+*.py      text
+*.json    text
+*.md      text
+*.html    text
+*.example text

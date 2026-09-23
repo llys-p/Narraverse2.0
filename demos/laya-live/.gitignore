@@ -1,0 +1,18 @@
+# 密钥
+.env
+.env.local
+
+# 虚拟环境与模型权重（不入库）
+.venv/
+.venv_*/
+__pycache__/
+*.pyc
+
+# Laya 检查点（约 840 MB／个）
+_models/
+_hf_cache/
+
+# 本地调试产物
+_diag/
+*.log
+*.png
