@@ -1857,3 +1857,284 @@ return text, "none"          # ← 中文原文被当成「英文译文」交给
   `trust_shift` 是 P2 的唯一支柱，**再加一个检查点来确认它**是值得的下一步。
 - §15.6 的更正**只对 td/english 在本机、本用例集上成立**；换设备/换用例集需重测。
 
+---
+
+## 17. ★ Phase3 P2：Checkpoint Capability Profile 与 Laya Proposal（2026-09-23/24）
+
+### 17.1 这一轮的定位：不推翻任何已有结论，只把结论变成可执行的约束
+
+P0/P1/P1.5 的结论是**诊断性**的：「哪些 signal 可用」写在了报告的表里。
+P2 要做的是把它变成**结构性**的：「哪些 signal 可用」由每个 checkpoint 一份的
+**能力档案**决定，而档案由实验产物推导，代码只消费档案。
+
+一句话概括这轮的差别：
+
+| | P1.5 之前 | P2 之后 |
+|---|---|---|
+| 能力知识的载体 | 报告里的表格 + 人的记忆 | `tests/capability_profiles.json`（机器可读） |
+| 换 checkpoint | 没人会想起去改代码 | 档案对不上 → **直接拒绝产出状态增量** |
+| 一个 signal 为什么被用了 | 说不清 | 档案里逐条 `status_reasons`，可回溯到 `tests/runs/` |
+| Laya 输出的性质 | 一段「建议」 | `state_proposal`：结构化、带权限边界、`authority=none` |
+
+**Laya 的定位没有变，也不需要变**：它仍然是
+**NPC 状态变化 + 行为倾向的快速推演器**——不是 Evidence/Observation Layer，
+也不是 Actor State 的写入者。这轮只是给「推演结果能不能落地」加了一道可验证的闸门。
+
+### 17.2 Task 8：能力档案是**推导出来的**，不是**写出来的**
+
+```
+./.venv-cuda/Scripts/python.exe laya_bridge.py capability          # 生成（不跑模型，秒级）
+./.venv-cuda/Scripts/python.exe laya_bridge.py capability --check  # 核对现有档案是否仍与磁盘一致
+```
+
+产物：`tests/capability_profiles.json`（索引 + 每 checkpoint 一份完整档案），
+每个 signal 记录 **name / role / checkpoint / grade / status / 语义描述 / 取值范围 / 已验证数据集**，
+以及 `metrics.auc_by_run`、`grade_by_run`、`status_reasons`、`portability`。
+
+**等级从哪来**：全部读 `tests/runs/*.json` 里 `signalmetrics` 已经算好的 `grade`。
+能力档案生成器**不重新定级**——想改判据只能改 `grade_signal()`，
+改在档案层等于偷偷改评分规则（§16.2 的教训：评分规则必须冻结，而且要冻结得**结构上做不到改**）。
+
+**status 推导规则**（写死在 `_derive_status()`，可审计）：
+
+| 序 | 条件 | status | 理由（原文见档案 `status_reasons`） |
+|---|---|---|---|
+| 0 | `capability_policy.override` 点名 | 由 config 指定 | 覆盖是**可见的**（`status_source=policy_override`），不伪装成推导结果 |
+| 1 | `grade=N` | `disabled` | 样本不足：不下结论，同样不接入 |
+| 2 | 3 次运行等级不一致 | `disabled` | 该检查点内自己就不稳，谈不上「已验证的能力」 |
+| 3 | `grade=R` | `semantic_review` | 稳定反向不是「弱」，是方向/语义有问题；不接入，且**禁止静默取反** |
+| 4 | `grade=A` | `active` | CI 下界 >0.50 且 AUC ≥0.70 |
+| 5 | `grade=B` | `auxiliary` | 「可作强提示，上层必须有规则约束」→ 修正项 |
+| 6 | `grade=C` | `auxiliary` | 「只能当合取项，禁止单独定行为」→ 修正项 |
+| 7 | `grade=D` | `disabled` | AUC <0.55，不可用 |
+
+★ **`portability`（跨检查点稳定/特有/反向）刻意不参与降级。**
+档案本身就是**按检查点**生成的：在这个检查点上 grade 是多少就是多少。
+拿另一个检查点的表现来否定当前检查点的结论，等于让 A 条件的数据否定 B 条件的实验。
+`portability` 只写进 `revalidate_on_switch` —— 真正的安全阀是
+**「换检查点必须重新生成档案，哈希对不上时直接拒用」**（见 17.2 末）。
+
+#### 17.2.1 档案必须能自证来源：五类哈希，四硬一软
+
+| 哈希 | 来源 | 对不上时 |
+|---|---|---|
+| `dataset` | `tests/cases/*.json` 逐文件内容哈希 | **硬阻断**：等级是在另一批输入上算的 |
+| `checkpoint` | 模型目录的配置/分词器哈希 + 顶层文件清单（名+大小） | **硬阻断**：检查点本体已变 |
+| `config` | `narra_config.json` | **硬阻断**：signal 定义/问题集可能已变 |
+| `translation_cache` | **实验用例那批文本的译文**哈希 | **硬阻断**：英文侧输入条件已变 |
+| `code` | `laya_bridge.py` | **只提示**（`code_changed`）：代码变了 ≠ 等级变了 |
+
+为什么 `code` 只提示：判据确实在代码里，但「改了代码」和「结论作废」之间还有一步推理，
+把它做成硬阻断会让每次改注释都要求重跑档案，最后一定被人绕过去。
+**硬阻断只留给输入侧**——输入变了，同一份档案描述的就是另一批条件，这没有任何辩解空间。
+
+#### 17.2.2 ★ 本轮自己抓到并修掉的一个假告警
+
+第一版把 `translation_cache` 记成**整个缓存文件**的哈希。问题是这个文件在正常使用中会增长
+（玩家自己敲的每句中文都会被翻译并缓存）。于是「玩过几轮 demo」会被判成
+**「实验条件变了」→ 档案 stale → 状态增量全部停发**。
+
+危险的地方在于它**看起来是对的方向**（宁可严一点），但假告警多了等于没有告警，
+最后所有人都会学会忽略它——这正是 §15.6 那个「跑次波动 0.073」假结论的同一个病根：
+**判据用错了对象，结论就会指向错误的方向**。
+
+改法：哈希**实验真正用到的那批译文**（137 条用例文本 → `case_subset`），
+而不是整个文件。已经验证：
+- 往缓存里加一条无关的句子 → 仍然 `fresh`（不再假告警）；
+- 删掉缓存文件 / 改掉用例译文 → 立刻 stale 并说明「缺 N/M 条」。
+
+### 17.3 typed-decisions 档案（Phase3 生产候选）
+
+`profile_id = f77f7f06ba82fd2a…` ｜ 3 次运行 ｜
+status 分布 **active 3 · auxiliary 9 · disabled 2 · semantic_review 1**
+
+| signal | role | kind | grade | AUC | 上下文定向Δ中位 | status | 跨检查点 | 换检查点需重验 |
+|---|---|---|---|---|---|---|---|---|
+| hostility | behavior_tendency | prob | C | 0.665 | +0.025 | auxiliary | ① 稳定 | |
+| cooperation | behavior_tendency | prob | C | 0.706 | +0.006 | auxiliary | ① 稳定 | |
+| withdraw | behavior_tendency | prob | C | 0.571 | −0.003 | auxiliary | ② 特有 | ✔ |
+| confront | behavior_tendency | prob | C | 0.664 | +0.076 | auxiliary | ② 特有 | ✔ |
+| disclose | behavior_tendency | prob | D | 0.464 | — | **disabled** ［P］ | ② 特有 | ✔ |
+| investigate | behavior_tendency | level | R | 0.895 | **−0.151** | **semantic_review** ［P］ | ③ 反向 | ✔ |
+| trust | situation_assessment | prob | C | 0.716 | +0.020 | auxiliary | ② 特有 | ✔ |
+| doubt | situation_assessment | prob | C | 0.618 | +0.013 | auxiliary | ① 稳定 | |
+| danger | situation_assessment | prob | D | 0.576 | −0.006 | **disabled** | ① 稳定 | |
+| **trust_shift** | state_shift | level | **A** | **0.827** | — | **active → 写状态** | ① 稳定 | |
+| respect_shift | state_shift | level | C | 0.615 | — | auxiliary | ① 稳定 | |
+| **doubt_shift** | state_shift | level | **A** | **0.847** | — | **active → 写状态** | ② 特有 | ✔ |
+| **fondness_shift** | state_shift | level | **A** | **0.790** | — | **active → 写状态** | ② 特有 | ✔ |
+| alert_shift | state_shift | level | C | 0.688 | — | auxiliary | ② 特有 | ✔ |
+| goal_shift | state_shift | level | C | 0.590 | — | auxiliary | ② 特有 | ✔ |
+
+［P］= `status_source=policy_override`（`disclose`、`investigate` 两条，理由写在
+`narra_config.json` 的 `capability_policy.override` 里）。
+
+**可写 Actor State 的三个**：`trust_shift`（跨检查点稳定）、`doubt_shift`、`fondness_shift`（都标了需重验）。
+按提示词，**`trust_shift` 是第一个验证对象**——它是唯一跨检查点都是 A 的，
+拿它去跑 State Transition 的端到端验证，能把「验证对象不可靠」这个变量排除掉。
+
+### 17.4 english 档案（能力对照，不是生产候选）
+
+`profile_id = 3b80be9014d6…` ｜ status 分布 **active 1 · auxiliary 6 · disabled 7 · semantic_review 1**
+
+| signal | grade | AUC | status | 与 td 的差异 |
+|---|---|---|---|---|
+| hostility | C | 0.635 | auxiliary | 同 |
+| cooperation | C | 0.772 | auxiliary | 同 |
+| withdraw | D | 0.505 | **disabled** | C→D 掉级；但上下文定向Δ +0.280（td 是 −0.003）——**判别力更差、上下文响应更强** |
+| confront | D | 0.414 | **disabled** | C→D |
+| disclose | **A** | **0.889** | **disabled**［P］ | ★ D→A，符号翻转：只看等级会判成 active |
+| investigate | R | 0.690 | semantic_review［P］ | 反向加剧（定向Δ −0.151 → **−0.410**） |
+| trust | B | 0.778 | auxiliary | C→B |
+| doubt | C | 0.614 | auxiliary | 同 |
+| danger | D | 0.447 | **disabled** | 同 |
+| **trust_shift** | **A** | **0.807** | **active → 写状态** | ★ 唯一跨检查点 A |
+| respect_shift | C | 0.669 | auxiliary | 同 |
+| doubt_shift | **D** | **0.407** | **disabled** | ★ A→D |
+| fondness_shift | C | 0.724 | auxiliary | A→C |
+| alert_shift | D | 0.500 | **disabled** | C→D |
+| goal_shift | D | 0.450 | **disabled** | C→D |
+
+**两台的差异本身就量化了「不能透明互换」**：
+
+- td 可写状态：`trust_shift`、`doubt_shift`、`fondness_shift`（3 个）
+- english 可写状态：`trust_shift`（1 个）
+- 交集只有 1 个；`doubt_shift` / `fondness_shift` 在 english 上必须停用。
+
+### 17.5 Task 9：Signal Role 分层（`narra_config.json` → `signals.roles`）
+
+| role | 个数 | signal | 语义 |
+|---|---|---|---|
+| `state_shift` | 6 | trust_shift / respect_shift / doubt_shift / fondness_shift / alert_shift / goal_shift | 写 Actor State 的量，`target` 见 `state_shift.paths` |
+| `behavior_tendency` | 6 | hostility / cooperation / withdraw / confront / disclose / investigate | 影响行为候选的排序/倾向，**不写状态** |
+| `situation_assessment` | 3 | trust / doubt / danger | 对角色的当下情境评估，**永不单独写状态** |
+
+★ **role 与 status 是两件正交的事，缺一不可**：
+role 决定一个信号**可以流向哪里**（人在 config 里声明，稳定）；
+status 决定它**够不够格真的流过去**（从实验结果推导，跟着检查点走）。
+所以 `role=state_shift` + `status=disabled` = 不写状态；
+`status=active` + `role=behavior_tendency` = 也不能去写状态。
+
+★ **`signals.roles` 必须覆盖全部 15 个 signal，缺一个就报错**（`_signal_roles(strict=True)` 返回 `None`，
+`capability` 命令 `return 2`）。理由：「忘了分层」如果会静默退回默认 role，
+一个写错 role 的 signal 就会以正确的外表出现在错误的位置上——这类错误验收时看不出来。
+
+### 17.6 Task 10：统一 Proposal Schema
+
+`decide()` 的输出新增（旧字段保留但**语义已变**）：
+
+| 字段 | 性质 | 说明 |
+|---|---|---|
+| `state_proposal` | 建议 | `delta[]` + `auxiliary[]` + `ignored_signals[]` + `gate` + `profile` |
+| `behavior_tendency` | 建议 | 6 个行为倾向信号的值 + role/status/grade + `consumable` |
+| `situation_assessment` | 建议 | 3 个情境评估信号，同上 |
+| `checkpoint_profile` | 元信息 | 本轮用的是哪份档案、`profile_id`、`fresh`、`problems` |
+| `capability_summary` | 元信息 | 全 15 个 signal 的 status 分布、可写状态清单、`by_role` |
+| `signal_table` | 元信息 | 面板信号 + role/status/grade（前端不用自己 join 三份数据） |
+| `proposed_deltas` / `deltas` | **旧字段，语义已变** | 现在等于 `state_proposal.delta`（**已过滤**） |
+| `raw_deltas_all_signals` | 审计 | 未过滤的全量增量，**仅供审计，不许拿去写状态** |
+
+一条 delta 的形状：
+
+```json
+{"attribute": "relationship.trust", "delta": -1.764,
+ "source_signal": "trust_shift", "grade": "A", "status": "active",
+ "role": "state_shift", "raw": -1.534, "attribution": 1.15, "range": [0, 100],
+ "checkpoint": "typed-decisions", "profile_id": "f77f7f06…"}
+```
+
+**三道过滤**（`build_state_proposal()`，缺一不可）：
+
+1. `role == state_shift` —— 只有这一层能写状态。`behavior_tendency` / `situation_assessment`
+   无论等级多高都没有产出 delta 的资格。
+2. `status == active` —— `auxiliary` 只能当合取/修正项。**P2 阶段对它会写状态的量更严**：
+   只登记「若启用会产生多少」（`applied: false`），**不产生任何数值效果**。
+   这比提示词的要求更保守一格，理由是会写状态的量一旦算错是**不可逆**的
+   （对比：行为选错，下一轮还能改）。
+3. 档案自身可用 —— 缺失/哈希不符 → 一条 delta 都不产出。
+
+**被过滤掉的必须逐条留 reason**：`ignored_signals[]` 里每条都有 `source_signal / status / grade / reason[]`。
+只报「忽略了 N 个」不算达标——验收时要能说出是哪 N 个、为什么。
+`n_active + n_auxiliary + n_ignored` 必须等于原始增量条数（`tests/p2_acceptance.py` 断言了这条恒等式）。
+
+#### 17.6.1 ★ 与提示词的一处口径冲突（已记录，未擅自裁决）
+
+提示词把 `doubt` 归入 `situation_assessment`，而 `state_proposal` 的字段示例里也出现了 `doubt`。
+但状态侧真正写 `relationship.doubt` 的是 **`doubt_shift`**（`state_shift`），
+`doubt` 是 `prob` 型、在 `state_shift.paths` 里**没有条目**。
+
+处理方式：**按提示词的显式清单把 `doubt` 标为 `situation_assessment`**，
+并在 `narra_config.json` 里加 `_collision_note` 说明「同名不同义」；
+**没有**为了凑示例而给 `doubt` 造一条通往 `relationship.doubt` 的路径——
+那会绕过 `doubt_shift` 的档案状态，等于用配置改动推翻实验结论。
+
+### 17.7 ★ 为什么 checkpoint 不能透明互换（deliverable 7）
+
+三段可核对的证据，而不是一句「因为能力不同」：
+
+1. **能力集合不同**：15 个 signal 里 8 个等级变化、1 个稳定反向，只有 `trust_shift` 跨检查点都是 A。
+   换检查点后「可写 Actor State 的 signal」从 3 个变成 1 个。
+2. **存在符号相反的 signal**：`disclose` td 0.464(D) → english 0.889(A)；
+   `doubt_shift` td 0.847(A) → english 0.407(D)。
+   **不存在一个对所有检查点都正确的阈值或方向**——这类 signal 一旦接进行为控制，
+   换检查点后行为会朝相反方向走，而且不会有任何报错。
+3. **同一 signal 的两种能力会分叉**：`withdraw` 在 english 上判别力掉到 D(0.505)，
+   上下文定向Δ 却是 +0.280（td 是 −0.003）。
+   说明「能不能分开两类输入」和「会不会随前文变化」是两个独立的维度，
+   一个检查点可以在一维上很弱、另一维上很强——所以「这台机器上能不能用上下文」
+   必须**先选定检查点再谈**。
+
+因此本系统的立场是：**每个 checkpoint 都是一个经过版本化验证的推演组件**，
+而不是「同一个模型的三种说法」。工程上的落地就是 17.2 的哈希核对：
+换检查点 → 档案对不上 → 拒绝产出状态增量 → 必须先跑 `signalmetrics` 再跑 `capability`。
+
+### 17.8 验收问题 A–F（可执行答案：`tests/p2_acceptance.py`，54 PASS / 0 FAIL）
+
+```
+./.venv-cuda/Scripts/python.exe tests/p2_acceptance.py --json   # 落盘 tests/p2_acceptance.json
+```
+
+| | 问题 | 答案 | 证据（断言级） |
+|---|---|---|---|
+| **A** | 当前在跑哪个 checkpoint？ | `typed-decisions`（`production_candidate`） | `checkpoint_profile.checkpoint == ENGINE.model_name`、`matched=true`、`fresh=true` |
+| **B** | 哪些 signal 是 active / auxiliary / disabled / semantic_review？ | active 3（trust_shift / doubt_shift / fondness_shift）· auxiliary 9 · disabled 2（disclose / danger）· semantic_review 1（investigate） | 档案覆盖 15/15、status 个数合计 = 15、**每个都附非空理由**、`status_source` 只有 derived / policy_override |
+| **C** | 一个 signal 为什么能进 State Transition？ | 因为它在**这个检查点上**实测 `role=state_shift` + `grade=A` + `status=active` | 每条 delta 都能追到 `grade_by_run`（如 trust_shift `['A','A','A']`）与 AUC 中位 0.8267；未进的三类各带 reason |
+| **D** | 换 checkpoint 时系统知道能力档案变了吗？ | 知道：未登记检查点直接拒用；输入哈希不符判 stale | `load_capability_profile("multilingual")` → `None` + 原因；0 条 delta；`gate.can_commit_state=false`；用例集变化 → stale，复原 → fresh |
+| **E** | Laya 的输出仍然只是 Proposal 吗？ | 是 | `is_proposal=true`；`authority="none"`；无 `committed/actor_state/write` 字样；过滤过程不修改原始增量对象 |
+| **F** | 不可靠的 signal 会被自动忽略吗？ | 会 | active/auxiliary/被拦下三个集合与档案逐一相等；反向信号既不进 delta 也不进 auxiliary（**禁止静默取反**）且 status=semantic_review；`disabled`/`semantic_review` 一律 `consumable=false` |
+
+### 17.9 本轮**没**做、且不能声称做了的
+
+- **没有**接 Narraverse Runtime；**没有**改主项目 Actor Schema；**没有**新建 Laya Agent。
+- **没有**碰 Master Library；**没有**做长期 Personality 成长；**没有**做 World Simulation。
+- **没有**美化 UI（Demo 只是把该显示的字段显示出来）；
+  **没有**做动态切检查点——切换必须离线重跑 `signalmetrics` + `capability`。
+- **没有**把任何实验阈值写成生产阈值：`metrics.best_threshold_median` 只是统计输出，
+  并在档案里显式标了 `best_threshold_is_statistical_only: true`。
+- **没有**重训/微调 Laya；**没有**动 P0 的歧义机制（歧义阈值仍未重新校准，见 §14）。
+- `behavior_tendency` / `situation_assessment` 两块**只给值、不判读**（`threshold_applied: false`）——
+  阈值属于 Policy Resolver。让推演层「顺手判一下」，等于把一处没标定的判据藏进推演层，
+  以后没人能说清某个行为到底是哪条规则定的。
+- 档案的 `code_changed` 目前是 `False`，但**任何对 `laya_bridge.py` 的改动都会让它变 True**；
+  这是提示而非故障，重跑一次 `capability` 即可。
+
+### 17.10 Phase 3 最终设计原则（原文，已写进本文档）
+
+> **Narraverse 不要求所有 Laya checkpoint 具备完全相同的能力。
+> 每个 checkpoint 都是一个经过版本化验证的推演组件；
+> Laya 可以推演 NPC 的状态与行为发展，
+> 但只有该 checkpoint 已验证的能力才能进入 State Transition。**
+
+对应的实现契约（每条都能在代码里指出位置）：
+
+1. 能力知识不写在提示词里，也不写在报告里——由 `laya_bridge.py capability` 从 `tests/runs/` 推导，
+   产物 `tests/capability_profiles.json` 可被机器读取（`load_capability_profile()`）。
+2. 只有 `role=state_shift` 且 `status=active` 的 signal 产生 `state_proposal.delta`（`build_state_proposal()`）。
+3. 档案与实际输入不符时**拒绝产出**，而不是退回「全都能用」（`load_capability_profile()` 返回 `None`）。
+4. Laya 的输出只有建议权：`is_proposal=true`、`authority="none"`；
+   写入属于 Narraverse 的 State Transition 层。
+
+**P2 到此为止，不自动进入 P3。** 下一步需要先完成：
+`trust_shift` 的 State Transition 端到端验证（按提示词，它是第一个验证对象）。
+
+
