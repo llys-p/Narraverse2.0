@@ -10,29 +10,29 @@
     "  ② score 的 criteria 必须是**领域化的档位描述**（\"trust drops sharply\"），",
     "     六个评分题共用 \"much lower/much higher\" 这种通用词时，期望值跨度只有 0.01~0.19 档；",
     "     改成领域化档位后跨度张到 0.74~0.82 档，且方向正确。",
-    "  ③ choice 的选项**必须是 3~5 个词的短标签**。长描述（\"asks a direct question, cornering",
-    "     the other person on one specific contradiction in what they said\"）会让某一个选项",
-    "     变成先验吸引子：实测 7 个长选项下，\"她主动交出秘密\" 对 \"玩家拔刀要杀她\" 和",
-    "     \"玩家朝地上吐口水辱骂骑士团\" 都是 argmax。压成短标签后 argmax 才开始随输入移动。",
+    "  ③ choice 的选项**必须是 3~5 个词的短标签**。长描述会让某一个选项变成先验吸引子 ——",
+    "     无论玩家说什么，argmax 都停在同一个选项上。压成短标签后 argmax 才会随输入移动。",
+    "     （实测数值见 tests/ 下的回归结果与 Laya接入报告.md，不要写回本文件。）",
     "",
-    "  ★ choice vs noul 的分工（实测得出的用法）：",
-    "     score / noul 是 Laya 可靠的两种原语（校准过的有序期望值 / 校准过的 P(true)）；",
-    "     choice 即使改对了，区分度也偏弱 → 所以用它出**基础分布**，",
-    "     再用 gates 段的 noul 做**阈值覆盖**（noul 是校准概率，天然适合当门限）。",
-    "     这样最终行为 = choice 的分布，但被明确的强信号截断。",
+    "  ★ 三种原语的分工（第二轮实测后的定论）：",
+    "     · noul   = 校准过的 P(true)，适合做**信号**与门限；",
+    "     · score  = 校准过的有序期望值，适合做**信号强度**与状态增量来源；",
+    "     · choice = 区分度弱（置信度长期卡在 0.07~0.16），**只作为兜底 baseline**。",
+    "    最终行为由 policy 段的 Policy Resolver 依 decision signals 裁定：",
+    "     规则命中 → policy；未命中 → 回落 choice baseline；判为歧义 → 交回 Director/Story。",
+    "    ★ 不要再让 choice 的 argmax 直接控制 NPC —— 那是第一轮的做法，已被推翻。",
     "",
     "★ 语言分工：喂给 Laya 的 state 文档与 questions 一律用英文。typed-decisions 检查点是",
-    "  英文 ModernBERT，中文属非拉丁脚本会静默失效；而 multilingual 检查点在决策任务上接近随机。",
+    "  英文 ModernBERT，中文属非拉丁脚本会静默失效；而 multilingual 检查点在决策任务上接近随机（依据见 Laya接入报告.md，勿在此复述数值）。",
     "  中文只用于 UI 展示和 LLM 台词。laya_language=en 时用英文决策文档，zh 时用中文（仅用于对照实测）。",
     "",
     "state_format：compact（默认）= 短键、少字段、带 `message` 锚点；full = 早期的 12 字段 JSON 形态（留作对照）。",
     "behaviors 段是 NPC 的行为候选集。short_en 就是喂给 Laya choice 的选项文本，务必保持 3~5 个词。",
     "state_shift 段把 Laya 的 score 期望值插值成实际的状态增量，attribution 让同一事件对不同人格产生不同结果。"
   ],
-
   "laya_language": "en",
   "state_format": "compact",
-
+  "personality_style": "signed",
   "scene": {
     "name": "铁壶酒馆",
     "time": "深夜",
@@ -41,24 +41,50 @@
     "time_en": "late night",
     "note_en": "The player claims to be a merchant from the north carrying goods he cannot discuss inside the city. Lia is a Templar knight secretly hunting a person codenamed Grey Crow."
   },
-
   "actor": {
     "name": "莉亚",
     "name_en": "Lia",
     "identity": "圣殿骑士，奉命北上，真实目的是秘密追查代号「灰鸦」的人",
     "identity_en": "a Templar knight sent north under orders, secretly hunting a man codenamed Grey Crow",
-    "personality": { "extraversion": -0.35, "intuition": 0.25, "thinking": 0.55, "judging": 0.70 },
-    "traits": { "justice": 0.85, "caution": 0.70, "loyalty": 0.60, "suspicion": 0.35 },
-    "emotion": { "alert": 0.45, "fondness": 0.35, "fatigue": 0.20 },
-    "relationship": { "trust": 60, "respect": 45, "doubt": 30, "reliance": 10 },
-    "goals": { "identify_player": 0.80, "complete_order": 0.62 },
-    "situation": { "place": "铁壶酒馆", "time": "深夜", "risk": 0.55,
-                   "place_en": "The Iron Kettle Tavern", "time_en": "late night" }
+    "personality": {
+      "extraversion": -0.35,
+      "intuition": 0.25,
+      "thinking": 0.55,
+      "judging": 0.7
+    },
+    "traits": {
+      "justice": 0.85,
+      "caution": 0.7,
+      "loyalty": 0.6,
+      "suspicion": 0.35
+    },
+    "emotion": {
+      "alert": 0.45,
+      "fondness": 0.35,
+      "fatigue": 0.2
+    },
+    "relationship": {
+      "trust": 60,
+      "respect": 45,
+      "doubt": 30,
+      "reliance": 10
+    },
+    "goals": {
+      "identify_player": 0.8,
+      "complete_order": 0.62
+    },
+    "situation": {
+      "place": "铁壶酒馆",
+      "time": "深夜",
+      "risk": 0.55,
+      "place_en": "The Iron Kettle Tavern",
+      "time_en": "late night"
+    }
   },
-
   "behaviors": [
     {
-      "id": "ask", "name": "直接发问",
+      "id": "ask",
+      "name": "直接发问",
       "short_en": "asks a direct question",
       "desc": "用具体的矛盾点逼问对方的身份",
       "desc_en": "asks a direct question, cornering the other person on one specific contradiction in what they said",
@@ -69,7 +95,8 @@
       ]
     },
     {
-      "id": "observe", "name": "沉默观察",
+      "id": "observe",
+      "name": "沉默观察",
       "short_en": "stays silent and watches",
       "desc": "不追问，只用沉默观察对方",
       "desc_en": "does not follow up, staying silent and reading the other person's body language and physical details",
@@ -80,7 +107,8 @@
       ]
     },
     {
-      "id": "probe", "name": "迂回试探",
+      "id": "probe",
+      "name": "迂回试探",
       "short_en": "probes indirectly",
       "desc": "用一段无关的旧事测试对方反应",
       "desc_en": "tests the other person indirectly by telling an apparently unrelated old story and watching the reaction",
@@ -91,7 +119,8 @@
       ]
     },
     {
-      "id": "leave", "name": "结束对话",
+      "id": "leave",
+      "name": "结束对话",
       "short_en": "ends the conversation",
       "desc": "起身离开，不继续纠缠",
       "desc_en": "stands up and ends the conversation, letting the matter go for now",
@@ -102,7 +131,8 @@
       ]
     },
     {
-      "id": "confide", "name": "交出秘密",
+      "id": "confide",
+      "name": "交出秘密",
       "short_en": "reveals her own secret",
       "desc": "主动说出自己真正的目的",
       "desc_en": "volunteers her own secret or her real purpose",
@@ -113,7 +143,8 @@
       ]
     },
     {
-      "id": "ally", "name": "提出结盟",
+      "id": "ally",
+      "name": "提出结盟",
       "short_en": "proposes an alliance",
       "desc": "把关系推进到并肩行动",
       "desc_en": "proposes an alliance, moving the relationship to acting side by side",
@@ -124,7 +155,8 @@
       ]
     },
     {
-      "id": "distance", "name": "保持距离",
+      "id": "distance",
+      "name": "保持距离",
       "short_en": "politely keeps her distance",
       "desc": "承认善意但拒绝关系推进",
       "desc_en": "politely acknowledges the goodwill shown but refuses to let the relationship advance",
@@ -135,7 +167,6 @@
       ]
     }
   ],
-
   "questions": {
     "npc_behavior": {
       "type": "choice",
@@ -173,50 +204,114 @@
         "smalltalk": "只是随口闲聊，没有明确意图"
       }
     },
-
     "trust_shift": {
       "type": "score",
       "instructions": "How does `message` change the trust that `npc` has in the player?",
-      "criteria": ["trust drops sharply", "trust drops a little", "trust is unchanged",
-                   "trust rises a little", "trust rises sharply"],
-      "mapping": [-10, -4, 0, 4, 9]
+      "criteria": [
+        "trust drops sharply",
+        "trust drops a little",
+        "trust is unchanged",
+        "trust rises a little",
+        "trust rises sharply"
+      ],
+      "mapping": [
+        -10,
+        -4,
+        0,
+        4,
+        9
+      ]
     },
     "respect_shift": {
       "type": "score",
       "instructions": "How does `message` change how much `npc` respects the player?",
-      "criteria": ["respect drops sharply", "respect drops a little", "respect is unchanged",
-                   "respect rises a little", "respect rises sharply"],
-      "mapping": [-6, -2, 0, 3, 7]
+      "criteria": [
+        "respect drops sharply",
+        "respect drops a little",
+        "respect is unchanged",
+        "respect rises a little",
+        "respect rises sharply"
+      ],
+      "mapping": [
+        -6,
+        -2,
+        0,
+        3,
+        7
+      ]
     },
     "doubt_shift": {
       "type": "score",
       "instructions": "How does `message` change how much `npc` suspects the player?",
-      "criteria": ["suspicion falls sharply", "suspicion falls a little", "suspicion is unchanged",
-                   "suspicion rises a little", "suspicion rises sharply"],
-      "mapping": [-12, -5, 0, 6, 14]
+      "criteria": [
+        "suspicion falls sharply",
+        "suspicion falls a little",
+        "suspicion is unchanged",
+        "suspicion rises a little",
+        "suspicion rises sharply"
+      ],
+      "mapping": [
+        -12,
+        -5,
+        0,
+        6,
+        14
+      ]
     },
     "fondness_shift": {
       "type": "score",
       "instructions": "How does `message` change how much `npc` likes the player?",
-      "criteria": ["liking falls sharply", "liking falls a little", "liking is unchanged",
-                   "liking rises a little", "liking rises sharply"],
-      "mapping": [-12, -4, 0, 4, 10]
+      "criteria": [
+        "liking falls sharply",
+        "liking falls a little",
+        "liking is unchanged",
+        "liking rises a little",
+        "liking rises sharply"
+      ],
+      "mapping": [
+        -12,
+        -4,
+        0,
+        4,
+        10
+      ]
     },
     "alert_shift": {
       "type": "score",
       "instructions": "How does `message` change how alert `npc` is to danger right now?",
-      "criteria": ["much less alert", "slightly less alert", "no change in her alertness",
-                   "slightly more alert", "much more alert"],
-      "mapping": [-10, -3, 0, 5, 12]
+      "criteria": [
+        "much less alert",
+        "slightly less alert",
+        "no change in her alertness",
+        "slightly more alert",
+        "much more alert"
+      ],
+      "mapping": [
+        -10,
+        -3,
+        0,
+        5,
+        12
+      ]
     },
     "goal_shift": {
       "type": "score",
       "instructions": "How does `message` change how urgently `npc` wants to find out who the player really is?",
-      "criteria": ["much less urgent", "slightly less urgent", "no change in her urgency",
-                   "slightly more urgent", "much more urgent"],
-      "mapping": [-8, -2, 0, 3, 8]
+      "criteria": [
+        "much less urgent",
+        "slightly less urgent",
+        "no change in her urgency",
+        "slightly more urgent",
+        "much more urgent"
+      ],
+      "mapping": [
+        -8,
+        -2,
+        0,
+        3,
+        8
+      ]
     },
-
     "betrayal_intent": {
       "type": "noul",
       "instructions": "Is `npc` forming the intention to abandon, betray or turn against the player?"
@@ -225,7 +320,6 @@
       "type": "noul",
       "instructions": "Given `scene` and `message`, is a third party (an assassin, guards, someone tailing them, an unexpected arrival) about to enter this scene?"
     },
-
     "gate_leave": {
       "type": "noul",
       "instructions": "Is `npc` about to end this conversation and walk away from the player?"
@@ -237,9 +331,60 @@
     "gate_ally": {
       "type": "noul",
       "instructions": "Is `npc` about to propose acting together with the player as allies?"
+    },
+    "signal_hostility": {
+      "type": "noul",
+      "signal": "hostility",
+      "instructions": "Given `npc`, `personality`, `relationship`, `scene` and `message`, is the player currently acting in a way that `npc` perceives as hostile?"
+    },
+    "signal_cooperation": {
+      "type": "noul",
+      "signal": "cooperation",
+      "instructions": "Given `npc`, `personality`, `goals`, `scene` and `message`, is `npc` currently inclined to cooperate with the player?"
+    },
+    "signal_withdraw": {
+      "type": "noul",
+      "signal": "withdraw",
+      "instructions": "Given `npc`, `personality`, `goals` and `message`, is `npc` inclined to disengage from the player or put physical distance between them?"
+    },
+    "signal_confront": {
+      "type": "noul",
+      "signal": "confront",
+      "instructions": "Given `npc`, `personality` and `message`, is `npc` inclined to confront the player directly about a contradiction or a demand?"
+    },
+    "signal_disclose": {
+      "type": "noul",
+      "signal": "disclose",
+      "instructions": "Given `npc`, `personality` and `relationship`, is `npc` currently inclined to reveal private or mission-critical information to the player?"
+    },
+    "signal_trust": {
+      "type": "noul",
+      "signal": "trust",
+      "instructions": "Given `npc`, `personality`, `relationship` and `message`, does `npc` currently trust the player?"
+    },
+    "signal_doubt": {
+      "type": "noul",
+      "signal": "doubt",
+      "instructions": "Given `npc`, `personality`, `relationship` and `message`, does `npc` currently doubt what the player is saying?"
+    },
+    "signal_danger": {
+      "type": "noul",
+      "signal": "danger",
+      "instructions": "Given `npc`, `personality`, `scene` and `message`, does `npc` perceive an immediate physical danger to herself right now?"
+    },
+    "signal_investigate": {
+      "type": "score",
+      "signal": "investigate",
+      "instructions": "How strongly does the current situation increase `npc`'s need to investigate the player?",
+      "criteria": [
+        "investigation becomes much less necessary",
+        "investigation becomes slightly less necessary",
+        "no meaningful change",
+        "investigation becomes slightly more necessary",
+        "investigation becomes much more necessary"
+      ]
     }
   },
-
   "gates": {
     "_note": [
       "★ choice 给基础分布，noul 做阈值覆盖。noul 是校准过的 P(true)，天然适合当门限；",
@@ -247,7 +392,15 @@
       "  并在返回里标 gated_by=（gate 名 + 概率），方便前端显示「这是被门限改写的」。",
       "",
       "★ 阈值现状（实测，样本很少，按观察到的分布先定，必须随真实对局重标）：",
-      "  gate_ally    同袍相助 0.527 / 0.625 / 0.637（三次不同措辞的英译）",
+      "★★ 2026-09-23 live 反例：**夹具上标的阈值不可迁移到 live state**。gate_ally 的",
+      "  0.45 在离线夹具上看着有余量（非结盟侧最大 0.344），但 live /decide 下 4/4 个输入",
+      "  （持刀 0.483 ／ 友好 0.480 ／ 辱骂 0.572 ／ 寒暄 0.553）**全部命中** → 门限恒真",
+      "  → 把包括「刀抵喉咙」在内的所有输入都改写成 ally。一个恒真的门限不是门限，是常量，",
+      "  而且比没有门限更糟：它掩盖了 choice 的方差，让四项极端不同的输入返回同一个行为。",
+      "  教训：阈值必须在**目标 state 文档**上标定。换 state（夹具 → live）会让整组分布平移。",
+      "  复现：起服务后 POST /decide 4 个极端输入，看 decision.behavior.id 是否恒为 ally。",
+      "  gate_ally 已据此停用（见下）。本轮的行为权威交回 policy 段。",
+      "  gate_ally    同袍相助 0.527 / 0.625 / 0.637（三次不同措辞的英译）【夹具数据，已作废】",
       "               非结盟 陌生问路 0.344 / 羞辱 0.333 / 持刀 0.233",
       "               → 方向正确、两组不重叠。阈值取 0.45：低于结盟组最小值 0.527，",
       "                 高于非结盟组最大值 0.344，两侧各留约 0.08 余量。",
@@ -263,48 +416,273 @@
       "  跑 python laya_bridge.py langtest 会把每个门限的「观察最大 P / 阈值 / 是否在生效」",
       "  直接列出来 —— 死门限必须显形，留着假装在工作比删掉更糟。"
     ],
-    "gate_leave": { "behavior": "leave", "threshold": 0.70, "_status": "未验证（方向可疑），暂不生效" },
-    "gate_ally": { "behavior": "ally", "threshold": 0.45, "_status": "实测两组不重叠，已生效" },
-    "gate_confide": { "behavior": "confide", "threshold": 0.85, "_status": "观察分布无安全阈值，暂不生效" }
+    "gate_leave": {
+      "behavior": "leave",
+      "threshold": 0.7,
+      "_status": "未验证（方向可疑），暂不生效"
+    },
+    "gate_ally": {
+      "behavior": "ally",
+      "threshold": 1.01,
+      "_status": "★ 已停用（2026-09-23 live 实测反例，不是调参）",
+      "_evidence": [
+        "离线 signaltest 夹具：非结盟侧观测最大 0.344 → 0.45 看起来两侧都有余量。",
+        "live /decide（默认 actor + scene）4/4 全部命中：",
+        "  持刀威胁 0.483 ／ 友好帮助 0.480 ／ 严重辱骂 0.572 ／ 正常寒暄 0.553",
+        "→ 分布整体上移，阈值被埋在分布内部，门限恒真。",
+        "→ 现象：四项语义完全不同的输入最终行为全部是 ally，包括「刀抵在你喉咙上」。",
+        "停用方式取 threshold=1.01（概率上界之外）而不是删掉该键：",
+        "  保留键是为了让 apply_gates 的审计字段仍能显示「这里曾有一个门限、它被停用了」，",
+        "  直接删除会让下一个人以为从来没人标定过。",
+        "★ 重新启用前必须做：在**目标 state 文档**上重新采集两组分布并确认不重叠。"
+      ]
+    },
+    "gate_confide": {
+      "behavior": "confide",
+      "threshold": 0.85,
+      "_status": "观察分布无安全阈值，暂不生效"
+    }
   },
-
+  "signals": {
+    "_note": [
+      "需求来源：npc_behavior choice 对复杂 NPC 行为的区分力不足（argmax 易停在先验上），",
+      "所以把控制职责从「选行为」下移到「产出决策信号」。Laya 出信号，Policy Resolver 出行为。",
+      "",
+      "两类量纲，不要混用：",
+      "  · kind=prob  —— noul，校准过的 P(true)，0~1，可以直接当阈值用。",
+      "  · kind=level —— score，0~4 的期望值，表示强度/程度，**不是概率**，不要和 prob 直接比大小。",
+      "display 只影响前端呈现，不参与任何判断。"
+    ],
+    "order": [
+      "hostility",
+      "cooperation",
+      "withdraw",
+      "confront",
+      "disclose",
+      "investigate",
+      "trust",
+      "doubt",
+      "danger"
+    ],
+    "meta": {
+      "hostility": {
+        "label": "敌意",
+        "kind": "prob",
+        "question": "signal_hostility"
+      },
+      "cooperation": {
+        "label": "合作",
+        "kind": "prob",
+        "question": "signal_cooperation"
+      },
+      "withdraw": {
+        "label": "退出倾向",
+        "kind": "prob",
+        "question": "signal_withdraw"
+      },
+      "confront": {
+        "label": "质问倾向",
+        "kind": "prob",
+        "question": "signal_confront"
+      },
+      "disclose": {
+        "label": "透露秘密",
+        "kind": "prob",
+        "question": "signal_disclose"
+      },
+      "investigate": {
+        "label": "调查需求",
+        "kind": "level",
+        "question": "signal_investigate",
+        "range": [
+          0,
+          4
+        ]
+      },
+      "trust": {
+        "label": "信任",
+        "kind": "prob",
+        "question": "signal_trust"
+      },
+      "doubt": {
+        "label": "怀疑",
+        "kind": "prob",
+        "question": "signal_doubt"
+      },
+      "danger": {
+        "label": "危险感",
+        "kind": "prob",
+        "question": "signal_danger"
+      }
+    }
+  },
+  "policy": {
+    "_note": [
+      "Policy Resolver：把 Laya 的 decision signals 转成系统行为。",
+      "★ 不要让 choice 的 argmax 直接控制 NPC —— 它只作为兜底 baseline。",
+      "",
+      "规则自上而下求值，命中即返回。每条 when 是 {signal: [min, max]} 的闭区间约束。",
+      "prob 类与 level 类量纲不同，阈值必须各自按实测分布定，不能互相借用。",
+      "",
+      "★★ 目前的 rules 只有一条，这是实测结果决定的，不是偷懒：",
+      "   48 条方向回归（tests/thresholds.json 的 runs）里，15 个维度**只有 3 个**的",
+      "   敌意侧/友好侧均值差超过噪声（doubt_shift +0.108、hostility +0.046、confront +0.037），",
+      "   其余 12 个（cooperation / withdraw / disclose / trust / doubt / danger /",
+      "   investigate / trust_shift / respect_shift / fondness_shift / alert_shift / goal_shift）",
+      "   全部落在噪声级。**不要为噪声级信号写阈值** —— 那不是策略，是赌博。",
+      "",
+      "校准方法（可复现）：",
+      "  python laya_bridge.py signaltest          # 全量 48 条 → tests/thresholds.json",
+      "  阈值 = 反面组观测最高值 + 2 × 翻译抖动估计(≈0.055)",
+      "  ☆ 翻译抖动为什么必须计入：同一句中文换译法会让 noul 概率在 0.527~0.637 间跳",
+      "    （见 gates._note 的实测）。阈值贴着观测值定，会时灵时不灵。"
+    ],
+    "enabled": true,
+    "rules": [
+      {
+        "behavior": "leave",
+        "when": {
+          "hostility": [
+            0.56,
+            1.0
+          ]
+        },
+        "_why": [
+          "★ 这是**安全护栏**，不是分类器：只在敌意信号的极端尾部触发，其余一律交给",
+          "  歧义裁定或 choice baseline。不做「中等敌意」的判断 —— 实测那个区间是噪声。",
+          "标定：阈值 = 低组（友好侧 7 类）观测最高 0.45 + 2 × 翻译抖动估计 0.055 ≈ 0.56。",
+          "  实测 48 条里唯一越过 0.56 的是 armed_attack_1（0.63，刀抵喉咙）；",
+          "  次高 severe_insult_1/2 = 0.54 **故意留在阈值之下** —— 它距噪声带太近。",
+          "选 leave 而不是 distance：刀抵喉咙时语义上该是「中止对话」，",
+          "  distance 的定义是「承认善意但拒绝关系推进」，对威胁场景不贴。"
+        ]
+      }
+    ],
+    "baseline_signals": [
+      "investigate"
+    ],
+    "ambiguity": {
+      "_note": [
+        "歧义判据：满足任一条件即判 ambiguous → source=ambiguous / fallback=story_agent，",
+        "交回 Story/Director，不硬选一个行为。",
+        "  · 全部 prob 信号都落在 [mid_low, mid_high] 中间带 —— 没有任何维度有把握；",
+        "  · 可用的 prob 信号少于 min_signals 个。",
+        "",
+        "★ 求值顺序：规则先于歧义判定（见 laya_bridge.policy_resolve）。反了规则永远触发不了。",
+        "",
+        "★ 曾用「top1 与 top2 差值 < margin」当判据，已废弃：8 个 prob 信号是**正交**的",
+        "  （敌意 0.88 与怀疑 0.80 可同时成立），当成互相竞争的候选是错的 ——",
+        "  实测导致「敌意 0.88 + 退出 0.71」被判 ambiguous，规则无法触发。",
+        "  差值仍计算，但只作审计信息，不参与判定。",
+        "",
+        "★★ 本机实测（typed-decisions / CPU / 48 条）：全部 prob 信号均值落在 0.33~0.66，",
+        "  **绝大多数轮次都会落进中间带 → 会大量返回 ambiguous**。这是刻意的：",
+        "  模型确实不知道的时候，系统就应该说不知道，而不是拿 choice 的弱分布冒充决定。"
+      ],
+      "margin": 0.08,
+      "mid_low": 0.35,
+      "mid_high": 0.65,
+      "min_signals": 3
+    }
+  },
   "state_shift": {
     "_note": "Laya 的 score 期望值在 mapping 上线性插值得到增量；attribution 让同一句话对不同人格产生不同结果。",
     "paths": {
-      "trust_shift": { "target": "relationship.trust", "range": [0, 100], "label": "信任" },
-      "respect_shift": { "target": "relationship.respect", "range": [0, 100], "label": "尊敬" },
-      "doubt_shift": { "target": "relationship.doubt", "range": [0, 100], "label": "怀疑" },
-      "fondness_shift": { "target": "emotion.fondness", "range": [0, 1], "scale": 0.01, "label": "好感" },
-      "alert_shift": { "target": "emotion.alert", "range": [0, 1], "scale": 0.01, "label": "警觉" },
-      "goal_shift": { "target": "goals.identify_player", "range": [0, 1], "scale": 0.01, "label": "查明身份" }
+      "trust_shift": {
+        "target": "relationship.trust",
+        "range": [
+          0,
+          100
+        ],
+        "label": "信任"
+      },
+      "respect_shift": {
+        "target": "relationship.respect",
+        "range": [
+          0,
+          100
+        ],
+        "label": "尊敬"
+      },
+      "doubt_shift": {
+        "target": "relationship.doubt",
+        "range": [
+          0,
+          100
+        ],
+        "label": "怀疑"
+      },
+      "fondness_shift": {
+        "target": "emotion.fondness",
+        "range": [
+          0,
+          1
+        ],
+        "scale": 0.01,
+        "label": "好感"
+      },
+      "alert_shift": {
+        "target": "emotion.alert",
+        "range": [
+          0,
+          1
+        ],
+        "scale": 0.01,
+        "label": "警觉"
+      },
+      "goal_shift": {
+        "target": "goals.identify_player",
+        "range": [
+          0,
+          1
+        ],
+        "scale": 0.01,
+        "label": "查明身份"
+      }
     },
     "attribution": {
       "enabled": true,
       "_note": "正向系数 k=0.5+(1-多疑)，负向系数 k'=0.5+多疑。关掉则完全由 Laya 判断。",
-      "positive_keys": ["trust_shift", "respect_shift", "fondness_shift", "goal_shift"],
+      "positive_keys": [
+        "trust_shift",
+        "respect_shift",
+        "fondness_shift",
+        "goal_shift"
+      ],
       "trait": "traits.suspicion"
     }
   },
-
   "director": {
     "event_threshold": 0.75,
     "_note": "hidden_event 概率超过阈值 → 交后台导演排期进入剧情；以下各项只写入状态，不直接触发。"
   },
-
   "world": {
     "state": {
-      "border_tension": 0.80,
+      "border_tension": 0.8,
       "grain_price": 0.72,
       "crown_prestige": 0.41,
       "cult_involvement": 0.55,
       "trade_volume": 0.66,
-      "weather_stress": 0.30
+      "weather_stress": 0.3
     },
     "questions": {
-      "war_outbreak": { "type": "noul", "instructions": "Judging from `world_state`, how likely is a war to break out within the next month?" },
-      "caravan_drop": { "type": "noul", "instructions": "Judging from `world_state`, how likely is a marked drop in northern caravan traffic within the next month?" },
-      "blackmarket": { "type": "noul", "instructions": "Judging from `world_state`, how likely is a sizable black market to appear within the next month?" }
+      "war_outbreak": {
+        "type": "noul",
+        "instructions": "Judging from `world_state`, how likely is a war to break out within the next month?"
+      },
+      "caravan_drop": {
+        "type": "noul",
+        "instructions": "Judging from `world_state`, how likely is a marked drop in northern caravan traffic within the next month?"
+      },
+      "blackmarket": {
+        "type": "noul",
+        "instructions": "Judging from `world_state`, how likely is a sizable black market to appear within the next month?"
+      }
     },
-    "names": { "war_outbreak": "战争爆发", "caravan_drop": "商队减少", "blackmarket": "黑市出现" }
+    "names": {
+      "war_outbreak": "战争爆发",
+      "caravan_drop": "商队减少",
+      "blackmarket": "黑市出现"
+    }
   }
 }

@@ -1,0 +1,210 @@
+{
+  "_readme": [
+    "由 python laya_bridge.py ckptcompare 生成。不要手改。",
+    "数据源是 thresholds.json 的 runs，需两个进程各跑一次 signaltest。"
+  ],
+  "models": [
+    "typed-decisions",
+    "english"
+  ],
+  "summary": {
+    "typed-decisions": {
+      "direction_accuracy": 0.4949,
+      "n_assertions": 99,
+      "live_signals": [
+        "hostility",
+        "cooperation",
+        "withdraw",
+        "confront",
+        "disclose",
+        "investigate",
+        "trust",
+        "doubt",
+        "danger"
+      ],
+      "flat_signals": [],
+      "n_signals": 9
+    },
+    "english": {
+      "direction_accuracy": 0.5152,
+      "n_assertions": 99,
+      "live_signals": [
+        "hostility",
+        "cooperation",
+        "withdraw",
+        "confront",
+        "disclose",
+        "investigate",
+        "trust",
+        "doubt",
+        "danger"
+      ],
+      "flat_signals": [],
+      "n_signals": 9
+    },
+    "_verdict": {
+      "ranked": [
+        "english",
+        "typed-decisions"
+      ],
+      "tie": true,
+      "win_margin_assertions": 2.0,
+      "min_pass_gap": 5
+    }
+  },
+  "winner": "english",
+  "signal_distribution": {
+    "typed-decisions": {
+      "hostility": {
+        "n": 48,
+        "min": 0.3276,
+        "mean": 0.4219,
+        "max": 0.622,
+        "span": 0.2944,
+        "kind": "prob"
+      },
+      "cooperation": {
+        "n": 48,
+        "min": 0.2534,
+        "mean": 0.4489,
+        "max": 0.6468,
+        "span": 0.3934,
+        "kind": "prob"
+      },
+      "withdraw": {
+        "n": 48,
+        "min": 0.2713,
+        "mean": 0.3573,
+        "max": 0.5166,
+        "span": 0.2453,
+        "kind": "prob"
+      },
+      "confront": {
+        "n": 48,
+        "min": 0.3627,
+        "mean": 0.4739,
+        "max": 0.6008,
+        "span": 0.2381,
+        "kind": "prob"
+      },
+      "disclose": {
+        "n": 48,
+        "min": 0.3263,
+        "mean": 0.4479,
+        "max": 0.5199,
+        "span": 0.1936,
+        "kind": "prob"
+      },
+      "investigate": {
+        "n": 48,
+        "min": 2.0429,
+        "mean": 2.7384,
+        "max": 3.1338,
+        "span": 1.0909,
+        "kind": "level"
+      },
+      "trust": {
+        "n": 48,
+        "min": 0.2593,
+        "mean": 0.4043,
+        "max": 0.6583,
+        "span": 0.399,
+        "kind": "prob"
+      },
+      "doubt": {
+        "n": 48,
+        "min": 0.3293,
+        "mean": 0.4271,
+        "max": 0.531,
+        "span": 0.2017,
+        "kind": "prob"
+      },
+      "danger": {
+        "n": 48,
+        "min": 0.4326,
+        "mean": 0.5038,
+        "max": 0.6601,
+        "span": 0.2275,
+        "kind": "prob"
+      }
+    },
+    "english": {
+      "hostility": {
+        "n": 48,
+        "min": 0.1927,
+        "mean": 0.299,
+        "max": 0.8218,
+        "span": 0.6291,
+        "kind": "prob"
+      },
+      "cooperation": {
+        "n": 48,
+        "min": 0.1412,
+        "mean": 0.5431,
+        "max": 0.8821,
+        "span": 0.7409,
+        "kind": "prob"
+      },
+      "withdraw": {
+        "n": 48,
+        "min": 0.1702,
+        "mean": 0.5414,
+        "max": 0.9365,
+        "span": 0.7663,
+        "kind": "prob"
+      },
+      "confront": {
+        "n": 48,
+        "min": 0.3678,
+        "mean": 0.619,
+        "max": 0.8129,
+        "span": 0.4451,
+        "kind": "prob"
+      },
+      "disclose": {
+        "n": 48,
+        "min": 0.2309,
+        "mean": 0.384,
+        "max": 0.7097,
+        "span": 0.4788,
+        "kind": "prob"
+      },
+      "investigate": {
+        "n": 48,
+        "min": 1.7968,
+        "mean": 2.1477,
+        "max": 2.5287,
+        "span": 0.7319,
+        "kind": "level"
+      },
+      "trust": {
+        "n": 48,
+        "min": 0.2037,
+        "mean": 0.3767,
+        "max": 0.8909,
+        "span": 0.6872,
+        "kind": "prob"
+      },
+      "doubt": {
+        "n": 48,
+        "min": 0.1286,
+        "mean": 0.2468,
+        "max": 0.4951,
+        "span": 0.3665,
+        "kind": "prob"
+      },
+      "danger": {
+        "n": 48,
+        "min": 0.0699,
+        "mean": 0.1896,
+        "max": 0.6933,
+        "span": 0.6234,
+        "kind": "prob"
+      }
+    }
+  },
+  "direction_accuracy": {
+    "typed-decisions": 0.4949,
+    "english": 0.5152
+  }
+}

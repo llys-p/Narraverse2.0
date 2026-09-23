@@ -1,0 +1,104 @@
+{
+  "_readme": [
+    "由 python laya_bridge.py bench 生成。不要手改。",
+    "CPU 与 GPU 必须分两个进程各跑一次，结果按设备合并进 runs。",
+    "GPU 请用 .venv-cuda 的解释器并设 LAYA_DEVICE=cuda。"
+  ],
+  "model": "typed-decisions",
+  "runs": {
+    "cpu (torch 2.14.0+cpu, 无 CUDA)": {
+      "results": [
+        {
+          "label": "1 题",
+          "n": 1,
+          "first_ms": 1550.6,
+          "avg_ms": 1169.8,
+          "per_q_ms": 1169.8
+        },
+        {
+          "label": "3 题",
+          "n": 3,
+          "first_ms": 3019.1,
+          "avg_ms": 3623.1,
+          "per_q_ms": 1207.7
+        },
+        {
+          "label": "6 题",
+          "n": 6,
+          "first_ms": 7228.2,
+          "avg_ms": 9279.8,
+          "per_q_ms": 1546.6
+        },
+        {
+          "label": "10 题",
+          "n": 10,
+          "first_ms": 11814.1,
+          "avg_ms": 10843.3,
+          "per_q_ms": 1084.3
+        },
+        {
+          "label": "完整 NPC tick",
+          "n": 22,
+          "first_ms": 22562.9,
+          "avg_ms": 22132.0,
+          "per_q_ms": 1006.0
+        }
+      ],
+      "world_tick": {
+        "n_questions": 3,
+        "avg_ms": 2617.4
+      },
+      "load_ms": 45339,
+      "vram": null
+    },
+    "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)": {
+      "results": [
+        {
+          "label": "1 题",
+          "n": 1,
+          "first_ms": 1653.5,
+          "avg_ms": 42.4,
+          "per_q_ms": 42.4
+        },
+        {
+          "label": "3 题",
+          "n": 3,
+          "first_ms": 81.8,
+          "avg_ms": 63.3,
+          "per_q_ms": 21.1
+        },
+        {
+          "label": "6 题",
+          "n": 6,
+          "first_ms": 102.4,
+          "avg_ms": 100.7,
+          "per_q_ms": 16.8
+        },
+        {
+          "label": "10 题",
+          "n": 10,
+          "first_ms": 171.4,
+          "avg_ms": 169.6,
+          "per_q_ms": 17.0
+        },
+        {
+          "label": "完整 NPC tick",
+          "n": 22,
+          "first_ms": 400.6,
+          "avg_ms": 399.5,
+          "per_q_ms": 18.2
+        }
+      ],
+      "world_tick": {
+        "n_questions": 3,
+        "avg_ms": 42.0
+      },
+      "load_ms": 49738,
+      "vram": {
+        "peak_allocated_gb": 2.477,
+        "peak_reserved_gb": 2.932,
+        "device_total_gb": 8.0
+      }
+    }
+  }
+}

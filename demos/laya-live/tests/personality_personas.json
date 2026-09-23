@@ -1,0 +1,39 @@
+{
+  "_readme": [
+    "Personality A/B 对照（§4）。",
+    "",
+    "★ 固定：同一场景 / 同一关系值 / 同一情绪 / 同一目标 / 同一 Traits / 同一玩家台词。",
+    "  只改 actor.personality。这样任何差异都只能归因给人格 —— 这是本实验唯一有价值的地方。",
+    "",
+    "★ 测试目标不是「证明 MBTI 分类正确」——那是伪命题，Laya 也不认识 MBTI。",
+    "  要回答的是：**其余状态完全相同的情况下，Laya 能否对人格参数产生稳定且方向合理的差异？**",
+    "",
+    "数值约定（与 narra_config.json 的 actor.personality 保持一致）：",
+    "  extraversion : -1 ~ +1（正值=外向）",
+    "  intuition / thinking / judging : 0 ~ 1（值越大=越偏该极）",
+    "  注意，这里刻意用「极性化」写法而不是四字母标签：",
+    "  不要把 MBTI 字符串（如 \"INTJ\"）直接作为行为规则喂进去 —— 模型没见过这种映射，",
+    "  而且那等于把一套心理学分类当成事实注入决策。"
+  ],
+  "fixed_note": "以下字段在所有 persona 之间保持不变，取 narra_config.json 的 actor 原值",
+
+  "personas": [
+    { "id": "A", "desc": "内倾 + 思考 + 判断", "tags": ["I", "T", "J"],
+      "personality": { "extraversion": -0.80, "intuition": 0.20, "thinking": 0.85, "judging": 0.80 } },
+    { "id": "B", "desc": "外倾 + 情感 + 知觉", "tags": ["E", "F", "P"],
+      "personality": { "extraversion": 0.80, "intuition": 0.60, "thinking": 0.15, "judging": 0.20 } },
+    { "id": "C", "desc": "内倾 + 情感", "tags": ["I", "F"],
+      "personality": { "extraversion": -0.80, "intuition": 0.60, "thinking": 0.15, "judging": 0.50 } },
+    { "id": "D", "desc": "外倾 + 思考", "tags": ["E", "T"],
+      "personality": { "extraversion": 0.80, "intuition": 0.20, "thinking": 0.85, "judging": 0.50 } }
+  ],
+
+  "stimuli": [
+    { "id": "primary", "text": "我可以帮你，但你必须先告诉我灰鸦是谁。",
+      "why": "§4 指定的主输入：既是示好又是索取，人格差异最容易在这个位置显形" },
+    { "id": "pressure", "text": "我劝你老实点，你出不了这座城。",
+      "why": "高压输入：思考型/情感型对威胁的反应路径应当不同" },
+    { "id": "warmth", "text": "外面有人在盯着你，我替你挡住门口。",
+      "why": "纯善意的帮助：外倾/内倾在是否拉近关系上应当有差别" }
+  ]
+}

@@ -294,6 +294,27 @@ class LayaEngine:
                 return self.obj.predict(state, questions)
         return self.obj.predict(state, questions)
 
+    def device_label(self):
+        """当前推理设备的人类可读标签。
+
+        ★ 刻意不做「静默回落到 CPU」：如果 LAYA_DEVICE=cuda 但 torch 装的是 CPU 版，
+          一定要把这件事说出来。否则 benchmark 会给出「用了 GPU」的假结论 ——
+          这正是本轮最容易犯的错（本机初始就是 torch 2.14.0+cpu）。
+        """
+        want = (os.environ.get("LAYA_DEVICE") or "").strip()
+        try:
+            import torch
+            avail = torch.cuda.is_available()
+            if want.lower().startswith("cuda"):
+                if avail:
+                    return "cuda (%s)" % torch.cuda.get_device_name(0)
+                return "cpu ｜ ⚠ LAYA_DEVICE=cuda 但 CUDA 不可用（torch %s，多半是 CPU 版）" % torch.__version__
+            if avail:
+                return "cpu ｜ 可用的 CUDA 未启用，设 LAYA_DEVICE=cuda 开启"
+            return "cpu (torch %s, 无 CUDA)" % torch.__version__
+        except Exception:
+            return want or "cpu (torch 未安装)"
+
     def describe(self):
         out = {
             "kind": self.kind,
@@ -638,16 +659,24 @@ def _dig(obj, path, default=None):
 def apply_gates(answers, choice_id):
     """用 noul 门限覆盖 choice 的 argmax，返回 (最终行为 id, 命中信息或 None)。
 
-    为什么需要这一步 —— 四轮实测的结论：
-      · score 与 noul 是 Laya **校准过**的原语。noul 直接给 P(true)（0~1），
-        跨输入可比、有明确语义；实测「玩家拔刀要杀她」时 leave 的 noul = 0.739，
-        而「玩家辱骂骑士团」时 leave = 0.216 —— 信号清晰。
-      · choice 即便把选项压短，区分度仍然偏弱，argmax 容易停在先验吸引子上
-        （七个长选项下，四个语义相反的输入全选中 confide）。
+    算法（只看这三步，没有任何经验阈值写在这里）：
+      ① 遍历 CFG["gates"]，取出每个门限问句的 noul 概率 P(true)；
+      ② 按概率降序排序 —— 概率最高的门限优先裁决；
+      ③ 返回第一个满足 P >= threshold 的 gate.behavior；一个都没命中就原样返回 choice 的 argmax。
+
+    为什么需要这一步：
+      · noul 是 Laya **校准过**的 P(true)，跨输入可比、有明确语义，天然适合当门限。
+      · choice 即便把选项压短，区分度仍偏弱，argmax 容易停在先验吸引子上。
 
     所以分工是：choice 出**基础分布**（保留选项间相对次序，前端画分布图仍有意义），
-    noul 门限在信号很强时改写**最终行为**。阈值取保守值（0.70~0.85），
-    只在证据明确时才覆盖，平时完全不干预 choice 的判断 —— 宁可漏，不可乱改。
+    noul 门限在信号足够强时改写**最终行为**。阈值取在实测分布的空隙上，
+    只在证据明确时才覆盖，平时完全不干预 choice —— 宁可漏，不可乱改。
+
+    ★ 各门限的阈值、观察到的分布、以及哪些门限当前「不生效」，统一记在
+      narra_config.json 的 gates._note 与 Laya接入报告.md。
+      **不要在这里写死实验数值** —— 注释会因为一次重测就变成假的（本站踩过）。
+      复现办法：python laya_bridge.py langtest，会列出每个门限的观察最大值、
+      阈值、以及是否真的在生效；死门限必须显形，留着假装在工作比删掉更糟。
     """
     gates = CFG.get("gates") or {}
     armed = []
@@ -664,6 +693,207 @@ def apply_gates(answers, choice_id):
                          "choice_said": choice_id,
                          "overrode": choice_id if choice_id != beh else None}
     return choice_id, None
+
+
+# ==========================================================================
+# 4b. 决策信号 + Policy Resolver
+#
+# 分工（本轮的核心架构改动）：
+#     Laya → decision signals → Policy Resolver → behavior candidate
+#
+# choice 的 argmax 不再直接控制 NPC，它只作为兜底 baseline。
+# 理由：choice 对复杂行为的区分力不足，而 noul/score 是校准过的量。
+# ==========================================================================
+def _signal_meta():
+    return (CFG.get("signals") or {}).get("meta") or {}
+
+
+def _signal_kind(name):
+    return (_signal_meta().get(name) or {}).get("kind", "prob")
+
+
+def signal_snapshot(answers):
+    """把 signal_* 问句的答案收成有序快照，返回 (列表, {signal: value})。
+
+    ★ 两类量纲不能混用：
+        kind=prob  —— noul 的 P(true)，0~1，可以直接当阈值；
+        kind=level —— score 的期望值，0~4，表示强度而不是概率。
+      把 level 当 prob 去和 0.7 比大小是错的（0~4 尺度上一个 0.7 是「几乎没有」）。
+    """
+    spec = CFG.get("signals") or {}
+    meta = spec.get("meta") or {}
+    order = spec.get("order") or list(meta.keys())
+    rows, values = [], {}
+    for name in order:
+        m = meta.get(name) or {}
+        qid = m.get("question") or ("signal_" + name)
+        v = (answers.get(qid) or {}).get("_value")
+        if v is None:
+            continue
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            continue
+        values[name] = v
+        rows.append({"signal": name, "label": m.get("label") or name,
+                     "kind": m.get("kind") or "prob", "value": round(v, 4),
+                     "question": qid, "range": m.get("range")})
+    return rows, values
+
+
+def _rule_matches(when, values):
+    """一条规则的全部区间约束是否都满足。缺信号的约束视为不满足 —— 不放行。"""
+    hits = []
+    for name, rng in (when or {}).items():
+        v = values.get(name)
+        if v is None:
+            return None
+        pair = (list(rng) + [None, None])[:2]
+        lo, hi = pair[0], pair[1]
+        if lo is not None and v < lo:
+            return None
+        if hi is not None and v > hi:
+            return None
+        hits.append({"signal": name, "value": round(v, 4),
+                     "range": [lo, hi], "kind": _signal_kind(name)})
+    return hits
+
+
+def assess_ambiguity(values):
+    """歧义裁定，返回 (level, reasons)；level ∈ strong / moderate / ambiguous。
+
+    ★ 判据设计上踩过一个坑，记在这里免得后人重踩：
+      最初把「top1 与 top2 的差值 < margin」当成歧义条件，即把 8 个 prob 信号
+      当成**互相竞争的候选**。但它们是**正交**的 —— 敌意 0.88 与怀疑 0.80 完全可以
+      同时成立，"两个数挨得近" 并不代表模型不知道该怎么办。
+      后果实测可见：敌意 0.88 + 退出 0.71（两条规则条件都满足）被判成 ambiguous，
+      规则根本没机会触发。
+      现在只保留两个触发条件：
+        · 没有任何信号越出中间带 —— 这才是「所有维度上都没把握」的正确表达；
+        · 可用信号数不足。
+      top1/top2 差值仍然计算并返回，但只作审计信息，不再参与判定。
+
+    ★ 刻意不追求「每次都给出一个结果」。在中间带里硬选一个，等于把模型的不确定性
+      藏起来，下游 Director / Story Agent 就无从判断该不该自己接手。
+    """
+    amb = (CFG.get("policy") or {}).get("ambiguity") or {}
+    margin = float(amb.get("margin", 0.08))
+    mid_lo = float(amb.get("mid_low", 0.35))
+    mid_hi = float(amb.get("mid_high", 0.65))
+    need = int(amb.get("min_signals", 3))
+
+    probs = sorted(((k, v) for k, v in values.items() if _signal_kind(k) == "prob"),
+                   key=lambda t: -t[1])
+    if len(probs) < need:
+        return "ambiguous", [{"why": "可用的 prob 信号数量不足",
+                              "have": len(probs), "need": need}]
+
+    # 越出中间带 = 至少有一个维度是「有把握」的
+    outside = [(k, v) for k, v in probs if v > mid_hi or v < mid_lo]
+    if not outside:
+        return "ambiguous", [{"why": "全部 prob 信号都落在中间带，没有任何维度是有把握的",
+                              "band": [mid_lo, mid_hi],
+                              "values": [[k, round(v, 4)] for k, v in probs]}]
+
+    top = probs[0]
+    gap = top[1] - (probs[1][1] if len(probs) > 1 else 0.0)
+    info = {"why": "top1 与 top2 差值（仅供参考，不作为歧义判据 —— 信号是正交的）",
+            "top1": [top[0], round(top[1], 4)],
+            "top2": [probs[1][0], round(probs[1][1], 4)] if len(probs) > 1 else None,
+            "gap": round(gap, 4)}
+
+    # strong：有信号越过中间带的幅度 ≥ margin —— 这是「明显有把握」
+    decisive = [(k, v) for k, v in outside if v >= mid_hi + margin or v <= mid_lo - margin]
+    if decisive:
+        return "strong", [{"why": "有信号明显越过中间带",
+                           "signals": [[k, round(v, 4)] for k, v in decisive],
+                           "band": [mid_lo, mid_hi], "margin": margin}, info]
+    return "moderate", [{"why": "有信号越出中间带，但越过幅度未达 margin",
+                         "signals": [[k, round(v, 4)] for k, v in outside],
+                         "band": [mid_lo, mid_hi], "margin": margin}, info]
+
+
+def policy_resolve(values, choice_baseline):
+    """Decision Signals → Behavior Candidate，输出必须可审计。
+
+    返回：behavior / source / reasons / choice_baseline / confidence_level / fallback
+    source ∈ {"policy", "choice_baseline", "ambiguous"}
+
+    求值顺序（★ 改动过，别改回去）：
+        1. policy.enabled=false      → 一律回落 choice baseline（当前默认状态）
+        2. 逐条规则 {when: 阈值合取} → 命中即 source=policy
+        3. 无规则命中且判为歧义       → source=ambiguous，fallback=story_agent，不硬选
+        4. 其余                       → source=choice_baseline
+    """
+    pol = CFG.get("policy") or {}
+    level, amb_reasons = assess_ambiguity(values)
+
+    if not pol.get("enabled", False):
+        return {"behavior": choice_baseline, "source": "choice_baseline",
+                "reasons": [{"why": "policy.enabled=false，规则未启用，回落 choice baseline",
+                             "note": "阈值尚未由实测分布确认 —— 宁可不改，也不要乱改"}],
+                "choice_baseline": choice_baseline, "confidence_level": level,
+                "ambiguity_reasons": amb_reasons, "fallback": None}
+
+    # ★ 顺序很重要：**先求规则，再判歧义**。
+    #   规则是「人写死的显式阈值合取」（如 hostility≥0.75 且 withdraw≥0.65），命中即
+    #   代表一个具体、有依据的判断；歧义判据是「没有任何维度有把握」的兜底。
+    #   把歧义放在前面 → 规则永远触发不了（实测踩过，详见 assess_ambiguity 注释）。
+    for rule in pol.get("rules") or []:
+        hits = _rule_matches(rule.get("when"), values)
+        if hits:
+            return {"behavior": rule.get("behavior"), "source": "policy",
+                    "reasons": hits, "choice_baseline": choice_baseline,
+                    "confidence_level": level, "ambiguity_reasons": amb_reasons,
+                    "fallback": None}
+
+    if level == "ambiguous":
+        return {"behavior": choice_baseline, "source": "ambiguous",
+                "reasons": amb_reasons, "choice_baseline": choice_baseline,
+                "confidence_level": level, "ambiguity_reasons": amb_reasons,
+                "fallback": "story_agent"}      # ★ 交 Story/Director，不硬选
+
+    return {"behavior": choice_baseline, "source": "choice_baseline",
+            "reasons": [{"why": "没有规则命中，回落 choice baseline"}],
+            "choice_baseline": choice_baseline, "confidence_level": level,
+            "ambiguity_reasons": amb_reasons, "fallback": None}
+
+
+def decision_history_entries(intent_id, behavior_id):
+    """把一轮决策压成英文 decision_history 记录（玩家一条 + NPC 一条）。
+
+    ★ 刻意**不**把 NPC 的中文台词翻成英文再塞进去：逐轮翻译既慢又会累积误差，
+      而且把文学文本当决策记录本身就是错配。
+      这里只记录**已经结构化的决策结果**（玩家意图 + NPC 行为），
+      措辞直接取自配置里的英文 criteria —— 天然英文、天然可比、天然可审计。
+    """
+    out = []
+    if intent_id:
+        crit = ((CFG.get("questions", {}).get("player_intent") or {}).get("criteria") or {}).get(intent_id)
+        out.append({"type": "player_%s" % intent_id,
+                    "summary": "player %s" % (crit or intent_id)})
+    if behavior_id:
+        crit = behavior_short_criteria().get(behavior_id)
+        out.append({"type": "npc_%s" % behavior_id,
+                    "summary": "npc %s" % (crit or behavior_id)})
+    return out
+
+
+def build_decision_history(payload, accumulated=None):
+    """取结构化决策历史：payload 显式给的优先，否则用桥内累积的（最近 6 条）。
+
+    ★ 契约（§8）：每条 summary 必须是**与 state 文档同语言的结构化短语**
+      （英文档就英文，中文档就中文），且只描述「决策结果」——
+      例如 "player threatens or pressures her" / "npc politely keeps her distance"。
+      不要塞逐轮的中文文学台词：那是 §8 的原始 bug ——
+      state 文档是英文的，中间夹几段中文完整台词，Laya 会在这些 token 上失焦。
+      桥内累积的条目由 decision_history_entries() 生成，天然满足这个契约；
+      只有外部调用方自己传 decision_history 时才有可能破坏它。
+    """
+    dh = payload.get("decision_history")
+    if isinstance(dh, list) and dh:
+        return [d for d in dh if isinstance(d, dict) and d.get("summary")][-6:]
+    return list(accumulated or [])[-6:]
 
 
 # ==========================================================================
@@ -904,10 +1134,10 @@ def translate_to_en(text):
 def behavior_short_criteria():
     """行为选择题的选项文本：取 behaviors[].short_en（3~5 个词）。
 
-    为什么不是 desc_en：实测用长描述当选项时，某个选项会变成先验吸引子。
-    7 个长选项下，「她主动交出秘密」对「玩家拔刀要杀她」与「玩家辱骂骑士团」
-    都是 argmax —— 四个语义相反的输入给同一个答案。压成短标签后 argmax 才开始
-    随输入移动。所以这里只认 short_en，缺了才退回 id。
+    为什么不用 desc_en：长描述会让某一个选项变成**先验吸引子** —— 语义相反的输入
+    会给出同一个 argmax。压成短标签后 argmax 才随输入移动。
+    这是**选项长度约束**，不是措辞偏好；对照数据见 Laya接入报告.md。
+    所以这里只认 short_en，缺了才退回 id —— 不要改回 desc_en。
     """
     return {b["id"]: (b.get("short_en") or b["id"]) for b in (CFG.get("behaviors") or [])}
 
@@ -940,20 +1170,73 @@ def build_laya_questions(questions):
     return out
 
 
-def build_state_doc(actor, player_input, history, scene, world_state=None, player_input_en=None):
+# ---- 人格：紧凑表示 --------------------------------------------------------
+# signed   : extraversion -0.35, intuition 0.25, thinking 0.55, judging 0.70
+# polarity : introversion 0.35, intuition 0.25, thinking 0.55, judging 0.70
+# 两种写法语义等价（polarity 把负向轴翻成正向轴名，避免出现负号）。
+# 哪种对 tokenizer 更有效必须实测，不要凭直觉定 —— 见 cmd_personatest。
+_POLARITY_FLIP = {"extraversion": "introversion"}
+
+
+def personality_style():
+    """当前的人格渲染写法：signed（默认）或 polarity。
+
+    优先级：环境变量 LAYA_PERSONA_STYLE > 配置 personality_style。
+    ★ 为什么要有环境变量：personatest 的 docstring 一直写着可以
+      `LAYA_PERSONA_STYLE=polarity python laya_bridge.py personatest` 对照另一种写法，
+      但这条路径此前**根本没实现** —— 写进文档的开关必须真的能用，
+      否则「实验结果可复现」就是空话（§16）。
+    """
+    want = (os.environ.get("LAYA_PERSONA_STYLE") or "").strip().lower()
+    if want in ("signed", "polarity"):
+        return want
+    return CFG.get("personality_style", "signed")
+
+
+def personality_line(personality):
+    """把 actor.personality 渲染成一行紧凑文本，供 compact state 使用。
+
+    ★ 为什么需要这个函数：actor.personality 一直写在配置里，但 compact state
+      从来没把它喂给 Laya —— 换句话说「人格影响决策」这件事在 Demo 里
+      **从未被验证过**。在把它接进 state 之前测到的任何差异，都不能归因给人格。
+    """
+    if not personality:
+        return ""
+    style = personality_style()
+    parts = []
+    for k, v in personality.items():
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if style == "polarity":
+            flipped = _POLARITY_FLIP.get(k)
+            if flipped:
+                parts.append("%s %.2f" % (flipped, -fv))
+                continue
+        parts.append("%s %.2f" % (k, fv))
+    return ", ".join(parts)
+
+
+def build_state_doc(actor, player_input, history, scene, world_state=None, player_input_en=None,
+                    decision_history=None):
     """构造喂给 Laya 的决策文档。
 
-    ★ state_format = "compact"（默认，实测有效）
+    ★ state_format = "compact"（默认）
       早期用的是 12 字段嵌套 JSON（role/name/identity/personality_axes/traits/emotion/
       relationship_to_player/goals/situation/scene/recent_conversation/player_says）。
-      问题有两个，都是实测出来的：
+      问题有两个：
         1. 没有锚点。instructions 里写 "this sentence"，模型无法知道指的是哪个字段；
            而 Laya 自带 presets 的写法是反引号引用键名（`message`），state 就是含该键的 dict。
-        2. token 全花在长键名和嵌套缩进上。英文检查点可用余量只有 354 token，
-           12 字段形态要 367 token → 直接溢出被 build_sequence 截掉尾巴。
-      compact 形态把状态压成几句话 + 一个 `message` 键，既给了锚点又留足余量。
+        2. token 全花在长键名和嵌套缩进上，会撑爆 head 预算、被 build_sequence 悄悄截掉尾巴。
 
-    ★ state_format = "full" 保留为对照，方便复现早期「无区分度」的实测结果。
+      ★ 改这个函数就是在花 token 预算。加字段前必须先跑：
+            python laya_bridge.py qcheck
+        它按 state_format 逐项报余量。**余量必须为正** —— 否则被截掉的可能是 `message`
+        本身，那会让模型完全看不到玩家说了什么，而且不报任何错。
+        各检查点的实际余量记在 Laya接入报告.md，不要在这里写死数字。
+
+    ★ state_format = "full" 保留为对照，方便复现早期「无区分度」的形态。
     """
     sit = actor.get("situation", {}) or {}
     fmt = CFG.get("state_format", "compact")
@@ -963,48 +1246,54 @@ def build_state_doc(actor, player_input, history, scene, world_state=None, playe
         e = actor.get("emotion", {}) or {}
         r = actor.get("relationship", {}) or {}
         g = actor.get("goals", {}) or {}
+        pers = personality_line(actor.get("personality"))
         if LANG == "en":
-            doc = {
-                "npc": ("%s, %s. Traits: %s. Currently %s."
-                        % (actor.get("name_en") or actor.get("name"),
-                           actor.get("identity_en") or actor.get("identity"),
-                           ", ".join("%s %.2f" % (k, v) for k, v in t.items()),
-                           ", ".join("%s %.2f" % (k, v) for k, v in e.items()))),
-                "relationship": ("trust %s/100, respect %s/100, doubt %s/100, reliance %s/100"
-                                 % (r.get("trust"), r.get("respect"), r.get("doubt"), r.get("reliance"))),
-                "goals": ", ".join("%s %.2f" % (k, v) for k, v in g.items()),
-                "scene": ("%s, %s. Risk %.2f. %s"
-                          % (sit.get("place_en") or sit.get("place"),
-                             sit.get("time_en") or sit.get("time"), sit.get("risk", 0),
-                             (scene or {}).get("note_en") or (scene or {}).get("note", ""))),
-            }
-            convo = ["%s: %s" % ("Player" if h.get("role") == "player" else (actor.get("name_en") or "NPC"),
-                                 h.get("text_en") or h.get("text", ""))
-                     for h in (history or [])[-6:]]
+            doc = {"npc": ("%s, %s. Traits: %s. Currently %s."
+                           % (actor.get("name_en") or actor.get("name"),
+                              actor.get("identity_en") or actor.get("identity"),
+                              ", ".join("%s %.2f" % (k, v) for k, v in t.items()),
+                              ", ".join("%s %.2f" % (k, v) for k, v in e.items())))}
+            if pers:
+                doc["personality"] = pers
+            doc["relationship"] = ("trust %s/100, respect %s/100, doubt %s/100, reliance %s/100"
+                                   % (r.get("trust"), r.get("respect"), r.get("doubt"), r.get("reliance")))
+            doc["goals"] = ", ".join("%s %.2f" % (k, v) for k, v in g.items())
+            doc["scene"] = ("%s, %s. Risk %.2f. %s"
+                            % (sit.get("place_en") or sit.get("place"),
+                               sit.get("time_en") or sit.get("time"), sit.get("risk", 0),
+                               (scene or {}).get("note_en") or (scene or {}).get("note", "")))
             doc["message"] = player_input_en if player_input_en is not None else player_input
         else:
-            doc = {
-                "npc": ("%s，%s。特质：%s。当前：%s。"
-                        % (actor.get("name"), actor.get("identity"),
-                           "，".join("%s %.2f" % (k, v) for k, v in t.items()),
-                           "，".join("%s %.2f" % (k, v) for k, v in e.items()))),
-                "relationship": ("信任 %s/100，尊敬 %s/100，怀疑 %s/100，依赖 %s/100"
-                                 % (r.get("trust"), r.get("respect"), r.get("doubt"), r.get("reliance"))),
-                "goals": "，".join("%s %.2f" % (k, v) for k, v in g.items()),
-                "scene": ("%s，%s。风险 %.2f。%s"
-                          % (sit.get("place"), sit.get("time"), sit.get("risk", 0),
-                             (scene or {}).get("note", ""))),
-            }
-            convo = ["%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"),
-                                 h.get("text", "")) for h in (history or [])[-6:]]
+            doc = {"npc": ("%s，%s。特质：%s。当前：%s。"
+                           % (actor.get("name"), actor.get("identity"),
+                              "，".join("%s %.2f" % (k, v) for k, v in t.items()),
+                              "，".join("%s %.2f" % (k, v) for k, v in e.items())))}
+            if pers:
+                doc["personality"] = pers
+            doc["relationship"] = ("信任 %s/100，尊敬 %s/100，怀疑 %s/100，依赖 %s/100"
+                                   % (r.get("trust"), r.get("respect"), r.get("doubt"), r.get("reliance")))
+            doc["goals"] = "，".join("%s %.2f" % (k, v) for k, v in g.items())
+            doc["scene"] = ("%s，%s。风险 %.2f。%s"
+                            % (sit.get("place"), sit.get("time"), sit.get("risk", 0),
+                               (scene or {}).get("note", "")))
             doc["message"] = player_input
-        if convo:
-            doc["conversation"] = convo
+        # ★ 决策历史与叙事历史分离（不要再退回把原始对话塞进来）：
+        #   原始对话里 NPC 的台词是中文文学文本，而 Laya 的 state 必须一律英文。
+        #   混着喂会得到「Player: English / NPC: 中文 / Player: English」的交替文本，
+        #   模型看到的一半是自己读不懂的脚本，且这种污染从第二轮才开始出现，很难察觉。
+        #   所以这里只读结构化的 decision_history；完整中文对话留给 LLM Story Agent。
+        dh = decision_history or []
+        if dh:
+            doc["decision_history"] = dh[-4:]
         if world_state:
             doc["world_state"] = world_state
         return doc
 
     # ---- full：早期形态，留作对照 ----
+    # 注意：full 也走 decision_history，不再用 recent_conversation。
+    # 否则这个「对照形态」会重新引入中英混杂，与「Laya state 一律英文」直接冲突，
+    # 拿它做对照就变成了拿一个坏掉的形态做对照。
+    dh = (decision_history or [])[-4:]
     if LANG == "en":
         doc = {
             "role": "NPC",
@@ -1019,11 +1308,6 @@ def build_state_doc(actor, player_input, history, scene, world_state=None, playe
                           "time": sit.get("time_en") or sit.get("time"),
                           "risk": sit.get("risk")},
             "scene": (scene or {}).get("note_en") or (scene or {}).get("note", ""),
-            "recent_conversation": [
-                "%s: %s" % ("Player" if h.get("role") == "player" else (actor.get("name_en") or "NPC"),
-                            h.get("text_en") or h.get("text", ""))
-                for h in (history or [])[-6:]
-            ],
             "player_says": player_input_en if player_input_en is not None else player_input,
         }
     else:
@@ -1038,12 +1322,10 @@ def build_state_doc(actor, player_input, history, scene, world_state=None, playe
             "goals": actor.get("goals", {}),
             "situation": sit,
             "scene": (scene or {}).get("note", ""),
-            "recent_conversation": [
-                "%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"), h.get("text", ""))
-                for h in (history or [])[-6:]
-            ],
             "player_says": player_input,
         }
+    if dh:
+        doc["decision_history"] = dh
     if world_state:
         doc["world_state"] = world_state
     return doc
@@ -1060,13 +1342,111 @@ def state_line(actor):
 # ==========================================================================
 # 7. 决策主流程
 # ==========================================================================
+# 桥内累积的结构化决策历史（供不显式传 decision_history 的客户端用）
+_DECISION_HISTORY = []
+
+# 检查点预算缓存：{模型名: (max_len, head_max_len, tokenizer)}
+_BUDGET_CACHE = {}
+
+
+def checkpoint_budget():
+    """当前检查点的 (max_len, head_max_len, tokenizer)；取不到返回 None。
+
+    ★ 只加载 tokenizer（几 MB），不加载模型 —— 所以可以在每轮 decide() 里调用。
+    """
+    name = DEFAULT_MODEL_NAME
+    if name in _BUDGET_CACHE:
+        return _BUDGET_CACHE[name]
+    d = MODELS_DIR / ("laya-" + name)
+    got = None
+    if (d / "tokenizer").is_dir():
+        try:
+            from transformers import AutoTokenizer
+            tok = AutoTokenizer.from_pretrained(str(d / "tokenizer"))
+            cfg_p = d / "rl_agent_config.json"
+            cfg = json.loads(cfg_p.read_text(encoding="utf-8")) if cfg_p.exists() else {}
+            got = (int(cfg.get("max_len", 512)), int(cfg.get("head_max_len", 256)), tok)
+        except Exception:
+            got = None
+    _BUDGET_CACHE[name] = got
+    return got
+
+
+def state_budget(state_doc):
+    """量当前 state 文档占多少 token、还剩多少余量。返回 dict，量不了返回 None。
+
+    ★★ 为什么必须做运行时检查（这是一个真实的静默失效）：
+      laya 的 build_sequence 拼出 [CLS] head [SEP] options [SEP] <state> [SEP]，
+      当 state 超过 max_len - head - 1 时，它做的是 **st[:room]** ——
+      **保留左边、丢掉右边**。而 compact state 的尾部恰好是
+      `message`（玩家这一句）和 `decision_history`（多轮上下文）。
+      于是"玩家说了什么"被无声地吃掉，模型只能凭角色卡和环境瞎猜，而
+      API 返回里没有任何迹象。
+
+      `qcheck` 能提前预测溢出，但没人会在第 5 轮对话时去跑 qcheck ——
+      而溢出恰恰是**从第 3~4 轮开始**的（决策历史攒到 4 条、state 涨了约 90 token）。
+      实测 english 检查点（max_len 512 / head 192，room 只有 319）：
+        空决策历史 en 284 ✅ / 满决策历史 en 372 ★溢出 / zh 371 ★溢出 / zh 满 459 ★溢出 140
+      所以本机默认的 typed-decisions（1024/256，room 767）够用，切 english 就会静默变差。
+    """
+    cb = checkpoint_budget()
+    if not cb:
+        return None
+    max_len, head, tok = cb
+    txt = state_doc if isinstance(state_doc, str) else json.dumps(state_doc, ensure_ascii=False)
+    try:
+        n = len(tok(txt, add_special_tokens=False)["input_ids"])
+    except Exception:
+        return None
+    room = max_len - head - 1
+    out = {"tokens": n, "room": room, "max_len": max_len, "head_max_len": head,
+           "overflow": n > room, "spare": room - n}
+    if n > room:
+        # 按 compact state 的字段顺序判断哪些字段会被砍掉
+        lost = [k for k in ("decision_history", "message", "scene", "goals")
+                if '"%s"' % k in txt]
+        out["at_risk_fields"] = lost[:2] or ["尾部字段"]
+        out["note"] = ("★ state 超预算 %d token，laya 会做 st[:room] 静默截断"
+                       "（保留左、丢右），最可能丢掉：%s。"
+                       % (n - room, "、".join(out["at_risk_fields"])))
+    return out
+
+
+def payload_text(payload):
+    """统一读取玩家输入（/decide 与 /narrate 共用，别各写一份）。
+
+    ★ 同时接受 `player_input`（规范键）与 `message`（历史别名）。
+      上一版的坑：/decide 读 player_input，/narrate 里喂给 LLM 的也读 player_input，
+      但两处是**分别手写**的；只要有人用 `message` 调用，就会出现
+      「决策吃到了台词、LLM 拿到空串」——两条链路基于不同输入，是最难查的一类不一致。
+      统一在这里取，就不会再分叉。
+    """
+    return (payload.get("player_input") or payload.get("message") or "").strip()
+
+
 def decide(payload):
     actor = payload.get("actor") or CFG["actor"]
     history = payload.get("history") or []
-    player_input = (payload.get("player_input") or "").strip()
-    world_state = payload.get("world_state") or CFG["world"]["state"]
+    # ★ 键名陷阱（2026-09-23 实测踩到，别再踩）：
+    #   /decide 读的是 `player_input`，但直觉和 README 里的 curl 示例都写成 `message`。
+    #   旧实现对未知键**静默忽略**：传 {"message": "刀抵在你喉咙上"} 会得到「空玩家输入」，
+    #   于是「刀抵喉咙」和「今晚麦酒淡」返回逐位相同的 state 与信号 ——
+    #   引擎看起来工作正常，实际玩家台词从未进入 state。这类静默失效比报错危险得多。
+    #   现在：`message` 作为别名接受；两者都为空则显式告警，绝不假装决策过。
+    player_input = payload_text(payload)
+    input_key = ("player_input" if payload.get("player_input")
+                 else ("message(别名)" if payload.get("message") else None))
+    input_warning = None
+    if not player_input:
+        input_warning = ("player_input 为空 —— 本轮 state 里 message 字段是空的，"
+                         "Laya 是在「玩家什么都没说」的前提下做的决策，结果与具体输入无关。"
+                         "若你确实传了台词，检查键名：/decide 认 `player_input`（`message` 亦可）。")
+    # ★ 世界状态不再默认注入：NPC Tick 是高频的、World Tick 是低频的，
+    #   默认把世界状态塞进每个 NPC 回合会把两者绑死（§9）。客户端要带就显式传。
+    world_state = payload.get("world_state")
     questions = payload.get("questions") or CFG["questions"]
     seed = payload.get("seed")
+    include_world_questions = bool(payload.get("include_world_questions", False))
 
     t0 = time.perf_counter()
 
@@ -1079,12 +1459,24 @@ def decide(payload):
         player_input_en, xlate_src = translate_to_en(player_input)
         xlate_ms = (time.perf_counter() - tx0) * 1000
 
-    state_doc = build_state_doc(actor, player_input, history, CFG.get("scene"), world_state,
-                                player_input_en=player_input_en)
+    decision_history = build_decision_history(payload, _DECISION_HISTORY)
 
-    # 世界层问题跟 NPC 层一起问；state 里已经带了 world_state
+    state_doc = build_state_doc(actor, player_input, history, CFG.get("scene"), world_state,
+                                player_input_en=player_input_en,
+                                decision_history=decision_history)
+    # ★ 运行时预算检查：state 超长会被 laya 内部 st[:room] 静默截断（丢尾部字段）。
+    #   这里让它变成一条显式告警，而不是"模型忽然变笨了"。
+    s_budget = state_budget(state_doc)
+    if s_budget and s_budget.get("overflow"):
+        sys.stderr.write("[bridge] ⚠ %s\n" % s_budget["note"])
+
+    # ★ NPC Tick / World Tick 分离：默认**不再**把世界问题合进 NPC 决策。
+    #   原来合在一起，等于每个 NPC 对话回合都重算一遍战争/商队/黑市 ——
+    #   既白烧算力（那三题是低频的），又往 NPC 决策里混进无关变量。
+    #   /world 独立跑；确实需要同回合带世界问题就显式传 include_world_questions=true。
     all_questions = dict(questions)
-    all_questions.update(CFG.get("world", {}).get("questions", {}))
+    if include_world_questions:
+        all_questions.update(CFG.get("world", {}).get("questions", {}))
     laya_q = build_laya_questions(all_questions)          # 交给 Laya 的（只有 type/instructions/criteria）
     fallback_q = laya_q
 
@@ -1110,10 +1502,32 @@ def decide(payload):
         a = answers.get(qid, {})
         return a.get("_value")
 
-    behavior_id = pick("npc_behavior")
-    # ★ choice 给基础分布，noul 门限做覆盖（见 apply_gates 的说明）
-    behavior_id, gate_hit = apply_gates(answers, behavior_id)
-    bh = next((b for b in CFG["behaviors"] if b["id"] == behavior_id), None)
+    # ---- 三段式：choice argmax → noul 门限（遗留，只审计）→ Policy Resolver ----
+    #   choice_argmax : Laya choice 的原始 argmax ← ★ 这才是 fallback baseline
+    #   gated_id      : 经 noul 门限改写后的值。★ 起**不再作为 baseline**，只留在返回里审计。
+    #                   原因（2026-09-23 live 实测）：gate_ally 的阈值 0.45 是在离线夹具上
+    #                   标的（非结盟侧观测最大 0.344），但在 live state 下 4/4 个输入
+    #                   （含「今晚的麦酒比上个月淡了不少」）都落在 0.48~0.57 → 门限恒命中
+    #                   → 把**所有**输入都改写成 ally，包括「刀抵在你喉咙上」。
+    #                   恒真的门限不是门限，是常量。结论：夹具上标的阈值不可迁移到 live，
+    #                   详见 Laya接入报告.md §12。gate_ally 已按此停用。
+    #   final_id      : Policy Resolver 的最终产出 ← 真正控制 NPC 的那个
+    choice_argmax = pick("npc_behavior")
+    gated_id, gate_hit = apply_gates(answers, choice_argmax)
+    signal_rows, signal_values = signal_snapshot(answers)
+    policy = policy_resolve(signal_values, choice_argmax)
+
+    final_id = policy.get("behavior") or choice_argmax
+    bh = next((b for b in CFG["behaviors"] if b["id"] == final_id), None)
+    if bh is None:
+        # policy 配错行为名时不要静默挑一个 —— 记下原因再回落
+        policy = dict(policy, behavior=choice_argmax, source="choice_baseline",
+                      reasons=[{"why": "policy 给出的行为不在 behaviors 里，已回落 choice baseline",
+                                "bad": final_id}])
+        final_id = choice_argmax
+        bh = next((b for b in CFG["behaviors"] if b["id"] == final_id), None)
+
+    baseline_bh = next((b for b in CFG["behaviors"] if b["id"] == choice_argmax), None)
 
     hidden = answers.get("hidden_event", {}).get("_value")
     threshold = CFG.get("director", {}).get("event_threshold", 0.75)
@@ -1127,12 +1541,18 @@ def decide(payload):
     }
 
     conf = answers.get("npc_behavior", {}).get("confidence")
+    prob = answers.get("npc_behavior", {}).get("_probabilities")
     return {
         "engine": engine_used,
         "engine_detail": ENGINE.detail if engine_used == "laya" else (ENGINE.detail or "未安装 laya"),
         "confidence_reliable": engine_used == "laya",
         "latency_ms": round(latency_ms, 2),
         "lang": LANG,
+        # ★ 输入自检：让我们一眼看出「这轮到底吃到了什么输入」
+        "input_key": input_key,
+        "input_warning": input_warning,
+        "tick": "npc",
+        "device": ENGINE.device_label(),
         "player_input_en": player_input_en,
         "translate": {"source": xlate_src, "ms": round(xlate_ms, 1)},
         "latency_breakdown": {"translate_ms": round(xlate_ms, 1),
@@ -1141,17 +1561,50 @@ def decide(payload):
         "answers": answers,
         "raw": meta_raw,
         "state_doc": state_doc,
+        "state_budget": s_budget,
         "state_line": state_line(actor),
+        "decision_history": decision_history,
         "attribution": attribution_meta,
-        "deltas": deltas,
+        # ★ 本轮主输出：Laya 判断了什么
+        "decision_signals": signal_rows,
+        "signal_values": dict((k, round(v, 4)) for k, v in signal_values.items()),
+        # ★ Narraverse 侧为什么做这个决定
+        "policy": policy,
+        # ★ 状态增量只是「建议」，不是最终写入值
+        "proposed_deltas": deltas,
+        "deltas": deltas,                        # 兼容旧前端，逐步淘汰
+        "state_proposal_meta": {
+            "is_proposal": True,
+            "note": ("proposed_deltas 是**决策建议**，不是 Actor State 的最终写入值。"
+                     "正式链路应为 Laya Proposal → 后端 Validate → State Transition → Commit；"
+                     "浏览器端 applyDeltas() 只是本 Demo 的演示手段，**不是状态权威**。"),
+        },
         "director": director,
         "decision": {
+            # 最终行为由 Policy Resolver 决定；choice 只是 baseline
             "behavior": None if not bh else {
                 "id": bh["id"], "name": bh["name"], "desc": bh["desc"], "instr": bh.get("instr", ""),
                 "confidence": conf,
-                "probabilities": answers.get("npc_behavior", {}).get("_probabilities"),
+                "probabilities": prob,
+                "source": policy.get("source"),
+                "policy_reasons": policy.get("reasons"),
+                "confidence_level": policy.get("confidence_level"),
+                "fallback": policy.get("fallback"),
                 "gated_by": gate_hit,
-                "choice_pick": (gate_hit or {}).get("choice_said") or behavior_id,
+                # ★ 名字要诚实：gate 改写后的值不是 choice baseline。
+                #   旧版这里叫 choice_baseline 但装的是 gated_id，前端据此显示
+                #   「choice 首选 · 被改写」，实际改写结果与真实 argmax 并不一致（实测踩到）。
+                "choice_argmax": choice_argmax,
+                "gated_baseline": gated_id,
+                "choice_baseline_name": (baseline_bh or {}).get("name"),
+                "conflict": bool(policy.get("source") == "policy"
+                                 and policy.get("behavior") != choice_argmax),
+            },
+            "choice_baseline": None if not baseline_bh else {
+                "id": baseline_bh["id"], "name": baseline_bh["name"],
+                "argmax": choice_argmax,
+                "confidence": conf,
+                "probabilities": prob,
             },
             "player_intent": {
                 "id": pick("player_intent"),
@@ -1192,7 +1645,11 @@ def world_decide(payload):
         events.append({"id": qid, "name": names.get(qid, qid), "p": v,
                        "adopt": bool(v is not None and v >= thr)})
     events.sort(key=lambda e: -(e["p"] or 0))
-    return {"engine": engine_used, "latency_ms": round(latency_ms, 2), "threshold": thr,
+    # World Tick 是低频的：世界事件概率 / 地区变化 / 势力状态 / 环境状态。
+    # 不要把它跟 NPC Tick 合在一起跑（§9），/decide 已不再自动带世界问题。
+    return {"engine": engine_used, "tick": "world", "device": ENGINE.device_label(),
+            "latency_ms": round(latency_ms, 2), "threshold": thr,
+            "world_state": state,
             "events": events, "routing": routing, "raw": meta_raw, "answers": answers}
 
 
@@ -1245,8 +1702,21 @@ class Handler(BaseHTTPRequestHandler):
                 "engine": "laya" if ENGINE.ready else "fallback",
                 "laya": ENGINE.describe(),
                 "config_path": str(CFG_PATH),
-                "questions": list(CFG["questions"].keys()) + list(CFG["world"]["questions"].keys()),
+                "questions": list(CFG["questions"].keys()),
+                "world_questions": list(CFG["world"]["questions"].keys()),
+                "signals": (CFG.get("signals") or {}).get("order", []),
+                "policy_enabled": bool((CFG.get("policy") or {}).get("enabled", False)),
                 "behaviors": [b["id"] for b in CFG["behaviors"]],
+                "device": ENGINE.device_label(),
+                "personality_style": personality_style(),
+                # 检查点预算：state 超了会被 laya 静默 st[:room] 截断（见 state_budget）
+                "state_budget": (lambda cb: None if not cb else {
+                    "max_len": cb[0], "head_max_len": cb[1],
+                    "room": cb[0] - cb[1] - 1})(checkpoint_budget()),
+                "ticks": {
+                    "npc": "高频：player intent / relationship shift / emotion shift / decision signals（/decide）",
+                    "world": "低频：世界事件概率 / 地区 / 势力 / 环境（独立 /world，不再混进 /decide）",
+                },
                 "llm": {
                     "ready": bool(os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")),
                     "model": os.environ.get("LLM_MODEL", "deepseek-flash"),
@@ -1275,10 +1745,11 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return self.wfile.write(body)
         if path == "/history":
-            return self._json({"turns": [d for d in _HISTORY]})
+            return self._json({"turns": [d for d in _HISTORY],
+                               "decision_history": [d for d in _DECISION_HISTORY]})
         return self._json({"error": "not found",
                            "try": ["/health", "/config", "/demo", "/decide", "/narrate", "/world",
-                                   "/predict"]}, 404)
+                                   "/reset", "/predict"]}, 404)
 
     def do_POST(self):
         path = self.path.split("?")[0]
@@ -1289,10 +1760,29 @@ class Handler(BaseHTTPRequestHandler):
                 out = decide(payload)
             except Exception as e:
                 return self._json({"error": repr(e)}, 500)
-            _HISTORY.append({"t": time.time(), "player": payload.get("player_input"),
-                             "engine": out["engine"], "behavior": (out["decision"]["behavior"] or {}).get("id")})
+            dec = out.get("decision") or {}
+            beh = dec.get("behavior") or {}
+            intent_id = (dec.get("player_intent") or {}).get("id")
+            # ★ 历史日志也用统一取值，否则用 message 调用的轮次会被记成 player=None。
+            #   注意 _DECISION_HISTORY 是**进程级滚动窗口**（上一条见下），
+            #   它让「连续两次独立 /decide」并非彼此独立 —— 单角色 Demo 够用，
+            #   多角色/并发场景必须改成按 actor 分桶。
+            _HISTORY.append({"t": time.time(), "player": payload_text(payload),
+                             "engine": out["engine"], "behavior": beh.get("id"),
+                             "source": beh.get("source")})
             del _HISTORY[:-50]
+            # ★ 把本轮压成结构化决策历史，供下一轮的 Laya state 用（§8）。
+            #   客户端自己带了 decision_history 就不再累积 —— 免得两套历史互相打架。
+            if not payload.get("decision_history"):
+                _DECISION_HISTORY.extend(decision_history_entries(intent_id, beh.get("id")))
+                del _DECISION_HISTORY[:-12]
             return self._json(out)
+
+        if path == "/reset":
+            # 清掉累积历史：换场景 / 开新局时调用。
+            del _HISTORY[:]
+            del _DECISION_HISTORY[:]
+            return self._json({"ok": True, "cleared": ["history", "decision_history"]})
 
         if path == "/world":
             try:
@@ -1322,7 +1812,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "unknown behavior: %s" % bid,
                                    "known": [b["id"] for b in CFG["behaviors"]]}, 400)
             if payload.get("use_llm", True):
-                r = llm_narrate(actor, bh, payload.get("player_input", ""),
+                r = llm_narrate(actor, bh, payload_text(payload),
                                 payload.get("history") or (pre or {}).get("history"),
                                 payload.get("state_line")
                                 or (pre or {}).get("state_line") or state_line(actor),
@@ -1330,7 +1820,7 @@ class Handler(BaseHTTPRequestHandler):
                 if r and not r.get("error"):
                     return self._json(dict(r, **({"decision": pre} if pre else {})))
                 if r and r.get("error"):
-                    fb = pool_line(bh, payload.get("player_input", ""))
+                    fb = pool_line(bh, payload_text(payload))
                     fb["llm_error"] = r["error"]
                     fb["llm_meta"] = {k: r.get(k) for k in ("model", "effort", "latency_ms",
                                                             "reasoning_tokens", "completion_tokens",
@@ -1339,7 +1829,7 @@ class Handler(BaseHTTPRequestHandler):
                     if r.get("raw_content_first"):
                         fb["llm_meta"]["raw_content_first"] = r["raw_content_first"][:800]
                     return self._json(dict(fb, **({"decision": pre} if pre else {})))
-            fb = pool_line(bh, payload.get("player_input", ""))
+            fb = pool_line(bh, payload_text(payload))
             if pre:
                 fb["decision"] = pre
             return self._json(fb)
@@ -1605,6 +2095,682 @@ def cmd_langtest():
     return 0
 
 
+# ==========================================================================
+# 10b. 决策信号实验：回归矩阵 / 人格对照 / 性能基准
+# ==========================================================================
+TESTS_DIR = HERE / "tests"
+# 注意别叫 _XLATE_CACHE —— 那个名字已经被 translate_to_en 的**内存**翻译记忆占用了，
+# 重名会把 dict 换成 Path，直到调用翻译时才崩（TypeError: WindowsPath is not iterable）。
+_XLATE_DISK = HERE / "_diag" / "translation_cache.json"
+
+
+def _load_fixture(name):
+    p = TESTS_DIR / name
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        print("读取 %s 失败：%r" % (p, e))
+        return None
+
+
+def _cached_translate(text, cache):
+    """带磁盘缓存的翻译。48 条输入每条都要翻，不能每次重跑都重新调一遍 LLM。"""
+    if text in cache:
+        return cache[text]
+    en, _src = translate_to_en(text)
+    if en and en != text:
+        cache[text] = en
+        try:
+            _XLATE_DISK.parent.mkdir(parents=True, exist_ok=True)
+            _XLATE_DISK.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+        except Exception:
+            pass
+    return en
+
+
+def _check_direction(rows_by_name, expected):
+    """按 tests/regression_cases.json 写明的判据核对方向，返回 (通过数, 失败列表)。"""
+    meta = _signal_meta()
+    ok, bad = 0, []
+    for name, want in (expected or {}).items():
+        row = rows_by_name.get(name)
+        if row is None:
+            bad.append({"signal": name, "want": want, "got": None, "why": "信号缺失"})
+            continue
+        v = row["value"]
+        # 优先用行自带的 kind —— score 位移题（trust_shift 等）在 signals.meta 里查不到，
+        # 若退回默认的 "prob" 会拿 0~4 的期望值去和 0.5 比大小，判据整个错掉。
+        kind = row.get("kind") or (meta.get(name) or {}).get("kind", "prob")
+        if kind == "prob":
+            good = {"high": v >= 0.50, "low": v <= 0.50,
+                    "neutral": 0.30 <= v <= 0.70}.get(want, False)
+        else:
+            good = {"positive": v > 2.20, "negative": v < 1.80, "neutral": 1.80 <= v <= 2.20,
+                    "high": v > 3.00, "low": v < 1.00}.get(want, False)
+        if good:
+            ok += 1
+        else:
+            bad.append({"signal": name, "want": want, "got": round(v, 4), "kind": kind})
+    return ok, bad
+
+
+# 方向断言也要能看见已有的 score 位移题（trust_shift / doubt_shift …）。
+# 它们**不**放进 signals.meta —— UI 的信号面板不该把这些全铺开，会淹掉重点；
+# 但它们同样是可断言的决策量，所以单独在这里声明。
+SHIFT_IDS = ("trust_shift", "respect_shift", "doubt_shift",
+             "fondness_shift", "alert_shift", "goal_shift")
+
+
+def _run_signals(model, doc, qs):
+    """跑一次并返回 (耗时ms, 信号行列表, {name: row})。
+
+    第三项刻意是「信号 + score 位移题」的合并视图，供方向断言用。
+    """
+    t0 = time.perf_counter()
+    if ENGINE.kind == "router":
+        res = ENGINE.obj.predict(doc, qs, model=model)
+    else:
+        res = ENGINE.obj.predict(doc, qs)
+    dt = (time.perf_counter() - t0) * 1000
+    raw, _ = normalize_laya(res)
+    answers = normalize_answers(raw, qs)
+    rows, _vals = signal_snapshot(answers)
+    by_name = dict((r["signal"], r) for r in rows)
+    for qid in SHIFT_IDS:
+        v = (answers.get(qid) or {}).get("_value")
+        if v is None:
+            continue
+        by_name[qid] = {"signal": qid, "label": qid, "kind": "level",
+                        "value": round(float(v), 4), "range": [0, 4]}
+    return dt, rows, by_name
+
+
+def cmd_signaltest():
+    """决策信号回归：48 条 × 方向断言，并导出各信号实测分布（阈值就靠它定）。
+
+    ★ 断言的是**决策方向**，不是「NPC 必须选某个唯一行为」。
+      要求一句话只有一种正确反应是没有依据的；能站得住的要求是
+      「敌意高的输入，敌意信号就该高」。
+
+    用法：
+        python laya_bridge.py signaltest            # 全量 48 条（默认检查点）
+        python laya_bridge.py signaltest 6          # 只跑前 6 条，先看形状
+        LAYA_MODEL=english python laya_bridge.py signaltest   # 换检查点对照
+
+    ★ 两个诊断用过滤器（受控对照，用来区分「模型不行」和「我们把题塞太多」）：
+        LAYA_QSET=signals   只跑 9 个信号题 + 6 个位移题，丢掉 npc_behavior /
+                            player_intent / gates / world 等——用来测「题目数量」
+                            本身对信号区分度的影响。
+        LAYA_CASES=a,b,c    只跑指定 id 的用例，便于同批输入做 A/B。
+
+        例：同一批 4 条极端输入，先跑全套，再只跑信号题，比 span 有没有变大。
+        LAYA_CASES=smalltalk_1,severe_insult_2 LAYA_QSET=signals \
+            python laya_bridge.py signaltest
+
+    ★ 换检查点必须**新开进程**：检查点在 init 时按 device/model 加载，
+      同进程切不了；两个 800MB 级检查点同时驻留会 OOM。
+      两次结果按检查点名合并进 tests/thresholds.json，再用 ckptcompare 出对照表。
+    """
+    fixture = _load_fixture("regression_cases.json")
+    if not fixture:
+        return 1
+    cases = list(fixture["cases"])
+    want_ids = [x.strip() for x in (os.environ.get("LAYA_CASES") or "").split(",") if x.strip()]
+    if want_ids:
+        by_id = dict((c["id"], c) for c in cases)
+        missing = [i for i in want_ids if i not in by_id]
+        if missing:
+            print("LAYA_CASES 里有找不到的 id：%s" % ", ".join(missing))
+            return 1
+        cases = [by_id[i] for i in want_ids]
+    lim = next((int(a) for a in sys.argv[2:] if a.isdigit()), None)
+    if lim:
+        cases = cases[:lim]
+
+    ENGINE.init()
+    if not ENGINE.ready:
+        print("laya 未就绪，先跑 probe 看原因。")
+        return 1
+    model = DEFAULT_MODEL_NAME
+    if model not in ENGINE.local_models:
+        print("本机没有 %r 检查点。" % model)
+        return 1
+
+    qs = build_laya_questions(CFG["questions"])
+    # ★ LAYA_QSET=signals：只留信号题 + 位移题（受控对照，见 docstring）
+    qset = (os.environ.get("LAYA_QSET") or "").strip().lower()
+    if qset == "signals":
+        keep = set(SHIFT_IDS) | set((CFG.get("signals") or {}).get("meta") or {})
+        qs = dict((k, v) for k, v in qs.items() if k in keep or k.startswith("signal_"))
+    elif qset:
+        print("LAYA_QSET 只认识 'signals'，收到 %r —— 按全套跑。" % qset)
+    cache = {}
+    try:
+        cache = json.loads(_XLATE_DISK.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    print("=" * 78)
+    print("决策信号回归 ｜ 检查点=%s ｜ 设备=%s" % (model, ENGINE.device_label()))
+    print("题目数=%d（LAYA_QSET=%s）｜ 样本数=%d ｜ 断言的是方向，不是唯一行为"
+          % (len(qs), qset or "full", len(cases)))
+    print("=" * 78)
+
+    per_cat, per_signal, obs, failures, total_ok, total_bad = {}, {}, {}, [], 0, 0
+    obs_by_case = {}          # ★ 逐用例原始值：阈值的唯一合法来源
+    global LANG
+    t_start = time.perf_counter()
+
+    for i, c in enumerate(cases, 1):
+        text_en = _cached_translate(c["text"], cache) if LANG == "en" else c["text"]
+        doc = build_state_doc(CFG["actor"], c["text"], [], CFG.get("scene"), None,
+                              player_input_en=text_en,
+                              decision_history=[{"type": "start", "summary": "scene begins"}])
+        try:
+            dt, rows, by_name = _run_signals(model, doc, qs)
+        except Exception as e:
+            print("  [%s] 失败：%r" % (c["id"], e))
+            continue
+
+        ok, bad = _check_direction(by_name, c.get("expected_direction"))
+        obs_by_case[c["id"]] = dict((k, v["value"]) for k, v in by_name.items())
+        total_ok += ok
+        total_bad += len(bad)
+        cat = c["category"]
+        a, b = per_cat.get(cat, (0, 0))
+        per_cat[cat] = (a + ok, b + len(bad))
+        for r in rows:
+            per_signal.setdefault(r["signal"], [0, 0])
+            per_signal[r["signal"]][0] += 1
+            per_signal[r["signal"]][1] += r["value"]
+            obs.setdefault(r["signal"], []).append(r["value"])
+        if bad:
+            for x in bad:
+                failures.append(dict(x, id=c["id"], category=cat))
+        mark = "✅" if not bad else "❌"
+        print("  %-3d %s %-12s %-10s %.0fms  %s" % (
+            i, mark, cat, c["id"], dt,
+            " ".join("%s=%.2f" % (r["signal"][:4], r["value"]) for r in rows[:5])))
+
+    dur = time.perf_counter() - t_start
+    print("\n" + "=" * 78)
+    print("方向断言：%d 通过 / %d 失败 ｜ 准确率 %.1f%% ｜ 总耗时 %.1f min"
+          % (total_ok, total_bad, 100.0 * total_ok / max(1, total_ok + total_bad), dur / 60))
+    print("=" * 78)
+
+    print("\n── 逐信号实测分布（阈值只能从这组数里定）" + "─" * 30)
+    print("  %-12s %5s %7s %7s %7s %7s" % ("signal", "n", "min", "mean", "max", "span"))
+    dist = {}
+    for name in (CFG.get("signals", {}).get("order") or []):
+        vals = obs.get(name) or []
+        if not vals:
+            print("  %-12s %5d   —— 无数据" % (name, 0))
+            continue
+        lo, hi, mean = min(vals), max(vals), sum(vals) / len(vals)
+        dist[name] = {"n": len(vals), "min": round(lo, 4), "mean": round(mean, 4),
+                      "max": round(hi, 4), "span": round(hi - lo, 4),
+                      "kind": _signal_kind(name)}
+        print("  %-12s %5d %7.3f %7.3f %7.3f %7.3f" % (name, len(vals), lo, mean, hi, hi - lo))
+
+    print("\n── 逐类别方向准确率" + "─" * 42)
+    for cat, (a, b) in sorted(per_cat.items(), key=lambda kv: (kv[1][0] / max(1, sum(kv[1])))):
+        tot = a + b
+        print("  %-14s %2d/%2d  %5.0f%%" % (cat, a, tot, 100.0 * a / max(1, tot)))
+
+    if failures:
+        print("\n── 失败明细（前 25 条）" + "─" * 40)
+        for f in failures[:25]:
+            print("  %-16s %-12s want=%-8s got=%s%s"
+                  % (f["id"], f["signal"], f["want"],
+                     f["got"], " (%s)" % f["why"] if f.get("why") else ""))
+
+    # ★ 实验数值落进 tests/，不留在代码注释里（§2.2）
+    out = {"_readme": ["由 python laya_bridge.py signaltest 生成。不要手改。",
+                       "这是「已实测」的分布，policy 的阈值只能从这里推导。",
+                       "重新生成请重跑 signaltest。"],
+           "model": model, "device": ENGINE.device_label(),
+           "n_cases": len(cases), "direction_accuracy": round(total_ok / max(1, total_ok + total_bad), 4),
+           "signal_distribution": dist,
+           "observations": obs_by_case,
+           "category_accuracy": dict((k, {"ok": v[0], "total": v[0] + v[1]}) for k, v in per_cat.items()),
+           "failures": failures}
+    # ★ 按检查点合并保存：typed-decisions 与 english 必须能「同条件对照」（§11），
+    #   后跑的把先跑的覆盖掉就没法比了。顶层字段保留最近一次，方便旧读法继续能用。
+    try:
+        path = TESTS_DIR / "thresholds.json"
+        try:
+            blob = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            blob = {}
+        blob["_readme"] = out["_readme"] + [
+            "runs 按检查点分别保存，typed-decisions / english 互不覆盖，供 ckptcompare 对照。"]
+        # ★ 非默认 qset / 子集用例不能顶掉全量结果，键名带上限定符。
+        #   注意默认 qset 是空串（不是 "full"），判断要连空串一起当「全量」。
+        is_full = (not qset or qset == "full") and not want_ids
+        run_key = model if is_full else (
+            "%s|qset=%s|cases=%s" % (model, qset or "full", len(cases)))
+        blob.setdefault("runs", {})[run_key] = out
+        blob["model"] = model                       # 最近一次跑的
+        for k in ("device", "n_cases", "direction_accuracy", "signal_distribution",
+                  "observations", "category_accuracy", "failures"):
+            blob[k] = out[k]
+        path.write_text(json.dumps(blob, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("\n实测分布已合并写入 tests/thresholds.json（检查点键：%s）" % model)
+    except Exception as e:
+        print("\n写入 tests/thresholds.json 失败：%r" % e)
+    return 0
+
+
+def _infer_n_assertions(run):
+    """从 direction_accuracy 与 failures 长度反推断言总数。
+
+    accuracy = passed / total，failed = len(failures)。两个已知量解出 total。
+    例：failed=50, accuracy=0.4949 → total = 50 / 0.5051 ≈ 99 ✓
+    ★ 为什么要这个数：48 个用例会展开成 99 条方向断言（一个用例可断言多个信号）。
+      「准确率差 2 个百分点」听起来像差距，实际只是 99 条里差 2 条 —— 必须先还原成
+      条数，才能判断这差距是不是噪声。
+    """
+    try:
+        acc = float(run.get("direction_accuracy") or 0.0)
+    except Exception:
+        return None
+    failed = len(run.get("failures") or [])
+    if failed == 0 or acc >= 1.0:
+        return None
+    n = int(round(failed / (1.0 - acc)))
+    return n if n >= failed else None
+
+
+def cmd_ckptcompare():
+    """同条件检查点对照（§11）：typed-decisions vs english。
+
+    同一套 48 条决策方向用例、同一批信号题，只换检查点。
+    数据来自 signaltest 写下的 runs，所以**必须在两个进程里各跑一次**：
+        python laya_bridge.py signaltest
+        LAYA_MODEL=english python laya_bridge.py signaltest
+        python laya_bridge.py ckptcompare
+
+    评判标准不是「哪个方向准确率高」，而是：
+        · 信号有没有区分度（span 太小 = 这个检查点在所有输入上给同一个值）
+        · 排除「全部同样本里 90% 只选同一个行为」这种假高分
+    """
+    path = TESTS_DIR / "thresholds.json"
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print("读不到 tests/thresholds.json（%r）。先跑 signaltest。" % e)
+        return 1
+    runs_all = blob.get("runs") or {}
+    # 只拿「全量、默认 qset」的结果做检查点对照；带 |qset= / |cases= 的是诊断子集，
+    # 混进来会让对照表没法看（同一条信号出现好几行）。
+    runs = dict((k, v) for k, v in runs_all.items() if "|" not in k)
+    skipped = sorted(k for k in runs_all if "|" in k)
+    if skipped:
+        print("（忽略 %d 个诊断子集结果：%s）\n" % (len(skipped), ", ".join(skipped)))
+    if len(runs) < 2:
+        print("目前只有 %d 个检查点的数据：%s" % (len(runs), ", ".join(sorted(runs)) or "无"))
+        print("请再跑一次：LAYA_MODEL=english python laya_bridge.py signaltest")
+        return 1
+
+    order = [m for m in ("typed-decisions", "english", "multilingual") if m in runs]
+    order += [m for m in sorted(runs) if m not in order]
+
+    print("=" * 78)
+    print("检查点对照（§11）｜同条件：同一批用例、同一批信号题，只换检查点")
+    print("=" * 78)
+    for m in order:
+        r = runs[m]
+        print("  %-16s n=%-3d 方向准确率 %.1f%%  ｜ %s"
+              % (m, r.get("n_cases", 0), 100.0 * (r.get("direction_accuracy") or 0), r.get("device", "?")))
+
+    # ---- 逐信号对比：区分度（span）比绝对值更有意义 ----
+    print("\n── 逐信号实测（min / mean / max / span）" + "─" * 34)
+    hdr = "  %-13s" % "signal"
+    for m in order:
+        hdr += "%-30s" % ("  " + m)
+    print(hdr)
+    sig_names = []
+    for m in order:
+        for s in (runs[m].get("signal_distribution") or {}):
+            if s not in sig_names:
+                sig_names.append(s)
+    for s in sig_names:
+        line = "  %-13s" % s
+        for m in order:
+            d = (runs[m].get("signal_distribution") or {}).get(s)
+            line += ("%-30s" % ("  ——无数据") if not d else
+                     "%-30s" % ("  %.2f/%.2f/%.2f span=%.2f"
+                                % (d["min"], d["mean"], d["max"], d["span"])))
+        print(line)
+
+    # ---- 排名：按「有区分度的信号个数」+ 方向准确率综合 ----
+    print("\n── 综合判断" + "─" * 46)
+    summary = {}
+    for m in order:
+        dist = runs[m].get("signal_distribution") or {}
+        # span 太小的信号等于常数输出，在决策里等于没提供信息
+        live = [s for s, d in dist.items() if d.get("span", 0) >= 0.05]
+        dead = [s for s, d in dist.items() if d.get("span", 0) < 0.05]
+        summary[m] = {"direction_accuracy": runs[m].get("direction_accuracy"),
+                      "n_assertions": _infer_n_assertions(runs[m]),
+                      "live_signals": live, "flat_signals": dead,
+                      "n_signals": len(dist)}
+        print("  %-16s 有效区分信号 %d/%d ｜ 近乎常量 %s"
+              % (m, len(live), len(dist), ", ".join(dead) or "无"))
+
+    # ★ 显著性护栏（本轮加）。
+    # 99 条断言里差 2 条 = 2 个百分点，视觉上像「更好」，统计上什么都不是。
+    # 不加这道护栏，工具会为了「给一个结论」而随机指定赢家 —— 下游会把噪声当证据写进架构决策。
+    MIN_PASS_GAP = 5
+    ranked = sorted(order, key=lambda m: -(summary[m]["direction_accuracy"] or 0))
+    tie, gap_pass = False, None
+    if len(ranked) >= 2:
+        a, b = ranked[0], ranked[1]
+        na, nb = summary[a].get("n_assertions"), summary[b].get("n_assertions")
+        if na and nb:
+            pa = (summary[a]["direction_accuracy"] or 0) * na
+            pb = (summary[b]["direction_accuracy"] or 0) * nb
+            gap_pass = abs(pa - pb)
+            tie = gap_pass < MIN_PASS_GAP
+    summary["_verdict"] = {"ranked": ranked, "tie": tie,
+                           "win_margin_assertions": (round(gap_pass, 1) if gap_pass is not None else None),
+                           "min_pass_gap": MIN_PASS_GAP}
+
+    if tie:
+        # 准确率分不出 → 退到次级指标：区分度更宽的更适合当信号源
+        def _total_span(m):
+            dist = runs[m].get("signal_distribution") or {}
+            return sum(d.get("span", 0.0) for d in dist.values())
+        best = max(order, key=lambda m: (_total_span(m), len(summary[m]["live_signals"])))
+        print("\n  ▸ 结论：**平局** —— 两个检查点的方向准确率差距仅 %.0f 条断言，"
+              "未达显著门槛 %d 条。" % (gap_pass if gap_pass is not None else 0, MIN_PASS_GAP))
+        print("    0.5 的准确率等于抛硬币：**两个检查点都没能真正做对决策方向**，"
+              "差别只是随机噪声落在谁头上。")
+        print("    次级指标（信号区分度跨度之和）：%s"
+              % "，".join("%s=%.2f" % (m, _total_span(m)) for m in order))
+        print("    → 若必须选一个当信号源，按「区分度更宽」取 **%s**，"
+              "但这只是可用性偏好，**不是准确率证据**。" % best)
+    else:
+        best = ranked[0]
+        print("\n  ▸ 结论：本次对照中 **%s** 更适合作为 Decision Signals Engine。" % best)
+        print("    依据：方向准确率 %.1f%%（比次优多对 %.0f 条断言，达显著门槛 %d），"
+              "%d/%d 个信号有实际区分度。"
+              % (100.0 * (summary[best]["direction_accuracy"] or 0), gap_pass or 0,
+                 MIN_PASS_GAP, len(summary[best]["live_signals"]), summary[best]["n_signals"]))
+    if any(summary[m]["flat_signals"] for m in order):
+        print("    ★ 标为「近乎常量」的信号在决策里等于没有信息，不要为它们写 policy 阈值。")
+    print("    ★ 同一检查点的数值会随设备漂移（CPU vs GPU 实测最大差 0.033，"
+          "与翻译抖动 0.055 同量级），比较必须同设备。")
+
+    try:
+        (TESTS_DIR / "ckpt_compare.json").write_text(json.dumps(
+            {"_readme": ["由 python laya_bridge.py ckptcompare 生成。不要手改。",
+                         "数据源是 thresholds.json 的 runs，需两个进程各跑一次 signaltest。"],
+             "models": order, "summary": summary,
+             "winner": best,
+             "signal_distribution": dict((m, runs[m].get("signal_distribution")) for m in order),
+             "direction_accuracy": dict((m, runs[m].get("direction_accuracy")) for m in order)},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+        print("\n已写入 tests/ckpt_compare.json")
+    except Exception as e:
+        print("\n写入 tests/ckpt_compare.json 失败：%r" % e)
+    return 0
+
+
+def cmd_personatest():
+    """人格 A/B 对照：固定场景/关系/情绪/目标/Traits/台词，只改 personality。
+
+    要回答的问题只有一个：
+        其余状态完全相同的情况下，Laya 会不会因为人格参数而产生**稳定且方向合理**的差异？
+
+    判据是**跨人格的方差**：如果四个 persona 的信号几乎一样，那就说明
+    「人格影响决策」在 Laya 这条链路上不成立 —— 无论配置里写得多漂亮。
+    这比看某一条输入的结果有意义得多。
+
+    用法：
+        python laya_bridge.py personatest
+        LAYA_PERSONA_STYLE=polarity python laya_bridge.py personatest   # 对照另一种人格写法
+    """
+    fixture = _load_fixture("personality_personas.json")
+    if not fixture:
+        return 1
+
+    ENGINE.init()
+    if not ENGINE.ready:
+        print("laya 未就绪，先跑 probe 看原因。")
+        return 1
+    model = DEFAULT_MODEL_NAME
+    personas = fixture["personas"]
+    stimuli = fixture["stimuli"]
+
+    global LANG
+    qs = build_laya_questions(CFG["questions"])
+    cache = {}
+    try:
+        cache = json.loads(_XLATE_DISK.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    print("=" * 78)
+    print("人格 A/B 对照 ｜ 检查点=%s ｜ 设备=%s" % (model, ENGINE.device_label()))
+    print("人格写法=%s（LAYA_PERSONA_STYLE 可覆盖）｜ 信号子集只用于表格，实际跑全部 %d 题"
+          % (personality_style(), len(qs)))
+    print("=" * 78)
+
+    order = CFG.get("signals", {}).get("order") or []
+    table, per_persona = {}, {}
+    for st in stimuli:
+        text_en = _cached_translate(st["text"], cache) if LANG == "en" else st["text"]
+        rows_pp = {}
+        for p in personas:
+            actor = json.loads(json.dumps(CFG["actor"]))     # 深拷贝，避免互相污染
+            actor["personality"] = p["personality"]
+            doc = build_state_doc(actor, st["text"], [], CFG.get("scene"), None,
+                                  player_input_en=text_en,
+                                  decision_history=[{"type": "start", "summary": "scene begins"}])
+            try:
+                _dt, rows, by_name = _run_signals(model, doc, qs)
+            except Exception as e:
+                print("  [%s/%s] 失败：%r" % (st["id"], p["id"], e))
+                rows_pp[p["id"]] = {}
+                continue
+            rows_pp[p["id"]] = dict((r["signal"], r["value"]) for r in rows)
+            # 累积到人名下，供最后算整体方差
+            for sig, v in rows_pp[p["id"]].items():
+                per_persona.setdefault(sig, {}).setdefault(p["id"], []).append(v)
+        table[st["id"]] = rows_pp
+
+    for st in stimuli:
+        print("\n── 输入 [%s]：%s" % (st["id"], st["text"]))
+        print("   %s" % st["why"])
+        print("   %-12s %8s %8s %8s %8s %9s" % ("signal", *[p["id"] for p in personas], "跨人格极差"))
+        rr = table.get(st["id"], {})
+        for sig in order:
+            vals = [rr.get(p["id"], {}).get(sig) for p in personas]
+            have = [v for v in vals if v is not None]
+            spread = (max(have) - min(have)) if len(have) > 1 else 0.0
+            cells = " ".join(("%8.3f" % v) if v is not None else "       -" for v in vals)
+            flag = "  ★" if spread >= 0.10 else ""
+            print("   %-12s %s %9.3f%s" % (sig, cells, spread, flag))
+
+    print("\n" + "=" * 78)
+    print("整体：每个信号在人之间的平均极差（越大 = 人格影响越明显）")
+    print("=" * 78)
+    print("  %-12s %9s %9s" % ("signal", "平均极差", "判定"))
+    summary = {}
+    for sig in order:
+        pp = per_persona.get(sig) or {}
+        if len(pp) < 2:
+            continue
+        # 先按 persona 求均值，再算跨 persona 的极差
+        means = dict((k, sum(v) / len(v)) for k, v in pp.items() if v)
+        if len(means) < 2:
+            continue
+        spread = max(means.values()) - min(means.values())
+        verdict = ("人格有可观察影响" if spread >= 0.10
+                   else ("接近噪声，无可观察影响" if spread < 0.05 else "弱，需更多样本"))
+        summary[sig] = {"persona_means": dict((k, round(v, 4)) for k, v in means.items()),
+                        "spread": round(spread, 4), "verdict": verdict}
+        print("  %-12s %9.3f   %s" % (sig, spread, verdict))
+
+    live = [s for s, v in summary.items() if v["spread"] >= 0.10]
+    print("\n结论：%d/%d 个信号对人呈现可观察差异。" % (len(live), len(summary)))
+    print("  有明显差异：%s" % (", ".join(live) if live else "（无）"))
+    print("  ★ 注意：差异存在 ≠ 方向合理。还要人工核对那几个 persona 的取向是否与设定一致；")
+    print("    当前 Demo 只做到「能量出差异」，没有做「差异是否符合人格语义」的自动判定。")
+
+    try:
+        (TESTS_DIR / "personality_ab.json").write_text(json.dumps(
+            {"_readme": ["由 python laya_bridge.py personatest 生成。",
+                         "table = 逐输入逐人格的信号矩阵；summary = 跨人格极差"],
+             "model": model, "device": ENGINE.device_label(),
+             "personality_style": personality_style(),
+             "table": table, "summary": summary}, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("\n已写入 tests/personality_ab.json")
+    except Exception as e:
+        print("\n写入失败：%r" % e)
+    return 0
+
+
+def cmd_bench():
+    """CPU / GPU 性能基准（§10）。真实测量，不做理论估算。
+
+    设备在 ENGINE.init() 时就定了（检查点按 device 加载），所以 CPU 与 GPU
+    **必须分两个进程**跑，不能在同一个进程里切换：
+        LAYA_DEVICE=cpu  python laya_bridge.py bench
+        LAYA_DEVICE=cuda python laya_bridge.py bench        # 记得用 .venv-cuda 的解释器
+    """
+    ENGINE.init()
+    if not ENGINE.ready:
+        print("laya 未就绪，先跑 probe 看原因。")
+        return 1
+
+    try:
+        import torch
+    except Exception:
+        torch = None
+
+    print("=" * 78)
+    print("性能基准 ｜ 检查点=%s" % DEFAULT_MODEL_NAME)
+    print("设备：%s" % ENGINE.device_label())
+    print("torch=%s  cuda_build=%s  cuda_available=%s"
+          % (getattr(torch, "__version__", "?"), getattr(getattr(torch, "version", None), "cuda", None),
+             bool(torch and torch.cuda.is_available())))
+    print("=" * 78)
+
+    if torch is not None and torch.cuda.is_available():
+        p = torch.cuda.get_device_properties(0)
+        print("GPU：%s  VRAM=%.2f GB  SM=%d.%d" % (p.name, p.total_memory / 1024**3,
+                                                   p.major, p.minor))
+    free_before = _free_phys_mb()
+    print("冷加载模型耗时：%d ms" % ENGINE.load_ms)
+    if torch is not None and torch.cuda.is_available():
+        print("加载后 VRAM：allocated=%.2f GB  reserved=%.2f GB"
+              % (torch.cuda.memory_allocated() / 1024**3, torch.cuda.memory_reserved() / 1024**3))
+    free_after = _free_phys_mb()
+    if free_before and free_after:
+        print("RAM 占用（加载前后可用物理内存之差）：约 %d MB" % max(0, free_before - free_after))
+
+    all_q = build_laya_questions(CFG["questions"])
+    qids = list(all_q.keys())
+    doc = build_state_doc(CFG["actor"], "Can you help me find the man called Grey Crow?",
+                          [], CFG.get("scene"), None,
+                          player_input_en="Can you help me find the man called Grey Crow?",
+                          decision_history=[{"type": "start", "summary": "scene begins"}])
+
+    print("\n%-34s %8s %10s %10s %12s" % ("题目集合", "题数", "首次ms", "均次ms", "每题均ms"))
+    plan = [("1 题", 1), ("3 题", 3), ("6 题", 6), ("10 题", 10),
+            ("完整 NPC tick", len(qids))]
+    results = []
+    for label, k in plan:
+        k = min(k, len(qids))
+        sub = dict((qid, all_q[qid]) for qid in qids[:k])
+        try:
+            t0 = time.perf_counter()
+            ENGINE.predict(doc, sub) if ENGINE.kind != "router" else ENGINE.obj.predict(
+                doc, sub, model=DEFAULT_MODEL_NAME)
+            first_ms = (time.perf_counter() - t0) * 1000
+            runs = []
+            for _ in range(3):
+                t1 = time.perf_counter()
+                ENGINE.predict(doc, sub) if ENGINE.kind != "router" else ENGINE.obj.predict(
+                    doc, sub, model=DEFAULT_MODEL_NAME)
+                runs.append((time.perf_counter() - t1) * 1000)
+            avg = sum(runs) / len(runs)
+            results.append({"label": label, "n": k, "first_ms": round(first_ms, 1),
+                            "avg_ms": round(avg, 1), "per_q_ms": round(avg / k, 1)})
+            print("%-34s %8d %10.0f %10.0f %12.1f" % (label, k, first_ms, avg, avg / k))
+        except Exception as e:
+            print("%-34s  失败：%r" % (label, e))
+
+    # ---- World Tick（§17 要求单独给出「GPU world decision」的毫秒数）----
+    # 世界层走的是 world_state + role=WORLD 的 payload，和 NPC 的 doc 不是同一种输入，
+    # 不能拿 NPC 的耗时顶上。
+    world_ms, world_n = None, 0
+    world_q = build_laya_questions(CFG["world"]["questions"])
+    world_payload = {"world_state": CFG["world"]["state"], "role": "WORLD"}
+    try:
+        t0 = time.perf_counter()
+        ENGINE.predict(world_payload, world_q)
+        first_ms = (time.perf_counter() - t0) * 1000
+        runs = []
+        for _ in range(3):
+            t1 = time.perf_counter()
+            ENGINE.predict(world_payload, world_q)
+            runs.append((time.perf_counter() - t1) * 1000)
+        world_ms = sum(runs) / len(runs)
+        world_n = len(world_q)
+        print("\n%-34s %8d %10.0f %10.0f %12.1f"
+              % ("World Tick（world_state + role=WORLD）", world_n, first_ms, world_ms, world_ms / max(1, world_n)))
+    except Exception as e:
+        print("\nWorld Tick 基准失败：%r" % e)
+
+    if torch is not None and torch.cuda.is_available():
+        print("\n峰值 VRAM：allocated=%.2f GB  reserved=%.2f GB"
+              % (torch.cuda.max_memory_allocated() / 1024**3,
+                 torch.cuda.max_memory_reserved() / 1024**3))
+
+    if results:
+        full = results[-1]
+        print("\n★ 高频 NPC tick 可行性判断（仅按本机实测算）")
+        print("  完整 NPC tick 一次 %.0f ms" % full["avg_ms"])
+        print("  → 单 NPC 每秒可决策 %.1f 次；若每个 NPC 每回合都跑，8 个并发 NPC ≈ %.0f ms/回合"
+              % (1000.0 / max(1.0, full["avg_ms"]), full["avg_ms"] * 8))
+        print("  世界层是低频的（§9）：一「日」跑一次，%.0f ms 完全够用，不需要和 NPC tick 抢预算。"
+              % (world_ms or 0))
+
+    # ---- 落盘：CPU / GPU 两次分别跑，结果**按设备合并**，不要互相覆盖 ----
+    # 每个进程只认一个设备（检查点在 init 时就按 device 加载），所以「一次跑出两份」
+    # 是做不到的，只能合并同一份文件里的两次结果。
+    vram = None
+    if torch is not None and torch.cuda.is_available():
+        vram = {"peak_allocated_gb": round(torch.cuda.max_memory_allocated() / 1024**3, 3),
+                "peak_reserved_gb": round(torch.cuda.max_memory_reserved() / 1024**3, 3),
+                "device_total_gb": round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2)}
+    dev = ENGINE.device_label()
+    try:
+        path = TESTS_DIR / "bench.json"
+        try:
+            blob = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            blob = {}
+        blob["_readme"] = ["由 python laya_bridge.py bench 生成。不要手改。",
+                           "CPU 与 GPU 必须分两个进程各跑一次，结果按设备合并进 runs。",
+                           "GPU 请用 .venv-cuda 的解释器并设 LAYA_DEVICE=cuda。"]
+        blob["model"] = DEFAULT_MODEL_NAME
+        blob.setdefault("runs", {})[dev] = {
+            "results": results,
+            "world_tick": ({"n_questions": world_n, "avg_ms": round(world_ms, 1)} if world_ms else None),
+            "load_ms": ENGINE.load_ms,
+            "vram": vram,
+        }
+        path.write_text(json.dumps(blob, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("已合并写入 tests/bench.json（设备键：%s）" % dev)
+    except Exception as e:
+        print("写入 tests/bench.json 失败：%r" % e)
+    return 0
+
+
 def cmd_selftest():
     print("=== 回退引擎自检（不需要 Laya）===")
     actor = json.loads(json.dumps(CFG["actor"]))
@@ -1745,19 +2911,30 @@ def cmd_qcheck():
     print()
     print("state 文档预算：max_len %d − head %d − 1 = 余量 %d token" % (max_len, head, room))
     orig_lang = LANG
+    # ★ 必须连「最坏情况」一起量。decision_history 会随着对局长大，
+    #   只测空历史等于没测 —— 真正的溢出从第三、四轮才开始出现，那时没人会再跑 qcheck。
+    DH_FULL = [
+        {"type": "player_sincere", "summary": "player gives real information openly"},
+        {"type": "npc_confide", "summary": "npc reveals her own secret"},
+        {"type": "player_lie", "summary": "player says a falsifiable lie"},
+        {"type": "npc_confront", "summary": "npc confronts the player directly"},
+    ]
+    variants = [("空决策历史", None), ("满决策历史(4条)", DH_FULL)]
     for lang in ("en", "zh"):
-        globals()["LANG"] = lang
-        doc = build_state_doc(CFG["actor"], SAMPLE_INPUT_EN if lang == "en" else SAMPLE_INPUT_ZH,
-                              [{"role": "player", "text": SAMPLE_INPUT_ZH, "text_en": SAMPLE_INPUT_EN}],
-                              CFG.get("scene"), CFG["world"]["state"],
-                              player_input_en=SAMPLE_INPUT_EN)
-        txt = doc if isinstance(doc, str) else json.dumps(doc, ensure_ascii=False)
-        n = len(tok(txt, add_special_tokens=False)["input_ids"])
-        mark = "★ 溢出！尾部会被 st[:room] 静默截断" if n > room else "OK（余量 %d token）" % (room - n)
-        print("  state_format=%-7s 语言 %s → %d token  %s"
-              % (CFG.get("state_format", "compact"), lang, n, mark))
-        if n > room:
-            problems.append("state_doc(%s)" % lang)
+        for label, dh in variants:
+            globals()["LANG"] = lang
+            doc = build_state_doc(CFG["actor"], SAMPLE_INPUT_EN if lang == "en" else SAMPLE_INPUT_ZH,
+                                  [{"role": "player", "text": SAMPLE_INPUT_ZH, "text_en": SAMPLE_INPUT_EN}],
+                                  CFG.get("scene"), CFG["world"]["state"],
+                                  player_input_en=SAMPLE_INPUT_EN,
+                                  decision_history=dh)
+            txt = doc if isinstance(doc, str) else json.dumps(doc, ensure_ascii=False)
+            n = len(tok(txt, add_special_tokens=False)["input_ids"])
+            mark = "★ 溢出！尾部会被 st[:room] 静默截断" if n > room else "OK（余量 %d token）" % (room - n)
+            print("  state_format=%-7s 语言 %s %-14s → %d token  %s"
+                  % (CFG.get("state_format", "compact"), lang, label, n, mark))
+            if n > room:
+                problems.append("state_doc(%s,%s)" % (lang, label))
     globals()["LANG"] = orig_lang
 
     print()
@@ -2143,6 +3320,14 @@ def main():
         return cmd_qcheck()
     if len(sys.argv) > 1 and sys.argv[1] == "sanity":
         return cmd_sanity()
+    if len(sys.argv) > 1 and sys.argv[1] == "signaltest":
+        return cmd_signaltest()
+    if len(sys.argv) > 1 and sys.argv[1] == "ckptcompare":
+        return cmd_ckptcompare()
+    if len(sys.argv) > 1 and sys.argv[1] == "personatest":
+        return cmd_personatest()
+    if len(sys.argv) > 1 and sys.argv[1] == "bench":
+        return cmd_bench()
 
     print("正在初始化 Laya ...（未安装会直接走回退引擎）")
     ENGINE.init()
@@ -2174,11 +3359,13 @@ def main():
     print("  GET  /health    体检（引擎 / Laya API 形状 / 已装预设）")
     print("  GET  /config    读取 narra_config.json")
     print("  GET  /demo      打开演示页（?auto=N 可自动问第 N 句，便于无人值守截图）")
-    print("  POST /decide    单轮决策：state + questions → 概率 / 增量 / 导演裁决")
+    print("  POST /decide    单轮 NPC Tick：决策信号 → Policy Resolver → 行为候选")
     print("  POST /narrate   按选中的行为生成台词（LLM 或台词池；不传 behavior 会自动先 decide）")
-    print("  POST /world     世界层事件概率")
+    print("  POST /world     独立 World Tick（低频世界事件，不再混进 /decide）")
+    print("  POST /reset     清空累积历史（dialogue history + decision_history）")
     print("  POST /predict   原始透传，直接调 Laya")
-    print("\n演示页：%s/demo    （?auto=7 会触发 gate_ally 门限覆盖，最适合看那套机制）" % url)
+    print("\n演示页：%s/demo    （?auto=7 会触发门限/策略改写，最适合看那套机制）" % url)
+    print("自检：qcheck 问题集预算 ｜ signaltest 决策方向回归 ｜ personatest 人格对照 ｜ bench 性能")
     print("按 Ctrl+C 停止。\n")
 
     if os.environ.get("OPEN_BROWSER") == "1":

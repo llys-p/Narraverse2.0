@@ -4,6 +4,9 @@
 
 # 虚拟环境与模型权重（不入库）
 .venv/
+# .venv-cuda（CUDA 版 torch，约 5 GB）
+.venv-*/
+# .venv_broken_<ts> / .venv_parked_<ts>
 .venv_*/
 __pycache__/
 *.pyc
@@ -16,3 +19,6 @@ _hf_cache/
 _diag/
 *.log
 *.png
+
+# torch CUDA 轮子（2.6 GB）。用 _fetch_cuda_torch.sh 现下，不要入库
+*.whl

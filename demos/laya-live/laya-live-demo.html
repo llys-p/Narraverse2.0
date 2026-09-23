@@ -402,125 +402,205 @@ function pushPending(){
 function dropPending(){ const p = $('pending'); if(p) p.remove(); }
 
 /* ---------- 渲染：右栏决策台 ---------- */
+/* ★ 三区结构（§13）：右栏不再把 NPC 行为 choice 当成最核心结果。
+     ① Decision Signals —— Laya 判断了什么（本轮主输出）
+     ② Policy Resolver  —— Narraverse 为什么做这个决定
+     ③ Story Agent      —— LLM 怎么把决定写成故事
+   后面的「状态建议 / 玩家意图 / 诊断」是次要信息，交给用户按需展开。
+   choice 的完整分布被降级放进 ②，只当 baseline 证据。 */
 function renderPanel(out){
-  const d = out.decision, b = d.behavior;
+  const d = out.decision || {}, b = d.behavior;
   const probs = b && b.probabilities;
-  const probRows = probs ? Object.entries(probs).sort((x,y)=>y[1]-x[1]).map(([id,p])=>{
-    const name = (CFG.behaviors.find(z=>z.id===id)||{}).name || id;
-    const gated = b.gated_by && b.choice_pick===id && id!==b.id;
-    return `<div class="pr ${id===(b.id)?'sel':''}">
-      <div class="pr-h"><span class="n">${name}</span>${id===b.id?'<span class="hit">选中</span>':(gated?'<span class="hit" style="background:var(--warn);color:#231a05">choice 首选·被改写</span>':'')}
-        <span class="v mono">${p.toFixed(3)}</span></div>
-      <div class="pr-b"><i style="width:0" data-w="${(p*100).toFixed(1)}"></i></div></div>`;
-  }).join('') : '<div class="tiny">该版本未返回每项概率，只有置信度</div>';
+  const pol = out.policy || {};
+  const base = d.choice_baseline || {};
+  const bname = id => (CFG.behaviors.find(z => z.id === id) || {}).name || id;
+  const num = (v, n) => (v == null || isNaN(v)) ? '—' : Number(v).toFixed(n == null ? 3 : n);
 
-  // ★ choice 给基础分布，noul 门限做覆盖 —— 命中时要说清是哪个门限改的，否则看到
-  //   「选中项不是分布第一名」会以为是 bug。
-  const gateBox = b && b.gated_by ? `<div class="verdict" style="margin-top:9px;border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.08)">
-      <span>⚑</span><span>门限改写：choice 首选「${(CFG.behaviors.find(z=>z.id===b.gated_by.choice_said)||{}).name || b.gated_by.choice_said}」，
-      但 <code>${b.gated_by.gate}</code> 给出校准概率 ${b.gated_by.p.toFixed(3)} ≥ 阈值 ${b.gated_by.threshold}，
-      最终行为改为「${b.name}」。<br><span class="tiny">choice 在原语里区分度偏弱，noul 是校准过的 P(true)，所以用门限覆盖。</span></span></div>`
-    : '';
+  /* ---- ① Decision Signals ---- */
+  const sigRows = (out.decision_signals || []).map(r => {
+    const isLv = r.kind === 'level';
+    const max = isLv ? ((r.range && r.range[1]) || 4) : 1;
+    const pct = Math.max(0, Math.min(100, 100 * r.value / max));
+    // 只对 prob 型标「高」（阈值 0.5）。level 型是 0~4 的强度不是概率，
+    // 拿 0.5 去标它会满屏假告警。
+    const hot = !isLv && r.value >= 0.5;
+    return `<div class="noulrow"><span class="n">${esc(r.label)}</span>
+      <span class="track ${hot ? 'hot' : ''}"><i style="width:0" data-w="${pct.toFixed(1)}"></i></span>
+      <span class="v mono" style="${hot ? 'color:var(--warn)' : ''}">${isLv ? num(r.value, 2) : num(r.value, 3)}<span class="tiny">${isLv ? ' /' + max : ''}</span></span></div>`;
+  }).join('') || (out.engine === 'laya'
+    ? '<div class="tiny">Laya 本轮未返回决策信号</div>'
+    : `<div class="verdict hold" style="margin-top:0">
+         <span>!</span><span>当前是<b>回退引擎</b>（未装 Laya 或加载失败），它不产出决策信号。<br>
+         <span class="tiny">刻意不给它编造信号值 —— 把启发式的假数字当模型输出展示，
+         比留空更糟。装上 Laya 后这里会显示 9 个真实信号。</span></span></div>`);
 
-  const intentProbs = d.player_intent.probabilities;
-  const intentRows = intentProbs ? Object.entries(intentProbs).sort((x,y)=>y[1]-x[1]).slice(0,3).map(([id,p])=>
-    `<div class="pr"><div class="pr-h"><span class="n">${id}</span><span class="v mono">${p.toFixed(3)}</span></div>
-     <div class="pr-b"><i style="width:0" data-w="${(p*100).toFixed(1)}"></i></div></div>`).join('')
-    : `<div class="tiny">${d.player_intent.id||'—'}（无分布）</div>`;
+  /* ---- ② Policy Resolver ---- */
+  const SRC = {policy: '规则命中', choice_baseline: '回落 choice baseline', ambiguous: '判为歧义 · 交回上游'};
+  const srcTxt = SRC[pol.source] || pol.source || '—';
+  const srcColor = pol.source === 'policy' ? 'var(--ok)'
+                 : (pol.source === 'ambiguous' ? 'var(--warn)' : 'var(--dim)');
+  // reasons 有三种形状：规则命中 {signal,value,range} / 歧义 {why,...} / 纯文本。逐条容错渲染。
+  const reasonRows = (pol.reasons || []).map(r => {
+    if (r && r.signal) {
+      const rng = (r.range && r.range[0] != null)
+        ? ` <span class="tiny">∈ [${r.range[0]}, ${r.range[1]}]</span>` : '';
+      return `<div class="kv"><span class="k">${esc(r.signal)}</span>
+        <span class="v mono">${num(r.value)}${rng}</span></div>`;
+    }
+    if (r && r.why) return `<div class="tiny" style="margin:3px 0">· ${esc(r.why)}</div>`;
+    return `<div class="tiny" style="margin:3px 0">· ${esc(String(r))}</div>`;
+  }).join('') || '<div class="tiny">无</div>';
 
-  const scoreRows = Object.entries(out.answers)
-    .filter(([k,v]) => (CFG.questions[k] && CFG.questions[k].type==='score'))
-    .map(([k,v]) => {
-      const lb = (CFG.state_shift && CFG.state_shift.paths[k] && CFG.state_shift.paths[k].label) || k.replace('_shift','');
-      return `<div class="kv"><span class="k">${lb}</span>
-      <span class="v">${v._value==null?'—':Number(v._value).toFixed(2)} / ${(CFG.questions[k].criteria.length-1)}</span></div>`;
+  // 命中 Policy 规则、且结论与 choice 首选不一致时，必须点明改判 —— 否则用户看到
+  // 「最终候选 ≠ 分布第一名」会以为是 bug。
+  const conflictBox = (b && b.conflict) ? `<div class="verdict" style="margin-top:9px;border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.08)">
+      <span>⚑</span><span>choice 首选是「${esc(bname(base.id))}」，Policy 改判为「${esc(b.name)}」。<br>
+      <span class="tiny">choice 对复杂行为区分度弱，noul/score 才是校准过的量 —— 有冲突时以 Policy 为准。</span></span></div>` : '';
+
+  const ambBox = pol.source === 'ambiguous' ? `<div class="verdict hold" style="margin-top:9px">
+      <span>?</span><span>Laya 本轮没有明确倾向，不硬选一个。已交回 Director / Story Agent 决定走向。</span></div>` : '';
+
+  const probRows = probs ? Object.entries(probs).sort((x, y) => y[1] - x[1]).map(([id, p]) =>
+    `<div class="pr ${id === base.id ? 'sel' : ''}">
+      <div class="pr-h"><span class="n">${esc(bname(id))}</span>${id === base.id ? '<span class="hit">baseline</span>' : ''}
+        <span class="v mono">${num(p)}</span></div>
+      <div class="pr-b"><i style="width:0" data-w="${(p * 100).toFixed(1)}"></i></div></div>`).join('')
+    : '<div class="tiny">该版本未返回每项概率，只有置信度</div>';
+
+  const intentProbs = (d.player_intent || {}).probabilities;
+  const intentRows = intentProbs ? Object.entries(intentProbs).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([id, p]) =>
+    `<div class="pr"><div class="pr-h"><span class="n">${esc(id)}</span><span class="v mono">${num(p)}</span></div>
+     <div class="pr-b"><i style="width:0" data-w="${(p * 100).toFixed(1)}"></i></div></div>`).join('')
+    : `<div class="tiny">${esc((d.player_intent || {}).id || '—')}（无分布）</div>`;
+
+  /* ---- ④ 状态建议（§12：是 proposal，不是 Actor State 真值） ---- */
+  const props = out.proposed_deltas || out.deltas || [];
+  const scoreRows = Object.entries(out.answers || {})
+    .filter(([k, v]) => (CFG.questions[k] && CFG.questions[k].type === 'score'))
+    .map(([k, v]) => {
+      const lb = (CFG.state_shift && CFG.state_shift.paths[k] && CFG.state_shift.paths[k].label) || k.replace('_shift', '');
+      return `<div class="kv"><span class="k">${esc(lb)}</span>
+      <span class="v">${v._value == null ? '—' : Number(v._value).toFixed(2)} / ${(CFG.questions[k].criteria.length - 1)}</span></div>`;
     }).join('');
 
-  const noul = (label, v, thr) => {
-    if(v==null) return '';
-    const hot = thr!=null && v>=thr;
-    return `<div class="noulrow"><span class="n">${label}</span>
-      <span class="track ${hot?'hot':''}">${thr!=null?`<span class="thr"></span>`:''}<i style="width:0" data-w="${(v*100).toFixed(1)}"></i></span>
-      <span class="v" style="${hot?'color:var(--warn)':''}">${v.toFixed(3)}</span></div>`;
-  };
-
-  const deltas = out.deltas.map(x =>
-    `<span class="chip ${x.delta<0?'minus':(Math.abs(x.delta)<0.01?'flat':'')}">${x.label} ${x.delta>0?'+':''}${x.delta.toFixed(2)}</span>`).join('')
+  const deltas = props.map(x =>
+    `<span class="chip ${x.delta < 0 ? 'minus' : (Math.abs(x.delta) < 0.01 ? 'flat' : '')}">${esc(x.label)} ${x.delta > 0 ? '+' : ''}${x.delta.toFixed(2)}</span>`).join('')
     || '<span class="tiny">无</span>';
 
+  const noul = (label, v, thr) => {
+    if (v == null) return '';
+    const hot = thr != null && v >= thr;
+    return `<div class="noulrow"><span class="n">${esc(label)}</span>
+      <span class="track ${hot ? 'hot' : ''}">${thr != null ? `<span class="thr"></span>` : ''}<i style="width:0" data-w="${(v * 100).toFixed(1)}"></i></span>
+      <span class="v" style="${hot ? 'color:var(--warn)' : ''}">${num(v)}</span></div>`;
+  };
+
+  const gates = Object.entries(CFG.gates || {}).filter(([k]) => !k.startsWith('_')).map(([gid, g]) => {
+    const v = (out.answers[gid] || {})._value;
+    const hot = v != null && v >= g.threshold;
+    // 阈值 > 1 落在概率上界之外 = 该门限是停用状态（配置里用这种方式停用而非删除键）。
+    // 不标出来的话，用户会以为「显示 0.48 / 1.01 说明门限在工作」。
+    const off = g.threshold > 1;
+    return `<div class="noulrow"><span class="n">→ ${esc(bname(g.behavior))}${off ? ' <span class="tiny">· 已停用</span>' : ''}</span>
+      <span class="track ${hot ? 'hot' : ''}"><span class="thr"></span><i style="width:0" data-w="${v != null ? (v * 100).toFixed(1) : 0}"></i></span>
+      <span class="v" style="${hot ? 'color:var(--warn)' : ''}">${v == null ? '—' : num(v)}<span class="tiny"> /${g.threshold}</span></span></div>
+      ${off && g._status ? `<div class="tiny" style="margin:0 0 6px 4px">${esc(g._status)}</div>` : ''}`;
+  }).join('');
+
   panel.innerHTML = `
+    ${out.input_warning ? `<div class="sec">
+      <div class="verdict hold"><span>!</span><span><b>输入告警</b>：${esc(out.input_warning)}</span></div>
+    </div>` : ''}
+
     <div class="sec">
-      <div class="sl">① 引擎
-        <span class="bd2">${out.engine==='laya'?'Laya':'回退引擎'}</span></div>
-      <div class="kv">
-        <span class="k">路径</span><span class="v">${esc(out.engine_detail)}</span>
-        <span class="k">一次前向传播</span><span class="v">${out.question_count} 题 / ${out.latency_breakdown?out.latency_breakdown.decide_ms:out.latency_ms} ms</span>
-        <span class="k">路由</span><span class="v">${out.routing? esc(out.routing.model||'—') : '—'}</span>
-        <span class="k">置信度可信</span><span class="v" style="color:${out.confidence_reliable?'var(--ok)':'var(--warn)'}">
-          ${out.confidence_reliable?'是（严格适当评分规则训练）':'否（回退路径为粗估）'}</span>
+      <div class="sl">① Decision Signals <span class="bd2">Laya 判断了什么 · ${(out.decision_signals || []).length} 项</span></div>
+      ${sigRows}
+      <div class="tiny" style="margin-top:8px;line-height:1.7">
+        这是本轮的主输出。<b>choice 只是 baseline，不是行为权威</b>。
+        prob 型是 noul 的校准概率（0~1），level 型是 score 的期望强度（0~4），量纲不同，不要互相比大小。
       </div>
-      ${out.lang==='en' ? `<div class="tiny" style="margin-top:8px;line-height:1.7">
-        语言桥：Laya 的决策检查点是英文的，中文属非拉丁脚本会静默失效
-        ${out.translate && out.translate.ms ? `（${out.translate.source}，${out.translate.ms}ms）` : ''}<br>
-        送入的玩家台词：<span style="color:#9fb0cb">“${esc(out.player_input_en||'')}”</span></div>` : ''}
     </div>
 
     <div class="sec">
-      <div class="sl">② NPC 行为选择 <span class="bd2">choice · ${Object.keys(probs||{}).length} 项</span></div>
-      ${probRows}
-      ${gateBox}
-      <div class="tiny" style="margin-top:8px">Laya 只给概率。选中「${b?b.name:'—'}」后，由 Story Agent 决定怎么表现。</div>
+      <div class="sl">② Policy Resolver <span class="bd2">Narraverse 为什么这么决定</span></div>
+      <div class="kv">
+        <span class="k">choice baseline</span><span class="v">${base.id ? esc(base.name) + ' <span class="tiny">(' + num(base.probabilities && base.probabilities[base.id]) + ')</span>' : '—'}</span>
+        <span class="k">最终候选</span><span class="v" style="font-weight:600">${b ? esc(b.name) : '—'}</span>
+        <span class="k">裁决来源</span><span class="v" style="color:${srcColor}">${esc(srcTxt)}</span>
+        <span class="k">置信水平</span><span class="v">${esc(pol.confidence_level || '—')}</span>
+      </div>
+      <div class="tiny" style="margin:9px 0 4px">原因（可审计）</div>
+      ${reasonRows}
+      ${conflictBox}${ambBox}
+      <details style="margin-top:9px"><summary class="tiny">choice 原始分布（baseline 证据，不是决策依据）</summary>
+        <div style="margin-top:6px">${probRows}</div></details>
     </div>
 
     <div class="sec">
-      <div class="sl">③ 玩家意图 <span class="bd2">choice</span></div>
-      ${intentRows}
+      <div class="sl">③ Story Agent <span class="bd2">LLM 怎么把决定写成故事</span></div>
+      <div class="instr"><div class="lab">本轮行为：${b ? esc(b.name) : '—'}</div>${b ? esc(b.instr) : '—'}</div>
+      <div class="tiny" style="margin-top:7px">最终台词见中间对话区。叙事不参与决策 —— 它只把决策表现成故事。</div>
     </div>
 
     <div class="sec">
-      <div class="sl">④ 状态增量 <span class="bd2">score → 插值 → 归因</span></div>
+      <div class="sl">④ 状态建议 <span class="bd2">proposed_deltas · 非 Actor State 真值</span></div>
       ${scoreRows}
       <div style="margin-top:9px">${deltas}</div>
+      <div class="verdict hold" style="margin-top:9px"><span>!</span><span>${esc((out.state_proposal_meta || {}).note || 'proposed_deltas 是决策建议，不是最终状态写入值。')}</span></div>
       <div class="tiny" style="margin-top:7px">归因系数 k₊=${out.attribution.k_positive} / k₋=${out.attribution.k_negative}
-        ${out.attribution.enabled?'':'（已关闭）'} · 同一句话对不同人格产生不同增量</div>
+        ${out.attribution.enabled ? '' : '（已关闭）'} · 同一句话对不同人格产生不同增量</div>
     </div>
 
     <div class="sec">
-      <div class="sl">⑤ noul：校准概率</div>
+      <div class="sl">⑤ 玩家意图 <span class="bd2">choice</span></div>
+      ${intentRows}
       ${noul('背叛倾向', d.betrayal_intent)}
       ${noul('隐藏事件', d.hidden_event, out.director.threshold)}
+      <div class="verdict ${out.director.adopt ? '' : 'hold'}" style="margin-top:10px">
+        <span>${out.director.adopt ? '✦' : '!'}</span><span>${esc(out.director.note)}</span></div>
+    </div>
+
+    <div class="sec">
+      <div class="sl">⑥ 诊断 <span class="bd2">${out.engine === 'laya' ? 'Laya' : '回退引擎'} · ${esc(out.device || '')}</span></div>
+      <div class="kv">
+        <span class="k">路径</span><span class="v">${esc(out.engine_detail)}</span>
+        <span class="k">一次前向传播</span><span class="v">${out.question_count} 题 / ${out.latency_breakdown ? out.latency_breakdown.decide_ms : out.latency_ms} ms</span>
+        <span class="k">tick</span><span class="v">${esc(out.tick || 'npc')}</span>
+        <span class="k">路由</span><span class="v">${out.routing ? esc(out.routing.model || '—') : '—'}</span>
+        <span class="k">置信度可信</span><span class="v" style="color:${out.confidence_reliable ? 'var(--ok)' : 'var(--warn)'}">
+          ${out.confidence_reliable ? '是（严格适当评分规则训练）' : '否（回退路径为粗估）'}</span>
+        ${out.state_budget ? `<span class="k">state 预算</span><span class="v" style="color:${out.state_budget.overflow ? 'var(--bad)' : 'var(--ok)'}">
+          ${out.state_budget.tokens} / ${out.state_budget.room} token${out.state_budget.overflow ? ' ★ 溢出' : '（余 ' + out.state_budget.spare + '）'}</span>` : ''}
+      </div>
+      ${out.state_budget && out.state_budget.overflow ? `<div class="verdict" style="margin-top:9px;border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.10)">
+        <span>✂</span><span>${esc(out.state_budget.note)}<br>
+        <span class="tiny">这是静默失效：接口不会报错，只是模型越来越看不到关键信息。
+        换 LAYA_MODEL=typed-decisions（1024 ctx）或减 decision_history 条数。</span></span></div>` : ''}
+      ${out.lang === 'en' ? `<div class="tiny" style="margin-top:8px;line-height:1.7">
+        语言桥：Laya 的决策检查点是英文的，中文属非拉丁脚本会静默失效
+        ${out.translate && out.translate.ms ? `（${out.translate.source}，${out.translate.ms}ms）` : ''}<br>
+        送入的玩家台词：<span style="color:#9fb0cb">“${esc(out.player_input_en || '')}”</span></div>` : ''}
       <div class="tiny" style="margin:10px 0 4px">行为门限（choice 出分布，noul 做覆盖）</div>
-      ${Object.entries(CFG.gates||{}).filter(([k])=>!k.startsWith('_')).map(([gid,g])=>{
-        const v = (out.answers[gid]||{})._value;
-        const nm = (CFG.behaviors.find(z=>z.id===g.behavior)||{}).name || g.behavior;
-        return `<div class="noulrow"><span class="n">→ ${nm}</span>
-          <span class="track ${v!=null&&v>=g.threshold?'hot':''}"><span class="thr"></span><i style="width:0" data-w="${v!=null?(v*100).toFixed(1):0}"></i></span>
-          <span class="v" style="${v!=null&&v>=g.threshold?'color:var(--warn)':''}">${v==null?'—':v.toFixed(3)}<span class="tiny"> /${g.threshold}</span></span></div>`;
-      }).join('')}
-      <div class="verdict ${out.director.adopt?'':'hold'}" style="margin-top:10px">
-        <span>${out.director.adopt?'✦':'!'}</span><span>${out.director.note}</span></div>
-    </div>
-
-    <div class="sec">
-      <div class="sl">⑥ 交给 Story Agent 的表现指令
-        <span class="bd2">叙事不参与决策</span></div>
-      <div class="instr"><div class="lab">本轮行为：${b?b.name:'—'}</div>${b?esc(b.instr):'—'}</div>
-    </div>
-
-    <div class="sec">
-      <div class="sl">⑦ 诊断</div>
-      <details><summary>送进 Laya 的 state 文档（原则3：压缩后的决策状态）</summary>
-        <pre>${esc(JSON.stringify(out.state_doc,null,1))}</pre></details>
+      ${gates}
+      <details style="margin-top:9px"><summary>送进 Laya 的 state 文档（原则3：压缩后的决策状态）</summary>
+        <pre>${esc(JSON.stringify(out.state_doc, null, 1))}</pre></details>
+      <details style="margin-top:7px"><summary>决策历史（多轮上下文，只存结构化摘要）</summary>
+        <pre>${esc(JSON.stringify(out.decision_history || [], null, 1))}</pre></details>
       <details style="margin-top:7px"><summary>引擎原始返回（版本差异看这里）</summary>
-        <pre>${esc(JSON.stringify(out.raw && Object.keys(out.raw).length ? out.raw : {note:'回退引擎无原始返回'},null,1))}</pre></details>
+        <pre>${esc(JSON.stringify(out.raw && Object.keys(out.raw).length ? out.raw : {note: '回退引擎无原始返回'}, null, 1))}</pre></details>
     </div>`;
 
-  requestAnimationFrame(()=>{
-    panel.querySelectorAll('[data-w]').forEach(i=>{ i.style.width = i.dataset.w + '%'; });
+  requestAnimationFrame(() => {
+    panel.querySelectorAll('[data-w]').forEach(i => { i.style.width = i.dataset.w + '%'; });
   });
 }
 
-/* ---------- 应用状态增量 ---------- */
+/* ---------- 应用状态建议（§12：这是 Proposal，不是状态真值） ----------
+   ★ 浏览器**不是 Actor State 的权威**。这里把后端给的 proposed_deltas 直接落到内存里的
+     actor 对象上，纯粹是为了让 Demo 能连续进行下去。
+     正式 Narraverse 的链路必须是：
+         Laya Proposal → 后端 Validate → State Transition → Commit
+     即：校验和提交都在后端，前端只负责显示。改这一段前先确认自己没在把 Demo 当架构。 */
 function applyDeltas(deltas){
   if(!actor) return [];
   const out = [];
@@ -582,8 +662,8 @@ async function send(text){
     });
     if(out.error){ throw new Error(out.error); }
 
-    // 1) 应用状态增量
-    const rows = applyDeltas(out.deltas || []);
+    // 1) 应用状态建议（proposed_deltas 是新字段名，deltas 仅作旧后端兼容）
+    const rows = applyDeltas(out.proposed_deltas || out.deltas || []);
     showChips(rows);
     renderActor();
     flashValues(rows);
@@ -591,7 +671,10 @@ async function send(text){
 
     // 2) 决策台
     renderPanel(out);
-    $('panelTag').textContent = (out.engine==='laya'?'Laya':'回退') + ' · ' + out.question_count + ' 题';
+    // 标签把「谁裁决的」带出来：policy 命中 / 回落 choice baseline / 判为歧义。
+    // 只写「Laya · 22 题」看不出这一轮到底是谁定的行为。
+    const srcTag = {policy:'Policy', choice_baseline:'choice 兜底', ambiguous:'歧义'}[out.policy && out.policy.source] || '—';
+    $('panelTag').textContent = (out.engine==='laya'?'Laya':'回退') + ' · ' + out.question_count + ' 题 · ' + srcTag;
     $('stQ').textContent = out.question_count;
     $('stLat').textContent = out.latency_ms.toFixed(1) + ' ms';
     $('stRoute').textContent = out.routing ? (out.routing.model||'—') : '—';
@@ -651,17 +734,23 @@ async function send(text){
   }
 }
 
-/* ---------- 世界层 ---------- */
+/* ---------- 世界层（World Tick，与 NPC Tick 分离 · §9） ----------
+   ★ 世界推进是**低频**的：世界事件 / 地区变化 / 势力状态 / 环境状态。
+     它和 NPC 每轮决策是两条独立的 tick，不要合并跑 —— NPC 每轮都算一遍世界事件
+     既浪费预算，也会让世界状态跟着每句话乱跳。 */
 async function worldTick(){
   const btn = $('btnWorld'); btn.disabled = true; btn.textContent = '世界推进中…';
   try{
     const out = await api('/world', {world_state: worldState});
     if(out.error) throw new Error(out.error);
+    if(out.world_state) worldState = out.world_state;
     $('worldOut').innerHTML = out.events.map(e=>`
       <div class="noulrow"><span class="n" style="width:56px">${e.name}</span>
         <span class="track ${e.adopt?'hot':''}"><i style="width:${(e.p*100).toFixed(1)}%"></i></span>
         <span class="v" style="${e.adopt?'color:var(--warn)':''}">${e.p.toFixed(3)}</span></div>`).join('')
-      + `<div class="tiny" style="margin-top:6px">${out.engine==='laya'?'Laya':'回退引擎'} · ${out.latency_ms}ms ·
+      + `<div class="tiny" style="margin-top:6px">
+         <b>World Tick</b>（tick=${esc(out.tick||'world')}）· ${out.engine==='laya'?'Laya':'回退引擎'}
+         · ${esc(out.device||'')} · ${out.latency_ms}ms<br>
          阈值 ${out.threshold}：${out.events.filter(e=>e.adopt).map(e=>e.name).join('、')||'无'} 进入剧情排期</div>`;
   } catch(e){
     $('worldOut').innerHTML = `<div class="tiny" style="color:var(--bad)">失败：${esc(e.message)}</div>`;

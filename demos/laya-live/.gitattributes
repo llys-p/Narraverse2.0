@@ -7,3 +7,5 @@
 *.md      text
 *.html    text
 *.example text
+*.sh      text
+*.mjs     text

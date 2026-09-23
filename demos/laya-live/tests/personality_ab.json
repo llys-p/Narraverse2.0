@@ -1,0 +1,241 @@
+{
+  "_readme": [
+    "由 python laya_bridge.py personatest 生成。",
+    "table = 逐输入逐人格的信号矩阵；summary = 跨人格极差"
+  ],
+  "model": "typed-decisions",
+  "device": "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)",
+  "personality_style": "polarity",
+  "table": {
+    "primary": {
+      "A": {
+        "hostility": 0.3774,
+        "cooperation": 0.4216,
+        "withdraw": 0.3573,
+        "confront": 0.4663,
+        "disclose": 0.4619,
+        "investigate": 2.6979,
+        "trust": 0.325,
+        "doubt": 0.4854,
+        "danger": 0.4513
+      },
+      "B": {
+        "hostility": 0.3811,
+        "cooperation": 0.4032,
+        "withdraw": 0.3733,
+        "confront": 0.4682,
+        "disclose": 0.4587,
+        "investigate": 2.6614,
+        "trust": 0.3257,
+        "doubt": 0.491,
+        "danger": 0.4514
+      },
+      "C": {
+        "hostility": 0.3794,
+        "cooperation": 0.4268,
+        "withdraw": 0.3568,
+        "confront": 0.4604,
+        "disclose": 0.4593,
+        "investigate": 2.6918,
+        "trust": 0.3259,
+        "doubt": 0.4973,
+        "danger": 0.459
+      },
+      "D": {
+        "hostility": 0.3808,
+        "cooperation": 0.4084,
+        "withdraw": 0.3658,
+        "confront": 0.4648,
+        "disclose": 0.4534,
+        "investigate": 2.6817,
+        "trust": 0.3239,
+        "doubt": 0.4822,
+        "danger": 0.445
+      }
+    },
+    "pressure": {
+      "A": {
+        "hostility": 0.5084,
+        "cooperation": 0.4851,
+        "withdraw": 0.5122,
+        "confront": 0.5703,
+        "disclose": 0.5163,
+        "investigate": 2.9311,
+        "trust": 0.4038,
+        "doubt": 0.3271,
+        "danger": 0.5821
+      },
+      "B": {
+        "hostility": 0.5021,
+        "cooperation": 0.4787,
+        "withdraw": 0.5022,
+        "confront": 0.5698,
+        "disclose": 0.4938,
+        "investigate": 2.901,
+        "trust": 0.4141,
+        "doubt": 0.3362,
+        "danger": 0.5824
+      },
+      "C": {
+        "hostility": 0.5145,
+        "cooperation": 0.4781,
+        "withdraw": 0.5183,
+        "confront": 0.5738,
+        "disclose": 0.5097,
+        "investigate": 2.9132,
+        "trust": 0.4073,
+        "doubt": 0.3297,
+        "danger": 0.5867
+      },
+      "D": {
+        "hostility": 0.4974,
+        "cooperation": 0.4762,
+        "withdraw": 0.493,
+        "confront": 0.568,
+        "disclose": 0.4883,
+        "investigate": 2.9034,
+        "trust": 0.4047,
+        "doubt": 0.3311,
+        "danger": 0.5736
+      }
+    },
+    "warmth": {
+      "A": {
+        "hostility": 0.4027,
+        "cooperation": 0.5443,
+        "withdraw": 0.5042,
+        "confront": 0.4798,
+        "disclose": 0.4295,
+        "investigate": 2.9582,
+        "trust": 0.4415,
+        "doubt": 0.3248,
+        "danger": 0.4905
+      },
+      "B": {
+        "hostility": 0.4036,
+        "cooperation": 0.5323,
+        "withdraw": 0.5084,
+        "confront": 0.4772,
+        "disclose": 0.4253,
+        "investigate": 2.9322,
+        "trust": 0.4419,
+        "doubt": 0.3433,
+        "danger": 0.4999
+      },
+      "C": {
+        "hostility": 0.4021,
+        "cooperation": 0.5367,
+        "withdraw": 0.5059,
+        "confront": 0.4793,
+        "disclose": 0.4266,
+        "investigate": 2.9384,
+        "trust": 0.4481,
+        "doubt": 0.3343,
+        "danger": 0.5015
+      },
+      "D": {
+        "hostility": 0.4046,
+        "cooperation": 0.5261,
+        "withdraw": 0.5067,
+        "confront": 0.4772,
+        "disclose": 0.4262,
+        "investigate": 2.9357,
+        "trust": 0.4413,
+        "doubt": 0.3357,
+        "danger": 0.4927
+      }
+    }
+  },
+  "summary": {
+    "hostility": {
+      "persona_means": {
+        "A": 0.4295,
+        "B": 0.4289,
+        "C": 0.432,
+        "D": 0.4276
+      },
+      "spread": 0.0044,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "cooperation": {
+      "persona_means": {
+        "A": 0.4837,
+        "B": 0.4714,
+        "C": 0.4805,
+        "D": 0.4702
+      },
+      "spread": 0.0134,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "withdraw": {
+      "persona_means": {
+        "A": 0.4579,
+        "B": 0.4613,
+        "C": 0.4603,
+        "D": 0.4552
+      },
+      "spread": 0.0061,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "confront": {
+      "persona_means": {
+        "A": 0.5055,
+        "B": 0.5051,
+        "C": 0.5045,
+        "D": 0.5033
+      },
+      "spread": 0.0021,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "disclose": {
+      "persona_means": {
+        "A": 0.4692,
+        "B": 0.4593,
+        "C": 0.4652,
+        "D": 0.456
+      },
+      "spread": 0.0133,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "investigate": {
+      "persona_means": {
+        "A": 2.8624,
+        "B": 2.8315,
+        "C": 2.8478,
+        "D": 2.8403
+      },
+      "spread": 0.0309,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "trust": {
+      "persona_means": {
+        "A": 0.3901,
+        "B": 0.3939,
+        "C": 0.3938,
+        "D": 0.39
+      },
+      "spread": 0.0039,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "doubt": {
+      "persona_means": {
+        "A": 0.3791,
+        "B": 0.3902,
+        "C": 0.3871,
+        "D": 0.383
+      },
+      "spread": 0.0111,
+      "verdict": "接近噪声，无可观察影响"
+    },
+    "danger": {
+      "persona_means": {
+        "A": 0.508,
+        "B": 0.5112,
+        "C": 0.5157,
+        "D": 0.5038
+      },
+      "spread": 0.012,
+      "verdict": "接近噪声，无可观察影响"
+    }
+  }
+}
