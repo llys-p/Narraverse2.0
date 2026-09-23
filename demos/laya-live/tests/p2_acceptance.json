@@ -67,7 +67,6 @@
   "situation_assessment  3 个：trust、doubt、danger",
   "运行中的检查点 = typed-decisions",
   "档案里的检查点 = typed-decisions ｜ profile_id = f77f7f06ba82fd2a",
-  "code_changed=True（只提示不阻断）：代码在生成档案后被改过，判据在代码里，所以重新跑一次 capability 即可消除",
   "active           3 个：trust_shift、doubt_shift、fondness_shift",
   "auxiliary        9 个：hostility、cooperation、withdraw、confront、trust、doubt、respect_shift、alert_shift、goal_shift",
   "disabled         2 个：disclose、danger",
@@ -100,7 +99,7 @@
    "matched": true,
    "fresh": true,
    "profile_id": "f77f7f06ba82fd2a22697cd9415e75623b51aa31507a3ea3a5dc78b2f928f52d",
-   "code_changed": true,
+   "code_changed": false,
    "problems": []
   },
   "B_status": {
