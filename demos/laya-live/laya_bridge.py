@@ -210,6 +210,100 @@ def _free_phys_mb():
     return None
 
 
+# ---------------------------------------------------------------- 快加载
+# 背景（2026-09-23 实测，报告 §13.3）：
+#   laya 0.3.5 的 `preload` 要 35–75 s，而其中 **95% 是一次没用的随机权重初始化**。
+#   `laya/common.py:139 build_model()` 在有 `encoder/` 目录时走
+#   `AutoModel.from_config(ecfg)` —— 对 4.2 亿参数做一次完整的随机初始化，
+#   紧接着 `agent.py:194 load_state_dict(weights, strict=True)` 把所有权重覆盖掉。
+#   实测拆解：build_model 25.15 s / 读 842MB safetensors 0.16 s / load_state_dict 0.63 s。
+#   （旁证：纯磁盘读同一个 842MB 文件只要 0.43 s，1972 MB/s —— 所以**瓶颈不是 IO**。
+#    早先报告里「瓶颈在磁盘 + tokenizer」的说法已被这次测量推翻。）
+#
+#   上游 0.3.7 的 changelog 修的就是这一处（"Checkpoints are built without the
+#   throwaway random weight initialisation"，CPU 冷加载 22 s → 2 s，答案位级一致），
+#   但 0.3.7 **不在 PyPI**（`pip index versions laya` → 最新 0.3.5），只能从 git 装。
+#   这里用等价做法在本机自己省掉那一步，并逐值验证过一致性。
+#
+# ★ 唯一的坑：**非持久 buffer 不会被 load_state_dict 覆盖**。
+#   ModernBERT 的 RoPE `*_inv_freq` 正是 `persistent=False`（本检查点 4 个），
+#   在 meta 上构建再 to_empty 之后它们是未初始化内存 —— 模型能跑、不报错、输出是垃圾。
+#   好在它们只是 config 的纯函数（compute_default_rope_parameters），重算即可。
+#   如果哪天换了别的架构、或重算数量对不上，下面的守卫会直接**回退到正常构建**，
+#   而不是把未初始化内存当结果用。
+#
+# 验证（_diag/_fastload.py，10 组输入 × 全 22 问题集，GPU 同设备对照）：
+#   加载 35.75 s → 1.01 s；输出 **1707 个值 0 个不同**。
+# 关闭方式：LAYA_FASTLOAD=0。
+def _rebuild_nonpersistent_buffers(model):
+    """重算非持久 buffer，返回 (重建个数, 本应有几个)。
+
+    本应有几个 = 模型里 `named_buffers()` 有、而 `state_dict()` 里没有的那些 ——
+    也就是 load_state_dict 永远不会覆盖的那些。两者数量不等就说明我们漏了，
+    必须让上层回退，绝不能放着不管。
+    """
+    sd_keys = set(model.state_dict().keys())
+    missing = [n for n, _ in model.named_buffers() if n not in sd_keys]
+    done = 0
+    for mod in model.modules():
+        if not hasattr(mod, "compute_default_rope_parameters"):
+            continue
+        fresh = type(mod)(mod.config)
+        for name, buf in fresh.named_buffers():
+            setattr(mod, name, buf)
+            done += 1
+    return done, missing
+
+
+def install_fastload():
+    """接管 transformers.AutoModel.from_config，跳过被丢弃的随机初始化。
+
+    返回一句人类可读的状态说明（会进 /health 与 describe()）——
+    这类"静默加速"如果不报出来，事后没人知道跑的是哪条路径。
+    """
+    if os.environ.get("LAYA_FASTLOAD", "1") != "1":
+        return "off（LAYA_FASTLOAD=0）"
+    try:
+        import torch
+        import transformers
+    except Exception as e:
+        return "skip: 无法 import torch/transformers（%r）" % (e,)
+    if getattr(transformers.AutoModel, "_laya_fastload_installed", False):
+        return "already"
+
+    orig = transformers.AutoModel.from_config
+    state = {"disabled": False, "rebuilt": 0, "why": ""}
+
+    def fast_from_config(*a, **k):
+        if state["disabled"]:
+            return orig(*a, **k)
+        try:
+            with torch.device("meta"):
+                m = orig(*a, **k)
+            m = m.to_empty(device="cpu")
+            done, missing = _rebuild_nonpersistent_buffers(m)
+            left = [n for n, t in list(m.named_parameters()) + list(m.named_buffers())
+                    if getattr(t, "device", None) is not None and t.device.type == "meta"]
+            if left:
+                raise RuntimeError("仍有 %d 个 meta 张量未实体化：%s" % (len(left), left[:3]))
+            if done != len(missing):
+                raise RuntimeError("非持久 buffer 只重算了 %d 个，实际有 %d 个（%s）"
+                                   % (done, len(missing), missing[:3]))
+            state["rebuilt"] = done
+            return m
+        except Exception as e:
+            # 一次性失败就永久回退：不要在每次构建时反复踩同一个坑。
+            state["disabled"] = True
+            state["why"] = repr(e)
+            sys.stderr.write("[bridge] 快加载不可用，本进程回退到正常构建：%r\n" % (e,))
+            return orig(*a, **k)
+
+    transformers.AutoModel.from_config = fast_from_config
+    transformers.AutoModel._laya_fastload_installed = True
+    install_fastload.state = state
+    return "on"
+
+
 class LayaEngine:
     def __init__(self):
         self.kind = "unavailable"
@@ -219,9 +313,12 @@ class LayaEngine:
         self.last_error = ""
         self.local_models = {}
         self.model_name = None
+        self.fastload = "n/a"
 
     def init(self):
         t0 = time.time()
+        # ★ 必须在构造 Router/Agent **之前**装好：它就是去改「模型怎么被建出来」那一步的。
+        self.fastload = install_fastload()
         try:
             import laya  # noqa
         except Exception as e:
@@ -321,12 +418,18 @@ class LayaEngine:
             "ready": self.ready,
             "detail": self.detail,
             "load_ms": self.load_ms,
+            "fastload": self.fastload,
             "model_name": self.model_name,
             "local_models": sorted(self.local_models),
             "models_dir": str(MODELS_DIR),
         }
         if self.last_error:
             out["last_error"] = self.last_error
+        st = getattr(install_fastload, "state", None)
+        if st:
+            out["fastload_rebuilt_buffers"] = st.get("rebuilt")
+            if st.get("why"):
+                out["fastload_disabled_why"] = st["why"]
         if not self.ready:
             return out
         laya = getattr(self, "_laya", None)
@@ -3333,6 +3436,12 @@ def main():
     ENGINE.init()
     if ENGINE.ready:
         print("  Laya 就绪：%s（加载 %d ms）" % (ENGINE.detail, ENGINE.load_ms))
+        _st = getattr(install_fastload, "state", None)
+        if _st and not _st.get("why"):
+            print("  快加载：%s（已重算 %d 个非持久 buffer）—— 省掉建随机权重那一步"
+                  % (ENGINE.fastload, _st.get("rebuilt") or 0))
+        else:
+            print("  快加载：%s" % (ENGINE.fastload,))
         print("  检查点：%s    本地已下：%s"
               % (ENGINE.model_name, ", ".join(ENGINE.local_models) or "（无，走 Hub 下载）"))
     else:

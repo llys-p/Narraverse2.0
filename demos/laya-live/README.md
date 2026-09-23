@@ -156,7 +156,8 @@ LAYA_DEVICE=cuda ./.venv-cuda/Scripts/python.exe laya_bridge.py serve
 ```
 
 实测（RTX 4060 Laptop，8 GB）：NPC tick 399 ms ／ World tick 42 ms ／ 峰值 VRAM 2.93 GB。
-★ 冷加载 GPU **不比 CPU 快**（49.7 s vs 45.3 s）—— 加载瓶颈是磁盘 + tokenizer。
+★ 冷加载 GPU **不比 CPU 快**（49.7 s vs 45.3 s）—— 瓶颈不在算力，而在 `build_model()` 的随机权重初始化
+（占 95%；早先写成「磁盘 + tokenizer」是错的，2026-09-23 实测更正）。开快加载后干净进程 **12.1 s**，见「上游」一节。
 
 ### 检查点
 
@@ -335,8 +336,34 @@ state 塞太满，都会在无声无息中失效。
 - ⚠️ **PyPI 停在 0.3.5，上游已经到 v0.3.7**（2026-09-23 发布，PR #195 跳过检查点加载时的无用初始化，
   上游自称 CPU 冷加载 22 s → 2 s 且答案位级一致）。**PyPI 上装不到**，要升只能从 git：
   `pip install "git+https://github.com/NandhaKishorM/laya@v0.3.7"`。
-  本机实测冷加载 **45 s**，瓶颈在磁盘 + tokenizer，所以别预期升完就是 2 s —— 升级前后要在**同一设备**上各跑一次
-  `bench` + `signaltest` 对存，确认答案真的一致。（细节见 `Laya接入报告.md` §13.3.1）
+  **那一步我们已在本机自己实现**（`install_fastload()`，见下），所以不再有升级的紧迫性。
+  （细节见 `Laya接入报告.md` §13.3.1 / §13.3.2）
 - 训练方式：RLCD + 严格适当评分规则
 - 上游对 `typed-decisions` 的说明：「在四种合成工作流上微调，不应作为静默默认」——
   我们没有更好的选择（`english` 装不下 state），但这个警告仍然成立。
+
+### 快加载（`LAYA_FASTLOAD`，默认开）
+
+`laya` 0.3.5 的 `preload` 要 **35–75 s**，其中 **95% 是纯粹浪费**：
+`build_model()` 用 `AutoModel.from_config()` 对 4.2 亿参数做一次随机初始化，
+紧接着 `load_state_dict(strict=True)` 把它**全量覆盖**。
+分步实测：`build_model 25.15 s` / 读 842 MB 权重 `0.16 s` / `load_state_dict 0.63 s`
+（同一个文件纯读一遍只要 `0.43 s` —— 所以瓶颈跟磁盘无关）。
+
+本仓库在 `laya_bridge.py` 里用等价做法省掉那一步：在 `torch.device("meta")` 下建形状 →
+`to_empty()` → 重建非持久 buffer → 让 `load_state_dict` 照常覆盖。
+
+| 口径（干净进程，cuda） | 原生 | 快加载 |
+|---|---|---|
+| `ENGINE.init()` | 35 623 ms | **12 075 ms** |
+| 差值来自 | — | 被删掉的随机初始化（≈25 s） |
+
+★ **唯一的坑**：`persistent=False` 的 buffer **不会被 `load_state_dict` 覆盖**。
+本检查点有 4 个 RoPE `*_inv_freq` 正属此类 —— 跳过初始化后它们是**未初始化内存**，
+模型能跑、不报错、输出是垃圾。所以快加载会重算它们，并带守卫：
+重算数量对不上、或实体化后仍有 meta 张量，就**回退到原生构建**（`/health` 的
+`laya.fastload` 会报出实际走的哪条路径）。
+
+正确性：10 组输入 × 全 22 问题集，`decision` / `decision_signals` / `policy` / `proposed_deltas`
+展开后 **1707 个值逐个相同**。验证脚本：`tests/fastload_compare.py`。
+不放心可关：`LAYA_FASTLOAD=0`（对比时两个进程各跑一次，别在同一进程里切）。

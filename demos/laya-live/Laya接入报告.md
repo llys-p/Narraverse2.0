@@ -341,7 +341,7 @@ Laya 自带 presets 就是这个形态（`` `message` ``、`` `prompt` ``）。
 
 | 项 | 实测 |
 |---|---|
-| 检查点冷加载 | 45 700 ~ 67 000 ms |
+| 检查点冷加载 | 45 700 ~ 67 000 ms（★ 其中约 25 s 是**无用的随机初始化**，已由快加载消除 → **9.2 ~ 12.1 s**，见 §13.3.2） |
 | Laya 推理本身（14 题，`langtest`，不含翻译） | 14 100 ~ 15 200 ms |
 | 一轮 `/decide`（16 题 + 英译 LLM 调用） | 21 500 ~ 27 300 ms |
 | 其中 `translate_to_en` 占 | 3 500 ~ 4 000 ms（★ 客户端传 `player_input_en` 可省掉） |
@@ -698,7 +698,7 @@ LLM 的错是显式的（读起来就不对，人会拦一下），而这里的�
 | 9 个信号跨度 | 0.19 ~ 1.09 | 0.37 ~ 0.77（更宽） |
 | state 余量 | **767 token** | **319 token** |
 | `qcheck` | **全绿** | 4 种 state 形态里 **3 种溢出** |
-| 冷加载 | 45.3 s（CPU）／49.7 s（GPU） | — |
+| 冷加载 | 45.3 s（CPU）／49.7 s（GPU）〔0.3.5 原生；开快加载后 12.1 s，见 §13.3.2〕 | — |
 
 - `ckptcompare` 原来会因为 2 条断言的差距宣布「english 更适合」——
   这是**缺少显著性护栏**导致的假结论。已加 `MIN_PASS_GAP=5`（分钟断言数）修正为「平局」，
@@ -808,7 +808,10 @@ CPU 用 `.venv`（torch 2.14.0+cpu），GPU 用 `.venv-cuda`（torch 2.14.0+cu12
 | **World Tick（3）** | 2383 | 2617 | 51 | 42 | 62× |
 
 - **冷加载：CPU 45 339 ms ／ GPU 49 738 ms** —— ★ GPU **没有更快**。
-  加载瓶颈是磁盘 + tokenizer，不是矩阵运算。**不要指望换 GPU 加快启动。**
+  ★ **2026-09-23 18:20 修正**：当时把原因写成「瓶颈是磁盘 + tokenizer」，**这是错的**。
+  真实构成是 `build_model()` 那次随机权重初始化 **≈25 s（占 95%）**，而读 842 MB 权重只要 0.16 s
+  （同一个文件纯读一遍 0.43 s / 1972 MB/s）。**不要指望换 GPU 加快启动** ——
+  该指望的是把那次随机初始化删掉，见 §13.3.2。
 - GPU 首次调用 1653 ms（含 CUDA kernel 预热），之后 42 ms。**首次延迟必须计入健康检查。**
 - 峰值 VRAM `allocated 2.48 GB / reserved 2.93 GB`（8 GB 卡余量充足，
   但**仍不要同时加载第二个检查点**，见 §7.2）。
@@ -993,7 +996,7 @@ policy = policy_resolve(signal_values, gated_id)   # ← 旧代码：传的是 g
 | **workspace 级成功案例** | `docs/finetune_browser_agent.md`：单张 16 GB 卡微调，元素 top-1 从 **0.10 → 0.66**，真实任务成功率 **0% → 62%**，17–23 ms/步 | 证明「微调能把 near-chance 抬到可用」在同类任务上已经发生过 |
 | **`laya-serve`** | 官方 Jev 兼容 HTTP 服务（`POST /v1/systemone`），`pip install "laya[serve]"` | 我们手写了 `laya_bridge.py`（更贴合本项目，但上游有现成的） |
 | **内置预设** | `router_questions()` / `guard_questions()` / `moderation_questions()` / **`triage_questions()`**（intent / urgency / frustration / churn） | 未用。**`triage_questions` 就是现成的意图识别问题集** |
-| **0.3.7 加载提速** | 「checkpoint 不再做一次无用的随机权重初始化」，CPU 冷加载 **22 s → 2 s**，且答案位级一致（原文见下） | ⚠️ **我们装的是 0.3.5，实测冷加载 45 s。但 0.3.7 装不上——见下** |
+| **0.3.7 加载提速** | 「checkpoint 不再做一次无用的随机权重初始化」，CPU 冷加载 **22 s → 2 s**，且答案位级一致（原文见下） | ✅ **本机已用等价做法自实现**（`LAYA_FASTLOAD`，见 §13.3.2）：干净进程 **35.6 s → 12.1 s**，输出 **1707 个值逐个相同**。0.3.7 本身仍装不到（PyPI 最新 0.3.5） |
 | **`predict_shortlist`** | 选项多时先用 embedding 召回 top-k 再前向 | 我们没这个问题（7 个行为） |
 
 ★ **检查点选择要修正**：上游在 **MASSIVE intent（20 选项，随机 0.050）** 上，
@@ -1010,7 +1013,7 @@ policy = policy_resolve(signal_values, gated_id)   # ← 旧代码：传的是 g
 | 相关 PR | **#195 `Skip redundant initialization when loading checkpoints`** |
 | 原始声明（README，v0.3.7 tag） | “**About 10x faster loading.** Checkpoints are built without the throwaway random weight initialisation, so `laya.load()` drops from about 22 s to about 2 s on CPU **with bit-identical answers**. This also skips the pass that **crashed on Windows with Python 3.14 (#123)**.” |
 | ★ 更正一：**PyPI 上拿不到** | `pip index versions laya` → `Available versions: … 0.3.5`（**LATEST: 0.3.5**）。0.3.5 是 PyPI 最新，**0.3.6 / 0.3.7 只在 GitHub 上**。 |
-| ★ 更正二：**22 s → 2 s 不是本机数字** | 22 s 是上游参考机上的冷加载。**本机实测 45 s**，且冷加载瓶颈在磁盘 + tokenizer，不在那段被跳过的初始化。所以「升级即 2 s」是错的预期 —— 得实测才知道本机能降到多少。 |
+| ★ 更正二：**原先写的「瓶颈在磁盘 + tokenizer」已被推翻** | 2026-09-23 18:20 复测（见 §13.3.2）：纯读 842.6 MB 权重只要 **0.43 s**（1972 MB/s，页缓存热）；`Agent.__init__` 分步拆解 **build_model 25.15 s / load_file 0.16 s / load_state_dict 0.63 s** —— **95% 花在 `AutoModel.from_config()` 的那次随机初始化上，正是 0.3.7 删掉的那一段**。所以「升级即 ~2 s」这个方向是对的，我上一轮写的「升级也降不到」是错的结论。 |
 
 **安装方式（PyPI 装不到，只能从 git 装）：**
 
@@ -1032,6 +1035,87 @@ policy = policy_resolve(signal_values, gated_id)   # ← 旧代码：传的是 g
 上游实测中位重载 **7.4 s（CPU）/ 10.3 s（T4）**。
 → 我们 `laya_bridge.py` 自己也持有检查点，且**按 actor 缓存**；若之后加多语言切换，
 要注意别退化成这种「每次切换重建」的模式。
+
+### 13.3.2 ★ 快加载：把 0.3.7 那一步在本机自己实现（2026-09-23 18:20 实测）
+
+**起因**：核对「加载 45 s → 2 s 到底实没实现」。查证结果：**没有**。
+`pip index versions laya` → 最新仍是 0.3.5；本机两个 venv 都是 0.3.5。
+但同一句话的后半段——「45 s 是真实开销吗」——测完之后结论反过来了。
+
+**先看 45 s 花在哪（`tests/loadstage.py` 分阶段 + `tests/loadstage_detail.py` 分步）：**
+
+| 阶段 | 耗时 | 占比 |
+|---|---|---|
+| `import laya` | 1.8 – 4.1 s | ~5% |
+| `Router(preload=False)` | 0.00 s | — |
+| `preload(['typed-decisions'])` | **38.2 – 46.8 s** | **~95%** |
+| └ `AutoTokenizer.from_pretrained` | 0.28 s | 1% |
+| └ **`build_model()`（`AutoModel.from_config`）** | **25.15 s** | **95%** |
+| └ `safetensors.load_file`（读 842.6 MB） | **0.16 s** | 1% |
+| └ `model.load_state_dict` | 0.63 s | 2% |
+
+**旁证（用来排除 IO）**：同一个 842.6 MB 文件，纯 `read()` 循环只要 **0.43 s**（**1972 MB/s**，页缓存热态）。
+→ **瓶颈完全不是磁盘、也不是 tokenizer，而是 `laya/common.py:139 build_model()` 里
+`AutoModel.from_config(ecfg)` 对 4.2 亿参数做的那一次随机初始化**，
+紧接着 `agent.py:194 load_state_dict(weights, strict=True)` 把它**全量覆盖**——纯浪费。
+
+**做法**（`laya_bridge.py` 的 `install_fastload()`）：
+
+```
+AutoModel.from_config 在 torch.device("meta") 下构建   # 只建形状，不分配、不填充
+        ↓
+.to_empty(device="cpu")                              # 落成未初始化的真张量
+        ↓
+重建非持久 buffer（见下的坑）
+        ↓
+Agent 的 load_state_dict(strict=True) 覆盖全部权重      # 与原生路径同一份权重
+```
+
+**★ 唯一的坑：非持久 buffer 不会被 `load_state_dict` 覆盖。**
+`tests/fastload_compare.py diag` 实测：本检查点有 **4 个** buffer 不在 `state_dict()` 里，全是 RoPE 的
+
+```
+encoder.rotary_emb.full_attention_inv_freq / full_attention_original_inv_freq
+encoder.rotary_emb.sliding_attention_inv_freq / sliding_attention_original_inv_freq
+```
+
+`persistent=False` 意味着没有任何东西会去覆盖它们，跳过初始化之后它们就是**未初始化内存**——
+模型照样能建、能前向、不报错，只是输出是垃圾。**这是最难查的一类失效。**
+好在它们只是 config 的纯函数（`compute_default_rope_parameters`），重算即可；
+`install_fastload()` 里带守卫：**重算数量 ≠ 未覆盖 buffer 数量** 或 **实体化后仍有 meta 张量**，
+就立刻回退到原生构建并在 stderr 说明原因，绝不会把未初始化内存当结果用。
+
+**实测结果（同一台机器、同设备 cuda、同口径）：**
+
+| 口径 | 关闭（原生） | 开启 | 说明 |
+|---|---|---|---|
+| 干净进程 `ENGINE.init()`（服务启动时用户真正经历的那段） | **35 623 ms** | **12 075 ms** | 剩下 12 s = torch/transformers 导入 + `import laya` + tokenizer，本次改动碰不到 |
+| 同脚本、同进程（已预先 import torch/transformers） | 34 452 ms | **8 772 ms** | 差额 25.7 s ≈ 被删掉的随机初始化 |
+| 纯 `build_model` 那一段 | 25.15 s | ≈ 0 | 归因 |
+
+**正确性验证（`tests/fastload_compare.py`，走产品自己的开关，不再由脚本另打一份补丁）：**
+**10 组输入 × 全 22 问题集**（威胁 / 友好 / 辱骂 / 道歉 / 贿赂 / 提问 / 空输入 / 中性 / 道别 / 好感），
+比对 `decision` + `decision_signals` + `policy` + `proposed_deltas` 的全部展开值：
+
+```
+键数: 关=1707 开=1707 ；只在一侧的键: 无
+★ 不相等的值: 0 / 1707
+```
+
+`english` 检查点同样验证（重算 4 个 buffer、未回退、ready）。
+开关：`LAYA_FASTLOAD=0` 关闭；`/health` 的 `laya.fastload` / `laya.fastload_rebuilt_buffers` 会报出实际走的哪条路径——
+这类「静默加速」如果不报出来，事后没人知道跑的是哪条。
+
+**保留意见**：这次一致性是**同版本、同设备、10 组输入**上的位级一致，
+不等于跨版本（0.3.5 → 0.3.7）也一致；上游的 "bit-identical" 是他们自己的对照，不能替他们担保。
+
+**★ 顺带查清的一件行为差异（排查时差点当成新 bug）**：
+同样的台词在 live `/decide` 与 CLI 直调 `decide()` 下会得到**不同行为**——
+「谢谢你救了我」在 live 上给 `leave`（conf 0.0776），CLI 直调给 `confide`（conf 0.1237）。
+原因不是缺陷：`_DECISION_HISTORY` 的累加写在 **HTTP 处理层**（`laya_bridge.py` 内 `_DECISION_HISTORY.extend(...)`），
+CLI 直调 `decide()` 不累加。手工注入一轮「刀架脖子」历史后，CLI 结果变成 `leave / argmax=leave / 0.0776`，与 live **完全一致**。
+→ 两条结论：① 这是设计（第二轮才体现出上一轮的影响）；② **以后做 live vs 离线对照必须对齐历史窗口**，
+否则会把「有历史」误判成「代码不一致」。
 
 ### 13.4 同类型项目（和我们这个 Demo 是同一物种）
 
