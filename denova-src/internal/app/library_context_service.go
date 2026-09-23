@@ -18,11 +18,17 @@ func (a *App) PreviewWorkLibraryContext(ctx context.Context, id string, req libr
 	if err != nil {
 		return librarycontext.Preview{}, err
 	}
+	return librarycontext.Build(ctx, l, revision, req, a.libraryMasterResolver())
+}
+
+// libraryMasterResolver 返回当前工作区的受控 Master 解析器。捕获一次 workspace：
+// 并发切书不能把两个 Master 根混进同一次读取。预览与运行授权共用此解析边界。
+func (a *App) libraryMasterResolver() librarycontext.Resolver {
 	// Capture once: a concurrent book switch cannot mix Master roots within a preview.
 	a.mu.RLock()
 	workspace := a.workspace
 	a.mu.RUnlock()
-	resolve := func(ctx context.Context, ref library.SourceRef) (librarycontext.ResolvedSource, error) {
+	return func(ctx context.Context, ref library.SourceRef) (librarycontext.ResolvedSource, error) {
 		if err := ctx.Err(); err != nil {
 			return librarycontext.ResolvedSource{}, err
 		}
@@ -41,7 +47,6 @@ func (a *App) PreviewWorkLibraryContext(ctx context.Context, id string, req libr
 		}
 		return projectLibraryMasterSource(detail), nil
 	}
-	return librarycontext.Build(ctx, l, revision, req, resolve)
 }
 
 // Reuse the existing factual-field allowlist. Original, system prompts, runtime

@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Library work in progress / 作品设定库建设中
 
+- 新增 Library 运行时授权核心（B1/L3.0）：`internal/libraryruntime` 提供服务端派生身份绑定、固定 revision、manual 显式授权集、auto 目录受控按需读取与累计预算；绑定期失败阻断启动，运行期显式 unavailable/stale/denied/budget_exceeded，complete/cancel 幂等清理；初始装配只以临时输入（ephemeral）交付当次模型输入，全链零写入，`internal/app` 增加绑定适配并复用受控 Master 解析。尚未接线任何模式（B2/B3/B4 待做）。
+- Add the Library runtime authorization core (B1/L3.0): `internal/libraryruntime` now binds server-derived run identity, pins the library revision, enforces the explicit manual grant, controls on-demand reads to the auto catalog, and charges one cumulative budget; bind failures block the start, runtime reads fail explicitly (unavailable/stale/denied/budget_exceeded), complete/cancel release idempotently, the initial assembly is delivered as an ephemeral-only input with zero writes along the whole path, and `internal/app` gains the binding adapter reusing the controlled Master resolver. No mode is wired yet (B2/B3/B4 pending).
 - 建立 L2/L3/L4 总骨架与分层契约；实现 L2 只读加载核心、受控 Master 解析、严格预览 API 与主动加载预览 UI。明确三档、来源版本、闭包和预算；不调用模型、不创建运行身份、不新增持久化。隔离正式页面与重启验收通过；L3/L4 仅规划。
 - Define L2/L3/L4 ownership and add a read-only L2 core, controlled Master resolution, strict preview API and explicitly requested preview UI. Enforce load modes, source revisions, closure and budgets without model calls, runtime identities or new persistence. Isolated executable/browser and restart acceptance passed; L3/L4 remain plans only.
 - 修复 L1 部分更新误改引用形态、草稿丢失、迟到响应串库、级联事件时间戳未同步；HTTP 条目更新拒绝遗漏/空白 baseUpdatedAt，防止绕过已有并发契约。前端1296项回归及相关Go门禁通过；外壳认证/更新检查环境告警单列于验收报告。
