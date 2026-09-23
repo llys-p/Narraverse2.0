@@ -934,3 +934,137 @@ policy = policy_resolve(signal_values, gated_id)   # ← 旧代码：传的是 g
 5. **`decision_history` 的内容由「决策结果」反推**（intent id + behavior id → 配置里的英文 criteria），
    不携带输入信息。当决策本身恒定（如输入为空）时，历史会**饱和成常量**。
    机制（§8 的语言要求）是对的，**内容是下游问题的函数**。
+
+---
+
+## 13. 上游文档与同类项目（2026-09-23 查证）
+
+> 本节是到上游仓库和 GitHub 生态里核对后的结果。
+> **它改变了 §12.3 的归因**：我们的 49.5% 不是集成 bug，而是**上游明确记录的基线状态**。
+
+### 13.1 ★ 上游自己承认「zero-shot 就是接近随机」
+
+上游 README（`github.com/NandhaKishorM/laya`）在 **Honest limits** 一节原文写着：
+
+> **The base checkpoints are near chance on typed-decisions zero-shot** — 0.362 and 0.342
+> against a 0.318 random baseline and a 0.461 majority-class baseline.
+> The 0.766 figure comes from the checkpoint fine-tuned on that benchmark's own training split.
+> **Laya is a fast base to specialise, not a zero-shot decision engine.**
+
+对上我们的实测：
+
+| | 上游自测（typed-decisions 基准，2000 决策） | 我们的 48 用例回归 |
+|---|---|---|
+| 方向准确率 | 0.362 / 0.342（两个基础检查点） | **0.495 / 0.515** |
+| 随机基线 | 0.318 | 0.500（二分类方向断言） |
+| 多数类基线 | 0.461 | — |
+
+→ **§12.3 的判定要改口径**：不是「我们没接好」，而是
+**「我们把一个官方声明为 zero-shot 接近随机的模型，当成了决策引擎来用」**。
+§12.2 ② 那句「有读数 ≠ 有信息」依然成立，但责任不在集成层，在**选型**。
+→ **唯一已知的出路是 fine-tune**（§13.2）。
+
+### 13.2 ★ 三个上游已知 bug，与我们的症状逐个吻合
+
+| 上游 issue | 症状 | 对应的我们的现象 |
+|---|---|---|
+| **#156** `noul` 会跟随**选项标签**而不是 state，在 `laya`（英文）上最明显 —— 对明显正面的输入返回自信的 "no" | 概率是标签驱动的，不是内容驱动的 | ★ **`cooperation`(−0.010) / `trust`(−0.028) 方向为负**（§12.2 ④）极可能就是它 |
+| **#131** `laya-multilingual` 在 `score` 上有**位置偏置**：几乎不选第一个等级 | 等级分布被系统性压向一侧 | 我们的 score 型信号（`*_shift`、`signal_investigate`）方向普遍偏弱 |
+| **#185** `action.act_probability` 读出来几乎恒为 1.0，与正确性反相关（AUROC 0.30） | 该字段无信号 | 我们没用它；上游建议改用 `confidence`（AUROC 0.77） |
+
+★ **一个自洽的旁证**：我们的 `player_intent` 是 **`choice`** 型 → **4/4 全对**；
+我们的 8 个信号里 7 个是 **`noul`** 型 → 大面积方向为负。
+上游对 #156 给的 workaround 正是：**把它改写成两选项 `choice`，选项键用中性的 A/B**：
+
+```json
+{"type": "choice", "instructions": "这句话是在表达敌意吗？",
+ "criteria": {"A": "是，明确表达敌意", "B": "否，没有敌意"}}
+```
+
+→ **这是当前最便宜、最可能见效的一个实验**：把 8 个 `noul` 信号全改成两选项 `choice`
+（`criteria` 用中性键 + 我们的等级描述），重跑 `signaltest`，看方向准确率是否从 49.5% 抬起来。
+**在 §12.3 的判定不变的前提下，这是唯一值得先做的一步。**
+
+### 13.3 上游能力我们没用上的
+
+| 能力 | 说明 | 我们的现状 |
+|---|---|---|
+| **fine-tune 配方** | Kaggle 免费 2×T4，~4-5 小时 / 4 epoch / ~30k 题，带 RLCD 训练 + 温度标定 + 推上 Hub | **未做**。这是从 0.49 走向可用的唯一路径 |
+| **workspace 级成功案例** | `docs/finetune_browser_agent.md`：单张 16 GB 卡微调，元素 top-1 从 **0.10 → 0.66**，真实任务成功率 **0% → 62%**，17–23 ms/步 | 证明「微调能把 near-chance 抬到可用」在同类任务上已经发生过 |
+| **`laya-serve`** | 官方 Jev 兼容 HTTP 服务（`POST /v1/systemone`），`pip install "laya[serve]"` | 我们手写了 `laya_bridge.py`（更贴合本项目，但上游有现成的） |
+| **内置预设** | `router_questions()` / `guard_questions()` / `moderation_questions()` / **`triage_questions()`**（intent / urgency / frustration / churn） | 未用。**`triage_questions` 就是现成的意图识别问题集** |
+| **0.3.7 加载提速** | 「checkpoint 不再做一次无用的随机权重初始化」，CPU 冷加载 **22 s → 2 s**，且答案位级一致 | ⚠️ **我们装的是 0.3.5，实测冷加载 45 s。升级到 0.3.7 可直接解决** |
+| **`predict_shortlist`** | 选项多时先用 embedding 召回 top-k 再前向 | 我们没这个问题（7 个行为） |
+
+★ **检查点选择要修正**：上游在 **MASSIVE intent（20 选项，随机 0.050）** 上，
+英文检查点 `laya` 得 **0.783**、multilingual 0.657 —— 也就是说
+**「意图识别」这类 `choice` 任务，表现最好的检查点是英文根检查点，不是 `typed-decisions`**。
+我们因为 state 预算选了 `typed-decisions`（`english` 余量只有 319 token）。
+→ 若要做意图识别，正确路线是：**压缩 state → 换回 `english` 检查点**，而不是继续用 `typed-decisions`。
+
+### 13.4 同类型项目（和我们这个 Demo 是同一物种）
+
+| 项目 | 星 | 为什么值得看 |
+|---|---|---|
+| **`ARCJ137442/jev-2048`** | 5 | ★★ 「每一步 2048 都是一次 Jev `choice`，**刻意不做启发式兜底**，概率/置信度/延迟/成本全部摊开可见」—— 和我们「不让 choice 冒充权威、把原始值摊开」是同一个方法论 |
+| **`inhabitants/laya-invaders`** | 1 | ★★ 「Laya 从事实里挑目标，**一条单行规则作为 baseline**」—— 和我们 Policy Resolver 的 baseline 对照思路一致 |
+| **`wdobry/laya-playground`** | 140 | 「一个网站 + 两个游戏 + 一个 benchmark + 一个 agent skill」 —— 交付形态最接近我们 |
+| **`ThinkFlowLab/system1-agents`** | 20 | 把 System 1 决策模型当 agent 大脑，覆盖浏览器/电脑操作、**游戏**、机器人 |
+| **`1Panel-dev/laya-server`** | 35 | 自托管 API + Web UI，Jev 兼容格式 —— 我们的 `laya_bridge.py` 的同类 |
+| **`receptron/laya`** | 314 | Node.js / TypeScript 经 **ONNX Runtime** 跑 Laya |
+| **`mizorewww/laya-mlx`** / **`laya-coreml`** | 5712 / 1346 | Apple MLX / Core ML 移植，M3 Max 上 **7–14 ms / ~5 ms** |
+| **`yzfly/edgejev`** | 8 | ★ ONNX + INT8，**4 核 CPU 单题 15.6 ms、运行时不需要 torch** —— 比我们的 GPU 方案更省事（我们 GPU 18 ms/题） |
+| **`bladedevoff/stuntd`** | 13 | 「本地代理，**学习你应用的 typed LLM 决策**，用 Laya head 回答」 —— 蒸馏路线 |
+| **`ReallyArtificial/stuntdouble`** | 1 | shadow 模式代理：并行跑线上 Jev 与本地模型，**判断能不能替换** |
+
+### 13.5 意图识别方向的参考
+
+| 项目 | 星 | 说明 |
+|---|---|---|
+| **`jev-chat/jev-chat-windows`** | 393 | ★★ **最贴合「意图识别」的一个**：微信旁挂 → 截图 + 离线 OCR 读对方消息 → **Jev 判断意图** → 3 条候选填入，发送永远手动 |
+| `laya` 内置 `triage_questions()` | — | intent / urgency / frustration / churn 四种预设问题，开箱可用 |
+| `Anil-matcha/awesome-jev-by-typesafe` | 811 | 用例集，topics 覆盖 `semantic-routing` / `llm-routing` / `reranking` / `classification` |
+| `kydlikebtc/awesome-jev` | 170 | **805 条已验证用例，按「它做了什么决策」索引**（不是按博客索引），中英双语 + JSON schema |
+| `sutro-sh/jev-align` | 280 | 用**人工反馈** + GEPA 构建校准过的决策函数 —— 对应我们的阈值标定难题 |
+| `KNambiarDJsc/second-thought` | 1 | 主动学习 / **漂移检测** / 人在回路 |
+
+### 13.6 酒馆（SillyTavern）方向
+
+**结论：酒馆生态里没有任何项目用决策模型，全部是 LLM prompt 路线。**
+
+| 项目 | 星 | 它解决的其实是我们的哪个问题 |
+|---|---|---|
+| `SillyTavern/SillyTavern` | 33.7k | 前端本体 |
+| `SpicyMarinara/rpg-companion-sillytavern` | 312 | ★★ **追踪角色/任务/物品/游戏状态** —— 对应我们的 ACTOR STATE + 数值面板 |
+| `prolix-oc/SillyTavern-SimTracker` | 63 | ★★ 从聊天里的 JSON **生成状态追踪卡片**（RPG / 恋爱模拟的角色属性） |
+| `bmen25124/SillyTavern-Roadway` | 82 | ★★ 「帮你对**故事走向做决定**」 —— 对应我们的行为候选 |
+| `mattjaybe/SillyTavern-Pathweaver` | 115 | ★ 「把故事/角色扮演变成冒险，带智能**剧情建议**」 |
+| `cierru/st-stepped-thinking` | 171 | 「让角色**先思考再回应**」 —— 对应「思考过程」 |
+| `muyoou/st-memory-enhancement`（1480）/ `SenriYuki/SillyTavern-Horae`（189）/ `bal-spec/sillytavern-character-memory`（72） | — | 长期记忆层 |
+| `bmen25124/SillyTavern-MCP-Client` | 95 | 给酒馆接 MCP —— **如果我们想把 Laya 暴露给酒馆，这是入口** |
+| `LYiHub/liars-bar-llm` | 673 | LLM 驱动的「骗子酒馆」对战框架 —— 多 agent 博弈 |
+
+★ 两点判断：
+
+1. **酒馆那套用纯 LLM 解决了同样的需求**（状态追踪、剧情决策、剧情建议、状态卡片），
+   而且用户量是几万级。**这说明「NPC 行为决策」在角色扮演场景里，用户接受 LLM 即兴**
+   —— 我们 Demo 的「可复现、可审计」卖点，在酒馆用户那里**不构成痛点**。
+   这是对产品定位的一个负面信号，比技术指标更值得注意。
+2. 反过来看也是**空位**：没人用判别式模型做酒馆的意图/剧情决策层。
+   若要做，落点应该是 **ST 扩展（`SillyTavern-MCP-Client` 或直接写扩展）**，
+   而不是独立前端 —— 因为流量在酒馆那里。
+
+### 13.7 ⚠️ 用这些项目时要注意的「星数不可信」问题
+
+这个生态目前处于**明显的炒作/刷榜期**，选型时不要看星数：
+
+- 主仓 **5 天前创建，已 18.5k star**；`laya-mlx` 4 天 5.7k。
+- **至少 10 个内容几乎一样的 `awesome-jev*` 列表**，多个在 2026-09-17~22 一周内创建，
+  描述模板高度雷同（「curated, source-backed list of projects built with Jev」），星数从 0 到 1389 不等。
+- 有仓库在描述里直接写「全网最全」「每日重扫，含批判」当作卖点。
+
+→ **判断标准换成可验证的三条**：① 有没有公开 benchmark 与复现脚本；
+② 有没有可看的具体数字；③ 代码能不能跑。
+按这个标准，本节里 13.1（上游文档自述）、13.2（上游 issue）、13.3（fine-tune 配方）、
+`jev-2048`、`laya-invaders`、`edgejev`、`jev-chat-windows` 是**可验证的**；
+`awesome-*` 列表只当索引用，不当证据。
