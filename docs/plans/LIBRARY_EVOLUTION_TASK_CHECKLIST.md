@@ -1,12 +1,12 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-24 07:32（Asia/Shanghai，A1/A2 已推送；B0/B1 完成、本地未推送）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-24 07:56（Asia/Shanghai，A1/A2 已推送；B0 完成、B1 完成+修复轮在分支 `library-b2a`，均本地未推送）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
 | 项 | 已核实事实 |
 | --- | --- |
-| 仓库 | `D:\Narraverse2.0`；A1/A2 已推送（`origin/main`=`968d1e2`，L1/L2 基线=`f503173`）。B0 本地提交 `50d6bcc`（契约）、B1 本地提交 `eab8f57`（授权核心），均未推送；期间并行 laya 提交（`48a34f2`/`1f0763e`/`b708cde`/`532f706`）与本任务文件零交集。并行任务的脏改动仍留在工作树。 |
+| 仓库 | `D:\Narraverse2.0`；A1/A2 已推送（`origin/main`=`968d1e2`，L1/L2 基线=`f503173`）。B0 本地提交 `50d6bcc`（契约）、B1 本地提交 `eab8f57`（授权核心）+ 修复轮提交 `6b5c996`，均未推送；B1 修复轮起在独立分支 `library-b2a`（工作树 `D:\Narraverse2.0-b2a`，自 `2b1bad1` 接手，后续 B2a 也在该分支）。期间并行 laya 提交（`48a34f2`/`1f0763e`/`b708cde`/`532f706`）与本任务文件零交集。并行任务的脏改动仍留在主工作树。 |
 | L1 | 独立作品设定库及其修复（来源形态、未保存草稿、跨库异步、事件时间戳、缺失更新基线）已随 `f503173` 提交。 |
 | L2 | 三档只读加载、Master 固定版本解析、预算、只读预览 API/UI 已随 `f503173` 提交；定向 Go 测试、前端 207 文件/1296 测试、构建和隔离 executable 23 项验收已通过；**未装配到用户 8080**。详细限制以验收报告为准。 |
 | L3 | B0 契约已冻结（[L3 计划 §8](LIBRARY_L3_MODE_INTEGRATION_PLAN.md)，提交 `50d6bcc`）；B1 授权核心已实现（`internal/libraryruntime` per-run 绑定/固定 revision/manual 授权/auto 受控按需读取/累计预算/幂等清理 + `internal/app` 绑定适配，提交 `eab8f57`，见 B1 完成记录）。**尚未接线四模式：transport、handler、agent 装配与前端入口是 B2/B3/B4**。旧 WorldContext 可用不等于新库接入。 |
@@ -22,7 +22,7 @@
 - [x] L2 只读核心、来源解析、HTTP 与 UI 预览及隔离 executable 23 项验收；证据：同报告第 3、4 节。**代码已随 `f503173` 提交并推送。**
 - [x] L3/L4 边界方案及目录职责骨架；证据：对应计划和 README。**功能尚未实现。**
 - [x] B0 transport/读取授权契约冻结（真实调用点锚点）；证据：L3 计划 §8 与 B0 完成记录。**仅契约，未接线。**
-- [x] B1 临时读取授权核心与 ephemeral 临时输入（`internal/libraryruntime` + app 适配）；证据：B1 完成记录与 14 个包内测试。**代码已提交 `eab8f57`（本地，未推送），未接线任何模式。**
+- [x] B1 临时读取授权核心与 ephemeral 临时输入（`internal/libraryruntime` + app 适配）；证据：B1 完成记录与 17 个包内测试（含 3 条预算口径失败先行回归）。**代码已提交 `eab8f57`，修复轮 `6b5c996`（分支 `library-b2a`，本地未推送），未接线任何模式。**
 
 ## 2. 多 AI 工作协议
 
@@ -65,7 +65,7 @@
 ### B1 · 临时读取授权核心（AI2；依赖 B0）
 
 - [x] 在 `internal/libraryruntime/` 与必要的 app/agent 适配实现运行身份绑定、固定版本、manual 集合、auto 目录受控读取与累计预算；禁用、跨库、任意路径、过期版本均拒绝。
-- [x] 单测/集成测试证明背景正文只进入当次模型输入，不落库、World、Session、压缩摘要、工具持久记录；完成/取消清理幂等，错误不能伪装为 active 或静默 bare。**完成记录：2026-09-24 07:32（Asia/Shanghai，AI2）。代码提交 `eab8f5792f69013ddafdf402c63bb1c97142f03c`（本地 main，未推送；同期间并行 laya 提交 `1f0763e`/`b708cde`/`532f706` 在其下，无文件交集）。实现：`internal/libraryruntime` per-run 授权核心（Bind/AssembleInitial/ReadOnDemand/Complete/Cancel/Status）——服务端派生身份（consumer=`writing|game|narraverse|module4`+scopeKey，伪造→`consumer_not_trusted`）；固定 revision（绑定与每次装配/读取都重核，漂移→`stale`，不交付旧授权下的新正文，也不把新版本当原版本）；manual 集逐项校验（存在/启用/manual 档，禁用/未知/跨库/其他档→`selection_invalid`）；auto 目录受控按需读取（仅启用 auto 或已授权 manual；resident/禁用/未授权/未知→`denied`；reference 经受控 Resolver 核对固定来源版本，locator 一律不是许可）；累计预算单计数器（基线+预留输出+初始装配+每次按需读取，重复读取照计，超限→`budget_exceeded`）；complete/cancel 幂等（首终态生效，终态后读取显式 `released`）。初始装配经 `librarycontext.Build`（L2 口径）包冻结只读抬头，以 `EphemeralLibraryContext` 返回当次模型输入；Run 不保留正文。app 适配 `BindWorkLibraryRuntime`（provider=GetWorkLibrary；Master resolver 与 L2 预览共用 `libraryMasterResolver`，自 `library_context_service.go` 抽出、行为不变）。测试：`go test ./internal/libraryruntime/ -count=1` 14 用例全过（含真实 Store 集成：全生命周期库文件逐字节零写入、跨库同名条目 ID 不串库、revision 漂移显式 stale、幂等清理、同输入同字节）；`go test ./internal/app/ -run "TestLibraryPreview|TestBindWorkLibraryRuntime" -count=1` 4 用例过（真实 App+Master 全链零写入、禁止字段不跨界、绑定期阻断错误码）；`go vet` 两包干净；`library`/`librarycontext` 依赖包测试过。未验证边界：① B1 只做核心+最小 app 适配，未接线任何模式，transport/agent 装配/前端入口是 B2a/B3a/B4；② “不落 Session/压缩/ledger/工具持久记录”在 B1 以核心不可达+零写入证明（Run 无正文、无持久化导入、库/Master 文件逐字节不变），agent 消息装配与落盘扫描证据按 B2a/B2c 各自条目产出；③ 默认预算常量（512KB/32k tokens/预留 8k/目录 50）为 L3.0 配置项，接线时按模式复核；④ 未跑 `internal/skills`（既有 Windows symlink 权限环境失败，非本任务，不写成通过）。**
+- [x] 单测/集成测试证明背景正文只进入当次模型输入，不落库、World、Session、压缩摘要、工具持久记录；完成/取消清理幂等，错误不能伪装为 active 或静默 bare。**完成记录：2026-09-24 07:32（Asia/Shanghai，AI2）。代码提交 `eab8f5792f69013ddafdf402c63bb1c97142f03c`（本地 main，未推送；同期间并行 laya 提交 `1f0763e`/`b708cde`/`532f706` 在其下，无文件交集）。实现：`internal/libraryruntime` per-run 授权核心（Bind/AssembleInitial/ReadOnDemand/Complete/Cancel/Status）——服务端派生身份（consumer=`writing|game|narraverse|module4`+scopeKey，伪造→`consumer_not_trusted`）；固定 revision（绑定与每次装配/读取都重核，漂移→`stale`，不交付旧授权下的新正文，也不把新版本当原版本）；manual 集逐项校验（存在/启用/manual 档，禁用/未知/跨库/其他档→`selection_invalid`）；auto 目录受控按需读取（仅启用 auto 或已授权 manual；resident/禁用/未授权/未知→`denied`；reference 经受控 Resolver 核对固定来源版本，locator 一律不是许可）；累计预算单计数器（基线+预留输出+初始装配+每次按需读取，重复读取照计，超限→`budget_exceeded`）；complete/cancel 幂等（首终态生效，终态后读取显式 `released`）。初始装配经 `librarycontext.Build`（L2 口径）包冻结只读抬头，以 `EphemeralLibraryContext` 返回当次模型输入；Run 不保留正文。app 适配 `BindWorkLibraryRuntime`（provider=GetWorkLibrary；Master resolver 与 L2 预览共用 `libraryMasterResolver`，自 `library_context_service.go` 抽出、行为不变）。测试：`go test ./internal/libraryruntime/ -count=1` 14 用例全过（含真实 Store 集成：全生命周期库文件逐字节零写入、跨库同名条目 ID 不串库、revision 漂移显式 stale、幂等清理、同输入同字节）；`go test ./internal/app/ -run "TestLibraryPreview|TestBindWorkLibraryRuntime" -count=1` 4 用例过（真实 App+Master 全链零写入、禁止字段不跨界、绑定期阻断错误码）；`go vet` 两包干净；`library`/`librarycontext` 依赖包测试过。未验证边界：① B1 只做核心+最小 app 适配，未接线任何模式，transport/agent 装配/前端入口是 B2a/B3a/B4；② “不落 Session/压缩/ledger/工具持久记录”在 B1 以核心不可达+零写入证明（Run 无正文、无持久化导入、库/Master 文件逐字节不变），agent 消息装配与落盘扫描证据按 B2a/B2c 各自条目产出；③ 默认预算常量（512KB/32k tokens/预留 8k/目录 50）为 L3.0 配置项，接线时按模式复核；④ 未跑 `internal/skills`（既有 Windows symlink 权限环境失败，非本任务，不写成通过）。修复轮（2026-09-24 07:56，Asia/Shanghai，分支 `library-b2a` 工作树 `D:\Narraverse2.0-b2a` 自 `2b1bad1` 接手，提交 `6b5c996`）：评审定位三处预算口径缺陷，按“失败回归测试先行”各补一条失败测试后最小修复——① 初始装配计费漏冻结抬头（`read.go` 原只量 JSON，现按完整交付文本=抬头+JSON 计费，与 `EphemeralLibraryContext.EstimatedTokens()` 同口径）；② 预留输出零值 Config 静默得 0（违背同结构体“零值→默认”约定与 §8.3 计数器覆盖预留输出，现零/负→默认 8000，显式越界 ≥ 累计 token 上限在绑定期显式 `invalid_request`，不再静默改写成误导性 `budget_exceeded`）；③ 运行中无外部成本计入通道（§8.3 单计数器须覆盖历史逐轮增长，新增 `Run.ChargeExternal(bytes, tokens)`：超限 `budget_exceeded` 不部分计入、负数 `invalid_request`、终态后 `released`）。验证：`go test ./internal/libraryruntime/ -count=1` 17 用例全过（14 旧 + 3 新回归）、`go test ./internal/app/ -run "TestLibraryPreview|TestBindWorkLibraryRuntime" -count=1` 4 用例过、`go vet` 两包干净、`library`/`librarycontext` 依赖包测试过。本修复轮在分支完成，主线清单记录待 AI1 合并后同步核对。**
 
 ### B2a · 写作后端接线（AI2；依赖 B1）
 
