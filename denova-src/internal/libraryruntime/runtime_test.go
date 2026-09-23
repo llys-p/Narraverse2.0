@@ -392,6 +392,108 @@ func TestLifecycleCleanupIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestAssembleInitialChargesDeliveredText 回归（缺陷修复）：§8.3 单计数器覆盖
+// 初始装配——计费必须与真正交付给模型的文本（冻结抬头+ModelView JSON）逐字节同口径，
+// 而不是只量 JSON；否则预算少计抬头，且与 EphemeralLibraryContext.EstimatedTokens() 不一致。
+func TestAssembleInitialChargesDeliveredText(t *testing.T) {
+	ctx := context.Background()
+	p := newTestProvider()
+	run := mustBind(t, p, func(in *BindInput) {
+		// 显式小预留，让"计费 == 交付文本"的断言不被默认值淹没。
+		in.Config = Config{MaxBytes: 512 * 1024, MaxEstimatedTokens: 32000, ReservedOutputTokens: 1, InitialCatalogLimit: 50}
+	})
+	e, err := run.AssembleInitial(ctx)
+	if err != nil || !e.Present() {
+		t.Fatalf("assemble: %v", err)
+	}
+	if !strings.HasPrefix(e.LeadingText(), ephemeralLibraryContextHeader) || len(e.LeadingText()) <= e.ModelViewByteLen() {
+		t.Fatal("delivered text must be header + model view JSON")
+	}
+	st := run.Status()
+	if st.BytesUsed != len(e.LeadingText()) {
+		t.Fatalf("charge must cover the delivered text: bytesUsed=%d delivered=%d", st.BytesUsed, len(e.LeadingText()))
+	}
+	if st.EstimatedTokensUsed != 1+e.EstimatedTokens() {
+		t.Fatalf("token charge must match the delivered text: used=%d reserved=1 ephemeral=%d",
+			st.EstimatedTokensUsed, e.EstimatedTokens())
+	}
+}
+
+// TestBindReservedOutputSemantics 回归（缺陷修复）：预留输出是 §8.3 计数器的必备覆盖项。
+// 零值 Config 表示"未指定"→用默认（与同结构体其他字段一致），不得静默变成 0；
+// 显式越界（≥ 累计上限）是配置错误，绑定必须显式 invalid_request，不得静默重置为
+// 绝对默认后以误导性的 budget_exceeded 阻断。
+func TestBindReservedOutputSemantics(t *testing.T) {
+	ctx := context.Background()
+	// 零值 Config：默认预留必须计入唯一计数器。
+	p := newTestProvider()
+	run := mustBind(t, p, func(in *BindInput) { in.Config = Config{} })
+	if st := run.Status(); st.EstimatedTokensUsed < DefaultConfig().ReservedOutputTokens {
+		t.Fatalf("zero-value config must charge the default reserved output, got used=%d", st.EstimatedTokensUsed)
+	}
+	// 显式合理预留：按提交值计入。
+	p2 := newTestProvider()
+	run2, err := Bind(ctx, BindInput{Consumer: ConsumerWriting, ScopeKey: "task:t1", LibraryID: testLibraryID,
+		ExpectedRevision: testRevision, ManualItemIDs: []string{"manual-1"},
+		Config: Config{MaxBytes: 128 * 1024, MaxEstimatedTokens: 1000, ReservedOutputTokens: 100}}, p2.load, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := run2.Status(); st.EstimatedTokensUsed != 100 {
+		t.Fatalf("explicit reserved output must be charged as given, got used=%d", st.EstimatedTokensUsed)
+	}
+	// 显式越界预留：显式 invalid_request，不静默改写成又一个不可用配置。
+	p3 := newTestProvider()
+	if run, err := bindTest(t, p3, func(in *BindInput) {
+		in.Config = Config{MaxBytes: 128 * 1024, MaxEstimatedTokens: 1000, ReservedOutputTokens: 2000}
+	}); run != nil || CodeOf(err) != ErrInvalidRequest {
+		t.Fatalf("want invalid_request for reserved >= budget max, got run=%v err=%v", run, err)
+	}
+}
+
+// TestChargeExternalCoversRuntimeCosts 回归（缺陷修复）：§8.3 单计数器覆盖
+// 系统提示+历史+初始装配+按需读取工具结果+预留输出——历史在运行中逐轮增长，
+// 接线层必须能把这类运行期已知成本计入同一计数器（ChargeExternal），
+// 否则“每次读取前校验剩余额度”对完整模型输入不成立。
+func TestChargeExternalCoversRuntimeCosts(t *testing.T) {
+	ctx := context.Background()
+	p := newTestProvider()
+	run := mustBind(t, p, func(in *BindInput) {
+		in.Config = Config{MaxBytes: 128 * 1024, MaxEstimatedTokens: 600, ReservedOutputTokens: 10, InitialCatalogLimit: 2}
+	})
+	if err := run.ChargeExternal(0, 100); err != nil {
+		t.Fatalf("history growth must be chargeable: %v", err)
+	}
+	if st := run.Status(); st.EstimatedTokensUsed < 110 {
+		t.Fatalf("external charge missing from the single counter: %#v", st)
+	}
+	// 超限：显式 budget_exceeded（不部分计入），被拒的计费不消耗剩余额度。
+	if err := run.ChargeExternal(0, 100000); CodeOf(err) != ErrBudgetExceeded {
+		t.Fatalf("want budget_exceeded, got %v", err)
+	}
+	if st := run.Status(); st.EstimatedTokensUsed != 110 {
+		t.Fatalf("rejected charge must not consume the counter: %#v", st)
+	}
+	// 真正耗尽后，按需读取同样被额度拒绝（§8.3：每次读取前校验剩余额度）。
+	if err := run.ChargeExternal(0, 490); err != nil {
+		t.Fatalf("fill-to-limit charge: %v", err)
+	}
+	if _, err := run.ReadOnDemand(ctx, "auto-1"); CodeOf(err) != ErrBudgetExceeded {
+		t.Fatalf("reads must be denied once the counter is exhausted, got %v", err)
+	}
+	// 负数：显式 invalid_request；终态后：released。
+	run2 := mustBind(t, newTestProvider(), func(in *BindInput) {
+		in.Config = Config{MaxEstimatedTokens: 600, ReservedOutputTokens: 10}
+	})
+	if err := run2.ChargeExternal(-1, 0); CodeOf(err) != ErrInvalidRequest {
+		t.Fatalf("want invalid_request for negative charge, got %v", err)
+	}
+	run2.Complete()
+	if err := run2.ChargeExternal(0, 10); CodeOf(err) != ErrReleased {
+		t.Fatalf("want released after terminal state, got %v", err)
+	}
+}
+
 func TestEphemeralZeroValueIsExplicitBareOnly(t *testing.T) {
 	zero := EphemeralLibraryContext{}
 	if zero.Present() || zero.LeadingText() != "" || zero.ModelViewByteLen() != 0 || zero.EstimatedTokens() != 0 {

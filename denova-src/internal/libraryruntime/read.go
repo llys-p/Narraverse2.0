@@ -52,7 +52,8 @@ type ReadResult struct {
 
 // AssembleInitial 装配本次运行的初始模型输入并计入预算：复用 L2 librarycontext.Build
 // 的加载/闭包/来源解析/定点估算口径（auto 档只进目录不进正文），包上冻结只读抬头后
-// 以临时输入返回。重复调用会再次装配并再次计费（同项重复读取照计）。
+// 以临时输入返回；计费覆盖完整交付文本（抬头+JSON），与 EstimatedTokens() 同口径。
+// 重复调用会再次装配并再次计费（同项重复读取照计）。
 // 库 revision 已变化时返回 stale，既不交付旧授权下的新正文，也不静默换版本。
 func (r *Run) AssembleInitial(ctx context.Context) (EphemeralLibraryContext, error) {
 	r.mu.Lock()
@@ -91,11 +92,14 @@ func (r *Run) AssembleInitial(ctx context.Context) (EphemeralLibraryContext, err
 		r.lastErrCode = ErrUnavailable
 		return EphemeralLibraryContext{}, fail(ErrUnavailable, "cannot serialize the initial library view")
 	}
-	bytes, tokens := measureText(string(data))
+	// 计费与交付逐字节同口径：真正进入模型输入的是“冻结抬头 + ModelView JSON”，
+	// 预算必须按完整交付文本计，不得只量 JSON（否则与 EstimatedTokens() 不一致）。
+	ephemeral := NewEphemeralLibraryContext(data)
+	bytes, tokens := measureText(ephemeral.LeadingText())
 	if err := r.chargeLocked(bytes, tokens); err != nil {
 		return EphemeralLibraryContext{}, err
 	}
-	return NewEphemeralLibraryContext(data), nil
+	return ephemeral, nil
 }
 
 // mapBuildErrorLocked 把 L2 Build 的错误映射为本包稳定码（绑定后数据不应再变形，

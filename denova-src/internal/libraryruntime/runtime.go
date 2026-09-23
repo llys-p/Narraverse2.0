@@ -100,6 +100,8 @@ type Config struct {
 	// MaxEstimatedTokens 是累计 token 估算上限（同 librarycontext 口径）。
 	MaxEstimatedTokens int
 	// ReservedOutputTokens 在绑定期一次性计入，为模型输出预留额度。
+	// 零/负值表示未指定→用默认；显式值必须小于 MaxEstimatedTokens，否则 Bind
+	// 显式 invalid_request（不静默改写）。
 	ReservedOutputTokens int
 	// InitialCatalogLimit 是初始装配中有界 auto 目录的长度（1~librarycontext.MaxCatalogLimit）。
 	InitialCatalogLimit int
@@ -124,7 +126,9 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.MaxEstimatedTokens <= 0 {
 		cfg.MaxEstimatedTokens = def.MaxEstimatedTokens
 	}
-	if cfg.ReservedOutputTokens < 0 || cfg.ReservedOutputTokens >= cfg.MaxEstimatedTokens {
+	// 与同结构体其他字段同语义：零/负=未指定→默认。显式值若 ≥ 累计上限属配置错误，
+	// 由 Bind 显式拒绝，绝不静默改写成又一个可能仍不可用的绝对默认。
+	if cfg.ReservedOutputTokens <= 0 {
 		cfg.ReservedOutputTokens = def.ReservedOutputTokens
 	}
 	if cfg.InitialCatalogLimit <= 0 {
@@ -208,6 +212,11 @@ func Bind(ctx context.Context, in BindInput, provider LibraryProvider, resolver 
 		return nil, err
 	}
 	cfg := normalizeConfig(in.Config)
+	// 预留输出必须装得进累计预算：显式越界（≥ 累计 token 上限）是配置错误，
+	// 绑定期显式 invalid_request，绝不静默改写后再用误导性的 budget_exceeded 阻断。
+	if cfg.ReservedOutputTokens >= cfg.MaxEstimatedTokens {
+		return nil, fail(ErrInvalidRequest, "reserved output tokens must be smaller than the cumulative token budget")
+	}
 	l, revision, err := provider(ctx, in.LibraryID)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -337,6 +346,25 @@ func (r *Run) Cancel() {
 	if r.state == stateActive {
 		r.state = stateCancelled
 	}
+}
+
+// ChargeExternal 把接线层在运行中产生的已知成本计入同一累计计数器（§8.3：单计数器
+// 覆盖系统提示+历史+初始装配+每次按需读取工具结果+预留输出）。写作/游戏等模式下
+// 历史逐轮增长、真实系统提示与按需读取工具结果的外包装文本都由调用方量测后经此
+// 通道计入，保证“每次读取前校验剩余额度”对完整模型输入成立。它不是读取许可、
+// 不返回任何正文：超限显式 budget_exceeded（不部分计入），负数 invalid_request，
+// 终态后 released。
+func (r *Run) ChargeExternal(bytes, tokens int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireActiveLocked(); err != nil {
+		return err
+	}
+	if bytes < 0 || tokens < 0 {
+		r.lastErrCode = ErrInvalidRequest
+		return fail(ErrInvalidRequest, "external charge must not be negative")
+	}
+	return r.chargeLocked(bytes, tokens)
 }
 
 // requireActiveLocked 校验运行仍处于 active；终态后一切读取显式 released，不静默变 bare。
