@@ -1,14 +1,14 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-23 19:54（Asia/Shanghai）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-24 06:43（Asia/Shanghai，A1/A2 完成后更新）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
 | 项 | 已核实事实 |
 | --- | --- |
-| 仓库 | `D:\Narraverse2.0`；当前 `main` 与 `origin/main` 均在 `1689b17cc75db38fdbaa6c36772ccc00feb16a76`。最近的 Laya Demo 提交与作品设定库任务并行，不是 L1/L2 已入库的证据。 |
-| L1 | 独立作品设定库已在 main；本地又修了来源形态、未保存草稿、跨库异步、事件时间戳和缺失更新基线。修复**未提交**。 |
-| L2 | 三档只读加载、Master 固定版本解析、预算、只读预览 API/UI 已在当前工作树实现；定向 Go 测试、前端 207 文件/1296 测试、构建和隔离 executable 23 项验收已通过；**未提交、未推送、未装配到用户 8080**。详细限制以验收报告为准。 |
+| 仓库 | `D:\Narraverse2.0`；A1/A2 完成后本地 `main` 在 `f503173b2ec0879c7bdab4d9e5248b022f4d30c0`，领先 `origin/main` 1 提交（本地提交未推送）。L1/L2 代码与文档均可从该 SHA 检出；并行任务的脏改动仍留在工作树。 |
+| L1 | 独立作品设定库及其修复（来源形态、未保存草稿、跨库异步、事件时间戳、缺失更新基线）已随 `f503173` 提交。 |
+| L2 | 三档只读加载、Master 固定版本解析、预算、只读预览 API/UI 已随 `f503173` 提交；定向 Go 测试、前端 207 文件/1296 测试、构建和隔离 executable 23 项验收已通过；**未推送、未装配到用户 8080**。详细限制以验收报告为准。 |
 | L3 | [四模式接入方案](LIBRARY_L3_MODE_INTEGRATION_PLAN.md) 与 `internal/libraryruntime/README.md` 是骨架；**新 Library 尚未送入写作、游戏、叙界或 Module4 的模型输入**。旧 WorldContext 可用不等于新库接入。 |
 | L4 | [迁移方案](LIBRARY_L4_MIGRATION_PLAN.md) 与 `internal/librarymigration/README.md` 是骨架；**没有迁移旧 World/Lore，也没有迁移 API**。 |
 | 运行实例 | 隔离验收 18082 已停；用户已有 8080 未被替换。本地 `artifacts/`、`.denova/`、exe、dist、截图和用户资料不得暂存入 Git。 |
@@ -18,8 +18,8 @@
 
 已完成但尚未共享的本地里程碑（后续 AI 核对证据即可，不要重做）：
 
-- [x] L1 修复和本地保存/重启验收；证据：L1/L2 验收报告第 2、3 节。**代码尚未提交。**
-- [x] L2 只读核心、来源解析、HTTP 与 UI 预览及隔离 executable 23 项验收；证据：同报告第 3、4 节。**代码尚未提交。**
+- [x] L1 修复和本地保存/重启验收；证据：L1/L2 验收报告第 2、3 节。**代码已随 `f503173` 提交（未推送）。**
+- [x] L2 只读核心、来源解析、HTTP 与 UI 预览及隔离 executable 23 项验收；证据：同报告第 3、4 节。**代码已随 `f503173` 提交（未推送）。**
 - [x] L3/L4 边界方案及目录职责骨架；证据：对应计划和 README。**功能尚未实现。**
 
 ## 2. 多 AI 工作协议
@@ -40,15 +40,15 @@
 
 ### A1 · 复核并隔离当前改动（AI1；可与 AI2/AI3 只读预审并行）
 
-- [ ] 对照验收报告和当前 Git，列出 L1/L2 **tracked 与 untracked** 精确文件；复查 `internal/library/`、`librarycontext/`、`app/library_context_service*`、Library handler/DTO/routes、前端 feature/i18n、相关 docs。审查共享 CHANGELOG/协作日志中的逐块内容。
-- [ ] 做一次改动比例相称的代码审查：来源版本和写入保护、预览只读、请求脱敏、并发/预算；复用已有门禁证据，仅在 HEAD 变化影响本任务时重跑相关测试。记录结论和实际失败，不把既有 Windows 符号链接权限问题写成测试通过。
-- [ ] 在所有待提交文件中排除 `artifacts/`、`.denova/`、`.obsidian/`、`node_modules`、dist、exe、截图、虚构验收运行目录及其他 AI 的修改。**完成记录：待填。**
+- [x] 对照验收报告和当前 Git，列出 L1/L2 **tracked 与 untracked** 精确文件；复查 `internal/library/`、`librarycontext/`、`app/library_context_service*`、Library handler/DTO/routes、前端 feature/i18n、相关 docs。审查共享 CHANGELOG/协作日志中的逐块内容。
+- [x] 做一次改动比例相称的代码审查：来源版本和写入保护、预览只读、请求脱敏、并发/预算；复用已有门禁证据，仅在 HEAD 变化影响本任务时重跑相关测试。记录结论和实际失败，不把既有 Windows 符号链接权限问题写成测试通过。
+- [x] 在所有待提交文件中排除 `artifacts/`、`.denova/`、`.obsidian/`、`node_modules`、dist、exe、截图、虚构验收运行目录及其他 AI 的修改。**完成记录：2026-09-24 06:40（Asia/Shanghai，AI1）。接手时重查 Git：HEAD=379eadb（main 与 origin/main 同步）；`1689b17` 之后的 5 个提交仅涉及 `demos/laya-live/` 与协作日志，与本任务文件零交集，故未重跑测试，直接复用 09-23 验收门禁证据。精确清单：tracked 修改 11（`internal/library/store.go`、`api/handlers/handler_library_workspace.go`、`api/routes.go`、`LibraryEditorPanel.tsx`、`library-panels.test.tsx`、`use-work-library.ts`、zh/en `workLibrary.ts`、`denova-src/CHANGELOG.md`、`docs/DOCUMENTATION_INDEX.md`、`docs/NEXT_PROJECT_BACKLOG.md`）+ untracked 新增 23（`librarycontext/` 4、`libraryruntime/`、`librarymigration/` README、`app/library_context_service*` 2、api handler/DTO/测试 3、`library/origin_update_test.go`、前端 4、docs 8）。共享文件逐块核查：routes.go 仅新增一行 context-preview 路由；DOCUMENTATION_INDEX/NEXT_PROJECT_BACKLOG 的 diff 全属本任务；CHANGELOG 混有 Agent Skills 块（09-22 遗留），已按块分离暂存。审查结论：来源形态保留与枚举校验、baseUpdatedAt 400 拒绝、只读调用链（GetWorkLibrary→Build→DTO，无模型/Task/Registry）、错误脱敏（400/404/409/413/500 通用文案）、请求代次/归属守卫与预算定点迭代，均与验收报告一致。排除项复核：Module4、Agent、知识库、Laya、artifacts/、.denova/、.obsidian/、dist-verify-*、exe、resp.json、截图、docs/_local-archive、09-21 三份文档均未暂存；敏感内容扫描无命中。未重跑既有 Windows symlink 权限失败（internal/skills，非本任务），不写成通过。**
 
 ### A2 · 建立 L1/L2 共享提交（AI1；依赖 A1）
 
-- [ ] 用精确路径与逐块暂存形成可复核提交；共享文件只暂存本任务片段。提交前 `git diff --cached --name-only`、`git diff --cached --check` 和暂存 diff 全检。
-- [ ] 记录本地 commit 完整 SHA、分支与远端是否已同步；**提交、推送、合并分别记状态**，不把其中一个写成另一个。若仍未获得执行外部推送的指令，保留本地提交并报告状态。
-- [ ] AI2/AI3 从该 SHA 建独立工作树后读取真实代码，确认不会基于旧 `3f226e1` 或仅有 L1 的 HEAD 实现 L3。**完成记录：待填。**
+- [x] 用精确路径与逐块暂存形成可复核提交；共享文件只暂存本任务片段。提交前 `git diff --cached --name-only`、`git diff --cached --check` 和暂存 diff 全检。
+- [x] 记录本地 commit 完整 SHA、分支与远端是否已同步；**提交、推送、合并分别记状态**，不把其中一个写成另一个。若仍未获得执行外部推送的指令，保留本地提交并报告状态。
+- [x] AI2/AI3 从该 SHA 建独立工作树后读取真实代码，确认不会基于旧 `3f226e1` 或仅有 L1 的 HEAD 实现 L3。**完成记录：2026-09-24 06:42（Asia/Shanghai，AI1）。精确暂存 34 文件（CHANGELOG 仅 Library 块，Agent Skills 块保留为未暂存改动）；`git diff --cached --name-only` 34 文件核对通过，`git diff --cached --check` 通过（LF/CRLF 为 .gitattributes+autocrlf 提示，非空白错误），暂存 diff 全检 +2168/−32。本地提交 SHA `f503173b2ec0879c7bdab4d9e5248b022f4d30c0`（main，英文 message "feat(library): add L2 read-only context preview and L1 update-safety fixes"）。状态分别记录：已提交=是（本地 main）；已推送=否（main 领先 origin/main 1 提交，未获外部推送指令）；合并=无（未动其他分支）。AI2/AI3 后续必须从此 SHA 建独立 worktree 接手 L3，不得基于旧 `3f226e1` 或仅有 L1 的 HEAD。**
 
 **检查点 A 通过条件**：L1/L2 代码与文档可从同一明确 SHA 检出；相关测试/验收结果有出处；并行用户改动未混入；用户 8080 未被替换。
 
