@@ -1,0 +1,1930 @@
+{
+ "_readme": [
+  "跨检查点复现实验的汇总（由 tests/replication/ckpt_analysis.py 生成）。",
+  "runs_dir = tests/runs/，每个检查点 3 次独立进程运行。",
+  "分级规则未在本脚本重写，全部读自 signalmetrics 的输出。",
+  "class 规则见 classify()：反向 > 跑次不一致 > 稳定 > 检查点特有。"
+ ],
+ "n_runs": {
+  "typed-decisions": 3,
+  "english": 3
+ },
+ "rows": {
+  "hostility": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.6649,
+     0.6649,
+     0.6649
+    ],
+    "median": 0.6649,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "thresholds": [
+     0.4619,
+     0.4619,
+     0.4619
+    ],
+    "gaps": [
+     0.0377,
+     0.0377,
+     0.0377
+    ],
+    "ci": [
+     0.5143,
+     0.8012
+    ],
+    "ci_rep_auc": 0.6649,
+    "gap_med": 0.0377,
+    "thr_med": 0.4619,
+    "ctx_signed_med": 0.0253,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.6818
+   },
+   "en": {
+    "aucs": [
+     0.6352,
+     0.6352,
+     0.6352
+    ],
+    "median": 0.6352,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     0.2739,
+     0.2739,
+     0.2739
+    ],
+    "gaps": [
+     0.0423,
+     0.0423,
+     0.0423
+    ],
+    "ci": [
+     0.4945,
+     0.7647
+    ],
+    "ci_rep_auc": 0.6352,
+    "gap_med": 0.0423,
+    "thr_med": 0.2739,
+    "ctx_signed_med": 0.042,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.7273
+   },
+   "class": "① 跨检查点稳定"
+  },
+  "cooperation": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.7061,
+     0.7061,
+     0.7061
+    ],
+    "median": 0.7061,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     0.3746,
+     0.3746,
+     0.3746
+    ],
+    "gaps": [
+     0.051,
+     0.051,
+     0.051
+    ],
+    "ci": [
+     0.5356,
+     0.8565
+    ],
+    "ci_rep_auc": 0.7061,
+    "gap_med": 0.051,
+    "thr_med": 0.3746,
+    "ctx_signed_med": 0.0061,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.5882
+   },
+   "en": {
+    "aucs": [
+     0.7719,
+     0.7719,
+     0.7719
+    ],
+    "median": 0.7719,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     0.3612,
+     0.3612,
+     0.3612
+    ],
+    "gaps": [
+     0.2004,
+     0.2004,
+     0.2004
+    ],
+    "ci": [
+     0.6065,
+     0.8983
+    ],
+    "ci_rep_auc": 0.7719,
+    "gap_med": 0.2004,
+    "thr_med": 0.3612,
+    "ctx_signed_med": 0.0394,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.5882
+   },
+   "class": "① 跨检查点稳定"
+  },
+  "withdraw": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.5714,
+     0.5714,
+     0.5714
+    ],
+    "median": 0.5714,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     0.3565,
+     0.3565,
+     0.3565
+    ],
+    "gaps": [
+     0.0107,
+     0.0107,
+     0.0107
+    ],
+    "ci": [
+     0.372,
+     0.7788
+    ],
+    "ci_rep_auc": 0.5714,
+    "gap_med": 0.0107,
+    "thr_med": 0.3565,
+    "ctx_signed_med": -0.0026,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.5833
+   },
+   "en": {
+    "aucs": [
+     0.5047,
+     0.5047,
+     0.5047
+    ],
+    "median": 0.5047,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     0.4899,
+     0.4899,
+     0.4899
+    ],
+    "gaps": [
+     0.0048,
+     0.0048,
+     0.0048
+    ],
+    "ci": [
+     0.3106,
+     0.7034
+    ],
+    "ci_rep_auc": 0.5047,
+    "gap_med": 0.0048,
+    "thr_med": 0.4899,
+    "ctx_signed_med": 0.2795,
+    "ctx_grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "ctx_sign_rate": 0.8333
+   },
+   "class": "② 检查点特有"
+  },
+  "confront": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.6643,
+     0.6643,
+     0.6643
+    ],
+    "median": 0.6643,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     0.4617,
+     0.4617,
+     0.4617
+    ],
+    "gaps": [
+     0.0272,
+     0.0272,
+     0.0272
+    ],
+    "ci": [
+     0.4763,
+     0.8483
+    ],
+    "ci_rep_auc": 0.6643,
+    "gap_med": 0.0272,
+    "thr_med": 0.4617,
+    "ctx_signed_med": 0.0761,
+    "ctx_grades": [
+     "N",
+     "N",
+     "N"
+    ],
+    "ctx_sign_rate": 1.0
+   },
+   "en": {
+    "aucs": [
+     0.4143,
+     0.4143,
+     0.4143
+    ],
+    "median": 0.4143,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     0.4941,
+     0.4941,
+     0.4941
+    ],
+    "gaps": [
+     -0.0414,
+     -0.0414,
+     -0.0414
+    ],
+    "ci": [
+     0.2377,
+     0.6061
+    ],
+    "ci_rep_auc": 0.4143,
+    "gap_med": -0.0414,
+    "thr_med": 0.4941,
+    "ctx_signed_med": 0.0639,
+    "ctx_grades": [
+     "N",
+     "N",
+     "N"
+    ],
+    "ctx_sign_rate": 1.0
+   },
+   "class": "② 检查点特有"
+  },
+  "disclose": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.4639,
+     0.4639,
+     0.4639
+    ],
+    "median": 0.4639,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     0.3973,
+     0.3973,
+     0.3973
+    ],
+    "gaps": [
+     -0.0117,
+     -0.0117,
+     -0.0117
+    ],
+    "ci": [
+     0.2437,
+     0.6917
+    ],
+    "ci_rep_auc": 0.4639,
+    "gap_med": -0.0117,
+    "thr_med": 0.3973,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.8889,
+     0.8889,
+     0.8889
+    ],
+    "median": 0.8889,
+    "range": 0.0,
+    "grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     0.4294,
+     0.4294,
+     0.4294
+    ],
+    "gaps": [
+     0.1645,
+     0.1645,
+     0.1645
+    ],
+    "ci": [
+     0.7396,
+     0.9889
+    ],
+    "ci_rep_auc": 0.8889,
+    "gap_med": 0.1645,
+    "thr_med": 0.4294,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "② 检查点特有"
+  },
+  "investigate": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.8947,
+     0.8947,
+     0.8947
+    ],
+    "median": 0.8947,
+    "range": 0.0,
+    "grades": [
+     "R",
+     "R",
+     "R"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     2.809,
+     2.809,
+     2.809
+    ],
+    "gaps": [
+     0.2092,
+     0.2092,
+     0.2092
+    ],
+    "ci": [
+     0.7468,
+     0.9902
+    ],
+    "ci_rep_auc": 0.8947,
+    "gap_med": 0.2092,
+    "thr_med": 2.809,
+    "ctx_signed_med": -0.1512,
+    "ctx_grades": [
+     "R",
+     "R",
+     "R"
+    ],
+    "ctx_sign_rate": 0.1
+   },
+   "en": {
+    "aucs": [
+     0.6895,
+     0.6895,
+     0.6895
+    ],
+    "median": 0.6895,
+    "range": 0.0,
+    "grades": [
+     "R",
+     "R",
+     "R"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     2.2941,
+     2.2941,
+     2.2941
+    ],
+    "gaps": [
+     0.0682,
+     0.0682,
+     0.0682
+    ],
+    "ci": [
+     0.4667,
+     0.8766
+    ],
+    "ci_rep_auc": 0.6895,
+    "gap_med": 0.0682,
+    "thr_med": 2.2941,
+    "ctx_signed_med": -0.4098,
+    "ctx_grades": [
+     "R",
+     "R",
+     "R"
+    ],
+    "ctx_sign_rate": 0.0
+   },
+   "class": "③ 不可靠-反向"
+  },
+  "trust": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.7162,
+     0.7162,
+     0.7162
+    ],
+    "median": 0.7162,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     0.3974,
+     0.3974,
+     0.3974
+    ],
+    "gaps": [
+     0.035,
+     0.035,
+     0.035
+    ],
+    "ci": [
+     0.5374,
+     0.865
+    ],
+    "ci_rep_auc": 0.7162,
+    "gap_med": 0.035,
+    "thr_med": 0.3974,
+    "ctx_signed_med": 0.0196,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.5625
+   },
+   "en": {
+    "aucs": [
+     0.778,
+     0.778,
+     0.778
+    ],
+    "median": 0.778,
+    "range": 0.0,
+    "grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     0.3499,
+     0.3499,
+     0.3499
+    ],
+    "gaps": [
+     0.1184,
+     0.1184,
+     0.1184
+    ],
+    "ci": [
+     0.6233,
+     0.9085
+    ],
+    "ci_rep_auc": 0.778,
+    "gap_med": 0.1184,
+    "thr_med": 0.3499,
+    "ctx_signed_med": 0.0987,
+    "ctx_grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "ctx_sign_rate": 0.75
+   },
+   "class": "② 检查点特有"
+  },
+  "doubt": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.6184,
+     0.6184,
+     0.6184
+    ],
+    "median": 0.6184,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     0.4615,
+     0.4615,
+     0.4615
+    ],
+    "gaps": [
+     0.0128,
+     0.0128,
+     0.0128
+    ],
+    "ci": [
+     0.438,
+     0.7885
+    ],
+    "ci_rep_auc": 0.6184,
+    "gap_med": 0.0128,
+    "thr_med": 0.4615,
+    "ctx_signed_med": 0.013,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.64
+   },
+   "en": {
+    "aucs": [
+     0.6144,
+     0.6144,
+     0.6144
+    ],
+    "median": 0.6144,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     0.2722,
+     0.2722,
+     0.2722
+    ],
+    "gaps": [
+     0.0223,
+     0.0223,
+     0.0223
+    ],
+    "ci": [
+     0.4495,
+     0.7768
+    ],
+    "ci_rep_auc": 0.6144,
+    "gap_med": 0.0223,
+    "thr_med": 0.2722,
+    "ctx_signed_med": -0.0038,
+    "ctx_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "ctx_sign_rate": 0.48
+   },
+   "class": "① 跨检查点稳定"
+  },
+  "danger": {
+   "kind": "prob",
+   "td": {
+    "aucs": [
+     0.5758,
+     0.5758,
+     0.5758
+    ],
+    "median": 0.5758,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     0.5277,
+     0.5277,
+     0.5277
+    ],
+    "gaps": [
+     0.0107,
+     0.0107,
+     0.0107
+    ],
+    "ci": [
+     0.381,
+     0.7621
+    ],
+    "ci_rep_auc": 0.5758,
+    "gap_med": 0.0107,
+    "thr_med": 0.5277,
+    "ctx_signed_med": -0.0062,
+    "ctx_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "ctx_sign_rate": 0.5
+   },
+   "en": {
+    "aucs": [
+     0.447,
+     0.447,
+     0.447
+    ],
+    "median": 0.447,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     0.235,
+     0.235,
+     0.235
+    ],
+    "gaps": [
+     -0.0045,
+     -0.0045,
+     -0.0045
+    ],
+    "ci": [
+     0.2552,
+     0.6375
+    ],
+    "ci_rep_auc": 0.447,
+    "gap_med": -0.0045,
+    "thr_med": 0.235,
+    "ctx_signed_med": 0.0515,
+    "ctx_grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "ctx_sign_rate": 0.9
+   },
+   "class": "① 跨检查点稳定"
+  },
+  "trust_shift": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.8267,
+     0.8267,
+     0.8267
+    ],
+    "median": 0.8267,
+    "range": 0.0,
+    "grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     2.2343,
+     2.2343,
+     2.2343
+    ],
+    "gaps": [
+     0.162,
+     0.162,
+     0.162
+    ],
+    "ci": [
+     0.6389,
+     0.9706
+    ],
+    "ci_rep_auc": 0.8267,
+    "gap_med": 0.162,
+    "thr_med": 2.2343,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.8067,
+     0.8067,
+     0.8067
+    ],
+    "median": 0.8067,
+    "range": 0.0,
+    "grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     2.1417,
+     2.1417,
+     2.1417
+    ],
+    "gaps": [
+     0.1445,
+     0.1445,
+     0.1445
+    ],
+    "ci": [
+     0.5909,
+     0.9559
+    ],
+    "ci_rep_auc": 0.8067,
+    "gap_med": 0.1445,
+    "thr_med": 2.1417,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "① 跨检查点稳定"
+  },
+  "respect_shift": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.6154,
+     0.6154,
+     0.6154
+    ],
+    "median": 0.6154,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     2.2178,
+     2.2178,
+     2.2178
+    ],
+    "gaps": [
+     0.07,
+     0.07,
+     0.07
+    ],
+    "ci": [
+     0.3571,
+     0.8571
+    ],
+    "ci_rep_auc": 0.6154,
+    "gap_med": 0.07,
+    "thr_med": 2.2178,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.6692,
+     0.6692,
+     0.6692
+    ],
+    "median": 0.6692,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     2.0596,
+     2.0596,
+     2.0596
+    ],
+    "gaps": [
+     0.1183,
+     0.1183,
+     0.1183
+    ],
+    "ci": [
+     0.4048,
+     0.8939
+    ],
+    "ci_rep_auc": 0.6692,
+    "gap_med": 0.1183,
+    "thr_med": 2.0596,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "① 跨检查点稳定"
+  },
+  "doubt_shift": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.8467,
+     0.8467,
+     0.8467
+    ],
+    "median": 0.8467,
+    "range": 0.0,
+    "grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     2.6295,
+     2.6295,
+     2.6295
+    ],
+    "gaps": [
+     0.1881,
+     0.1881,
+     0.1881
+    ],
+    "ci": [
+     0.66,
+     0.987
+    ],
+    "ci_rep_auc": 0.8467,
+    "gap_med": 0.1881,
+    "thr_med": 2.6295,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.4067,
+     0.4067,
+     0.4067
+    ],
+    "median": 0.4067,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     2.2356,
+     2.2356,
+     2.2356
+    ],
+    "gaps": [
+     -0.0183,
+     -0.0183,
+     -0.0183
+    ],
+    "ci": [
+     0.1603,
+     0.6533
+    ],
+    "ci_rep_auc": 0.4067,
+    "gap_med": -0.0183,
+    "thr_med": 2.2356,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "② 检查点特有"
+  },
+  "fondness_shift": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.7905,
+     0.7905,
+     0.7905
+    ],
+    "median": 0.7905,
+    "range": 0.0,
+    "grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "disc_grades": [
+     "A",
+     "A",
+     "A"
+    ],
+    "thresholds": [
+     2.1023,
+     2.1023,
+     2.1023
+    ],
+    "gaps": [
+     0.1954,
+     0.1954,
+     0.1954
+    ],
+    "ci": [
+     0.6,
+     0.9417
+    ],
+    "ci_rep_auc": 0.7905,
+    "gap_med": 0.1954,
+    "thr_med": 2.1023,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.7238,
+     0.7238,
+     0.7238
+    ],
+    "median": 0.7238,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     1.7524,
+     1.7524,
+     1.7524
+    ],
+    "gaps": [
+     0.1704,
+     0.1704,
+     0.1704
+    ],
+    "ci": [
+     0.5,
+     0.9333
+    ],
+    "ci_rep_auc": 0.7238,
+    "gap_med": 0.1704,
+    "thr_med": 1.7524,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "② 检查点特有"
+  },
+  "alert_shift": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.6882,
+     0.6882,
+     0.6882
+    ],
+    "median": 0.6882,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     2.5264,
+     2.5264,
+     2.5264
+    ],
+    "gaps": [
+     0.0808,
+     0.0808,
+     0.0808
+    ],
+    "ci": [
+     0.4659,
+     0.9013
+    ],
+    "ci_rep_auc": 0.6882,
+    "gap_med": 0.0808,
+    "thr_med": 2.5264,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.5,
+     0.5,
+     0.5
+    ],
+    "median": 0.5,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     2.0228,
+     2.0228,
+     2.0228
+    ],
+    "gaps": [
+     -0.0465,
+     -0.0465,
+     -0.0465
+    ],
+    "ci": [
+     0.2632,
+     0.7357
+    ],
+    "ci_rep_auc": 0.5,
+    "gap_med": -0.0465,
+    "thr_med": 2.0228,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "② 检查点特有"
+  },
+  "goal_shift": {
+   "kind": "level",
+   "td": {
+    "aucs": [
+     0.59,
+     0.59,
+     0.59
+    ],
+    "median": 0.59,
+    "range": 0.0,
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "disc_grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "thresholds": [
+     2.63,
+     2.63,
+     2.63
+    ],
+    "gaps": [
+     0.0881,
+     0.0881,
+     0.0881
+    ],
+    "ci": [
+     0.3067,
+     0.8384
+    ],
+    "ci_rep_auc": 0.59,
+    "gap_med": 0.0881,
+    "thr_med": 2.63,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "en": {
+    "aucs": [
+     0.45,
+     0.45,
+     0.45
+    ],
+    "median": 0.45,
+    "range": 0.0,
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "disc_grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "thresholds": [
+     1.8983,
+     1.8983,
+     1.8983
+    ],
+    "gaps": [
+     -0.0178,
+     -0.0178,
+     -0.0178
+    ],
+    "ci": [
+     0.1905,
+     0.7253
+    ],
+    "ci_rep_auc": 0.45,
+    "gap_med": -0.0178,
+    "thr_med": 1.8983,
+    "ctx_signed_med": null,
+    "ctx_grades": [],
+    "ctx_sign_rate": null
+   },
+   "class": "② 检查点特有"
+  }
+ },
+ "class_counts": {
+  "① 跨检查点稳定": 6,
+  "② 检查点特有": 8,
+  "③ 不可靠-反向": 1
+ },
+ "variance": {
+  "typed-decisions": {
+   "median_range": 0.0,
+   "max_range": 0.0,
+   "mean_range": 0.0,
+   "n": 15,
+   "gt_0.02": 0
+  },
+  "english": {
+   "median_range": 0.0,
+   "max_range": 0.0,
+   "mean_range": 0.0,
+   "n": 15,
+   "gt_0.02": 0
+  }
+ },
+ "grade_caliber": {
+  "typed-decisions": {
+   "disc_A_all": [
+    "cooperation",
+    "investigate",
+    "trust",
+    "trust_shift",
+    "doubt_shift",
+    "fondness_shift"
+   ],
+   "disc_A_level": [
+    "investigate",
+    "trust_shift",
+    "doubt_shift",
+    "fondness_shift"
+   ],
+   "disc_A_prob": [
+    "cooperation",
+    "trust"
+   ],
+   "final_A": [
+    "trust_shift",
+    "doubt_shift",
+    "fondness_shift"
+   ]
+  },
+  "english": {
+   "disc_A_all": [
+    "cooperation",
+    "disclose",
+    "trust",
+    "trust_shift"
+   ],
+   "disc_A_level": [
+    "trust_shift"
+   ],
+   "disc_A_prob": [
+    "cooperation",
+    "disclose",
+    "trust"
+   ],
+   "final_A": [
+    "disclose",
+    "trust_shift"
+   ]
+  }
+ },
+ "qa": {
+  "a_trio_hold_on_english": false,
+  "c_prob_all_no_A_on_english": false,
+  "d_thresholds_cluster_note": "阈值是统计输出，不回写配置",
+  "e_disclose_reversed": {
+   "typed-decisions": {
+    "median": 0.4639
+   },
+   "english": {
+    "median": 0.8889
+   }
+  },
+  "h_stabler_checkpoint": "typed-decisions"
+ },
+ "observable_accuracy": {
+  "typed-decisions": [
+   [
+    0.5309,
+    275,
+    518
+   ],
+   [
+    0.5309,
+    275,
+    518
+   ],
+   [
+    0.5309,
+    275,
+    518
+   ]
+  ],
+  "english": [
+   [
+    0.4961,
+    257,
+    518
+   ],
+   [
+    0.4961,
+    257,
+    518
+   ],
+   [
+    0.4961,
+    257,
+    518
+   ]
+  ]
+ },
+ "validity": {
+  "typed-decisions": {
+   "_readme": [
+    "req.5：任何输入被截断 / 未被有效呈现的用例，必须从能力对比中剔除，并单独列出。",
+    "两类 invalid：(a) state 溢出被 st[:room] 静默截断；(b) 翻译缓存缺失 → message 字段是中文原文。",
+    "★ 只报「剔除了几条」不算达标 —— 必须能说出是哪几条、为什么。"
+   ],
+   "max_len": 1024,
+   "head_max_len": 256,
+   "room": 767,
+   "cache_sha": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+   "cache_changed_during_run": false,
+   "n_items_measured": 186,
+   "token_min": 222,
+   "token_median": 236,
+   "token_max": 254,
+   "n_overflow": 0,
+   "passed": {
+    "observable": [
+     70,
+     70
+    ],
+    "hidden_truth": [
+     20,
+     20
+    ],
+    "contextual": [
+     48,
+     48
+    ]
+   },
+   "invalid": []
+  },
+  "english": {
+   "_readme": [
+    "req.5：任何输入被截断 / 未被有效呈现的用例，必须从能力对比中剔除，并单独列出。",
+    "两类 invalid：(a) state 溢出被 st[:room] 静默截断；(b) 翻译缓存缺失 → message 字段是中文原文。",
+    "★ 只报「剔除了几条」不算达标 —— 必须能说出是哪几条、为什么。"
+   ],
+   "max_len": 512,
+   "head_max_len": 192,
+   "room": 319,
+   "cache_sha": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+   "cache_changed_during_run": false,
+   "n_items_measured": 186,
+   "token_min": 222,
+   "token_median": 236,
+   "token_max": 254,
+   "n_overflow": 0,
+   "passed": {
+    "observable": [
+     70,
+     70
+    ],
+    "hidden_truth": [
+     20,
+     20
+    ],
+    "contextual": [
+     48,
+     48
+    ]
+   },
+   "invalid": []
+  }
+ },
+ "contextual_detail": {
+  "typed-decisions": {
+   "hostility": {
+    "signed": [
+     0.0253,
+     0.0253,
+     0.0253
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.6818,
+     0.6818,
+     0.6818
+    ],
+    "beyond": [
+     0.5,
+     0.5,
+     0.5
+    ],
+    "n": [
+     22,
+     22,
+     22
+    ]
+   },
+   "cooperation": {
+    "signed": [
+     0.0061,
+     0.0061,
+     0.0061
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.5882,
+     0.5882,
+     0.5882
+    ],
+    "beyond": [
+     0.7647,
+     0.7647,
+     0.7647
+    ],
+    "n": [
+     17,
+     17,
+     17
+    ]
+   },
+   "withdraw": {
+    "signed": [
+     -0.0026,
+     -0.0026,
+     -0.0026
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.5833,
+     0.5833,
+     0.5833
+    ],
+    "beyond": [
+     0.4167,
+     0.4167,
+     0.4167
+    ],
+    "n": [
+     12,
+     12,
+     12
+    ]
+   },
+   "confront": {
+    "signed": [
+     0.0761,
+     0.0761,
+     0.0761
+    ],
+    "grades": [
+     "N",
+     "N",
+     "N"
+    ],
+    "sign_rate": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "beyond": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "n": [
+     1,
+     1,
+     1
+    ]
+   },
+   "investigate": {
+    "signed": [
+     -0.1512,
+     -0.1512,
+     -0.1512
+    ],
+    "grades": [
+     "R",
+     "R",
+     "R"
+    ],
+    "sign_rate": [
+     0.1,
+     0.1,
+     0.1
+    ],
+    "beyond": [
+     0.8,
+     0.8,
+     0.8
+    ],
+    "n": [
+     10,
+     10,
+     10
+    ]
+   },
+   "trust": {
+    "signed": [
+     0.0196,
+     0.0196,
+     0.0196
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.5625,
+     0.5625,
+     0.5625
+    ],
+    "beyond": [
+     0.375,
+     0.375,
+     0.375
+    ],
+    "n": [
+     16,
+     16,
+     16
+    ]
+   },
+   "doubt": {
+    "signed": [
+     0.013,
+     0.013,
+     0.013
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.64,
+     0.64,
+     0.64
+    ],
+    "beyond": [
+     0.44,
+     0.44,
+     0.44
+    ],
+    "n": [
+     25,
+     25,
+     25
+    ]
+   },
+   "danger": {
+    "signed": [
+     -0.0062,
+     -0.0062,
+     -0.0062
+    ],
+    "grades": [
+     "D",
+     "D",
+     "D"
+    ],
+    "sign_rate": [
+     0.5,
+     0.5,
+     0.5
+    ],
+    "beyond": [
+     0.1,
+     0.1,
+     0.1
+    ],
+    "n": [
+     10,
+     10,
+     10
+    ]
+   }
+  },
+  "english": {
+   "hostility": {
+    "signed": [
+     0.042,
+     0.042,
+     0.042
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.7273,
+     0.7273,
+     0.7273
+    ],
+    "beyond": [
+     0.3636,
+     0.3636,
+     0.3636
+    ],
+    "n": [
+     22,
+     22,
+     22
+    ]
+   },
+   "cooperation": {
+    "signed": [
+     0.0394,
+     0.0394,
+     0.0394
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.5882,
+     0.5882,
+     0.5882
+    ],
+    "beyond": [
+     0.8824,
+     0.8824,
+     0.8824
+    ],
+    "n": [
+     17,
+     17,
+     17
+    ]
+   },
+   "withdraw": {
+    "signed": [
+     0.2795,
+     0.2795,
+     0.2795
+    ],
+    "grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "sign_rate": [
+     0.8333,
+     0.8333,
+     0.8333
+    ],
+    "beyond": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "n": [
+     12,
+     12,
+     12
+    ]
+   },
+   "confront": {
+    "signed": [
+     0.0639,
+     0.0639,
+     0.0639
+    ],
+    "grades": [
+     "N",
+     "N",
+     "N"
+    ],
+    "sign_rate": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "beyond": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "n": [
+     1,
+     1,
+     1
+    ]
+   },
+   "investigate": {
+    "signed": [
+     -0.4098,
+     -0.4098,
+     -0.4098
+    ],
+    "grades": [
+     "R",
+     "R",
+     "R"
+    ],
+    "sign_rate": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "beyond": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "n": [
+     10,
+     10,
+     10
+    ]
+   },
+   "trust": {
+    "signed": [
+     0.0987,
+     0.0987,
+     0.0987
+    ],
+    "grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "sign_rate": [
+     0.75,
+     0.75,
+     0.75
+    ],
+    "beyond": [
+     0.8125,
+     0.8125,
+     0.8125
+    ],
+    "n": [
+     16,
+     16,
+     16
+    ]
+   },
+   "doubt": {
+    "signed": [
+     -0.0038,
+     -0.0038,
+     -0.0038
+    ],
+    "grades": [
+     "C",
+     "C",
+     "C"
+    ],
+    "sign_rate": [
+     0.48,
+     0.48,
+     0.48
+    ],
+    "beyond": [
+     0.8,
+     0.8,
+     0.8
+    ],
+    "n": [
+     25,
+     25,
+     25
+    ]
+   },
+   "danger": {
+    "signed": [
+     0.0515,
+     0.0515,
+     0.0515
+    ],
+    "grades": [
+     "B",
+     "B",
+     "B"
+    ],
+    "sign_rate": [
+     0.9,
+     0.9,
+     0.9
+    ],
+    "beyond": [
+     0.6,
+     0.6,
+     0.6
+    ],
+    "n": [
+     10,
+     10,
+     10
+    ]
+   }
+  }
+ }
+}

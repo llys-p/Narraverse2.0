@@ -1,0 +1,97 @@
+"""把三组用例的输入全部预热进翻译缓存（**跑实验之前**执行，只跑一次）。
+
+为什么必须单独有这一步（2026-09-23 实测踩到的坑）：
+
+  `_cached_translate` 在缓存缺失时会**顺手把译文写进磁盘缓存**。
+  于是「同一组 3 次独立运行」里，第 1、2 次把缺失的那条判为
+  「缓存缺失 → message 被填成中文」而剔除，中间那次运行把译文写了进去，
+  第 3 次就读到一条都不缺 —— **同一组数据里混了两种条件，且全程无报错**。
+
+  根因是 `translate_to_en` 会**间歇性返回空串**（HTTP 200 但 content 为空），
+  所以「什么时候写得进去」不可预测。实验不能把这种不确定性吃进去。
+
+做法：开跑**之前**在这里一次性补齐，之后每次运行前断言「全命中」，
+运行后再核对缓存哈希 —— 条件不变就成了一个可观察的事实，而不是一个假设。
+
+用法：
+    ./.venv-cuda/Scripts/python.exe tests/replication/prewarm_cache.py
+"""
+import hashlib
+import json
+import os
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _find_root(start):
+    """向上找含 laya_bridge.py 的目录 —— 脚本换位置后不用改路径。"""
+    d = start
+    for _ in range(4):
+        if os.path.exists(os.path.join(d, "laya_bridge.py")):
+            return d
+        d = os.path.dirname(d)
+    raise SystemExit("找不到 laya_bridge.py；脚本必须放在 laya-live/ 之内")
+
+
+ROOT = _find_root(HERE)
+sys.path.insert(0, ROOT)
+sys.argv = [sys.argv[0]]
+
+import laya_bridge as B  # noqa: E402
+
+DISK = B._XLATE_DISK
+TRIES = 6
+
+cache = {}
+if DISK.exists():
+    try:
+        cache = json.loads(DISK.read_text(encoding="utf-8"))
+    except Exception as e:
+        print("读缓存失败：%r" % e)
+print("预热前：%d 条 ｜ sha256=%s"
+      % (len(cache), hashlib.sha256(DISK.read_bytes()).hexdigest()[:16] if DISK.exists() else "无"))
+
+sets = B._load_case_sets()
+need = []
+for k in ("observable", "contextual", "hidden_truth"):
+    for c in (sets.get(k) or ({}, []))[1]:
+        if c["text"] not in need:
+            need.append(c["text"])
+missing = [t for t in need if t not in cache]
+print("用例输入去重后 %d 条，其中 %d 条缺缓存" % (len(need), len(missing)))
+
+added, failed = 0, []
+for t in missing:
+    got = ""
+    for i in range(TRIES):
+        # 用与运行期**同一个**函数，保证新增条目的来源和已有 172 条一致
+        en, src = B.translate_to_en(t)
+        if en and en != t:
+            got = en
+            break
+        time.sleep(1.5 * (i + 1))
+    if got:
+        cache[t] = got
+        added += 1
+        print("  ✅ %s\n     → %s" % (t[:40], got[:80]))
+    else:
+        failed.append(t)
+        print("  ★ %d 次尝试都拿到空串，失败：%s" % (TRIES, t[:40]))
+
+if added:
+    DISK.parent.mkdir(parents=True, exist_ok=True)
+    DISK.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("\n已写回 %d 条 → %s" % (added, DISK))
+
+after = json.loads(DISK.read_text(encoding="utf-8")) if DISK.exists() else {}
+still = [t for t in need if t not in after]
+print("预热后：%d 条 ｜ sha256=%s"
+      % (len(after), hashlib.sha256(DISK.read_bytes()).hexdigest()[:16] if DISK.exists() else "无"))
+if still:
+    print("★ 仍有 %d 条缺失 —— 不要开跑，signalmetrics 会拒绝执行（return 2）：" % len(still))
+    for t in still:
+        print("   · %s" % t[:50])
+    sys.exit(1)
+print("✅ 缓存完备，可以开始冻结运行。")

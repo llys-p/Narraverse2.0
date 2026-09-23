@@ -76,6 +76,7 @@ import time
 import math
 import random
 import inspect
+import hashlib
 import subprocess
 import urllib.request
 import urllib.error
@@ -2961,6 +2962,34 @@ def cmd_signalmetrics():
     except Exception:
         pass
 
+    # ---- ★★ 翻译缓存必须在**开跑前就完备**，否则条件会在运行途中自己变 ----------
+    # 实测踩到（2026-09-23，English 复现实验）：obs_crow_3 不在缓存里，
+    #   第 1、2 次运行按「缓存缺失 → message 被填成中文」把它剔除（69/70），
+    #   而中间那一次运行顺手把译文写进了缓存 —— 于是**第 3 次运行读到 70/70、0 剔除**。
+    #   同一组号称「3 次独立运行」的数据里混进了两种条件，**而且没有任何报错**。
+    # 根因：translate_to_en 会**间歇性**返回空串（HTTP 200 但 content 为空），
+    #   所以「什么时候能写进缓存」不可预测 —— 这类不确定性不该由实验去承担。
+    # 修法：开跑前缺任何一条就**直接停**（return 2），让人先跑 _prewarm_cache.py，
+    #   而不是让它边跑边改条件。跑完再核对哈希，双重保险。
+    _cache_sha = (hashlib.sha256(_XLATE_DISK.read_bytes()).hexdigest()
+                  if _XLATE_DISK.exists() else None)
+
+    if LANG == "en":
+        _all = []
+        for _k in ("observable", "contextual", "hidden_truth"):
+            for _c in (sets.get(_k) or ({}, []))[1]:
+                _all.append(_c["text"])
+        _missing = sorted(set(t for t in _all if t not in cache))
+        if _missing:
+            print("★ 开跑前检查未通过：%d 条输入不在翻译缓存里，拒绝开跑。" % len(_missing))
+            print("  继续跑的话，「哪些用例被剔除」会取决于运行途中的缓存写入时机 ——")
+            print("  同一组多次运行之间条件就不一致了（这个坑已经踩过一次）。请先预热：")
+            print("      ./.venv-cuda/Scripts/python.exe tests/replication/prewarm_cache.py")
+            for _t in _missing[:6]:
+                print("      · %s" % _t[:44])
+            return 2
+        print("翻译缓存完备且冻结：%d 条 ｜ sha256=%s" % (len(cache), (_cache_sha or "")[:16]))
+
     def run_one(doc):
         dt, rows, by_name = _run_signals(model, doc, qs)
         return dt, by_name
@@ -2975,22 +3004,96 @@ def cmd_signalmetrics():
     sig_order = list((CFG.get("signals") or {}).get("order") or [])
     all_names = sig_order + [s for s in SHIFT_IDS if s not in sig_order]
 
+    run_id = os.environ.get("LAYA_RUN_ID") or time.strftime("%Y%m%d-%H%M%S")
     print("=" * 92)
-    print("逐 signal 指标 ｜ 检查点=%s ｜ 设备=%s" % (model, ENGINE.device_label()))
+    print("逐 signal 指标 ｜ 检查点=%s ｜ 设备=%s ｜ run=%s"
+          % (model, ENGINE.device_label(), run_id))
     print("bootstrap n=%d seed=%d ｜ 噪声底=%.2f ｜ 等级规则见 grade_signal() 的 docstring"
           % (_BOOT_N, _BOOT_SEED, _NOISE_FLOOR))
     print("=" * 92)
+
+    # ---- ★ 有效性过滤（English 复现实验 req.5）---------------------------
+    # ★★ 为什么必须在跑模型**之前**做，而且必须把结论**排除掉**而不是「记一笔」：
+    #   两类用例喂给模型的输入其实是坏的，而 API 返回里毫无迹象 ——
+    #     1) state 溢出：build_sequence 会做 `st[:room]`（保留左、丢右），而 compact
+    #        state 的尾部正是 `message`（玩家这一句）和 `decision_history`。
+    #        模型的回答**不是**「它对这个输入的看法」，而是「它对一个被砍过的输入的看法」。
+    #     2) 翻译缓存缺失：_cached_translate 在 translate_to_en 返回空串时**静默回落**
+    #        成中文原文，于是 message 字段变成中文 —— 而 english/typed-decisions 都是
+    #        英文校准的 ModernBERT。实测本机 translate_to_en 现在稳定返回空串（§16），
+    #        所以这一类**不是假设**，是正在发生的事。
+    #   把坏输入留在主表里，得到的就不是「能力对比」，而是「谁被截得更少」的对比。
+    #   所以：剔除 + 单独列为 invalid，与 §15.6 的「两组不齐」同一处理口径。
+    xcache = cache if isinstance(cache, dict) else {}
+    invalid = []
+
+    def vet(cid, cset, role, text, dh):
+        """量一条用例的输入是否**能**被有效呈现给模型，返回 (ok, budget)。"""
+        doc = make_doc(text, dh)
+        b = state_budget(doc)
+        why = []
+        if b and b.get("overflow"):
+            why.append("state 溢出 %d token（room=%d）：laya 会 st[:room] 静默截断，"
+                       "最可能丢掉 message / decision_history"
+                       % (b["tokens"] - b["room"], b["room"]))
+        if LANG == "en" and text not in xcache:
+            why.append("翻译缓存缺失 → message 字段被填成**中文原文**，"
+                       "模型读不到这句话（translate_to_en 返回空串后静默回落）")
+        if why:
+            invalid.append({"set": cset, "id": cid, "role": role,
+                            "tokens": (b or {}).get("tokens"),
+                            "room": (b or {}).get("room"), "reasons": why})
+        return (not why), b
 
     # ---- 收集：判别用 high/low 配对 -------------------------------------
     # ★★ 这里**只能**用 observable。第一版把 hidden_truth 一起并进来算了，
     #    是错的：那些用例的期望方向依赖 NPC 观察不到的事实，模型**原理上**
     #    不可能满足，并进来会系统性压低 AUC —— 这正是 Task4 说的
     #    「绝不混进主 accuracy」。hidden_truth 单独一段出，只当参考上限。
-    obs_meta, obs_cases = sets.get("observable") or ({}, [])
-    ht_meta, ht_cases = sets.get("hidden_truth") or ({}, [])
+    obs_meta, obs_cases_all = sets.get("observable") or ({}, [])
+    ht_meta, ht_cases_all = sets.get("hidden_truth") or ({}, [])
+    ctx_meta, ctx_cases_all = sets.get("contextual") or ({}, [])
     if lim:
-        obs_cases = obs_cases[:lim]
-        ht_cases = ht_cases[:lim]
+        obs_cases_all = obs_cases_all[:lim]
+        ht_cases_all = ht_cases_all[:lim]
+        ctx_cases_all = ctx_cases_all[:lim]
+
+    obs_cases, ht_cases, ctx_cases, budgets = [], [], [], {}
+    for c in obs_cases_all:
+        _ok, _b = vet(c["id"], "observable", "base", c["text"], FRESH)
+        budgets["observable/%s/base" % c["id"]] = _b
+        if _ok:
+            obs_cases.append(c)
+    for c in ht_cases_all:
+        _ok, _b = vet(c["id"], "hidden_truth", "base", c["text"], FRESH)
+        budgets["hidden_truth/%s/base" % c["id"]] = _b
+        if _ok:
+            ht_cases.append(c)
+    for c in ctx_cases_all:
+        _prior = c.get("prior") or {}
+        _ok1, _b1 = vet(c["id"], "contextual", "base", c["text"], FRESH)
+        _ok2, _b2 = vet(c["id"], "contextual", "with_prior", c["text"],
+                        _prior.get("decision_history") or FRESH)
+        budgets["contextual/%s/base" % c["id"]] = _b1
+        budgets["contextual/%s/with_prior" % c["id"]] = _b2
+        if _ok1 and _ok2:
+            ctx_cases.append(c)
+
+    print("有效性过滤（req.5）：observable %d/%d ｜ hidden_truth %d/%d ｜ contextual %d/%d 通过"
+          % (len(obs_cases), len(obs_cases_all), len(ht_cases), len(ht_cases_all),
+             len(ctx_cases), len(ctx_cases_all)))
+    _tok_ok = [b["tokens"] for b in budgets.values() if b]
+    if _tok_ok:
+        room_now = (checkpoint_budget() or (0, 0, None))
+        print("  state 预算：token min=%d 中位=%d max=%d ｜ room=%d ｜ 溢出 %d 项"
+              % (min(_tok_ok), sorted(_tok_ok)[len(_tok_ok) // 2], max(_tok_ok),
+                 room_now[0] - room_now[1] - 1, sum(1 for b in budgets.values() if b and b["overflow"])))
+    if invalid:
+        print("  ★ 剔除 %d 项（**不进任何主结论**，单列于报告末尾）：" % len(invalid))
+        for r in invalid:
+            print("     [%s/%s/%s] %s" % (r["set"], r["id"], r["role"], "；".join(r["reasons"])))
+    else:
+        print("  0 项被剔除。")
 
     pairs = dict((n, []) for n in all_names)
     ht_pairs = dict((n, []) for n in all_names)
@@ -3081,9 +3184,8 @@ def cmd_signalmetrics():
 
     # ---- 上下文维度 -----------------------------------------------------
     print("\n── 上下文维度：同一句话在有/无前文下的增量（成对）" + "─" * 30)
-    meta_c, ctx_cases = sets.get("contextual") or ({}, [])
-    if lim:
-        ctx_cases = ctx_cases[:lim]
+    # ctx_cases 已在有效性过滤阶段取好并按 req.5 过滤过 —— 不要在这里重新读文件，
+    # 否则「过滤」只作用于判别段、上下文段又悄悄把坏用例收回来。
     deltas = dict((n, []) for n in all_names)
     for c in ctx_cases:
         try:
@@ -3169,10 +3271,47 @@ def cmd_signalmetrics():
         print("  hidden_truth %d 条 —— **不计入上面的数字**，单列于上方的参考段" % len(ht_cases))
 
     # ---- 落盘 -----------------------------------------------------------
+    # ★ 每次运行**单独**留一份原始结果（tests/runs/），signal_metrics.json 只保留
+    #   该检查点的最新一次。原因：P1 实测同条件三次重跑的 AUC 中位区间 0.013、
+    #   最大 0.073 —— 只留最后一次，就等于把「抖动」当成了「结果」，
+    #   而且下一步没法算 run-to-run 区间（它需要每一次的原始数字，不能只有均值）。
+    # ---- 跑完核对：翻译缓存有没有在运行期间被改写 ----------------------
+    # 开跑前已经断言过完备（全命中），所以正常情况哈希不会变；这里是第二道保险 ——
+    # 「条件不可能变」不该靠推理，应该有一个能被观察到的事实。
+    _cache_sha_after = (hashlib.sha256(_XLATE_DISK.read_bytes()).hexdigest()
+                        if _XLATE_DISK.exists() else None)
+    _cache_changed = _cache_sha_after != _cache_sha
+    if _cache_changed:
+        print("\n★★★ 警告：翻译缓存在本次运行**期间被改写**（%s → %s）。"
+              "本次运行的条件与其它运行不一致，不能直接合并比较。"
+              % ((_cache_sha or "")[:16], (_cache_sha_after or "")[:16]))
+
+    _cb = checkpoint_budget() or (None, None, None)
+    _room = (_cb[0] - _cb[1] - 1) if _cb[0] else None
+    _toks = [b["tokens"] for b in budgets.values() if b]
+    validity = {
+        "_readme": ["req.5：任何输入被截断 / 未被有效呈现的用例，必须从能力对比中剔除，并单独列出。",
+                    "两类 invalid：(a) state 溢出被 st[:room] 静默截断；"
+                    "(b) 翻译缓存缺失 → message 字段是中文原文。",
+                    "★ 只报「剔除了几条」不算达标 —— 必须能说出是哪几条、为什么。"],
+        "max_len": _cb[0], "head_max_len": _cb[1], "room": _room,
+        "cache_sha": _cache_sha, "cache_changed_during_run": _cache_changed,
+        "n_items_measured": len(budgets),
+        "token_min": min(_toks) if _toks else None,
+        "token_median": sorted(_toks)[len(_toks) // 2] if _toks else None,
+        "token_max": max(_toks) if _toks else None,
+        "n_overflow": sum(1 for b in budgets.values() if b and b.get("overflow")),
+        "passed": {"observable": [len(obs_cases), len(obs_cases_all)],
+                   "hidden_truth": [len(ht_cases), len(ht_cases_all)],
+                   "contextual": [len(ctx_cases), len(ctx_cases_all)]},
+        "invalid": invalid,
+    }
     out = {"_readme": ["由 python laya_bridge.py signalmetrics 生成。不要手改。",
                        "主结论 = discrimination 段（**仅 observable**）与 contextual 段。",
                        "hidden_truth 段只是参考上限，绝不用来给 signal 定级或定阈值。",
-                       "总体 accuracy 只在 observable_accuracy 里，且不与旧口径可比。"],
+                       "总体 accuracy 只在 observable_accuracy 里，且不与旧口径可比。",
+                       "validity.invalid 里的用例已从以上所有主结论中剔除。"],
+           "run_id": run_id,
            "model": model, "device": ENGINE.device_label(),
            "noise_floor": _NOISE_FLOOR, "bootstrap": {"n": _BOOT_N, "seed": _BOOT_SEED},
            "discrimination": report, "contextual": ctx_report, "final_grades": final,
@@ -3182,8 +3321,23 @@ def cmd_signalmetrics():
                                    "n_cases": len(obs_cases),
                                    "comparable_with_previous_round": False,
                                    "why": "用例集已重建，与第二轮 48 条口径不可直接比较。"},
+           "validity": validity,
            "counts": dict((k, len(v[1])) for k, v in sets.items()),
            "n_assertions": {"observable": n_obs_assert, "hidden_truth": n_ht_assert}}
+    if invalid:
+        print("\n── 单独列出：本次被剔除的 invalid 用例（**不进任何主结论**）" + "─" * 14)
+        for r in invalid:
+            print("  [%s/%s/%s] tokens=%s ｜ %s"
+                  % (r["set"], r["id"], r["role"], r.get("tokens"), "；".join(r["reasons"])))
+    try:
+        runs_dir = TESTS_DIR / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        raw = dict(out, budgets=budgets)
+        rp = runs_dir / ("%s__%s.json" % (model, run_id))
+        rp.write_text(json.dumps(raw, ensure_ascii=False, indent=1), encoding="utf-8")
+        print("\n本次运行的原始结果已单独留档：tests/runs/%s" % rp.name)
+    except Exception as e:
+        print("\n写入 tests/runs/ 失败：%r" % e)
     try:
         p = TESTS_DIR / "signal_metrics.json"
         try:
@@ -3195,7 +3349,7 @@ def cmd_signalmetrics():
             if k != "runs":
                 blob[k] = v
         p.write_text(json.dumps(blob, ensure_ascii=False, indent=2), encoding="utf-8")
-        print("\n逐 signal 指标已写入 tests/signal_metrics.json（检查点键：%s）" % model)
+        print("逐 signal 指标已写入 tests/signal_metrics.json（检查点键：%s）" % model)
     except Exception as e:
         print("\n写入 tests/signal_metrics.json 失败：%r" % e)
     return 0

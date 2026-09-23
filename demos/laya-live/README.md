@@ -272,14 +272,60 @@ $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶
 `C` AUC≥0.55 但区间不稳（只能当合取项）｜ `R` **稳定反向**（比噪声更危险）｜ `D` AUC<0.55。
 最终等级 = `min(判别, 上下文)`，规则见 `grade_signal()` / `grade_context()` 的 docstring。
 
-**两个必须知道的限制**：
+### ★ 三个口径：说「A 级有几个」时必须先声明用哪个
 
-1. bootstrap CI 只覆盖**单次运行内**的重采样方差。实测三次同条件独立运行，
-   AUC 中位极差 0.013、**最大 0.073**（`doubt_shift` / `goal_shift`）。
-   → **任何阈值都不可能靠单次实验定下来。**
-2. 8 个 noul 信号里没有一个的上下文效应超过噪声底；唯一测到的 `investigate`
-   是**反向**的（−0.151，9/10 配对下降）。它只能反向使用，且须先查清是
-   「用例期望写反了」还是「信号语义相反」。
+同一份数据能数出三个不同的 A 级个数，**混着读会以为表格出错**：
+
+| 口径 | 怎么数 | 本机 typed-decisions |
+|---|---|---|
+| ① 判别力（只看 AUC+CI） | 全部 15 个 signal | **6** |
+| ② 判别力 · 仅 level 组 | 只数 7 个 level 型 | **4** |
+| ③ 最终 `min(判别, 上下文)` | 判别力与上下文取差 | **3** |
+
+差异来自 `investigate`：判别力 AUC 0.905（15 个里最高）→ 上下文反向 → 最终 **R**。
+另有两个 prob 信号（`cooperation`、`trust`）判别力为 A、最终降为 C（对前文无反应）。
+详见 `Laya接入报告.md` §15.8 的口径声明。
+
+### 有效性过滤：坏输入不参与能力对比
+
+`signalmetrics` 跑模型**之前**先做一次静态体检，把「输入根本没被有效呈现」的用例
+从所有主结论里**剔除**并单独列出（`validity.invalid`）：
+
+1. **state 溢出** —— `build_sequence` 溢出时做 `st[:room]`（保留左、丢右），
+   而 compact state 的尾部正是 `message` 和 `decision_history`。实测 english
+   `room=319`、本套用例 token 222~256，**当前 0 溢出**；但换检查点/加字段就会踩到。
+2. **翻译缓存缺失** —— `translate_to_en` 在本机**稳定返回空串**（HTTP 200 但 content 为空），
+   `_cached_translate` 于是**静默回落成中文原文**，`message` 字段变成中文，
+   而两个检查点都是英文校准的 ModernBERT。实测 `obs_crow_3` 命中这一类。
+
+只报「剔除了几条」不算达标 —— 必须能说出是哪几条、为什么，所以 invalid 会逐条打印。
+
+### 每次运行单独留档（`tests/runs/`）
+
+`signalmetrics` 每次运行写一份 `tests/runs/<检查点>__<run_id>.json`（含逐用例 `budgets`），
+`tests/signal_metrics.json` 只保留该检查点最新一次。
+原因：跑次抖动实测中位 0.013 / 最大 0.073，**只留最后一次等于把抖动当成结果**，
+而且没法算 run-to-run 区间。`LAYA_RUN_ID=run2` 可指定 run id。
+
+**三个必须知道的限制**：
+
+1. ~~bootstrap CI 只覆盖单次运行内的重采样方差，实测三次同条件运行 AUC 最大极差 0.073。~~
+   **已更正（见 §16.2）**：条件真正冻结后（缓存完备 + 哈希核对），
+   两检查点各跑 3 次 **15/15 个 AUC 逐位相同，跑次区间 = 0.000** —— 模型是确定性的。
+   原先那个「0.073」是**测试台缺陷**（翻译缓存被运行中途改写 → 输入变了）。
+   → 教训换成：**输入管线可变，必须冻结并留下可校验证据**；
+   且**跑次区间 = 0 ≠ 结论稳**（一条坏用例就能把 `goal_shift` 打成 `N`）。
+2. 8 个 noul 信号里没有一个的上下文效应**在 `typed-decisions` 上**超过噪声底；
+   唯一测到的 `investigate` 是**反向**的，且跨检查点稳定（td −0.151 → english −0.410，
+   方向对率 10% → **0%**）。它只能反向使用，且须先查清是「用例期望写反了」
+   还是「信号语义相反」。★ 但在 `english` 上 `withdraw`/`trust`/`danger` **真的随前文动了**
+   （等级 B）—— 「上下文无反应」是检查点特征，不是 Laya 的固有属性。
+3. ★ **跨检查点结论（§16）**：15 个 signal 里 **8 个的等级会随检查点改变**。
+   P1 的头号结论「score 型可用 / noul 型不可用」在 english 上**反号**
+   （level 0.750→0.607，prob 0.623→0.632）。
+   **P1 的「4 个 level A 级可直接输入」在跨检查点口径下只剩 `trust_shift` 一个**；
+   `disclose`（D→A）与 `doubt_shift`（A→D）**方向相反，必须淘汰**。
+   P2 的信号选择以报告 §16.8 为准。
 
 
 `qcheck` 值得单独说：Laya 的 `build_sequence` 对选项有 48 token 上限，且所有选项必须塞进
@@ -296,9 +342,10 @@ state 塞太满，都会在无声无息中失效。
 | `laya_bridge.py` | HTTP 桥 + 决策编排 + CLI 自检（纯标准库） |
 | `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals` |
 | `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent |
-| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级** |
+| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 ★ English 检查点跨检查点复现（P2 信号选择依据）** |
 | `tests/cases/` | **三组用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率） |
 | `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py`）。**这些是证据，要提交** |
+| `tests/runs/` | ★ **每次运行一份原始结果**（`<检查点>__<run_id>.json`，含逐用例 `budgets`）。跨检查点对照靠它，不能只留最新一次 |
 | `启动Laya桥.bat` | Windows 一键启动（**GBK 编码**，由 `_gen_bat.py` 生成，勿手改） |
 | `.env.example` | 配置样例，**由 `_gen_env_example.py` 生成，手改会被下次生成覆盖** |
 | `.gitignore` / `.gitattributes` | 排除 `.env`、虚拟环境、检查点权重；`.bat` 标为 binary 防止换行改写 |

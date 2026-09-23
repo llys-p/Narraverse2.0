@@ -1,0 +1,3731 @@
+{
+ "model": "typed-decisions",
+ "max_len": 1024,
+ "head_max_len": 256,
+ "room": 767,
+ "n_items": 186,
+ "n_cache_miss": 0,
+ "n_overflow": 0,
+ "items": [
+  {
+   "set": "observable",
+   "id": "obs_smalltalk_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_smalltalk_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 233,
+   "room": 767,
+   "spare": 534,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_smalltalk_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_smalltalk_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_smalltalk_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_direction_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_direction_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_direction_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_direction_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_direction_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_help_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_help_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_help_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_help_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 231,
+   "room": 767,
+   "spare": 536,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_help_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 245,
+   "room": 767,
+   "spare": 522,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_plea_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_plea_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 244,
+   "room": 767,
+   "spare": 523,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_plea_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_plea_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_weak_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_weak_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 231,
+   "room": 767,
+   "spare": 536,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_weak_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_weak_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_provoke_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_provoke_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_provoke_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_provoke_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_provoke_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_insult_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 230,
+   "room": 767,
+   "spare": 537,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_insult_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_insult_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_insult_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_insult_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_threat_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 233,
+   "room": 767,
+   "spare": 534,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_threat_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_threat_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 231,
+   "room": 767,
+   "spare": 536,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_threat_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 242,
+   "room": 767,
+   "spare": 525,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_threat_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_attack_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_attack_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_attack_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_attack_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 230,
+   "room": 767,
+   "spare": 537,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_bond_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_bond_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_bond_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_bond_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_secret_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_secret_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_secret_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_secret_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_exchange_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 254,
+   "room": 767,
+   "spare": 513,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_exchange_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 250,
+   "room": 767,
+   "spare": 517,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_exchange_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 245,
+   "room": 767,
+   "spare": 522,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_exchange_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_exchange_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_exchange_6",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 246,
+   "room": 767,
+   "spare": 521,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_anomaly_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_anomaly_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_anomaly_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_anomaly_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_respect_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_respect_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_respect_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_respect_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_crow_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 242,
+   "room": 767,
+   "spare": 525,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_crow_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_crow_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 243,
+   "room": 767,
+   "spare": 524,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_crow_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_crow_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "observable",
+   "id": "obs_crow_6",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_minor_lie_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_minor_lie_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_minor_lie_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_minor_lie_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 227,
+   "room": 767,
+   "spare": 540,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_minor_lie_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_blatant_lie_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_blatant_lie_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 244,
+   "room": 767,
+   "spare": 523,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_blatant_lie_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 230,
+   "room": 767,
+   "spare": 537,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_blatant_lie_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_blatant_lie_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_deception_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_deception_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_deception_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_deception_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_deception_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_credential_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 253,
+   "room": 767,
+   "spare": 514,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_credential_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_credential_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_credential_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "hidden_truth",
+   "id": "ht_credential_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 253,
+   "room": 767,
+   "spare": 514,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 246,
+   "room": 767,
+   "spare": 521,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 252,
+   "room": 767,
+   "spare": 515,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_idflip_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 249,
+   "room": 767,
+   "spare": 518,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_brokenpromise_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_brokenpromise_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 244,
+   "room": 767,
+   "spare": 523,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_brokenpromise_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 234,
+   "room": 767,
+   "spare": 533,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_brokenpromise_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 246,
+   "room": 767,
+   "spare": 521,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_brokenpromise_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 233,
+   "room": 767,
+   "spare": 534,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_brokenpromise_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 245,
+   "room": 767,
+   "spare": 522,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 224,
+   "room": 767,
+   "spare": 543,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 230,
+   "room": 767,
+   "spare": 537,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 243,
+   "room": 767,
+   "spare": 524,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 243,
+   "room": 767,
+   "spare": 524,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostilecarry_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 243,
+   "room": 767,
+   "spare": 524,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 242,
+   "room": 767,
+   "spare": 525,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 227,
+   "room": 767,
+   "spare": 540,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 225,
+   "room": 767,
+   "spare": 542,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trustcarry_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 224,
+   "room": 767,
+   "spare": 543,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 232,
+   "room": 767,
+   "spare": 535,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 247,
+   "room": 767,
+   "spare": 520,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 225,
+   "room": 767,
+   "spare": 542,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_ledger_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 230,
+   "room": 767,
+   "spare": 537,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 249,
+   "room": 767,
+   "spare": 518,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 242,
+   "room": 767,
+   "spare": 525,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_established_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 243,
+   "room": 767,
+   "spare": 524,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 233,
+   "room": 767,
+   "spare": 534,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 224,
+   "room": 767,
+   "spare": 543,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topicshift_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_afterthreat_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 222,
+   "room": 767,
+   "spare": 545,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_afterthreat_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 233,
+   "room": 767,
+   "spare": 534,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_afterthreat_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 225,
+   "room": 767,
+   "spare": 542,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_afterthreat_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 235,
+   "room": 767,
+   "spare": 532,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_afterthreat_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_afterthreat_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 227,
+   "room": 767,
+   "spare": 540,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 225,
+   "room": 767,
+   "spare": 542,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_5",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 240,
+   "room": 767,
+   "spare": 527,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_6",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 225,
+   "room": 767,
+   "spare": 542,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_hostile_extra_6",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 244,
+   "room": 767,
+   "spare": 523,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 224,
+   "room": 767,
+   "spare": 543,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 237,
+   "room": 767,
+   "spare": 530,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 244,
+   "room": 767,
+   "spare": 523,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 225,
+   "room": 767,
+   "spare": 542,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 224,
+   "room": 767,
+   "spare": 543,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_5",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_6",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 228,
+   "room": 767,
+   "spare": 539,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_trust_extra_6",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_1",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_1",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_2",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_2",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 236,
+   "room": 767,
+   "spare": 531,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_3",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 226,
+   "room": 767,
+   "spare": 541,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_3",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 239,
+   "room": 767,
+   "spare": 528,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_4",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 227,
+   "room": 767,
+   "spare": 540,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_4",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 238,
+   "room": 767,
+   "spare": 529,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_5",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 229,
+   "room": 767,
+   "spare": 538,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_5",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 242,
+   "room": 767,
+   "spare": 525,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_6",
+   "role": "base",
+   "cache": "hit",
+   "tokens": 227,
+   "room": 767,
+   "spare": 540,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  },
+  {
+   "set": "contextual",
+   "id": "ctx_topic_extra_6",
+   "role": "with_prior",
+   "cache": "hit",
+   "tokens": 241,
+   "room": 767,
+   "spare": 526,
+   "overflow": false,
+   "at_risk": null,
+   "state_doc_keys": [
+    "npc",
+    "personality",
+    "relationship",
+    "goals",
+    "scene",
+    "message",
+    "decision_history"
+   ]
+  }
+ ]
+}

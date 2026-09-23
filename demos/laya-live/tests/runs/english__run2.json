@@ -1,0 +1,3079 @@
+{
+ "_readme": [
+  "由 python laya_bridge.py signalmetrics 生成。不要手改。",
+  "主结论 = discrimination 段（**仅 observable**）与 contextual 段。",
+  "hidden_truth 段只是参考上限，绝不用来给 signal 定级或定阈值。",
+  "总体 accuracy 只在 observable_accuracy 里，且不与旧口径可比。",
+  "validity.invalid 里的用例已从以上所有主结论中剔除。"
+ ],
+ "run_id": "run2",
+ "model": "english",
+ "device": "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)",
+ "noise_floor": 0.05,
+ "bootstrap": {
+  "n": 2000,
+  "seed": 20260923
+ },
+ "discrimination": {
+  "hostility": {
+   "n_high": 23,
+   "n_low": 41,
+   "mean_high": 0.3389,
+   "mean_low": 0.2966,
+   "mean_gap": 0.0423,
+   "median_gap": 0.0127,
+   "auc": 0.6352,
+   "auc_ci": [
+    0.4945,
+    0.7647
+   ],
+   "best_threshold": 0.2739,
+   "threshold_balanced_acc": 0.6691,
+   "threshold_accuracy": 0.625,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "C",
+   "grade_reason": "AUC=0.635，但 CI (0.4945, 0.7647) 不稳"
+  },
+  "cooperation": {
+   "n_high": 24,
+   "n_low": 19,
+   "mean_high": 0.619,
+   "mean_low": 0.4187,
+   "mean_gap": 0.2004,
+   "median_gap": 0.287,
+   "auc": 0.7719,
+   "auc_ci": [
+    0.6065,
+    0.8983
+   ],
+   "best_threshold": 0.3612,
+   "threshold_balanced_acc": 0.7215,
+   "threshold_accuracy": 0.7442,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "A",
+   "grade_reason": "AUC=0.772，CI 下界 0.607>0.50"
+  },
+  "withdraw": {
+   "n_high": 23,
+   "n_low": 14,
+   "mean_high": 0.5091,
+   "mean_low": 0.5043,
+   "mean_gap": 0.0048,
+   "median_gap": 0.0025,
+   "auc": 0.5047,
+   "auc_ci": [
+    0.3106,
+    0.7034
+   ],
+   "best_threshold": 0.4899,
+   "threshold_balanced_acc": 0.5761,
+   "threshold_accuracy": 0.5946,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "D",
+   "grade_reason": "AUC=0.505 < 0.55（CI (0.3106, 0.7034)）"
+  },
+  "confront": {
+   "n_high": 25,
+   "n_low": 14,
+   "mean_high": 0.5756,
+   "mean_low": 0.617,
+   "mean_gap": -0.0414,
+   "median_gap": -0.057,
+   "auc": 0.4143,
+   "auc_ci": [
+    0.2377,
+    0.6061
+   ],
+   "best_threshold": 0.4941,
+   "threshold_balanced_acc": 0.5071,
+   "threshold_accuracy": 0.5897,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "D",
+   "grade_reason": "AUC=0.414 < 0.55（CI (0.2377, 0.6061)）"
+  },
+  "disclose": {
+   "n_high": 10,
+   "n_low": 18,
+   "mean_high": 0.5239,
+   "mean_low": 0.3594,
+   "mean_gap": 0.1645,
+   "median_gap": 0.1287,
+   "auc": 0.8889,
+   "auc_ci": [
+    0.7396,
+    0.9889
+   ],
+   "best_threshold": 0.4294,
+   "threshold_balanced_acc": 0.8667,
+   "threshold_accuracy": 0.8571,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "A",
+   "grade_reason": "AUC=0.889，CI 下界 0.740>0.50"
+  },
+  "investigate": {
+   "n_high": 19,
+   "n_low": 10,
+   "mean_high": 2.2811,
+   "mean_low": 2.213,
+   "mean_gap": 0.0682,
+   "median_gap": 0.0173,
+   "auc": 0.6895,
+   "auc_ci": [
+    0.4667,
+    0.8766
+   ],
+   "best_threshold": 2.2941,
+   "threshold_balanced_acc": 0.6605,
+   "threshold_accuracy": 0.5862,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "C",
+   "grade_reason": "AUC=0.690，但 CI (0.4667, 0.8766) 不稳"
+  },
+  "trust": {
+   "n_high": 19,
+   "n_low": 23,
+   "mean_high": 0.4098,
+   "mean_low": 0.2914,
+   "mean_gap": 0.1184,
+   "median_gap": 0.1186,
+   "auc": 0.778,
+   "auc_ci": [
+    0.6233,
+    0.9085
+   ],
+   "best_threshold": 0.3499,
+   "threshold_balanced_acc": 0.7597,
+   "threshold_accuracy": 0.7619,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "A",
+   "grade_reason": "AUC=0.778，CI 下界 0.623>0.50"
+  },
+  "doubt": {
+   "n_high": 19,
+   "n_low": 26,
+   "mean_high": 0.3018,
+   "mean_low": 0.2795,
+   "mean_gap": 0.0223,
+   "median_gap": 0.0297,
+   "auc": 0.6144,
+   "auc_ci": [
+    0.4495,
+    0.7768
+   ],
+   "best_threshold": 0.2722,
+   "threshold_balanced_acc": 0.6235,
+   "threshold_accuracy": 0.6222,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "C",
+   "grade_reason": "AUC=0.614，但 CI (0.4495, 0.7768) 不稳"
+  },
+  "danger": {
+   "n_high": 18,
+   "n_low": 22,
+   "mean_high": 0.1907,
+   "mean_low": 0.1951,
+   "mean_gap": -0.0045,
+   "median_gap": -0.0185,
+   "auc": 0.447,
+   "auc_ci": [
+    0.2552,
+    0.6375
+   ],
+   "best_threshold": 0.235,
+   "threshold_balanced_acc": 0.5934,
+   "threshold_accuracy": 0.625,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "D",
+   "grade_reason": "AUC=0.447 < 0.55（CI (0.2552, 0.6375)）"
+  },
+  "trust_shift": {
+   "n_high": 15,
+   "n_low": 10,
+   "mean_high": 2.2441,
+   "mean_low": 2.0996,
+   "mean_gap": 0.1445,
+   "median_gap": 0.1691,
+   "auc": 0.8067,
+   "auc_ci": [
+    0.5909,
+    0.9559
+   ],
+   "best_threshold": 2.1417,
+   "threshold_balanced_acc": 0.7667,
+   "threshold_accuracy": 0.8,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "A",
+   "grade_reason": "AUC=0.807，CI 下界 0.591>0.50"
+  },
+  "respect_shift": {
+   "n_high": 13,
+   "n_low": 10,
+   "mean_high": 2.0882,
+   "mean_low": 1.9699,
+   "mean_gap": 0.1183,
+   "median_gap": 0.0347,
+   "auc": 0.6692,
+   "auc_ci": [
+    0.4048,
+    0.8939
+   ],
+   "best_threshold": 2.0596,
+   "threshold_balanced_acc": 0.6962,
+   "threshold_accuracy": 0.6957,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "C",
+   "grade_reason": "AUC=0.669，但 CI (0.4048, 0.8939) 不稳"
+  },
+  "doubt_shift": {
+   "n_high": 10,
+   "n_low": 15,
+   "mean_high": 2.3194,
+   "mean_low": 2.3377,
+   "mean_gap": -0.0183,
+   "median_gap": -0.031,
+   "auc": 0.4067,
+   "auc_ci": [
+    0.1603,
+    0.6533
+   ],
+   "best_threshold": 2.2356,
+   "threshold_balanced_acc": 0.55,
+   "threshold_accuracy": 0.48,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "D",
+   "grade_reason": "AUC=0.407 < 0.55（CI (0.1603, 0.6533)）"
+  },
+  "fondness_shift": {
+   "n_high": 21,
+   "n_low": 10,
+   "mean_high": 1.9845,
+   "mean_low": 1.814,
+   "mean_gap": 0.1704,
+   "median_gap": 0.2519,
+   "auc": 0.7238,
+   "auc_ci": [
+    0.5,
+    0.9333
+   ],
+   "best_threshold": 1.7524,
+   "threshold_balanced_acc": 0.7524,
+   "threshold_accuracy": 0.8065,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "C",
+   "grade_reason": "AUC=0.724，但 CI (0.5, 0.9333) 不稳"
+  },
+  "alert_shift": {
+   "n_high": 17,
+   "n_low": 10,
+   "mean_high": 1.9923,
+   "mean_low": 2.0388,
+   "mean_gap": -0.0465,
+   "median_gap": 0.0366,
+   "auc": 0.5,
+   "auc_ci": [
+    0.2632,
+    0.7357
+   ],
+   "best_threshold": 2.0228,
+   "threshold_balanced_acc": 0.6147,
+   "threshold_accuracy": 0.5926,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "D",
+   "grade_reason": "AUC=0.500 < 0.55（CI (0.2632, 0.7357)）"
+  },
+  "goal_shift": {
+   "n_high": 10,
+   "n_low": 10,
+   "mean_high": 1.9369,
+   "mean_low": 1.9547,
+   "mean_gap": -0.0178,
+   "median_gap": -0.0478,
+   "auc": 0.45,
+   "auc_ci": [
+    0.1905,
+    0.7253
+   ],
+   "best_threshold": 1.8983,
+   "threshold_balanced_acc": 0.6,
+   "threshold_accuracy": 0.6,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "D",
+   "grade_reason": "AUC=0.450 < 0.55（CI (0.1905, 0.7253)）"
+  }
+ },
+ "contextual": {
+  "hostility": {
+   "n": 22,
+   "mean_signed": 0.042,
+   "median_signed": 0.0404,
+   "sign_ok": 16,
+   "sign_rate": 0.7273,
+   "share_beyond": 0.3636,
+   "mean_ci": [
+    0.0171,
+    0.0686
+   ],
+   "n_up": 11,
+   "n_down": 11,
+   "cases": [
+    {
+     "id": "ctx_hostilecarry_1",
+     "delta": 0.1896,
+     "want": "up",
+     "signed": 0.1896,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostilecarry_3",
+     "delta": 0.0476,
+     "want": "up",
+     "signed": 0.0476,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostilecarry_4",
+     "delta": -0.0373,
+     "want": "up",
+     "signed": -0.0373,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trustcarry_1",
+     "delta": -0.0409,
+     "want": "down",
+     "signed": 0.0409,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trustcarry_2",
+     "delta": -0.0399,
+     "want": "down",
+     "signed": 0.0399,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trustcarry_3",
+     "delta": -0.1156,
+     "want": "down",
+     "signed": 0.1156,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_4",
+     "delta": -0.0423,
+     "want": "down",
+     "signed": 0.0423,
+     "beyond": false
+    },
+    {
+     "id": "ctx_ledger_4",
+     "delta": -0.068,
+     "want": "down",
+     "signed": 0.068,
+     "beyond": true
+    },
+    {
+     "id": "ctx_afterthreat_1",
+     "delta": -0.0123,
+     "want": "up",
+     "signed": -0.0123,
+     "beyond": false
+    },
+    {
+     "id": "ctx_afterthreat_3",
+     "delta": -0.0331,
+     "want": "up",
+     "signed": -0.0331,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_1",
+     "delta": 0.0227,
+     "want": "up",
+     "signed": 0.0227,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_2",
+     "delta": 0.0265,
+     "want": "up",
+     "signed": 0.0265,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_3",
+     "delta": -0.03,
+     "want": "up",
+     "signed": -0.03,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_4",
+     "delta": 0.0255,
+     "want": "up",
+     "signed": 0.0255,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_5",
+     "delta": -0.0381,
+     "want": "up",
+     "signed": -0.0381,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_6",
+     "delta": -0.0463,
+     "want": "up",
+     "signed": -0.0463,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trust_extra_1",
+     "delta": -0.1108,
+     "want": "down",
+     "signed": 0.1108,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_2",
+     "delta": -0.0655,
+     "want": "down",
+     "signed": 0.0655,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_3",
+     "delta": -0.019,
+     "want": "down",
+     "signed": 0.019,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trust_extra_4",
+     "delta": -0.0722,
+     "want": "down",
+     "signed": 0.0722,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_5",
+     "delta": -0.0962,
+     "want": "down",
+     "signed": 0.0962,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_6",
+     "delta": -0.1398,
+     "want": "down",
+     "signed": 0.1398,
+     "beyond": true
+    }
+   ],
+   "grade": "C",
+   "grade_reason": "36% 的增量越过噪声底（方向对率 73%）"
+  },
+  "cooperation": {
+   "n": 17,
+   "mean_signed": 0.0394,
+   "median_signed": 0.0417,
+   "sign_ok": 10,
+   "sign_rate": 0.5882,
+   "share_beyond": 0.8824,
+   "mean_ci": [
+    -0.0717,
+    0.1491
+   ],
+   "n_up": 11,
+   "n_down": 6,
+   "cases": [
+    {
+     "id": "ctx_trustcarry_1",
+     "delta": -0.3506,
+     "want": "up",
+     "signed": -0.3506,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_2",
+     "delta": 0.4157,
+     "want": "up",
+     "signed": 0.4157,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_3",
+     "delta": 0.0398,
+     "want": "up",
+     "signed": 0.0398,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trustcarry_4",
+     "delta": -0.0611,
+     "want": "up",
+     "signed": -0.0611,
+     "beyond": true
+    },
+    {
+     "id": "ctx_ledger_1",
+     "delta": 0.0417,
+     "want": "up",
+     "signed": 0.0417,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_1",
+     "delta": -0.3706,
+     "want": "down",
+     "signed": 0.3706,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_2",
+     "delta": -0.1757,
+     "want": "down",
+     "signed": 0.1757,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_3",
+     "delta": -0.2278,
+     "want": "down",
+     "signed": 0.2278,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_4",
+     "delta": -0.0751,
+     "want": "down",
+     "signed": 0.0751,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_5",
+     "delta": -0.1448,
+     "want": "down",
+     "signed": 0.1448,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_6",
+     "delta": -0.2088,
+     "want": "down",
+     "signed": 0.2088,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_1",
+     "delta": -0.252,
+     "want": "up",
+     "signed": -0.252,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_2",
+     "delta": -0.3265,
+     "want": "up",
+     "signed": -0.3265,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_3",
+     "delta": -0.1795,
+     "want": "up",
+     "signed": -0.1795,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_4",
+     "delta": 0.3941,
+     "want": "up",
+     "signed": 0.3941,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_5",
+     "delta": -0.116,
+     "want": "up",
+     "signed": -0.116,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_6",
+     "delta": -0.1384,
+     "want": "up",
+     "signed": -0.1384,
+     "beyond": true
+    }
+   ],
+   "grade": "C",
+   "grade_reason": "88% 的增量越过噪声底（方向对率 59%）"
+  },
+  "withdraw": {
+   "n": 12,
+   "mean_signed": 0.2795,
+   "median_signed": 0.2927,
+   "sign_ok": 10,
+   "sign_rate": 0.8333,
+   "share_beyond": 1.0,
+   "mean_ci": [
+    0.1227,
+    0.4245
+   ],
+   "n_up": 1,
+   "n_down": 11,
+   "cases": [
+    {
+     "id": "ctx_trustcarry_1",
+     "delta": -0.5919,
+     "want": "down",
+     "signed": 0.5919,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_2",
+     "delta": 0.2006,
+     "want": "down",
+     "signed": -0.2006,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_3",
+     "delta": -0.3014,
+     "want": "down",
+     "signed": 0.3014,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_4",
+     "delta": -0.5002,
+     "want": "down",
+     "signed": 0.5002,
+     "beyond": true
+    },
+    {
+     "id": "ctx_ledger_3",
+     "delta": -0.1454,
+     "want": "down",
+     "signed": 0.1454,
+     "beyond": true
+    },
+    {
+     "id": "ctx_established_1",
+     "delta": -0.1895,
+     "want": "up",
+     "signed": -0.1895,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_1",
+     "delta": -0.3375,
+     "want": "down",
+     "signed": 0.3375,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_2",
+     "delta": -0.2202,
+     "want": "down",
+     "signed": 0.2202,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_3",
+     "delta": -0.284,
+     "want": "down",
+     "signed": 0.284,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_4",
+     "delta": -0.2705,
+     "want": "down",
+     "signed": 0.2705,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_5",
+     "delta": -0.7327,
+     "want": "down",
+     "signed": 0.7327,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_6",
+     "delta": -0.3602,
+     "want": "down",
+     "signed": 0.3602,
+     "beyond": true
+    }
+   ],
+   "grade": "B",
+   "grade_reason": "100% 的增量越过噪声底、均值 CI (0.1227, 0.4245) 不含 0、方向对率 83%"
+  },
+  "confront": {
+   "n": 1,
+   "mean_signed": 0.0639,
+   "median_signed": 0.0639,
+   "sign_ok": 1,
+   "sign_rate": 1.0,
+   "share_beyond": 1.0,
+   "mean_ci": null,
+   "n_up": 1,
+   "n_down": 0,
+   "cases": [
+    {
+     "id": "ctx_brokenpromise_1",
+     "delta": 0.0639,
+     "want": "up",
+     "signed": 0.0639,
+     "beyond": true
+    }
+   ],
+   "grade": "N",
+   "grade_reason": "可配对样本 1 < 10"
+  },
+  "investigate": {
+   "n": 10,
+   "mean_signed": -0.4098,
+   "median_signed": -0.3437,
+   "sign_ok": 0,
+   "sign_rate": 0.0,
+   "share_beyond": 1.0,
+   "mean_ci": [
+    -0.547,
+    -0.2855
+   ],
+   "n_up": 10,
+   "n_down": 0,
+   "cases": [
+    {
+     "id": "ctx_topicshift_1",
+     "delta": -0.1004,
+     "want": "up",
+     "signed": -0.1004,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topicshift_2",
+     "delta": -0.2668,
+     "want": "up",
+     "signed": -0.2668,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topicshift_3",
+     "delta": -0.3952,
+     "want": "up",
+     "signed": -0.3952,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topicshift_4",
+     "delta": -0.8755,
+     "want": "up",
+     "signed": -0.8755,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topic_extra_1",
+     "delta": -0.543,
+     "want": "up",
+     "signed": -0.543,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topic_extra_2",
+     "delta": -0.2878,
+     "want": "up",
+     "signed": -0.2878,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topic_extra_3",
+     "delta": -0.6333,
+     "want": "up",
+     "signed": -0.6333,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topic_extra_4",
+     "delta": -0.3087,
+     "want": "up",
+     "signed": -0.3087,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topic_extra_5",
+     "delta": -0.347,
+     "want": "up",
+     "signed": -0.347,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topic_extra_6",
+     "delta": -0.3404,
+     "want": "up",
+     "signed": -0.3404,
+     "beyond": true
+    }
+   ],
+   "grade": "R",
+   "grade_reason": "100% 的增量越过噪声底、均值 CI (-0.547, -0.2855) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
+  },
+  "trust": {
+   "n": 16,
+   "mean_signed": 0.0987,
+   "median_signed": 0.1193,
+   "sign_ok": 12,
+   "sign_rate": 0.75,
+   "share_beyond": 0.8125,
+   "mean_ci": [
+    0.0025,
+    0.1942
+   ],
+   "n_up": 10,
+   "n_down": 6,
+   "cases": [
+    {
+     "id": "ctx_trustcarry_1",
+     "delta": -0.2389,
+     "want": "up",
+     "signed": -0.2389,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_2",
+     "delta": 0.4879,
+     "want": "up",
+     "signed": 0.4879,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_3",
+     "delta": 0.1491,
+     "want": "up",
+     "signed": 0.1491,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_4",
+     "delta": 0.1959,
+     "want": "up",
+     "signed": 0.1959,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_1",
+     "delta": -0.1124,
+     "want": "down",
+     "signed": 0.1124,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_2",
+     "delta": -0.0127,
+     "want": "down",
+     "signed": 0.0127,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_3",
+     "delta": 0.0201,
+     "want": "down",
+     "signed": -0.0201,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_4",
+     "delta": -0.0577,
+     "want": "down",
+     "signed": 0.0577,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_5",
+     "delta": -0.0101,
+     "want": "down",
+     "signed": 0.0101,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_6",
+     "delta": -0.1465,
+     "want": "down",
+     "signed": 0.1465,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_1",
+     "delta": 0.2767,
+     "want": "up",
+     "signed": 0.2767,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_2",
+     "delta": -0.2391,
+     "want": "up",
+     "signed": -0.2391,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_3",
+     "delta": -0.1387,
+     "want": "up",
+     "signed": -0.1387,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_4",
+     "delta": 0.3366,
+     "want": "up",
+     "signed": 0.3366,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_5",
+     "delta": 0.1263,
+     "want": "up",
+     "signed": 0.1263,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_6",
+     "delta": 0.3048,
+     "want": "up",
+     "signed": 0.3048,
+     "beyond": true
+    }
+   ],
+   "grade": "B",
+   "grade_reason": "81% 的增量越过噪声底、均值 CI (0.0025, 0.1942) 不含 0、方向对率 75%"
+  },
+  "doubt": {
+   "n": 25,
+   "mean_signed": -0.0038,
+   "median_signed": -0.0053,
+   "sign_ok": 12,
+   "sign_rate": 0.48,
+   "share_beyond": 0.8,
+   "mean_ci": [
+    -0.0602,
+    0.0567
+   ],
+   "n_up": 14,
+   "n_down": 11,
+   "cases": [
+    {
+     "id": "ctx_idflip_1",
+     "delta": 0.1424,
+     "want": "up",
+     "signed": 0.1424,
+     "beyond": true
+    },
+    {
+     "id": "ctx_idflip_2",
+     "delta": 0.3294,
+     "want": "up",
+     "signed": 0.3294,
+     "beyond": true
+    },
+    {
+     "id": "ctx_idflip_3",
+     "delta": -0.0361,
+     "want": "up",
+     "signed": -0.0361,
+     "beyond": false
+    },
+    {
+     "id": "ctx_idflip_4",
+     "delta": -0.1844,
+     "want": "up",
+     "signed": -0.1844,
+     "beyond": true
+    },
+    {
+     "id": "ctx_brokenpromise_2",
+     "delta": -0.1683,
+     "want": "up",
+     "signed": -0.1683,
+     "beyond": true
+    },
+    {
+     "id": "ctx_brokenpromise_3",
+     "delta": -0.1533,
+     "want": "up",
+     "signed": -0.1533,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_1",
+     "delta": -0.032,
+     "want": "down",
+     "signed": 0.032,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trustcarry_2",
+     "delta": -0.0899,
+     "want": "down",
+     "signed": 0.0899,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_3",
+     "delta": -0.0527,
+     "want": "down",
+     "signed": 0.0527,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trustcarry_4",
+     "delta": 0.1474,
+     "want": "down",
+     "signed": -0.1474,
+     "beyond": true
+    },
+    {
+     "id": "ctx_ledger_2",
+     "delta": -0.1921,
+     "want": "up",
+     "signed": -0.1921,
+     "beyond": true
+    },
+    {
+     "id": "ctx_established_3",
+     "delta": -0.1028,
+     "want": "up",
+     "signed": -0.1028,
+     "beyond": true
+    },
+    {
+     "id": "ctx_established_4",
+     "delta": -0.089,
+     "want": "down",
+     "signed": 0.089,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_1",
+     "delta": -0.0351,
+     "want": "up",
+     "signed": -0.0351,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_2",
+     "delta": -0.054,
+     "want": "up",
+     "signed": -0.054,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_3",
+     "delta": -0.0053,
+     "want": "up",
+     "signed": -0.0053,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_4",
+     "delta": -0.254,
+     "want": "up",
+     "signed": -0.254,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_5",
+     "delta": -0.133,
+     "want": "up",
+     "signed": -0.133,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_6",
+     "delta": -0.1816,
+     "want": "up",
+     "signed": -0.1816,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_1",
+     "delta": -0.1255,
+     "want": "down",
+     "signed": 0.1255,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_2",
+     "delta": -0.1702,
+     "want": "down",
+     "signed": 0.1702,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_3",
+     "delta": -0.0131,
+     "want": "down",
+     "signed": 0.0131,
+     "beyond": false
+    },
+    {
+     "id": "ctx_trust_extra_4",
+     "delta": -0.2101,
+     "want": "down",
+     "signed": 0.2101,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_5",
+     "delta": -0.1093,
+     "want": "down",
+     "signed": 0.1093,
+     "beyond": true
+    },
+    {
+     "id": "ctx_trust_extra_6",
+     "delta": -0.1887,
+     "want": "down",
+     "signed": 0.1887,
+     "beyond": true
+    }
+   ],
+   "grade": "C",
+   "grade_reason": "80% 的增量越过噪声底（方向对率 48%）"
+  },
+  "danger": {
+   "n": 10,
+   "mean_signed": 0.0515,
+   "median_signed": 0.0584,
+   "sign_ok": 9,
+   "sign_rate": 0.9,
+   "share_beyond": 0.6,
+   "mean_ci": [
+    0.0253,
+    0.0782
+   ],
+   "n_up": 10,
+   "n_down": 0,
+   "cases": [
+    {
+     "id": "ctx_hostilecarry_2",
+     "delta": 0.0747,
+     "want": "up",
+     "signed": 0.0747,
+     "beyond": true
+    },
+    {
+     "id": "ctx_established_2",
+     "delta": 0.1308,
+     "want": "up",
+     "signed": 0.1308,
+     "beyond": true
+    },
+    {
+     "id": "ctx_topicshift_3",
+     "delta": 0.059,
+     "want": "up",
+     "signed": 0.059,
+     "beyond": true
+    },
+    {
+     "id": "ctx_afterthreat_2",
+     "delta": 0.0045,
+     "want": "up",
+     "signed": 0.0045,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_1",
+     "delta": 0.0849,
+     "want": "up",
+     "signed": 0.0849,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_2",
+     "delta": 0.0578,
+     "want": "up",
+     "signed": 0.0578,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_3",
+     "delta": -0.019,
+     "want": "up",
+     "signed": -0.019,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_4",
+     "delta": 0.0923,
+     "want": "up",
+     "signed": 0.0923,
+     "beyond": true
+    },
+    {
+     "id": "ctx_hostile_extra_5",
+     "delta": 0.0111,
+     "want": "up",
+     "signed": 0.0111,
+     "beyond": false
+    },
+    {
+     "id": "ctx_hostile_extra_6",
+     "delta": 0.0186,
+     "want": "up",
+     "signed": 0.0186,
+     "beyond": false
+    }
+   ],
+   "grade": "B",
+   "grade_reason": "60% 的增量越过噪声底、均值 CI (0.0253, 0.0782) 不含 0、方向对率 90%"
+  }
+ },
+ "final_grades": {
+  "hostility": {
+   "discrimination": "C",
+   "context": "C",
+   "final": "C",
+   "disc_reason": "AUC=0.635，但 CI (0.4945, 0.7647) 不稳",
+   "ctx_reason": "36% 的增量越过噪声底（方向对率 73%）"
+  },
+  "cooperation": {
+   "discrimination": "A",
+   "context": "C",
+   "final": "C",
+   "disc_reason": "AUC=0.772，CI 下界 0.607>0.50",
+   "ctx_reason": "88% 的增量越过噪声底（方向对率 59%）"
+  },
+  "withdraw": {
+   "discrimination": "D",
+   "context": "B",
+   "final": "D",
+   "disc_reason": "AUC=0.505 < 0.55（CI (0.3106, 0.7034)）",
+   "ctx_reason": "100% 的增量越过噪声底、均值 CI (0.1227, 0.4245) 不含 0、方向对率 83%"
+  },
+  "confront": {
+   "discrimination": "D",
+   "context": "N",
+   "final": "D",
+   "disc_reason": "AUC=0.414 < 0.55（CI (0.2377, 0.6061)）",
+   "ctx_reason": "可配对样本 1 < 10"
+  },
+  "disclose": {
+   "discrimination": "A",
+   "context": "N",
+   "final": "A",
+   "disc_reason": "AUC=0.889，CI 下界 0.740>0.50",
+   "ctx_reason": ""
+  },
+  "investigate": {
+   "discrimination": "C",
+   "context": "R",
+   "final": "R",
+   "disc_reason": "AUC=0.690，但 CI (0.4667, 0.8766) 不稳",
+   "ctx_reason": "100% 的增量越过噪声底、均值 CI (-0.547, -0.2855) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
+  },
+  "trust": {
+   "discrimination": "A",
+   "context": "B",
+   "final": "B",
+   "disc_reason": "AUC=0.778，CI 下界 0.623>0.50",
+   "ctx_reason": "81% 的增量越过噪声底、均值 CI (0.0025, 0.1942) 不含 0、方向对率 75%"
+  },
+  "doubt": {
+   "discrimination": "C",
+   "context": "C",
+   "final": "C",
+   "disc_reason": "AUC=0.614，但 CI (0.4495, 0.7768) 不稳",
+   "ctx_reason": "80% 的增量越过噪声底（方向对率 48%）"
+  },
+  "danger": {
+   "discrimination": "D",
+   "context": "B",
+   "final": "D",
+   "disc_reason": "AUC=0.447 < 0.55（CI (0.2552, 0.6375)）",
+   "ctx_reason": "60% 的增量越过噪声底、均值 CI (0.0253, 0.0782) 不含 0、方向对率 90%"
+  },
+  "trust_shift": {
+   "discrimination": "A",
+   "context": "N",
+   "final": "A",
+   "disc_reason": "AUC=0.807，CI 下界 0.591>0.50",
+   "ctx_reason": ""
+  },
+  "respect_shift": {
+   "discrimination": "C",
+   "context": "N",
+   "final": "C",
+   "disc_reason": "AUC=0.669，但 CI (0.4048, 0.8939) 不稳",
+   "ctx_reason": ""
+  },
+  "doubt_shift": {
+   "discrimination": "D",
+   "context": "N",
+   "final": "D",
+   "disc_reason": "AUC=0.407 < 0.55（CI (0.1603, 0.6533)）",
+   "ctx_reason": ""
+  },
+  "fondness_shift": {
+   "discrimination": "C",
+   "context": "N",
+   "final": "C",
+   "disc_reason": "AUC=0.724，但 CI (0.5, 0.9333) 不稳",
+   "ctx_reason": ""
+  },
+  "alert_shift": {
+   "discrimination": "D",
+   "context": "N",
+   "final": "D",
+   "disc_reason": "AUC=0.500 < 0.55（CI (0.2632, 0.7357)）",
+   "ctx_reason": ""
+  },
+  "goal_shift": {
+   "discrimination": "D",
+   "context": "N",
+   "final": "D",
+   "disc_reason": "AUC=0.450 < 0.55（CI (0.1905, 0.7253)）",
+   "ctx_reason": ""
+  }
+ },
+ "hidden_truth_reference": {
+  "hostility": {
+   "n_high": 1,
+   "n_low": 3,
+   "mean_high": 0.2704,
+   "mean_low": 0.2529,
+   "mean_gap": 0.0175,
+   "median_gap": 0.0182,
+   "auc": 1.0,
+   "auc_ci": [
+    1.0,
+    1.0
+   ],
+   "best_threshold": 0.2691,
+   "threshold_balanced_acc": 1.0,
+   "threshold_accuracy": 1.0,
+   "kind": "prob",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "N",
+   "grade_reason": "样本不足（high=1 / low=3，各需 ≥10）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "cooperation": {
+   "n_high": 2,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "withdraw": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "confront": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "disclose": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "investigate": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "trust": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "doubt": {
+   "n_high": 17,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "danger": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "trust_shift": {
+   "n_high": 2,
+   "n_low": 13,
+   "mean_high": 2.2049,
+   "mean_low": 2.1668,
+   "mean_gap": 0.0381,
+   "median_gap": -0.0279,
+   "auc": 0.5,
+   "auc_ci": [
+    0.1429,
+    0.8571
+   ],
+   "best_threshold": 2.1382,
+   "threshold_balanced_acc": 0.6538,
+   "threshold_accuracy": 0.4,
+   "kind": "level",
+   "boot_n": 2000,
+   "boot_seed": 20260923,
+   "grade": "N",
+   "grade_reason": "样本不足（high=2 / low=13，各需 ≥10）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "respect_shift": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "doubt_shift": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "fondness_shift": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "alert_shift": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  },
+  "goal_shift": {
+   "n_high": 0,
+   "n_low": 0,
+   "auc": null,
+   "grade": "N",
+   "grade_reason": "两组不齐（hidden_truth 组两组不齐。★ 这组期望方向依赖 NPC 观察不到的真相，数字只作上限参考）",
+   "counts_in_main_accuracy": false,
+   "note": "本组不含 omniscient 判据，**不得**用于给 signal 定级或定阈值。放进来的唯一目的是对照「若把真相喂进去会怎样」。"
+  }
+ },
+ "observable_accuracy": {
+  "passed": 257,
+  "total": 518,
+  "rate": 0.4961,
+  "n_cases": 70,
+  "comparable_with_previous_round": false,
+  "why": "用例集已重建，与第二轮 48 条口径不可直接比较。"
+ },
+ "validity": {
+  "_readme": [
+   "req.5：任何输入被截断 / 未被有效呈现的用例，必须从能力对比中剔除，并单独列出。",
+   "两类 invalid：(a) state 溢出被 st[:room] 静默截断；(b) 翻译缓存缺失 → message 字段是中文原文。",
+   "★ 只报「剔除了几条」不算达标 —— 必须能说出是哪几条、为什么。"
+  ],
+  "max_len": 512,
+  "head_max_len": 192,
+  "room": 319,
+  "cache_sha": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+  "cache_changed_during_run": false,
+  "n_items_measured": 186,
+  "token_min": 222,
+  "token_median": 236,
+  "token_max": 254,
+  "n_overflow": 0,
+  "passed": {
+   "observable": [
+    70,
+    70
+   ],
+   "hidden_truth": [
+    20,
+    20
+   ],
+   "contextual": [
+    48,
+    48
+   ]
+  },
+  "invalid": []
+ },
+ "counts": {
+  "observable": 70,
+  "contextual": 48,
+  "hidden_truth": 20
+ },
+ "n_assertions": {
+  "observable": 518,
+  "hidden_truth": 38
+ },
+ "budgets": {
+  "observable/obs_smalltalk_1/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_smalltalk_2/base": {
+   "tokens": 233,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 86
+  },
+  "observable/obs_smalltalk_3/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "observable/obs_smalltalk_4/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "observable/obs_smalltalk_5/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_direction_1/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "observable/obs_direction_2/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "observable/obs_direction_3/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "observable/obs_direction_4/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "observable/obs_direction_5/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "observable/obs_help_1/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "observable/obs_help_2/base": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "observable/obs_help_3/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_help_4/base": {
+   "tokens": 231,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 88
+  },
+  "observable/obs_help_5/base": {
+   "tokens": 245,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 74
+  },
+  "observable/obs_plea_1/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_plea_2/base": {
+   "tokens": 244,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 75
+  },
+  "observable/obs_plea_3/base": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "observable/obs_plea_4/base": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "observable/obs_weak_1/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_weak_2/base": {
+   "tokens": 231,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 88
+  },
+  "observable/obs_weak_3/base": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "observable/obs_weak_4/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "observable/obs_provoke_1/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_provoke_2/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_provoke_3/base": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "observable/obs_provoke_4/base": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "observable/obs_provoke_5/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_insult_1/base": {
+   "tokens": 230,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 89
+  },
+  "observable/obs_insult_2/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "observable/obs_insult_3/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_insult_4/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "observable/obs_insult_5/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_threat_1/base": {
+   "tokens": 233,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 86
+  },
+  "observable/obs_threat_2/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_threat_3/base": {
+   "tokens": 231,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 88
+  },
+  "observable/obs_threat_4/base": {
+   "tokens": 242,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 77
+  },
+  "observable/obs_threat_5/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_attack_1/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "observable/obs_attack_2/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_attack_3/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_attack_4/base": {
+   "tokens": 230,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 89
+  },
+  "observable/obs_bond_1/base": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "observable/obs_bond_2/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_bond_3/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_bond_4/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_secret_1/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_secret_2/base": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "observable/obs_secret_3/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_secret_4/base": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "observable/obs_exchange_1/base": {
+   "tokens": 254,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 65
+  },
+  "observable/obs_exchange_2/base": {
+   "tokens": 250,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 69
+  },
+  "observable/obs_exchange_3/base": {
+   "tokens": 245,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 74
+  },
+  "observable/obs_exchange_4/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "observable/obs_exchange_5/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_exchange_6/base": {
+   "tokens": 246,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 73
+  },
+  "observable/obs_anomaly_1/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_anomaly_2/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_anomaly_3/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "observable/obs_anomaly_4/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_respect_1/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "observable/obs_respect_2/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "observable/obs_respect_3/base": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "observable/obs_respect_4/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "observable/obs_crow_1/base": {
+   "tokens": 242,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 77
+  },
+  "observable/obs_crow_2/base": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "observable/obs_crow_3/base": {
+   "tokens": 243,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 76
+  },
+  "observable/obs_crow_4/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "observable/obs_crow_5/base": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "observable/obs_crow_6/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "hidden_truth/ht_minor_lie_1/base": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "hidden_truth/ht_minor_lie_2/base": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "hidden_truth/ht_minor_lie_3/base": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "hidden_truth/ht_minor_lie_4/base": {
+   "tokens": 227,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 92
+  },
+  "hidden_truth/ht_minor_lie_5/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "hidden_truth/ht_blatant_lie_1/base": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "hidden_truth/ht_blatant_lie_2/base": {
+   "tokens": 244,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 75
+  },
+  "hidden_truth/ht_blatant_lie_3/base": {
+   "tokens": 230,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 89
+  },
+  "hidden_truth/ht_blatant_lie_4/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "hidden_truth/ht_blatant_lie_5/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "hidden_truth/ht_deception_1/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "hidden_truth/ht_deception_2/base": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "hidden_truth/ht_deception_3/base": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "hidden_truth/ht_deception_4/base": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "hidden_truth/ht_deception_5/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "hidden_truth/ht_credential_1/base": {
+   "tokens": 253,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 66
+  },
+  "hidden_truth/ht_credential_2/base": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "hidden_truth/ht_credential_3/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "hidden_truth/ht_credential_4/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "hidden_truth/ht_credential_5/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "contextual/ctx_idflip_1/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "contextual/ctx_idflip_1/with_prior": {
+   "tokens": 253,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 66
+  },
+  "contextual/ctx_idflip_2/base": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "contextual/ctx_idflip_2/with_prior": {
+   "tokens": 246,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 73
+  },
+  "contextual/ctx_idflip_3/base": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "contextual/ctx_idflip_3/with_prior": {
+   "tokens": 252,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 67
+  },
+  "contextual/ctx_idflip_4/base": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "contextual/ctx_idflip_4/with_prior": {
+   "tokens": 249,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 70
+  },
+  "contextual/ctx_brokenpromise_1/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "contextual/ctx_brokenpromise_1/with_prior": {
+   "tokens": 244,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 75
+  },
+  "contextual/ctx_brokenpromise_2/base": {
+   "tokens": 234,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 85
+  },
+  "contextual/ctx_brokenpromise_2/with_prior": {
+   "tokens": 246,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 73
+  },
+  "contextual/ctx_brokenpromise_3/base": {
+   "tokens": 233,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 86
+  },
+  "contextual/ctx_brokenpromise_3/with_prior": {
+   "tokens": 245,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 74
+  },
+  "contextual/ctx_hostilecarry_1/base": {
+   "tokens": 224,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 95
+  },
+  "contextual/ctx_hostilecarry_1/with_prior": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "contextual/ctx_hostilecarry_2/base": {
+   "tokens": 230,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 89
+  },
+  "contextual/ctx_hostilecarry_2/with_prior": {
+   "tokens": 243,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 76
+  },
+  "contextual/ctx_hostilecarry_3/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "contextual/ctx_hostilecarry_3/with_prior": {
+   "tokens": 243,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 76
+  },
+  "contextual/ctx_hostilecarry_4/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_hostilecarry_4/with_prior": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "contextual/ctx_trustcarry_1/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "contextual/ctx_trustcarry_1/with_prior": {
+   "tokens": 243,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 76
+  },
+  "contextual/ctx_trustcarry_2/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "contextual/ctx_trustcarry_2/with_prior": {
+   "tokens": 242,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 77
+  },
+  "contextual/ctx_trustcarry_3/base": {
+   "tokens": 227,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 92
+  },
+  "contextual/ctx_trustcarry_3/with_prior": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "contextual/ctx_trustcarry_4/base": {
+   "tokens": 225,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 94
+  },
+  "contextual/ctx_trustcarry_4/with_prior": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "contextual/ctx_ledger_1/base": {
+   "tokens": 224,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 95
+  },
+  "contextual/ctx_ledger_1/with_prior": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "contextual/ctx_ledger_2/base": {
+   "tokens": 232,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 87
+  },
+  "contextual/ctx_ledger_2/with_prior": {
+   "tokens": 247,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 72
+  },
+  "contextual/ctx_ledger_3/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "contextual/ctx_ledger_3/with_prior": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "contextual/ctx_ledger_4/base": {
+   "tokens": 225,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 94
+  },
+  "contextual/ctx_ledger_4/with_prior": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "contextual/ctx_established_1/base": {
+   "tokens": 230,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 89
+  },
+  "contextual/ctx_established_1/with_prior": {
+   "tokens": 249,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 70
+  },
+  "contextual/ctx_established_2/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "contextual/ctx_established_2/with_prior": {
+   "tokens": 242,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 77
+  },
+  "contextual/ctx_established_3/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "contextual/ctx_established_3/with_prior": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "contextual/ctx_established_4/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_established_4/with_prior": {
+   "tokens": 243,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 76
+  },
+  "contextual/ctx_topicshift_1/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_topicshift_1/with_prior": {
+   "tokens": 233,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 86
+  },
+  "contextual/ctx_topicshift_2/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "contextual/ctx_topicshift_2/with_prior": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "contextual/ctx_topicshift_3/base": {
+   "tokens": 224,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 95
+  },
+  "contextual/ctx_topicshift_3/with_prior": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "contextual/ctx_topicshift_4/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_topicshift_4/with_prior": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "contextual/ctx_afterthreat_1/base": {
+   "tokens": 222,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 97
+  },
+  "contextual/ctx_afterthreat_1/with_prior": {
+   "tokens": 233,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 86
+  },
+  "contextual/ctx_afterthreat_2/base": {
+   "tokens": 225,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 94
+  },
+  "contextual/ctx_afterthreat_2/with_prior": {
+   "tokens": 235,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 84
+  },
+  "contextual/ctx_afterthreat_3/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "contextual/ctx_afterthreat_3/with_prior": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "contextual/ctx_hostile_extra_1/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_hostile_extra_1/with_prior": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "contextual/ctx_hostile_extra_2/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_hostile_extra_2/with_prior": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "contextual/ctx_hostile_extra_3/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_hostile_extra_3/with_prior": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "contextual/ctx_hostile_extra_4/base": {
+   "tokens": 227,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 92
+  },
+  "contextual/ctx_hostile_extra_4/with_prior": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "contextual/ctx_hostile_extra_5/base": {
+   "tokens": 225,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 94
+  },
+  "contextual/ctx_hostile_extra_5/with_prior": {
+   "tokens": 240,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 79
+  },
+  "contextual/ctx_hostile_extra_6/base": {
+   "tokens": 225,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 94
+  },
+  "contextual/ctx_hostile_extra_6/with_prior": {
+   "tokens": 244,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 75
+  },
+  "contextual/ctx_trust_extra_1/base": {
+   "tokens": 224,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 95
+  },
+  "contextual/ctx_trust_extra_1/with_prior": {
+   "tokens": 237,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 82
+  },
+  "contextual/ctx_trust_extra_2/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "contextual/ctx_trust_extra_2/with_prior": {
+   "tokens": 244,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 75
+  },
+  "contextual/ctx_trust_extra_3/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_trust_extra_3/with_prior": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "contextual/ctx_trust_extra_4/base": {
+   "tokens": 225,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 94
+  },
+  "contextual/ctx_trust_extra_4/with_prior": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "contextual/ctx_trust_extra_5/base": {
+   "tokens": 224,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 95
+  },
+  "contextual/ctx_trust_extra_5/with_prior": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "contextual/ctx_trust_extra_6/base": {
+   "tokens": 228,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 91
+  },
+  "contextual/ctx_trust_extra_6/with_prior": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  },
+  "contextual/ctx_topic_extra_1/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_topic_extra_1/with_prior": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "contextual/ctx_topic_extra_2/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_topic_extra_2/with_prior": {
+   "tokens": 236,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 83
+  },
+  "contextual/ctx_topic_extra_3/base": {
+   "tokens": 226,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 93
+  },
+  "contextual/ctx_topic_extra_3/with_prior": {
+   "tokens": 239,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 80
+  },
+  "contextual/ctx_topic_extra_4/base": {
+   "tokens": 227,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 92
+  },
+  "contextual/ctx_topic_extra_4/with_prior": {
+   "tokens": 238,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 81
+  },
+  "contextual/ctx_topic_extra_5/base": {
+   "tokens": 229,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 90
+  },
+  "contextual/ctx_topic_extra_5/with_prior": {
+   "tokens": 242,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 77
+  },
+  "contextual/ctx_topic_extra_6/base": {
+   "tokens": 227,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 92
+  },
+  "contextual/ctx_topic_extra_6/with_prior": {
+   "tokens": 241,
+   "room": 319,
+   "max_len": 512,
+   "head_max_len": 192,
+   "overflow": false,
+   "spare": 78
+  }
+ }
+}
