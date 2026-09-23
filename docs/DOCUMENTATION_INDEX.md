@@ -14,6 +14,8 @@
 
 ## 在用文档
 
+作品设定库接手先读 [L2–L4 总骨架](plans/LIBRARY_EVOLUTION_BLUEPRINT.md)，再看 [多 AI 交接任务清单](plans/LIBRARY_EVOLUTION_TASK_CHECKLIST.md) 的实时勾选状态；[L1/L2 实施记录](plans/LIBRARY_RUNTIME_IMPLEMENTATION_PLAN.md) 与 [验收报告](acceptance/LIBRARY_L1_L2_ACCEPTANCE.md) 提供已完成部分的证据。不要以旧路线图的“尚无文档”为准。
+
 | 类别 | 位置 | 用途 |
 | --- | --- | --- |
 | 全景事实 | [项目文档状态全景-2026-09-21.md](项目文档状态全景-2026-09-21.md) | 全量文档分类、分支/代码事实落差、遗漏矛盾清单 |

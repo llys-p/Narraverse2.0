@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Library work in progress / 作品设定库建设中
+
+- 建立 L2/L3/L4 总骨架与分层契约；实现 L2 只读加载核心、受控 Master 解析、严格预览 API 与主动加载预览 UI。明确三档、来源版本、闭包和预算；不调用模型、不创建运行身份、不新增持久化。隔离正式页面与重启验收通过；L3/L4 仅规划。
+- Define L2/L3/L4 ownership and add a read-only L2 core, controlled Master resolution, strict preview API and explicitly requested preview UI. Enforce load modes, source revisions, closure and budgets without model calls, runtime identities or new persistence. Isolated executable/browser and restart acceptance passed; L3/L4 remain plans only.
+- 修复 L1 部分更新误改引用形态、草稿丢失、迟到响应串库、级联事件时间戳未同步；HTTP 条目更新拒绝遗漏/空白 baseUpdatedAt，防止绕过已有并发契约。前端1296项回归及相关Go门禁通过；外壳认证/更新检查环境告警单列于验收报告。
+- Preserve reference ownership, unsaved drafts, response ownership and authoritative cascade timestamps. Reject missing/blank baseUpdatedAt in HTTP item updates to enforce the existing concurrency contract. All 1296 frontend tests and relevant Go gates passed; shell authentication/update-check warnings are recorded separately.
+
 ### Changed
 - PR #3 统一导航语义：顶部保留四个运行模式，世界入口改名为“梳理世界”，移除世界概览中重复的四模式卡片；同步修正页面标题和响应式测试断言。
 - PR #3 clarifies navigation semantics: the top bar keeps the four runtime modes, the world entry is renamed to “Organize World”, duplicate mode cards are removed from the world overview, and the page title and responsive test assertion are aligned.

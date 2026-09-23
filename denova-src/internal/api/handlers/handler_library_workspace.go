@@ -225,6 +225,11 @@ func (h *Handlers) HandleWorkLibraryItemUpdate(ctx context.Context, c *app.Reque
 		writeWorkLibraryError(c, consts.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
+	// HTTP callers must supply the saved baseline; omission is not force-overwrite.
+	if strings.TrimSpace(in.BaseUpdatedAt) == "" {
+		writeWorkLibraryError(c, consts.StatusBadRequest, "validation_failed", "baseUpdatedAt is required")
+		return
+	}
 	// 条目 ID 以路径为准，避免请求体与路径不一致时产生歧义。
 	in.ID = c.Param("itemId")
 	item, revision, err := h.app.UpdateWorkLibraryItem(ctx, c.Param("id"), in)

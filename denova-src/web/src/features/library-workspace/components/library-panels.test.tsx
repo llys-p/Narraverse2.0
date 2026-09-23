@@ -91,6 +91,23 @@ function renderEditorPanel(createItem: ReturnType<typeof vi.fn>) {
 }
 
 describe('new entry composer', () => {
+  it('guards an existing draft before creating and the new name before leaving', () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderEditorPanel(vi.fn())
+    fireEvent.click(screen.getByRole('button', { name: '条目' }))
+    fireEvent.change(screen.getByLabelText(/^正文/), { target: { value: '未保存正文' } })
+    fireEvent.click(screen.getByRole('button', { name: '新建条目' }))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText(/^正文/)).toHaveValue('未保存正文')
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: '新建条目' }))
+    fireEvent.change(screen.getByPlaceholderText(/条目名称/), { target: { value: '新条目草稿' } })
+    confirm.mockReturnValue(false)
+    fireEvent.click(screen.getByRole('button', { name: '事件与时间线' }))
+    expect(screen.getByPlaceholderText(/条目名称/)).toHaveValue('新条目草稿')
+    confirm.mockRestore()
+  })
+
   it('requires a real name before creating so the stable id never comes from the placeholder', async () => {
     const createItem = vi.fn(async (input: WorkLibraryItemInput) => ({
       id: 'wusong', name: input.name, type: input.type, enabled: true, importance: input.importance,

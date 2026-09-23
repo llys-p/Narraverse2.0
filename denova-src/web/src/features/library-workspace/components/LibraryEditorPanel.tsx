@@ -14,6 +14,7 @@ import { LibrarySourcePicker } from './LibrarySourcePicker'
 import { LibraryRelationsPanel } from './LibraryRelationsPanel'
 import { LibraryTimelinePanel } from './LibraryTimelinePanel'
 import { LibraryDeleteImpact } from './LibraryDeleteImpact'
+import { LibraryContextPreview } from './LibraryContextPreview'
 import type { WorkLibraryEditorState } from '../use-work-library'
 
 // 单个设定库的编辑面板：背景总览 / 条目。
@@ -21,7 +22,7 @@ import type { WorkLibraryEditorState } from '../use-work-library'
 // 草稿与冲突：库元信息草稿保存在本组件内，只在「重新加载」或「保存成功」时同步；
 // 409 时显示横幅并提供重新加载，草稿与服务端数据都不丢（L1.2 验收要求）。
 
-type EditorTab = 'overview' | 'items' | 'settings' | 'relations' | 'timeline'
+type EditorTab = 'overview' | 'items' | 'settings' | 'relations' | 'timeline' | 'preview'
 
 interface NewItemDraft {
   name: string
@@ -99,7 +100,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
     || (meta.tone ?? '') !== (library!.tone ?? '')
     || (meta.startingPoint ?? '') !== (library!.startingPoint ?? '')
   )
-  const hasDraft = Boolean(metaDirty || itemDirty || settingsDirty || relationsDirty)
+  const hasDraft = Boolean(metaDirty || itemDirty || settingsDirty || relationsDirty || newDraft)
   useEffect(() => onDirtyChange?.(hasDraft), [hasDraft, onDirtyChange])
   const guardLeave = () => !hasDraft || window.confirm(t('workLibrary.reloadConfirm'))
 
@@ -155,13 +156,15 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
   // 新建条目必须先让用户给出真实名称：稳定 ID 在创建时由名称派生，
   // 不能用「新建条目」占位名落库后再改名（ID 一经分配永不改变）。
   const openNewItem = (type: string) => {
+    if (!guardLeave()) return
+    setItemDirty(false)
     setSourceOpen(false)
     setNewDraft({ name: '', type, importance: 'important', missing: false })
     setTab('items')
   }
 
   const submitNewItem = async () => {
-    if (!newDraft) return
+    if (!newDraft || savingItem) return
     const trimmed = newDraft.name.trim()
     if (!trimmed) {
       setNewDraft({ ...newDraft, missing: true })
@@ -242,8 +245,8 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
         </div>
       ) : null}
 
-      <div className="flex shrink-0 items-center gap-1 border-b border-[var(--nova-border)] px-3 py-1">
-        {(['overview', 'items', 'relations', 'timeline', 'settings'] as EditorTab[]).map((value) => (
+      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--nova-border)] px-3 py-1">
+        {(['overview', 'items', 'relations', 'timeline', 'settings', 'preview'] as EditorTab[]).map((value) => (
           <button
             key={value}
             type="button"
@@ -271,6 +274,8 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
         <div className="p-3">
           <InlineErrorNotice message={editor.error ?? t('workLibrary.loadError')} />
         </div>
+      ) : tab === 'preview' && library ? (
+        <LibraryContextPreview key={library.id} library={library} revision={editor.revision} dirty={hasDraft} />
       ) : tab === 'overview' ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <p className="mb-2 text-[11px] leading-5 text-muted-foreground">{t('workLibrary.overview.hint')}</p>
@@ -378,7 +383,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange }
               <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => openNewItem('character')}>
                 {t('workLibrary.items.new')}
               </Button>
-              <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => { setNewDraft(null); setSourceOpen((value) => !value) }}>
+              <Button type="button" size="sm" variant="ghost" className="w-full justify-start" onClick={() => { if (newDraft && !guardLeave()) return; setNewDraft(null); setSourceOpen((value) => !value) }}>
                 {t('workLibrary.items.newFromSource')}
               </Button>
             </div>

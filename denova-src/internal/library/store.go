@@ -407,7 +407,15 @@ func mergeItemUpdate(previous Item, in ItemInput) (Item, error) {
 	if in.Content != nil {
 		next.Content = *in.Content
 	}
-	next.Origin = normalizeOrigin(in.Origin, next.Source)
+	// Creation defaults must not change ownership during a partial update.
+	if origin := strings.TrimSpace(in.Origin); origin != "" {
+		switch origin {
+		case OriginOriginal, OriginAdaptation, OriginReference:
+			next.Origin = origin
+		default:
+			return Item{}, fieldError("origin", "未知来源形态")
+		}
+	}
 	next.ID = previous.ID
 
 	if previous.Origin == OriginReference && next.Origin == OriginReference {

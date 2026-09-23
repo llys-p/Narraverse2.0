@@ -126,28 +126,55 @@ export function useWorkLibraryEditor(libraryId: string | null): WorkLibraryEdito
   const revisionRef = useRef('')
   revisionRef.current = revision
 
+  // A request belongs to one mount/library generation (including A → B → A).
+  const generation = useRef(0)
+  const loadSequence = useRef(0)
+  const timelineSequence = useRef(0)
+  useEffect(() => {
+    generation.current++
+    return () => { generation.current++ }
+  }, [libraryId])
+  const captureRequest = useCallback(() => {
+    const owner = generation.current
+    return () => owner === generation.current
+  }, [])
+
   const load = useCallback(async (id: string) => {
+    const ownsEditor = captureRequest()
+    const sequence = ++loadSequence.current
+    const current = () => ownsEditor() && sequence === loadSequence.current
     setStatus('loading')
     try {
       const envelope = await getWorkLibrary(id)
+      if (!current()) return
       setLibrary(envelope.library)
       setRevision(envelope.revision)
       setError(null)
       setConflict(null)
       setStatus('ready')
+      setLastError(null)
+      const timelineRequest = ++timelineSequence.current
       try {
-        setTimeline(await getWorkLibraryTimeline(id))
+        const entries = await getWorkLibraryTimeline(id)
+        if (current() && timelineRequest === timelineSequence.current) setTimeline(entries)
       } catch {
         // 时间线是派生视图，读不到不应让整个编辑器失败。
-        setTimeline([])
+        if (current() && timelineRequest === timelineSequence.current) setTimeline([])
       }
     } catch (err: unknown) {
+      if (!current()) return
       setError(workLibraryErrorMessage(err) ?? 'load_failed')
       setStatus('error')
     }
-  }, [])
+  }, [captureRequest])
 
   useEffect(() => {
+    setLibrary(null)
+    setRevision('')
+    setTimeline([])
+    setError(null)
+    setConflict(null)
+    setLastError(null)
     if (!libraryId) {
       setStatus('idle')
       setLibrary(null)
@@ -159,12 +186,16 @@ export function useWorkLibraryEditor(libraryId: string | null): WorkLibraryEdito
   }, [libraryId, load])
 
   const syncTimeline = useCallback(async (id: string) => {
+    const ownsEditor = captureRequest()
+    const sequence = ++timelineSequence.current
+    const current = () => ownsEditor() && sequence === timelineSequence.current
     try {
-      setTimeline(await getWorkLibraryTimeline(id))
+      const entries = await getWorkLibraryTimeline(id)
+      if (current()) setTimeline(entries)
     } catch {
-      setTimeline([])
+      if (current()) setTimeline([])
     }
-  }, [])
+  }, [captureRequest])
 
   const handleFailure = useCallback((err: unknown, scope: WorkLibraryConflict['scope']) => {
     const kind = classifyWorkLibraryError(err)
@@ -184,111 +215,130 @@ export function useWorkLibraryEditor(libraryId: string | null): WorkLibraryEdito
 
   const saveMeta = useCallback(async (patch: WorkLibraryMetaPatch) => {
     if (!libraryId) return false
+    const current = captureRequest()
     try {
       const envelope = await updateWorkLibraryMeta(libraryId, revisionRef.current, patch)
+      if (!current()) return false
       setLibrary(envelope.library)
       setRevision(envelope.revision)
       setConflict(null)
       return true
     } catch (err: unknown) {
-      handleFailure(err, 'meta')
+      if (current()) handleFailure(err, 'meta')
       return false
     }
-  }, [libraryId, handleFailure])
+  }, [libraryId, handleFailure, captureRequest])
 
   const createItem = useCallback(async (input: WorkLibraryItemInput) => {
     if (!libraryId) return null
+    const current = captureRequest()
     try {
       const result = await createWorkLibraryItem(libraryId, input)
+      if (!current()) return null
       setLibrary((current) => (current ? upsertItem(current, result.item) : current))
       setRevision(result.revision)
       setConflict(null)
       void syncTimeline(libraryId)
       return result.item
     } catch (err: unknown) {
-      handleFailure(err, 'item')
+      if (current()) handleFailure(err, 'item')
       return null
     }
-  }, [libraryId, handleFailure, syncTimeline])
+  }, [libraryId, handleFailure, syncTimeline, captureRequest])
 
   const saveItem = useCallback(async (itemId: string, input: WorkLibraryItemInput) => {
     if (!libraryId) return null
+    const current = captureRequest()
     try {
       const result = await updateWorkLibraryItem(libraryId, itemId, input)
+      if (!current()) return null
       setLibrary((current) => (current ? upsertItem(current, result.item) : current))
       setRevision(result.revision)
       setConflict(null)
       void syncTimeline(libraryId)
       return result.item
     } catch (err: unknown) {
-      handleFailure(err, 'item')
+      if (current()) handleFailure(err, 'item')
       return null
     }
-  }, [libraryId, handleFailure, syncTimeline])
+  }, [libraryId, handleFailure, syncTimeline, captureRequest])
 
   const deleteItem = useCallback(async (itemId: string, cascade: boolean): Promise<WorkLibraryDeleteOutcome> => {
     if (!libraryId) return { status: 'failed' }
+    const current = captureRequest()
     try {
       const result = await deleteWorkLibraryItem(libraryId, itemId, cascade)
+      if (!current()) return { status: 'failed' }
       setLibrary((current) => (current
         ? removeItemLocal(current, result.deletedId, result.removedRelationIds ?? [], result.updatedEventIds ?? [])
         : current))
       setRevision(result.revision)
       setConflict(null)
-      void syncTimeline(libraryId)
+      // Cascade changes event updatedAt on the server. Local ID pruning alone
+      // leaves a stale edit baseline and guarantees a false conflict next save.
+      if ((result.updatedEventIds ?? []).length > 0) await load(libraryId)
+      else void syncTimeline(libraryId)
+      if (!current()) return { status: 'failed' }
       return { status: 'deleted' }
     } catch (err: unknown) {
       const kind = classifyWorkLibraryError(err)
+      if (!current()) return { status: 'failed' }
       if (kind === 'item_in_use') {
         // 被引用不是失败：把影响交给 UI 展示，由用户决定是否级联。
         return { status: 'in_use', impact: workLibraryErrorImpact(err) ?? undefined, message: workLibraryErrorMessage(err) ?? '' }
       }
-      handleFailure(err, 'item')
+      if (current()) handleFailure(err, 'item')
       return { status: 'failed', message: workLibraryErrorMessage(err) ?? '' }
     }
-  }, [libraryId, handleFailure, syncTimeline])
+  }, [libraryId, handleFailure, syncTimeline, captureRequest, load])
 
   const createRelation = useCallback(async (input: WorkLibraryRelationInput) => {
     if (!libraryId) return null
+    const current = captureRequest()
     try {
       const result = await createWorkLibraryRelation(libraryId, input)
+      if (!current()) return null
       setLibrary((current) => (current ? upsertRelation(current, result.relation) : current))
       setRevision(result.revision)
       setConflict(null)
       return result.relation
     } catch (err: unknown) {
-      handleFailure(err, 'relation')
+      if (current()) handleFailure(err, 'relation')
       return null
     }
-  }, [libraryId, handleFailure])
+  }, [libraryId, handleFailure, captureRequest])
 
   const saveRelation = useCallback(async (relationId: string, input: WorkLibraryRelationInput) => {
     if (!libraryId) return null
+    const current = captureRequest()
     try {
       const result = await updateWorkLibraryRelation(libraryId, relationId, input)
+      if (!current()) return null
       setLibrary((current) => (current ? upsertRelation(current, result.relation) : current))
       setRevision(result.revision)
       setConflict(null)
       return result.relation
     } catch (err: unknown) {
-      handleFailure(err, 'relation')
+      if (current()) handleFailure(err, 'relation')
       return null
     }
-  }, [libraryId, handleFailure])
+  }, [libraryId, handleFailure, captureRequest])
 
   const deleteRelation = useCallback(async (relationId: string) => {
     if (!libraryId) return false
+    const current = captureRequest()
     try {
       const result = await deleteWorkLibraryRelation(libraryId, relationId)
+      if (!current()) return false
       setLibrary((current) => (current ? removeRelationLocal(current, relationId) : current))
       setRevision(result.revision)
       setConflict(null)
       return true
     } catch (err: unknown) {
-      handleFailure(err, 'relation')
+      if (current()) handleFailure(err, 'relation')
       return false
     }
-  }, [libraryId, handleFailure])
+  }, [libraryId, handleFailure, captureRequest])
 
   return {
     status,

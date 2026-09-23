@@ -114,6 +114,7 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.PATCH("/work-libraries/:id", apiHandlers.HandleWorkLibraryUpdateMeta)
 		api.DELETE("/work-libraries/:id", apiHandlers.HandleWorkLibraryDelete)
 		api.GET("/work-libraries/:id/timeline", apiHandlers.HandleWorkLibraryTimeline)
+		api.POST("/work-libraries/:id/context-preview", apiHandlers.HandleLibraryContextPreview)
 		api.POST("/work-libraries/:id/items", apiHandlers.HandleWorkLibraryItemCreate)
 		api.PATCH("/work-libraries/:id/items/:itemId", apiHandlers.HandleWorkLibraryItemUpdate)
 		api.DELETE("/work-libraries/:id/items/:itemId", apiHandlers.HandleWorkLibraryItemDelete)
