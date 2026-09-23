@@ -514,6 +514,209 @@
         "kind": "prob",
         "question": "signal_danger"
       }
+    },
+    "roles": {
+      "_note": [
+        "Phase3-P2 Task9：每个 signal 的职责分层。",
+        "",
+        "★ role 与 status 是两件正交的事，缺一不可：",
+        "    role   —— 这个 signal 的输出**可以流向哪里**（本文件声明，人写的，稳定）。",
+        "    status —— 它**够不够格**真的流过去（由 capability profile 从实验结果推导，不在这里写死）。",
+        "  一个 role=state_shift 的 signal 若 status=disabled，它就不写状态；",
+        "  一个 status=active 的 signal 若 role=behavior_tendency，它也**不能**去写状态。",
+        "",
+        "三个 role：",
+        "  state_shift          —— 写 Actor State 的量。**只有这一层**能进 state_proposal 的 delta；",
+        "                          target 见本文件 state_shift.paths。",
+        "  behavior_tendency    —— 影响行为候选的排序/倾向，不写状态。",
+        "  situation_assessment —— 对角色的当下情境评估，只作为约束/上下文，**永不**单独写状态。",
+        "",
+        "★ 不要因为跨检查点表现不同就改名。名字是接口，改了历史实验数据就对不上；",
+        "  表现差异记录在 capability profile 的 portability 字段，不改名。",
+        "",
+        "validated_on = 该 signal 的等级取自哪组用例：observable（判别力）/ contextual（上下文响应）。",
+        "★ 6 个 *_shift 没有 contextual 配对用例（同一句话换前文时 score 位移题不构成配对），",
+        "  所以它们的最终等级事实上只由判别力决定 —— profile 里会记成 ctx=N，这是已知限制，不是漏做。"
+      ],
+      "hostility": {
+        "role": "behavior_tendency",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "对玩家表现出敌意、攻击性言语或态度的倾向。",
+        "semantic_en": "Tendency to show hostility or aggression toward the player.",
+        "validated_on": ["observable", "contextual"]
+      },
+      "cooperation": {
+        "role": "behavior_tendency",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "愿意配合玩家、提供帮助或信息的倾向。",
+        "semantic_en": "Tendency to cooperate with, assist, or inform the player.",
+        "validated_on": ["observable", "contextual"]
+      },
+      "withdraw": {
+        "role": "behavior_tendency",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "想结束、回避或抽离当前互动的倾向。",
+        "semantic_en": "Tendency to end, avoid, or disengage from the current interaction.",
+        "validated_on": ["observable", "contextual"]
+      },
+      "confront": {
+        "role": "behavior_tendency",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "直接质问、逼问玩家的倾向（与 withdraw 是两条不同的退路，不是同一维的两端）。",
+        "semantic_en": "Tendency to confront or press the player directly.",
+        "validated_on": ["observable", "contextual"]
+      },
+      "disclose": {
+        "role": "behavior_tendency",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "主动透露自己的秘密/隐私信息的倾向。",
+        "semantic_en": "Tendency to voluntarily disclose the actor's own secrets or private information.",
+        "validated_on": ["observable"]
+      },
+      "investigate": {
+        "role": "behavior_tendency",
+        "kind": "level",
+        "range": [0, 4],
+        "semantic_zh": "★ 语义存疑：面板上叫「调查需求」，但实测在上下文方向上稳定反向。",
+        "semantic_en": "★ Semantics under review: labelled 'investigation need', but stably inverted on the contextual axis.",
+        "validated_on": ["observable", "contextual"],
+        "_semantic_review": [
+          "两种解释，**本轮不裁决、不改名、不取反**：",
+          "  (1) 用例期望写反了；",
+          "  (2) 这个量测的其实是「信息缺口 / 不确定性 / 前文不足」，而不是「调查欲望」——",
+          "      那它就应该单独成类，名字也要换。",
+          "证据倾向 (2)：定向均Δ 在 typed −0.151 → english −0.410，方向对率 10% → 0%，",
+          "跨检查点复现且幅度变大。若要查清，需要单独设计一组「信息充分/不充分」的用例。"
+        ]
+      },
+      "trust": {
+        "role": "situation_assessment",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "对玩家可信度的总体评估（当下情境判断，不是累积关系值）。",
+        "semantic_en": "Overall assessment of the player's trustworthiness in the current situation.",
+        "validated_on": ["observable", "contextual"]
+      },
+      "doubt": {
+        "role": "situation_assessment",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "对玩家陈述真实性的怀疑评估（情境判断）。",
+        "semantic_en": "Assessment of doubt about the truthfulness of the player's statements.",
+        "validated_on": ["observable", "contextual"],
+        "_collision_note": [
+          "★ 与 state_shift 的 doubt_shift 同名不同义，不要混：",
+          "  doubt       = 此刻怀疑多少（情境评估，无方向）",
+          "  doubt_shift = 这句话让 relationship.doubt 变了多少（状态位移，有方向）",
+          "两者读写的是不同东西，因此可以一个 active、另一个 disabled。"
+        ]
+      },
+      "danger": {
+        "role": "situation_assessment",
+        "kind": "prob",
+        "range": [0, 1],
+        "semantic_zh": "对当前情境危险程度的评估。",
+        "semantic_en": "Assessment of how dangerous the current situation is.",
+        "validated_on": ["observable", "contextual"]
+      },
+      "trust_shift": {
+        "role": "state_shift",
+        "kind": "level",
+        "range": [0, 4],
+        "target": "relationship.trust",
+        "semantic_zh": "这句话使 relationship.trust 变化的方向与强度（score 期望值，0~4）。",
+        "semantic_en": "Direction and strength of change this line causes to relationship.trust.",
+        "validated_on": ["observable"]
+      },
+      "respect_shift": {
+        "role": "state_shift",
+        "kind": "level",
+        "range": [0, 4],
+        "target": "relationship.respect",
+        "semantic_zh": "这句话使 relationship.respect 变化的方向与强度。",
+        "semantic_en": "Direction and strength of change this line causes to relationship.respect.",
+        "validated_on": ["observable"]
+      },
+      "doubt_shift": {
+        "role": "state_shift",
+        "kind": "level",
+        "range": [0, 4],
+        "target": "relationship.doubt",
+        "semantic_zh": "这句话使 relationship.doubt 变化的方向与强度。",
+        "semantic_en": "Direction and strength of change this line causes to relationship.doubt.",
+        "validated_on": ["observable"],
+        "_portability_note": [
+          "★ 本 signal 在 typed-decisions 是 A、在 english 是 D —— 检查点特有。",
+          "不要因为 english 上差就把它从 typed 的能力档案里删掉：typed 才是 Phase3 的生产候选。",
+          "正确做法是保留 status=active 且标 portability=检查点特有，换检查点时必须重新验证。"
+        ]
+      },
+      "fondness_shift": {
+        "role": "state_shift",
+        "kind": "level",
+        "range": [0, 4],
+        "target": "emotion.fondness",
+        "semantic_zh": "这句话使 emotion.fondness 变化的方向与强度。",
+        "semantic_en": "Direction and strength of change this line causes to emotion.fondness.",
+        "validated_on": ["observable"]
+      },
+      "alert_shift": {
+        "role": "state_shift",
+        "kind": "level",
+        "range": [0, 4],
+        "target": "emotion.alert",
+        "semantic_zh": "这句话使 emotion.alert（警觉）变化的方向与强度。",
+        "semantic_en": "Direction and strength of change this line causes to emotion.alert.",
+        "validated_on": ["observable"]
+      },
+      "goal_shift": {
+        "role": "state_shift",
+        "kind": "level",
+        "range": [0, 4],
+        "target": "goals.identify_player",
+        "semantic_zh": "这句话对「查明玩家身份」这个目标的推力方向与强度。",
+        "semantic_en": "Direction and strength of push this line gives to the goal 'identify the player'.",
+        "validated_on": ["observable"]
+      }
+    }
+  },
+  "capability_policy": {
+    "_note": [
+      "Phase3-P2 Task8：Checkpoint Capability Profile 的**声明式策略**。",
+      "",
+      "★ 这里**不放等级**。等级永远从 tests/runs/ 的实验结果读，本文件不参与定级。",
+      "  本表只放两类「无论实验数字怎么变都不许接进正式链路」的判断，以及检查点的身份声明。",
+      "",
+      "override 里列出的 signal，profile 会记 status_source=policy_override 并附 reason ——",
+      "  也就是说覆盖是**可见的**，不会被伪装成「实验推导出来的」。",
+      "  没有列在这里的 signal，status 完全由 _derive_status() 从 grade + portability 推导。"
+    ],
+    "production_candidate": "typed-decisions",
+    "comparison_checkpoints": ["english"],
+    "override": {
+      "investigate": {
+        "status": "semantic_review",
+        "reason": [
+          "判别力最强（typed AUC 0.895，15 个 signal 里最高），但上下文轴稳定反向，最终被拉到 R。",
+          "「方向反了」和「信号弱」是两回事：反向会主动骗人，弱信号只是没用。",
+          "在查清「用例期望写反」还是「这个量的语义其实是信息缺口/不确定性」之前，",
+          "禁止按原方向使用，**也禁止静默取反**（取反等于把一个没查清的假设写进状态）。"
+        ]
+      },
+      "disclose": {
+        "status": "disabled",
+        "reason": [
+          "跨检查点符号相反：typed D(0.464) → english A(0.889)，方向整个翻过来。",
+          "★ 危险点在于：只看 english 的等级会判成 active，于是「透露秘密」在换检查点后",
+          "  会变成相反的行为倾向 —— 不存在一个对所有检查点都正确的阈值或方向。",
+          "因此它不能作为正式的行为控制信号，只能留在实验层。"
+        ]
+      }
     }
   },
   "policy": {

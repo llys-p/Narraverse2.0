@@ -95,6 +95,18 @@
     color:#5ee8b5;animation:pop .4s cubic-bezier(.2,1.6,.4,1)}
   .chip.minus{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.3);color:#fca5a5}
   .chip.flat{background:rgba(139,147,166,.1);border-color:rgba(139,147,166,.25);color:var(--dim)}
+  /* P2：能力档案 / 信号分层。status 四值各有颜色，disabled/semantic_review 还会压暗整行 ——
+     「不能用」必须一眼看出来，否则这张表会给人错误的安全感。 */
+  .pill{display:inline-flex;align-items:center;font-family:var(--fm);font-size:9.5px;padding:1px 5px;
+    border-radius:4px;border:1px solid var(--line2);color:var(--dim);background:rgba(139,147,166,.08);white-space:nowrap}
+  .pill.active{color:#5ee8b5;border-color:rgba(52,211,153,.42);background:rgba(52,211,153,.12)}
+  .pill.auxiliary{color:#f0d09a;border-color:rgba(245,158,11,.36);background:rgba(245,158,11,.1)}
+  .pill.disabled{color:#8b93a6;border-color:rgba(139,147,166,.28);background:rgba(139,147,166,.08)}
+  .pill.semantic_review{color:#fca5a5;border-color:rgba(248,113,113,.36);background:rgba(248,113,113,.1)}
+  .role{font-family:var(--fm);font-size:9.5px;color:var(--dim2)}
+  .siglite{opacity:.45}
+  .ign{display:flex;gap:8px;align-items:baseline;font-size:11px;margin:4px 0;color:var(--dim2)}
+  .ign .sn{font-family:var(--fm);color:var(--dim);flex:none;width:104px}
   @keyframes pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
   .tiny{font-size:10.5px;color:var(--dim2);font-family:var(--fm)}
 
@@ -433,17 +445,79 @@ function renderPanel(out){
   const bname = id => (CFG.behaviors.find(z => z.id === id) || {}).name || id;
   const num = (v, n) => (v == null || isNaN(v)) ? '—' : Number(v).toFixed(n == null ? 3 : n);
 
+  /* ---- ⓿ P2：检查点能力档案 -------------------------------------------
+     ★ 放在最前面，因为它是「后面那些信号凭什么能用」的前提。
+       没有这一栏，④ 里的增量看起来就是 Laya 直接给的；有了这一栏才看得出
+       哪些信号被能力档案拦掉了、拦掉的理由是什么。 */
+  const ROLE_ZH = {state_shift: '状态位移', behavior_tendency: '行为倾向', situation_assessment: '情境评估'};
+  const ST_ZH = {active: '可直接用', auxiliary: '仅修正项', disabled: '不接入', semantic_review: '待查语义'};
+  const sp = out.state_proposal || {};
+  const cpf = out.checkpoint_profile || sp.profile || {};
+  const sigTab = out.signal_table || [];
+  const cap = out.capability_summary || {};
+  const counts = cap.counts || {};
+  // ★ 可写状态的 signal 必须取自**档案全量**（15 个），不能从 signal_table 推 ——
+  //   会写 Actor State 的 6 个 *_shift 刻意不在信号面板上，从面板推会得出「无」。
+  const shiftLabel = s => ((CFG.state_shift && CFG.state_shift.paths[s]) || {}).label || s;
+  const writable = (cap.state_writable || []).map(shiftLabel);
+  const shiftRows = ((cap.by_role || {}).state_shift || []);
+  const capWarn = (cpf.problems || []).length ? `<div class="verdict hold" style="margin-top:9px">
+      <span>!</span><span><b>能力档案不可用 → 本轮不产出任何状态增量。</b><br>
+      <span class="tiny">${esc((cpf.problems || []).join('；'))}</span></span></div>`
+    : (cpf.code_changed ? `<div class="tiny" style="margin-top:8px">
+        代码在上次生成档案后被改过（code_changed）—— 等级判据在代码里，所以这是提示而非阻断；
+        重新跑 <code>laya_bridge.py capability</code> 即可消除。</div>` : '');
+
+  const capBox = (sigTab.length || shiftRows.length) ? `<div class="sec">
+      <div class="sl">⓿ Checkpoint Capability Profile
+        <span class="bd2">P2 · 这些信号凭什么是可用的</span></div>
+      <div class="kv">
+        <span class="k">检查点</span><span class="v">${esc(cap.checkpoint || cpf.checkpoint || out.model || '—')}
+          <span class="pill ${cpf.fresh ? 'active' : 'semantic_review'}">${cpf.fresh ? 'fresh · 与实验一致' : 'stale · 需重新生成'}</span></span>
+        <span class="k">档案号</span><span class="v">${esc(String(cap.profile_id || cpf.profile_id || '—').slice(0, 12))}
+          <span class="tiny">${esc(cap.role_in_phase3 || '')}${cap.n_runs ? ' · ' + cap.n_runs + ' 次运行' : ''}</span></span>
+        <span class="k">status 分布</span><span class="v">active ${counts.active || 0} · auxiliary ${counts.auxiliary || 0}
+          · disabled ${counts.disabled || 0} · semantic_review ${counts.semantic_review || 0} <span class="tiny">/ 15</span></span>
+        <span class="k">可写 Actor State</span><span class="v">${writable.length
+          ? esc(writable.join('、')) : '<span style="color:var(--bad)">无</span>'}</span>
+      </div>
+      ${shiftRows.length ? `<div class="tiny" style="margin:10px 0 5px">
+        会写 Actor State 的 6 个信号（role=state_shift，刻意不在信号面板上）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0 10px">${shiftRows.map(r =>
+          `<span class="tiny" style="display:inline-flex;align-items:center;gap:4px;margin:2px 0">
+            <span style="color:var(--txt)">${esc(r.label || shiftLabel(r.signal))}</span>
+            <span class="pill ${esc(r.status)}">${esc(r.status)}</span>
+            <span class="tiny">${esc(r.grade || '—')}</span></span>`).join('')}</div>` : ''}
+      ${capWarn}
+      <div class="tiny" style="margin-top:8px;line-height:1.7">
+        档案由 <code>tests/runs/</code> 的实验结果推导（等级不是手写的）。
+        <b>role</b> 决定信号能流向哪里，<b>status</b> 决定它够不够格真的流过去 ——
+        只有 role=state_shift 且 status=active 才能产生状态增量。
+      </div>
+    </div>` : '';
+
   /* ---- ① Decision Signals ---- */
-  const sigRows = (out.decision_signals || []).map(r => {
+  const base_sig = sigTab.length ? sigTab : (out.decision_signals || []);
+  const sigRows = base_sig.map(r => {
     const isLv = r.kind === 'level';
     const max = isLv ? ((r.range && r.range[1]) || 4) : 1;
     const pct = Math.max(0, Math.min(100, 100 * r.value / max));
     // 只对 prob 型标「高」（阈值 0.5）。level 型是 0~4 的强度不是概率，
     // 拿 0.5 去标它会满屏假告警。
     const hot = !isLv && r.value >= 0.5;
-    return `<div class="noulrow"><span class="n">${esc(r.label)}</span>
+    const st = r.status;
+    const lite = (!st || st === 'disabled' || st === 'semantic_review') ? ' siglite' : '';
+    const pill = st
+      ? `<span class="pill ${esc(st)}" title="${esc(ST_ZH[st] || '')}">${esc(st)}</span>`
+      : '<span class="pill">无档案</span>';
+    const rtag = r.role
+      ? `<span class="role">${esc(ROLE_ZH[r.role] || r.role)}${r.grade ? ' · ' + esc(r.grade) : ''}</span>`
+      : '<span class="role">—</span>';
+    return `<div class="noulrow${lite}">
+      <span class="n" style="width:112px;line-height:1.5">${esc(r.label)}<br>${rtag}</span>
       <span class="track ${hot ? 'hot' : ''}"><i style="width:0" data-w="${pct.toFixed(1)}"></i></span>
-      <span class="v mono" style="${hot ? 'color:var(--warn)' : ''}">${isLv ? num(r.value, 2) : num(r.value, 3)}<span class="tiny">${isLv ? ' /' + max : ''}</span></span></div>`;
+      <span class="v mono" style="${hot ? 'color:var(--warn)' : ''}">${isLv ? num(r.value, 2) : num(r.value, 3)}<span class="tiny">${isLv ? ' /' + max : ''}</span></span>
+      <span style="width:104px;text-align:right;flex:none">${pill}</span></div>`;
   }).join('') || (out.engine === 'laya'
     ? '<div class="tiny">Laya 本轮未返回决策信号</div>'
     : `<div class="verdict hold" style="margin-top:0">
@@ -490,8 +564,13 @@ function renderPanel(out){
      <div class="pr-b"><i style="width:0" data-w="${(p * 100).toFixed(1)}"></i></div></div>`).join('')
     : `<div class="tiny">${esc((d.player_intent || {}).id || '—')}（无分布）</div>`;
 
-  /* ---- ④ 状态建议（§12：是 proposal，不是 Actor State 真值） ---- */
-  const props = out.proposed_deltas || out.deltas || [];
+  /* ---- ④ 状态建议（§12：是 proposal，不是 Actor State 真值） ----
+     ★ P2 起这里已经是**按能力档案过滤后**的结果：只有 role=state_shift 且 status=active
+       的 signal 会变成 delta；auxiliary 只登记「若启用是多少」而不生效；
+       disabled / semantic_review 逐条列出理由。 */
+  const props = sp.delta || out.proposed_deltas || out.deltas || [];
+  const auxRows = sp.auxiliary || [];
+  const ignRows = sp.ignored_signals || [];
   const scoreRows = Object.entries(out.answers || {})
     .filter(([k, v]) => (CFG.questions[k] && CFG.questions[k].type === 'score'))
     .map(([k, v]) => {
@@ -500,9 +579,20 @@ function renderPanel(out){
       <span class="v">${v._value == null ? '—' : Number(v._value).toFixed(2)} / ${(CFG.questions[k].criteria.length - 1)}</span></div>`;
     }).join('');
 
+  const f2 = v => (v == null || isNaN(v)) ? '—' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2);
   const deltas = props.map(x =>
-    `<span class="chip ${x.delta < 0 ? 'minus' : (Math.abs(x.delta) < 0.01 ? 'flat' : '')}">${esc(x.label)} ${x.delta > 0 ? '+' : ''}${x.delta.toFixed(2)}</span>`).join('')
-    || '<span class="tiny">无</span>';
+    `<span class="chip ${x.delta < 0 ? 'minus' : (Math.abs(x.delta) < 0.01 ? 'flat' : '')}"
+      title="${esc(x.source_signal || '')} · grade ${esc(x.grade || '—')} · ${esc(x.attribute || '')}">${esc(x.label || x.source_signal)} ${f2(x.delta)}</span>`).join('')
+    || '<span class="tiny">无 —— 本检查点没有任何 state_shift 信号达到 active</span>';
+  // auxiliary：登记但不生效。必须显示「未生效」，否则会被误读成已经写进状态了。
+  const auxHtml = auxRows.length ? `<div class="tiny" style="margin:9px 0 4px">
+      auxiliary · 仅修正项（<b>本轮未生效</b>，P2 阶段对会写状态的量更保守）</div>` + auxRows.map(x =>
+    `<span class="chip flat" title="${esc((x.reason || []).join(' '))}">${esc(x.source_signal)} 若启用 ${f2(x.delta_if_enabled)} · applied=false</span>`).join('') : '';
+  const ignHtml = ignRows.length ? `<div class="tiny" style="margin:9px 0 2px">
+      被能力档案拦下（逐条理由）</div>` + ignRows.map(x =>
+    `<div class="ign"><span class="sn">${esc(x.source_signal || '—')}</span>
+      <span><span class="pill ${esc(x.status || 'disabled')}">${esc(x.status || '—')}</span>
+      ${esc(String((x.reason || [])[0] || '').slice(0, 96))}</span></div>`).join('') : '';
 
   const noul = (label, v, thr) => {
     if (v == null) return '';
@@ -528,6 +618,8 @@ function renderPanel(out){
     ${out.input_warning ? `<div class="sec">
       <div class="verdict hold"><span>!</span><span><b>输入告警</b>：${esc(out.input_warning)}</span></div>
     </div>` : ''}
+
+    ${capBox}
 
     <div class="sec">
       <div class="sl">① Decision Signals <span class="bd2">Laya 判断了什么 · ${(out.decision_signals || []).length} 项</span></div>
@@ -560,9 +652,13 @@ function renderPanel(out){
     </div>
 
     <div class="sec">
-      <div class="sl">④ 状态建议 <span class="bd2">proposed_deltas · 非 Actor State 真值</span></div>
+      <div class="sl">④ 状态建议 <span class="bd2">state_proposal · 已按能力档案过滤 · 非 Actor State 真值</span></div>
       ${scoreRows}
-      <div style="margin-top:9px">${deltas}</div>
+      <div class="tiny" style="margin:9px 0 4px">active · 可交给 State Transition 裁决
+        （${(sp.gate || {}).n_delta != null ? (sp.gate || {}).n_delta : props.length} 条）</div>
+      <div>${deltas}</div>
+      ${auxHtml}
+      ${ignHtml}
       <div class="verdict hold" style="margin-top:9px"><span>!</span><span>${esc((out.state_proposal_meta || {}).note || 'proposed_deltas 是决策建议，不是最终状态写入值。')}</span></div>
       <div class="tiny" style="margin-top:7px">归因系数 k₊=${out.attribution.k_positive} / k₋=${out.attribution.k_negative}
         ${out.attribution.enabled ? '' : '（已关闭）'} · 同一句话对不同人格产生不同增量</div>
@@ -617,18 +713,22 @@ function renderPanel(out){
      actor 对象上，纯粹是为了让 Demo 能连续进行下去。
      正式 Narraverse 的链路必须是：
          Laya Proposal → 后端 Validate → State Transition → Commit
-     即：校验和提交都在后端，前端只负责显示。改这一段前先确认自己没在把 Demo 当架构。 */
+     即：校验和提交都在后端，前端只负责显示。改这一段前先确认自己没在把 Demo 当架构。
+   ★ P2：这里拿到的已经不是全部增量 —— 后端已按 capability profile 过滤过，
+     只有 role=state_shift 且 status=active 的 signal 才会出现在里面。
+     所以「某些属性不动了」通常是**正确行为**（该检查点上那个信号没被验证），不是 bug。 */
 function applyDeltas(deltas){
   if(!actor) return [];
   const out = [];
   deltas.forEach(d=>{
-    const cur = dig(actor, d.target);
+    const attr = d.attribute || d.target;      // attribute 是新键名，target 是旧键名
+    const cur = dig(actor, attr);
     if(typeof cur !== 'number') return;
     let next = cur + d.delta;
     const [lo,hi] = d.range || [0,100];
     next = Math.max(lo, Math.min(hi, next));
-    setDig(actor, d.target, +next.toFixed(4));
-    out.push({label: d.label, delta: d.delta, from: cur, to: next, target: d.target});
+    setDig(actor, attr, +next.toFixed(4));
+    out.push({label: d.label, delta: d.delta, from: cur, to: next, target: attr});
   });
   return out;
 }

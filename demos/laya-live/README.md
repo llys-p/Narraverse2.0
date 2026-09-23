@@ -62,7 +62,13 @@ Policy Resolver → ★ 行为权威
 
 ### `decision_signals`：9 个信号
 
-`narra_config.json` 的 `signals.order` 定义 9 个信号，两类量纲**不要混用**：
+> ⚠️ **本节口径已被 §16.5 / §17 收窄，先读这段再读下面。**
+> 上面「score 可用 / noul 不可用」的说法**只在 `typed-decisions` 上成立**；
+> 换到 `english`，level 组 AUC 均值 0.750→**0.607**、prob 组 0.623→**0.632**，**两组的差反号**。
+> 所以「哪种 kind 可用」不是 Laya 的属性，**是检查点的属性**。
+> 现在真正的判据不再是 kind，而是每个检查点一份的**能力档案**（`laya_bridge.py capability`）。
+
+`narra_config.json` 的 `signals.order` 定义 **9 个面板信号**，两类量纲**不要混用**：
 
 | kind | 来源 | 量纲 | 能否当阈值 |
 |---|---|---|---|
@@ -71,6 +77,14 @@ Policy Resolver → ★ 行为权威
 
 `hostility` / `cooperation` / `withdraw` / `confront` / `disclose` / `trust` / `doubt` / `danger`
 是 `prob`；`investigate` 是 `level`。
+
+★ 面板之外还有 **6 个 `*_shift` 信号**（`trust_shift` / `respect_shift` / `doubt_shift` /
+`fondness_shift` / `alert_shift` / `goal_shift`，都是 `level` 0~4）。
+它们**刻意不上面板**（会把重点淹掉，见 `SHIFT_IDS` 的注释），但它们是**唯一会写 Actor State 的一层**。
+所以「可定级的 signal」一共是 **9 + 6 = 15 个**，
+统计时若只看面板那 9 个，会得出「可写状态的信号：无」这种错误结论
+（`laya-live-demo.html` 的 ⓿ 栏就是为此改成读档案全量的）。
+每个 signal 的 role / status 见 `narra_config.json` 的 `signals.roles` 与能力档案。
 
 ### Policy Resolver
 
@@ -241,6 +255,8 @@ PY=.venv/Scripts/python.exe          # 一律用项目自带 venv，不要裸 py
 
 $PY laya_bridge.py qcheck       # ★ 改配置后必跑：token 预算 / 温度桶 / state 溢出
 $PY laya_bridge.py signalmetrics # ★★ 主实验：逐 signal 判别力 + 上下文响应 + A/B/C/D/R 分级
+$PY laya_bridge.py capability    # ★★ P2：从 tests/runs/ 推导每个检查点的能力档案（不跑模型，秒级）
+$PY laya_bridge.py capability --check  # 核对现有档案是否仍与磁盘一致
 $PY laya_bridge.py signaltest   # 旧口径回归（48 用例 / 99 断言，legacy 对照用）
 $PY laya_bridge.py ckptcompare  # 检查点同条件对照（两个进程各跑一次 signaltest）
 $PY laya_bridge.py personatest  # 人格 A/B 对照（LAYA_PERSONA_STYLE=polarity 换写法）
@@ -250,6 +266,7 @@ $PY laya_bridge.py llmtest      # 验证密钥与模型 id
 $PY laya_bridge.py langtest     # 旧版 4 句极端输入区分度测试
 
 $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶 + 提交门控，需先起桥）
+$PY tests/p2_acceptance.py --json   # ★ Phase3 P2 验收（能力档案 / 角色分层 / Proposal 过滤，54 条断言）
 ```
 
 诊断子集（结果单独存放，不影响正式对照）：
@@ -326,6 +343,50 @@ $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶
    **P1 的「4 个 level A 级可直接输入」在跨检查点口径下只剩 `trust_shift` 一个**；
    `disclose`（D→A）与 `doubt_shift`（A→D）**方向相反，必须淘汰**。
    P2 的信号选择以报告 §16.8 为准。
+4. ★ **P2 起「哪些 signal 能用」不再写在报告里，而是每个检查点一份能力档案**（见下节）。
+   档案对不上时**拒绝产出状态增量** —— 所以「某个属性忽然不动了」通常是正确行为，不是 bug。
+
+### `capability`：能力档案（P2，`tests/capability_profiles.json`）
+
+P1.5 的结论是诊断性的（写在表里）；P2 把它变成**结构性**的：机器可读、跟着检查点走、可核对。
+
+```bash
+$PY laya_bridge.py capability                     # 为 tests/runs/ 里出现的检查点各生成一份
+$PY laya_bridge.py capability typed-decisions      # 只做指定的
+$PY laya_bridge.py capability --check              # 只核对现档案与磁盘是否一致（不重新生成）
+```
+
+**等级不在这里定**：全部读 `tests/runs/*.json` 里 `signalmetrics` 已经算好的 `grade`。
+能力档案只做「跨跑次取代表值 → 跨检查点分类 → 按 grade 推导 status」。
+想改判据只能改 `grade_signal()` —— 改在档案层等于偷偷改评分规则。
+
+**status 四值**（`_derive_status()`，规则写死在代码里）：
+
+| status | 触发条件 | 含义 |
+|---|---|---|
+| `active` | `grade=A` | 该 role 的**主输入**；`role=state_shift` 时才能产生状态增量 |
+| `auxiliary` | `grade=B` / `grade=C` | 只能当合取/修正项，**不能单独驱动重大状态变化** |
+| `disabled` | `grade=D` / `grade=N` / 跑次等级不一致 | 不接入正式链路 |
+| `semantic_review` | `grade=R`（稳定反向） | 明显稳定响应但方向/语义有问题；**禁止静默取反**，先查清 |
+
+两张**声明式覆盖**（`narra_config.json` → `capability_policy.override`，档案里标
+`status_source=policy_override` 且附理由，不伪装成推导结果）：
+`investigate`→`semantic_review`、`disclose`→`disabled`。
+
+**五类哈希，四硬一软**：`dataset` / `checkpoint` / `config` / `translation_cache` 不符 → **硬阻断**；
+`code` 不符 → 只提示（`code_changed`）。硬阻断只留给**输入侧**：输入变了，
+同一份档案描述的就是另一批条件，没有辩解空间。
+
+★ `translation_cache` 记的是**实验用例那批文本的译文**哈希（`case_subset`），
+不是整个缓存文件 —— 否则「玩过几轮 demo」会被误判成「实验条件变了」（已实测修掉）。
+
+**当前 typed-decisions（生产候选）**：`active 3 · auxiliary 9 · disabled 2 · semantic_review 1`，
+可写 Actor State 的是 `trust_shift` / `doubt_shift` / `fondness_shift`。
+english 上只剩 `trust_shift` 一个 —— 这就是「不能透明互换」的量化证据（报告 §17.7）。
+
+`decide()` 的输出自 P2 起多出 `state_proposal` / `behavior_tendency` / `situation_assessment` /
+`checkpoint_profile` / `capability_summary` / `signal_table`；
+`proposed_deltas` **语义已变**（现在是过滤后的结果），未过滤的全量在 `raw_deltas_all_signals`（仅供审计）。
 
 
 `qcheck` 值得单独说：Laya 的 `build_sequence` 对选项有 48 token 上限，且所有选项必须塞进
@@ -340,12 +401,14 @@ state 塞太满，都会在无声无息中失效。
 | 文件 | 说明 |
 |---|---|
 | `laya_bridge.py` | HTTP 桥 + 决策编排 + CLI 自检（纯标准库） |
-| `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals` |
-| `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent |
-| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 ★ English 检查点跨检查点复现（P2 信号选择依据）** |
+| `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals`（含 **`roles`：15 个 signal 的职责分层**）、**`capability_policy`**（检查点身份 + 声明式 status 覆盖） |
+| `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent，外加 **⓿ Checkpoint Capability Profile**（P2） |
+| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 English 跨检查点复现（P2 信号选择依据）、§17 ★ Phase3-P2 能力档案与 Proposal + Phase3 最终设计原则** |
 | `tests/cases/` | **三组用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率） |
-| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py`）。**这些是证据，要提交** |
+| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py` / **`p2_acceptance.py`** / **`capability_profiles.json`**）。**这些是证据，要提交** |
 | `tests/runs/` | ★ **每次运行一份原始结果**（`<检查点>__<run_id>.json`，含逐用例 `budgets`）。跨检查点对照靠它，不能只留最新一次 |
+| `tests/capability_profiles.json` | ★ **P2：每个检查点的能力档案**（机器可读）。由 `capability` 从 `tests/runs/` 推导，**不要手改**；运行时按五类哈希核对后才敢用 |
+| `tests/replication/` | 复现实验工具：`prewarm_cache.py`（预热翻译缓存）/ `budget_check.py`（静态预算）/ `ckpt_analysis.py`（跨检查点分类，**classify() 的唯一权威实现**） |
 | `启动Laya桥.bat` | Windows 一键启动（**GBK 编码**，由 `_gen_bat.py` 生成，勿手改） |
 | `.env.example` | 配置样例，**由 `_gen_env_example.py` 生成，手改会被下次生成覆盖** |
 | `.gitignore` / `.gitattributes` | 排除 `.env`、虚拟环境、检查点权重；`.bat` 标为 binary 防止换行改写 |

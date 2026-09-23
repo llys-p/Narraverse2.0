@@ -1768,6 +1768,63 @@ def decide(payload):
     signal_rows, signal_values = signal_snapshot(answers)
     policy = policy_resolve(signal_values, choice_argmax)
 
+    # ---- ★★ Phase3-P2 Task10：按能力档案过滤后的统一 Proposal ------------------
+    # 只有 role=state_shift 且 status=active 的 signal 能产出 delta。
+    # 档案缺失 / 输入哈希不符时**一条都不产出** —— 宁可不动状态，也不拿未知能力当全能力用。
+    # 代价是：换到一个没有档案的检查点（如 multilingual）时，本桥不再给状态建议；
+    # 这是刻意的，因为「没验证过」和「验证过没问题」必须表现成不一样。
+    _cap_prof, _cap_check = load_capability_profile(
+        getattr(ENGINE, "model_name", None) or DEFAULT_MODEL_NAME)
+    state_proposal, behavior_tendency, situation_assessment = build_state_proposal(
+        answers, deltas, signal_values, _cap_prof, _cap_check)
+
+    # ★ 信号总表（Task9/Task10 的展示接口）：把 role / status / grade 直接挂到每个信号上。
+    #   为什么不让前端自己按名字 join 三份数据 —— 前端 join 一定会和后端漂，
+    #   而这张表的用途恰恰是「一眼看出这个信号能不能用」，漂了就等于给了错误的安全感。
+    _prof_sig = ((_cap_prof or {}).get("signals") or {})
+    signal_table = []
+    for _r in signal_rows:
+        _v = _prof_sig.get(_r["signal"]) or {}
+        signal_table.append(dict(
+            _r,
+            role=_v.get("role"), status=_v.get("status"), grade=_v.get("grade"),
+            portability=_v.get("portability"), status_source=_v.get("status_source"),
+            may_write_state=_v.get("may_write_state"),
+            consumable=bool(_v.get("status") in ("active", "auxiliary")),
+            has_profile=bool(_v),
+        ))
+
+    # ★ 档案摘要（给前端 ⓿ 那一栏用）—— 注意必须覆盖**全部 15 个 signal**，
+    #   而不是只有面板上那 9 个：会写 Actor State 的 6 个 *_shift 刻意不在面板上
+    #   （见 SHIFT_IDS 的注释），只统计面板信号会得到「可写状态的信号：无」这种错误结论。
+    cap_summary = None
+    if _cap_prof:
+        _psig = _cap_prof.get("signals") or {}
+        _order = all_signal_names()
+        _by_role = {}
+        for _n, _v in _psig.items():
+            _by_role.setdefault(_v.get("role"), []).append({
+                "signal": _n, "status": _v.get("status"), "grade": _v.get("grade"),
+                "portability": _v.get("portability"),
+                "status_source": _v.get("status_source"),
+                "label": ((CFG.get("state_shift") or {}).get("paths") or {}).get(_n, {}).get("label"),
+            })
+        for _r in _by_role.values():
+            _r.sort(key=lambda x: _order.index(x["signal"]) if x["signal"] in _order else 99)
+        cap_summary = {
+            "checkpoint": _cap_prof.get("checkpoint"),
+            "profile_id": _cap_prof.get("profile_id"),
+            "role_in_phase3": _cap_prof.get("role_in_phase3"),
+            "generated_at": _cap_prof.get("generated_at"),
+            "n_runs": (_cap_prof.get("runs") or {}).get("n_runs"),
+            "counts": _cap_prof.get("counts"),
+            "state_writable": [_n for _n in _order
+                               if (_psig.get(_n) or {}).get("may_write_state")],
+            "revalidate_on_switch": [_n for _n in _order
+                                     if (_psig.get(_n) or {}).get("revalidate_on_switch")],
+            "by_role": _by_role,
+        }
+
     # ★ 最终行为的取值规则（Phase3-Task1 后）：
     #   · source=ambiguous → **不给行为**（behavior=None），由上游 Story/Director 决定。
     #     这里绝不能用 `or choice_argmax` 兜底 —— 那正是被修掉的假交接：
@@ -1845,14 +1902,32 @@ def decide(payload):
         # ★ 本轮主输出：Laya 判断了什么
         "decision_signals": signal_rows,
         "signal_values": dict((k, round(v, 4)) for k, v in signal_values.items()),
+        # ★ P2：信号面板要看的那张表（含 role / status / grade / 能不能用）
+        "signal_table": signal_table,
+        # ★ P2：能力档案摘要（覆盖全部 15 个 signal，含写状态的 6 个 *_shift）
+        "capability_summary": cap_summary,
         # ★ Narraverse 侧为什么做这个决定
         "policy": policy,
         # ★ 状态增量只是「建议」，不是最终写入值
-        "proposed_deltas": deltas,
-        "deltas": deltas,                        # 兼容旧前端，逐步淘汰
+        # ★★ Phase3-P2 Task10：P2 起这里**已经不是全部增量**了 ——
+        #     只有 role=state_shift 且 status=active 的 signal 才进 proposed_deltas；
+        #     auxiliary / disabled / semantic_review 全部被 capability profile 拦下并逐条留 reason。
+        #     未过滤的全量增量仍在 raw_deltas_all_signals，**仅供审计，不许拿去写状态**。
+        "state_proposal": state_proposal,
+        "behavior_tendency": behavior_tendency,
+        "situation_assessment": situation_assessment,
+        "checkpoint_profile": state_proposal["profile"],
+        "proposed_deltas": state_proposal["delta"],
+        "deltas": state_proposal["delta"],           # 兼容旧前端，逐步淘汰
+        "raw_deltas_all_signals": deltas,
         "state_proposal_meta": {
             "is_proposal": True,
-            "note": ("proposed_deltas 是**决策建议**，不是 Actor State 的最终写入值。"
+            "filtered_by_capability_profile": True,
+            "n_active": len(state_proposal["delta"]),
+            "n_auxiliary": len(state_proposal["auxiliary"]),
+            "n_ignored": len(state_proposal["ignored_signals"]),
+            "note": ("proposed_deltas 是**决策建议**，不是 Actor State 的最终写入值；"
+                     "且自 Phase3-P2 起它已是**按能力档案过滤后**的结果 —— "
                      "正式链路应为 Laya Proposal → 后端 Validate → State Transition → Commit；"
                      "浏览器端 applyDeltas() 只是本 Demo 的演示手段，**不是状态权威**。"),
         },
@@ -2245,7 +2320,17 @@ def cmd_probe():
         (out["decision"]["behavior"] or {}).get("confidence")))
     print("行为分布：", json.dumps((out["decision"]["behavior"] or {}).get("probabilities"),
                                 ensure_ascii=False, default=str))
-    print("状态增量：", "  ".join("%s %+.2f" % (d["label"], d["delta"]) for d in out["deltas"]))
+    # ★ P2 起 out["deltas"] 是**按能力档案过滤后**的结果，不等于「Laya 报了多少增量」。
+    #   两行分开打，避免有人拿过滤后的数字去说明模型能力（或反过来）。
+    print("状态建议（已过滤，能进 State Transition 的）：",
+          "  ".join("%s %+.2f" % (d["label"], d["delta"]) for d in out["deltas"]) or "（无）")
+    print("全量增量（未过滤，仅审计）：",
+          "  ".join("%s %+.2f" % (d["label"], d["delta"]) for d in out["raw_deltas_all_signals"]))
+    print("能力档案：%s fresh=%s ｜ 可写状态 %d 条 / 修正项 %d 条 / 拦下 %d 条"
+          % ((out.get("checkpoint_profile") or {}).get("checkpoint"),
+             (out.get("checkpoint_profile") or {}).get("fresh"),
+             len(out["state_proposal"]["delta"]), len(out["state_proposal"]["auxiliary"]),
+             len(out["state_proposal"]["ignored_signals"])))
     print("\n引擎原始返回：")
     print(json.dumps(out["raw"], ensure_ascii=False, indent=2, default=str)[:3000])
     return 0
@@ -2929,6 +3014,912 @@ def _load_case_sets():
             print("读取 %s 失败：%r" % (p, e))
             out[key] = ({}, [])
     return out
+
+
+# ==========================================================================
+# Phase3-P2 Task8：Checkpoint Capability Profile（机器可读的能力档案）
+#
+# 为什么必须有这一步：P1.5 的实测结论是「同一个 signal 在不同 checkpoint 上等级会变」——
+#   15 个里 8 个变、1 个稳定反向、只有 trust_shift 一个跨检查点都是 A。
+#   既然能力不是 Laya 的属性、而是 **checkpoint 的属性**，那么
+#   「哪些 signal 可以进 State Transition」就**不能**是代码里的常量，
+#   必须是每个 checkpoint 一份、从实验数据推导、跟着检查点走的档案。
+#
+# 三条纪律：
+#   1) **等级不在这里定**。全部读 tests/runs/*.json 里 signalmetrics 已经算好的 grade，
+#      本模块只做「跨跑次取代表值 → 跨检查点分类 → 按 grade 推导 status」。
+#      想改判据就去改 grade_signal()，改在这里等于偷偷改评分规则。
+#   2) 推导规则写死在 _derive_status()，可审计；唯一允许的例外是 config 里
+#      capability_policy.override 显式点名的 signal —— 且 profile 会标
+#      status_source=policy_override 并附 reason，覆盖是**可见的**，不伪装成推导结果。
+#   3) 档案必须能自证来源：dataset / translation-cache / checkpoint / config / code 五个哈希。
+#      哈希对不上时**拒绝使用**旧档案（见 load_capability_profile），不许静默沿用 ——
+#      「拿 A 条件的档案去指导 B 条件的运行」正是这套实验里已经踩过一次的坑。
+# ==========================================================================
+
+_ROLE_NAMES = ("state_shift", "behavior_tendency", "situation_assessment")
+
+# status 的四个取值（与提示词一致，不要扩成五个；要表达「暂时不用」用 disabled + reason）
+_STATUSES = ("active", "auxiliary", "disabled", "semantic_review")
+
+
+def _sha256_file(p):
+    try:
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def _sha256_blob(obj):
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _dataset_fingerprint():
+    """用例集指纹：逐文件内容哈希后再整体哈希一次。
+
+    ★ 只哈希文件名列表是不够的 —— 改了用例内容必须能看出来，
+      而「改了什么用例」恰恰是 P1→P1.5 之间最大的变量。
+    """
+    d = TESTS_DIR / "cases"
+    per = {}
+    try:
+        for p in sorted(d.glob("*.json")):
+            per[p.name] = _sha256_file(p)
+    except Exception:
+        pass
+    return {"dir": str(d), "files": per, "sha": _sha256_blob(per),
+            "n_files": len(per)}
+
+
+def _checkpoint_fingerprint(model):
+    """检查点指纹。
+
+    ★ 刻意**不**哈希权重内容：权重上 GB，读一遍纯属浪费，而且换不了任何结论。
+      改为「配置/分词器配置的内容哈希 + 顶层文件清单（名 + 大小）」——
+      换 checkpoint、换权重、换 max_len 都能看出来，开销毫秒级。
+    """
+    d = MODELS_DIR / ("laya-" + model)
+    cfg_files = {}
+    for rel in ("rl_agent_config.json", "config.json", "model_config.json",
+                "tokenizer/tokenizer_config.json", "tokenizer/special_tokens_map.json"):
+        p = d / rel
+        if p.exists():
+            cfg_files[rel] = _sha256_file(p)
+    listing = []
+    try:
+        listing = sorted((p.name, p.stat().st_size) for p in d.iterdir() if p.is_file())
+    except Exception:
+        pass
+    blob = {"model": model, "cfg": cfg_files, "files": listing}
+    return {"model": model, "dir": str(d), "exists": d.is_dir(),
+            "config_files": cfg_files, "top_level_files": listing,
+            "id": _sha256_blob(blob)}
+
+
+def _config_fingerprint():
+    return {"path": str(CFG_PATH), "sha": _sha256_file(CFG_PATH)}
+
+
+def _case_texts():
+    """三组用例的全部输入文本（稳定顺序）。"""
+    out = []
+    for key in ("observable", "contextual", "hidden_truth"):
+        try:
+            blob = json.loads((TESTS_DIR / "cases" / ("%s.json" % key)).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for c in (blob.get("cases") or []):
+            t = c.get("text")
+            if t:
+                out.append(t)
+    return out
+
+
+def _xlate_subset_fingerprint():
+    """实验**真正用到**的那部分译文 → 哈希。这才是英文侧的输入条件。
+
+    ★ 为什么不哈希整个缓存文件：正常使用（玩家自己敲中文）也会往缓存里写条目。
+      哈希整个文件会让「玩过几轮 demo」变成「实验条件变了」——
+      假告警多了等于没有告警，最后没人看。
+      该冻结的是**这批用例的译文**：同一个中文句子只要译文没变，
+      实验的输入条件就没变；缓存里多几条别的句子与本次实验无关。
+
+    ★ n_missing > 0 表示这批输入根本没进过缓存 —— 那 signalmetrics 也不会开跑
+      （开跑前的完备性断言会拦住），所以这个数字应当永远是 0；
+      它不是 0 就说明缓存被换过 / 被删过。
+    """
+    texts = sorted(set(_case_texts()))
+    try:
+        cache = json.loads(_XLATE_DISK.read_text(encoding="utf-8"))
+    except Exception:
+        cache = {}
+    sub = dict((t, cache.get(t)) for t in texts if t in cache)
+    missing = [t for t in texts if t not in cache]
+    return {"sha": _sha256_blob(sub), "kind": "case_subset",
+            "n_texts": len(texts), "n_present": len(sub), "n_missing": len(missing),
+            "missing_sample": missing[:5], "source": str(_XLATE_DISK)}
+
+
+def _code_fingerprint():
+    p = Path(__file__).resolve()
+    return {"path": str(p), "sha": _sha256_file(p)}
+
+
+def all_signal_names():
+    """15 个可定级 signal = signals.order 的 9 个 + 6 个 *_shift（顺序稳定）。"""
+    spec = CFG.get("signals") or {}
+    order = list(spec.get("order") or list(spec.get("meta") or {}))
+    return order + [s for s in SHIFT_IDS if s not in order]
+
+
+def _signal_roles(strict=True):
+    """读 signals.roles。strict=True 时缺一个就返回 None。
+
+    ★ 为什么必须有 strict：如果「忘了分层」会静默退回默认 role，
+      那么一个 role 写错的 signal 会以正确的外表出现在错误的位置上 ——
+      这类错误在验收时看不出来，只有出了事故才看得出来。
+    """
+    roles = (CFG.get("signals") or {}).get("roles") or {}
+    roles = dict((k, v) for k, v in roles.items() if not k.startswith("_"))
+    names = all_signal_names()
+    missing = [s for s in names if s not in roles]
+    if missing:
+        msg = "signals.roles 没有覆盖这些 signal：%s" % "、".join(missing)
+        if strict:
+            print("★ 配置错误：%s" % msg)
+            print("  每个 signal 都必须显式声明 role —— 不许有默认值，")
+            print("  否则「忘了分层」会变成「静默用了默认值」，验收时看不出来。")
+            return None
+        print("⚠ %s（非 strict 模式，继续）" % msg)
+    unknown = [k for k in roles if k not in names]
+    if unknown:
+        print("⚠ signals.roles 里 %d 个名字不是可定级 signal（将被忽略）：%s"
+              % (len(unknown), "、".join(unknown)))
+    for k, v in sorted(roles.items()):
+        if k in names and (v or {}).get("role") not in _ROLE_NAMES:
+            print("⚠ signals.roles.%s 的 role=%r 不在 %s 之内" % (k, (v or {}).get("role"), _ROLE_NAMES))
+    return roles
+
+
+def _capability_policy():
+    return CFG.get("capability_policy") or {}
+
+
+def _load_run_results(runs_dir=None):
+    """读 tests/runs/<checkpoint>__<run>.json，按检查点分组。
+
+    返回 (分组, 文件名分组)。文件名里没有 `__` 的直接跳过 —— 目录里可能有别的产物。
+    """
+    d = Path(runs_dir) if runs_dir else (TESTS_DIR / "runs")
+    out, names = {}, {}
+    try:
+        files = sorted(d.glob("*.json"))
+    except Exception:
+        files = []
+    for p in files:
+        if "__" not in p.stem:
+            continue
+        ck, _run = p.stem.rsplit("__", 1)
+        try:
+            blob = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            print("⚠ 解析 %s 失败：%r（跳过）" % (p.name, e))
+            continue
+        out.setdefault(ck, []).append(blob)
+        names.setdefault(ck, []).append(p.name)
+    return out, names
+
+
+def _median(xs):
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    n = len(xs)
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
+
+
+def _rep_grade(gs):
+    """跨跑次的代表等级 → (grade, unstable)。
+
+    ★ 全部一致 → 直接用它；不一致 → 取**较差**的那个并标 unstable。
+      取较差而不是取众数/取最好：跑次之间有分歧本身就是结论（说明不稳），
+      挑最好的一次当结论等于把抖动当能力 —— P1 已经在这一步上栽过一次。
+    """
+    gs = [g for g in gs if g]
+    if not gs:
+        return None, False
+    if len(set(gs)) == 1:
+        return gs[0], False
+    return min(gs, key=lambda g: _GRADE_ORDER.get(g, -1)), True
+
+
+def _collect_signal_stats(runs):
+    """从 N 次运行里抽每个 signal 的等级序列与指标。"""
+    st = {}
+    for s in all_signal_names():
+        aucs, dgs, cgs, fgs = [], [], [], []
+        csigned, cg, cn = [], [], []
+        thr, gap = [], []
+        for r in runs:
+            d = (r.get("discrimination") or {}).get(s) or {}
+            aucs.append(d.get("auc"))
+            dgs.append(d.get("grade"))
+            thr.append(d.get("best_threshold"))
+            gap.append(d.get("mean_gap"))
+            f = (r.get("final_grades") or {}).get(s) or {}
+            cgs.append(f.get("context") or ((r.get("contextual") or {}).get(s) or {}).get("grade"))
+            fgs.append(f.get("final") or d.get("grade"))
+            x = (r.get("contextual") or {}).get(s)
+            if x:
+                csigned.append(x.get("mean_signed"))
+                cg.append(x.get("grade"))
+                cn.append(x.get("n"))
+        dg_rep, dg_unstable = _rep_grade(dgs)
+        cg_rep, cg_unstable = _rep_grade(cgs)
+        fg_rep, fg_unstable = _rep_grade(fgs)
+        st[s] = {
+            "auc_by_run": aucs, "auc_median": _median(aucs),
+            "disc_grades": dgs, "disc_grade": dg_rep,
+            "ctx_grades": cgs, "ctx_grade": cg_rep,
+            "final_grades": fgs, "final_grade": fg_rep,
+            "unstable": bool(dg_unstable or cg_unstable or fg_unstable),
+            "n_ctx_pairs": max(cn) if cn else None,
+            "ctx_signed_median": _median(csigned),
+            "threshold_median": _median(thr),
+            "mean_gap_median": _median(gap),
+        }
+    return st
+
+
+def _derive_status(name, grade, role, unstable, override, portability):
+    """由实验结果推导 status → (status, source, reasons[])。
+
+    规则（写死在这里，可审计；**等级不在本函数里决定**，只消费 grade）：
+
+      0) config.capability_policy.override 显式点名 → 用它（source=policy_override）
+      1) grade = N  → disabled         样本不足：不下结论，同样不接入
+      2) 跑次之间等级不一致 → disabled  同一检查点内自己都不稳，谈不上能力
+      3) grade = R  → semantic_review  「稳定反向」不是「弱」，是方向/语义出了问题。
+                                       不接入，且**禁止静默取反** —— 取反等于把一个
+                                       没查清的假设写进状态，比不用更危险
+      4) grade = A  → active           该 role 的主输入
+      5) grade = B  → auxiliary        「可作强提示，上层必须有规则约束」= 修正项
+      6) grade = C  → auxiliary        「只能当合取项，禁止单独定行为」
+      7) grade = D  → disabled         不可用
+      8) 兜底       → disabled
+
+    ★ portability（跨检查点稳定 / 特有 / 反向）**不参与降级**。
+      档案本身是按检查点生成的：在这个检查点上 grade 是多少就是多少，
+      拿另一个检查点的表现来降当前检查点的级，等于让 A 条件的数据否定 B 条件的结论。
+      portability 只写进 revalidate_on_switch —— 真正的安全阀是
+      「换检查点必须重新生成档案，哈希对不上时 load_capability_profile() 直接拒用」。
+    """
+    ov = (override or {}).get(name)
+    if ov:
+        st = ov.get("status")
+        if st not in _STATUSES:
+            return "disabled", "policy_override", ["override 里的 status=%r 非法，按 disabled 处理" % st]
+        return st, "policy_override", list(ov.get("reason") or ["config 里显式覆盖"])
+
+    r = []
+    if grade == "N" or grade is None:
+        return "disabled", "derived", ["grade=N（样本不足）：不下结论，也不接入正式链路"]
+    if unstable:
+        return "disabled", "derived", ["3 次运行的等级不一致 —— 该检查点内自己就不稳，"
+                                       "谈不上「已验证的能力」"]
+    if grade == "R":
+        return "semantic_review", "derived", [
+            "grade=R（稳定反向）：这不是「信号弱」，是方向或语义有问题。",
+            "不接入正式链路，**并且禁止静默取反** —— 必须先查清是用例期望写反了、"
+            "还是这个量的语义与名字不符",
+        ]
+    if grade == "A":
+        r.append("grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入")
+        return "active", "derived", r
+    if grade == "B":
+        r.append("grade=B（CI 下界 >0.50 且 AUC ≥0.60）：可作强提示，但上层必须有规则约束 → 修正项")
+        return "auxiliary", "derived", r
+    if grade == "C":
+        r.append("grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项")
+        return "auxiliary", "derived", r
+    if grade == "D":
+        r.append("grade=D（AUC <0.55）：不可用，不要拿它写阈值")
+        return "disabled", "derived", r
+    return "disabled", "derived", ["未知等级 %r" % grade]
+
+
+def _evidence_check(runs, names, ckpt_fp, ds_fp):
+    """核对「这几次运行是不是同一个条件」，并把结论写进档案。
+
+    ★ 这是那次静默条件漂移事故的固化：当时同一组号称「3 次独立运行」的数据里
+      混进了两种翻译缓存状态（obs_crow_3 在不在缓存里），**而且没有任何报错**。
+      所以档案不能只说「3 次运行」，必须能回答「这 3 次条件是否一致」。
+    """
+    out = {"checks": {}, "consistent": True, "problems": []}
+
+    # (1) 检查点：运行记录的 model 字段必须一致，且与档案一致
+    models = sorted(set(str(r.get("model")) for r in runs))
+    out["checks"]["models"] = models
+    if len(models) > 1:
+        out["consistent"] = False
+        out["problems"].append("这几次运行的 model 字段不一致：%s" % "、".join(models))
+
+    # (2) 翻译缓存：每次运行记录的 cache_sha 必须一致
+    shas = [(r.get("validity") or {}).get("cache_sha") for r in runs]
+    uniq = sorted(set(s for s in shas if s))
+    out["checks"]["cache_sha"] = [(names[i] if i < len(names) else "?", (shas[i] or "")[:16])
+                                  for i in range(len(shas))]
+    out["checks"]["cache_sha_unique"] = uniq
+    if len(uniq) > 1:
+        out["consistent"] = False
+        out["problems"].append(
+            "★ 这几次运行用的是**不同的翻译缓存**（%d 个不同哈希）—— 条件已经变了，"
+            "不能当同一组独立运行合并比较。见 tests/replication/ckpt_analysis.py 的说明。"
+            % len(uniq))
+    for i, r in enumerate(runs):
+        if (r.get("validity") or {}).get("cache_changed_during_run"):
+            out["consistent"] = False
+            out["problems"].append("★ %s 运行**期间**翻译缓存被改写"
+                                   % (names[i] if i < len(names) else "?"))
+
+    # (3) 用例集：运行记录的 counts 必须与当前磁盘上的用例数一致
+    cur = {}
+    for key in ("observable", "contextual", "hidden_truth"):
+        try:
+            blob = json.loads((TESTS_DIR / "cases" / ("%s.json" % key)).read_text(encoding="utf-8"))
+            cur[key] = len(blob.get("cases") or [])
+        except Exception:
+            cur[key] = None
+    out["checks"]["case_counts_now"] = cur
+    out["checks"]["case_counts_runs"] = [r.get("counts") for r in runs]
+    for i, r in enumerate(runs):
+        c = r.get("counts") or {}
+        if cur and any(cur.get(k) is not None and c.get(k) != cur.get(k) for k in cur):
+            out["consistent"] = False
+            out["problems"].append(
+                "%s 的用例数与当前磁盘不一致（运行 %s / 现在 %s）—— "
+                "档案描述的是另一批输入，等级不能直接沿用"
+                % (names[i] if i < len(names) else "?", c, cur))
+
+    # (4) 有效性：被剔除的用例要能说出来
+    out["checks"]["invalid_per_run"] = [
+        len((r.get("validity") or {}).get("invalid") or []) for r in runs]
+    for i, r in enumerate(runs):
+        for it in ((r.get("validity") or {}).get("invalid") or []):
+            out["problems"].append("剔除用例 [%s/%s/%s]：%s"
+                                   % (it.get("set"), it.get("id"), it.get("role"),
+                                      "；".join(it.get("reasons") or [])))
+    out["checkpoint_id"] = ckpt_fp.get("id")
+    out["dataset_sha"] = ds_fp.get("sha")
+    return out
+
+
+def _portability_from_analysis(name):
+    """跨检查点分类：优先读 ckpt_analysis 的产物，读不到就标「未跨检查点验证」。
+
+    ★ 刻意**不**在这里重新实现一遍 classify()。
+      两份规则一定会漂，而「同一份数据被两套规则解释成不同结论」是这套实验里
+      最难查的一类错误。分类只允许有一个权威实现（tests/replication/ckpt_analysis.py）。
+    """
+    p = TESTS_DIR / "ckpt_replication.json"
+    try:
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        row = ((blob.get("rows") or {}).get(name) or {})
+        cls = row.get("class")
+        if cls:
+            return cls, "tests/ckpt_replication.json"
+    except Exception:
+        pass
+    return "未跨检查点验证", None
+
+
+def _build_profile(model, runs, names):
+    """为一个检查点生成能力档案。"""
+    roles = _signal_roles(strict=True)
+    if roles is None:
+        return None
+    pol = _capability_policy()
+    override = pol.get("override") or {}
+    prod = pol.get("production_candidate")
+    cmp_list = list(pol.get("comparison_checkpoints") or [])
+
+    ckpt_fp = _checkpoint_fingerprint(model)
+    ds_fp = _dataset_fingerprint()
+    cfg_fp = _config_fingerprint()
+    code_fp = _code_fingerprint()
+    stats = _collect_signal_stats(runs)
+    ev = _evidence_check(runs, names, ckpt_fp, ds_fp)
+
+    signals = {}
+    counts = dict((s, 0) for s in _STATUSES)
+    for s in all_signal_names():
+        entry = roles.get(s) or {}
+        role = entry.get("role")
+        st = stats[s]
+        portability, port_src = _portability_from_analysis(s)
+        status, source, reasons = _derive_status(
+            s, st["final_grade"], role, st["unstable"], override, portability)
+        counts[status] = counts.get(status, 0) + 1
+
+        target = entry.get("target")
+        if not target and role == "state_shift":
+            target = (((CFG.get("state_shift") or {}).get("paths") or {}).get(s) or {}).get("target")
+
+        signals[s] = {
+            "name": s,
+            "role": role,
+            "kind": entry.get("kind") or st.get("kind") or _signal_kind(s),
+            "range": entry.get("range"),
+            "state_target": target,
+            "semantic_zh": entry.get("semantic_zh"),
+            "semantic_en": entry.get("semantic_en"),
+            "validated_on": entry.get("validated_on"),
+            # ---- 实验推导部分（唯一的事实来源）----
+            "grade": st["final_grade"],
+            "grade_by_run": st["final_grades"],
+            "discrimination_grade": st["disc_grade"],
+            "context_grade": st["ctx_grade"],
+            "grade_detail": {
+                "discrimination_by_run": st["disc_grades"],
+                "context_by_run": st["ctx_grades"],
+                "n_ctx_pairs": st["n_ctx_pairs"],
+            },
+            "metrics": {
+                "auc_by_run": st["auc_by_run"],
+                "auc_median": st["auc_median"],
+                "ctx_signed_median": st["ctx_signed_median"],
+                "mean_gap_median": st["mean_gap_median"],
+                # ★ 最佳阈值只是统计输出：档案里记录，但**不写回 config / Policy**。
+                #   从一次实验的阈值直接当生产阈值，是这套系统最容易犯的错。
+                "best_threshold_median": st["threshold_median"],
+                "best_threshold_is_statistical_only": True,
+            },
+            "status": status,
+            "status_source": source,
+            "status_reasons": reasons,
+            "portability": portability,
+            "portability_source": port_src,
+            "revalidate_on_switch": portability not in ("① 跨检查点稳定", "未跨检查点验证"),
+            "may_write_state": bool(role == "state_shift" and status == "active"),
+            "need_upper_constraint": status == "auxiliary",
+        }
+
+    prof = {
+        "_readme": [
+            "Phase3-P2 Task8：Checkpoint Capability Profile（机器可读，由 laya_bridge.py capability 生成，不要手改）。",
+            "★ 等级 (grade) 一律读自 tests/runs/*.json 里 signalmetrics 算好的值，本文件不重新定级。",
+            "★ status 由 _derive_status() 推导；status_source=policy_override 的条目来自",
+            "  narra_config.json 的 capability_policy.override，是**可见的**声明式覆盖。",
+            "★ 只能由 role=state_shift 且 status=active 的 signal 产生 state_proposal 的 delta。",
+            "  role 决定「能流向哪里」，status 决定「够不够格」，两者正交。",
+            "★ metrics.best_threshold_median 只是统计输出，禁止写回 config / Policy。",
+            "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。",
+        ],
+        "checkpoint": model,
+        "profile_id": None,          # 下面回填
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "generator": "laya_bridge.py capability",
+        "role_in_phase3": ("production_candidate" if model == prod
+                           else ("capability_comparison" if model in cmp_list else "unregistered")),
+        "runs": {"n_runs": len(runs), "files": names, "run_ids": [r.get("run_id") for r in runs]},
+        "evidence": {
+            "dataset": ds_fp, "checkpoint": ckpt_fp, "config": cfg_fp,
+            # ★ 英文侧输入条件的权威哈希 = 实验用例译文的哈希（不是整个缓存文件）。
+            #   file_sha_now / file_sha_per_run 只作旁证：前者会随日常使用增长，
+            #   后者用来发现「运行期间缓存被改写」（那次静默条件漂移事故的指纹）。
+            "translation_cache": {
+                "path": str(_XLATE_DISK),
+                "sha": _xlate_subset_fingerprint()["sha"],
+                "kind": "case_subset",
+                "subset": _xlate_subset_fingerprint(),
+                "file_sha_now": _sha256_file(_XLATE_DISK),
+                "file_sha_per_run": ev["checks"].get("cache_sha"),
+            },
+            "code": code_fp,
+            "consistency": ev,
+        },
+        "status_rule": [
+            "0) capability_policy.override 显式点名 → 覆盖（source=policy_override）",
+            "1) grade=N → disabled；2) 跑次等级不一致 → disabled",
+            "3) grade=R → semantic_review（方向/语义问题，禁止静默取反）",
+            "4) grade=A → active；5) grade=B → auxiliary；6) grade=C → auxiliary；7) grade=D → disabled",
+            "★ portability 不参与降级：档案是按检查点生成的，换检查点必须重新生成。",
+        ],
+        "counts": counts,
+        "signals": signals,
+    }
+    prof["profile_id"] = _sha256_blob({
+        "ckpt": model,
+        "signals": dict((k, [v["grade"], v["status"], v["role"]]) for k, v in signals.items()),
+        "dataset": ds_fp.get("sha"), "checkpoint": ckpt_fp.get("id"), "config": cfg_fp.get("sha"),
+    })
+    return prof
+
+
+CAPABILITY_PATH = TESTS_DIR / "capability_profiles.json"
+_CAP_PROFILE_CACHE = {"mtime": None, "blob": None}
+
+
+def load_capability_profiles(force=False):
+    """读 tests/capability_profiles.json（带 mtime 缓存）。"""
+    p = CAPABILITY_PATH
+    if not p.exists():
+        return None
+    try:
+        mt = p.stat().st_mtime
+        if not force and _CAP_PROFILE_CACHE["mtime"] == mt and _CAP_PROFILE_CACHE["blob"] is not None:
+            return _CAP_PROFILE_CACHE["blob"]
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        _CAP_PROFILE_CACHE.update({"mtime": mt, "blob": blob})
+        return blob
+    except Exception as e:
+        print("⚠ 读取能力档案失败：%r" % e)
+        return None
+
+
+def load_capability_profile(model=None):
+    """运行时取当前检查点的能力档案 → (profile, check)。
+
+    check 里是「为什么可用 / 不可用」，decide() 会原样透出给上游：
+      matched          —— 档案里的 checkpoint 与当前运行的是同一个
+      fresh            —— 输入侧哈希（dataset / config / checkpoint / cache）与磁盘现状一致
+      problems[]       —— 具体哪一项对不上
+      code_changed     —— 只是提示：代码变了不等于等级变了，所以**不阻断**
+                          （断的是输入变了 —— 那会让同一份档案描述的是另一批条件）
+
+    ★ 档案缺失或不 fresh 时**返回 (None, check)**，调用方必须据此拒绝写状态，
+      而不是退回「所有 signal 都可用」—— 未知能力当全能力用，是最危险的默认值。
+    """
+    name = model or DEFAULT_MODEL_NAME
+    blob = load_capability_profiles()
+    check = {"checkpoint": name, "profile_file": str(CAPABILITY_PATH),
+             "file_exists": CAPABILITY_PATH.exists(),
+             "matched": False, "fresh": False, "problems": [], "code_changed": False,
+             "profile_id": None}
+    if not blob:
+        check["problems"].append("能力档案不存在（先跑：python laya_bridge.py capability）")
+        return None, check
+    prof = ((blob.get("profiles") or {}).get(name))
+    if not prof:
+        check["problems"].append(
+            "档案里没有检查点 %r 的条目（有的：%s）。"
+            "换检查点必须重新生成档案 —— 能力不是 Laya 的属性，是检查点的属性。"
+            % (name, "、".join(sorted((blob.get("profiles") or {}).keys())) or "无"))
+        return None, check
+    check["matched"] = (prof.get("checkpoint") == name)
+    check["profile_id"] = prof.get("profile_id")
+
+    ev = prof.get("evidence") or {}
+    # 输入侧：不一致就拒用
+    ds_now = _dataset_fingerprint().get("sha")
+    if (ev.get("dataset") or {}).get("sha") != ds_now:
+        check["problems"].append("用例集已变（dataset sha 不符）→ 等级是在另一批输入上算的")
+    cfg_now = _config_fingerprint().get("sha")
+    if (ev.get("config") or {}).get("sha") != cfg_now:
+        check["problems"].append("narra_config.json 已变（config sha 不符）→ signal 定义可能已变")
+    ck_now = _checkpoint_fingerprint(name).get("id")
+    if (ev.get("checkpoint") or {}).get("id") != ck_now:
+        check["problems"].append("检查点本体已变（checkpoint id 不符）→ 必须重新验证")
+    # ★ 比对的是「实验用例译文的哈希」，不是缓存文件哈希 ——
+    #   日常使用会让文件增长，那不是实验条件变化（见 _xlate_subset_fingerprint 的说明）。
+    xsub_now = _xlate_subset_fingerprint()
+    if (ev.get("translation_cache") or {}).get("sha") != xsub_now["sha"]:
+        check["problems"].append(
+            "实验用例的译文已变（缺 %d/%d 条）→ 英文侧的输入条件与生成档案时不同"
+            % (xsub_now["n_missing"], xsub_now["n_texts"]))
+    # 旁证：生成档案时那几次运行本身是否条件一致（运行期缓存被改写等），
+    # 由 _evidence_check 在生成阶段已经判定并存进 consistency —— 这里只透出结论，
+    # 不在每次 decide 里重读 6 个运行文件（那是几百 KB 的 I/O，且结论不会变）。
+    # 代码侧：只提示
+    if (ev.get("code") or {}).get("sha") != _code_fingerprint().get("sha"):
+        check["code_changed"] = True
+    if not (ev.get("consistency") or {}).get("consistent", True):
+        check["problems"] += ["生成档案时这几次运行的条件就不一致：%s" % x
+                              for x in ((ev.get("consistency") or {}).get("problems") or [])[:3]]
+
+    check["fresh"] = not check["problems"]
+    return (prof if check["fresh"] else None), check
+
+
+def capability_status_map(profile):
+    """profile → {signal: status}，供 decide() 过滤用。"""
+    return dict((k, v.get("status")) for k, v in (profile.get("signals") or {}).items())
+
+
+def _role_entries():
+    return dict((k, v) for k, v in ((CFG.get("signals") or {}).get("roles") or {}).items()
+                if not k.startswith("_"))
+
+
+def _role_block(role_name, signal_values, profile, usable):
+    """behavior_tendency / situation_assessment 两个块共用。
+
+    ★ 这里**刻意不套阈值**。0.5 对 kind=prob 是「概率的中点」而不是标定出来的阈值，
+      但即便这样也不在这里判读 —— 阈值属于 Policy Resolver 的规则表，
+      能力档案里那些 best_threshold 又只是**统计输出**。
+      让 Laya 层自己「顺手判一下」，等于把一处没标定的判据藏进推演层，
+      以后没人能说清某个行为到底是哪条规则定的。
+    """
+    roles = _role_entries()
+    sig = (profile or {}).get("signals") or {}
+    out = []
+    for name in all_signal_names():
+        ent = roles.get(name) or {}
+        if ent.get("role") != role_name:
+            continue
+        if name not in signal_values:
+            continue
+        pv = sig.get(name) or {}
+        st = pv.get("status")
+        out.append({
+            "signal": name,
+            "role": role_name,
+            "value": signal_values.get(name),
+            "kind": ent.get("kind"),
+            "range": ent.get("range"),
+            "grade": pv.get("grade"),
+            "status": st,
+            "semantic_zh": ent.get("semantic_zh"),
+            # 只有 active / auxiliary 的值才允许上游当输入；disabled / semantic_review 一律标不可消费
+            "consumable": bool(usable and st in ("active", "auxiliary")),
+            "threshold_applied": False,
+            "note": "本层只给值，不判读。阈值/分档属于 Policy Resolver，不得在这里定。",
+        })
+    return out
+
+
+def build_state_proposal(answers, deltas, signal_values, profile, check):
+    """Phase3-P2 Task10：统一 Proposal Schema（按能力档案过滤后的状态建议）。
+
+    返回 (state_proposal, behavior_tendency, situation_assessment)。三者都是**建议**，
+    绝不写 Actor State —— 真正写入属于 Narraverse 的 State Transition Layer。
+
+    ★ 三道过滤，缺一不可：
+      1) role == state_shift  —— 只有这一层能写状态。behavior_tendency 与
+         situation_assessment 无论等级多高，都**没有**产出 delta 的资格。
+      2) status == active     —— auxiliary 只能当合取/修正项。P2 阶段对 auxiliary 更严：
+         只登记「若启用会产生多少」，**不产生任何数值效果**（applied=false）。
+         这比提示词的要求更保守一格，理由是会写状态的量一旦算错是**不可逆**的。
+      3) 档案自身可用          —— 档案缺失 / 输入哈希不符 → 一条 delta 都不产出。
+         未知能力当全能力用，是这套系统里最危险的默认值。
+
+    ★ 被过滤掉的必须逐条留 reason：只报「忽略了 N 个」不算达标，
+      必须能说出是哪 N 个、为什么。
+    """
+    roles = _role_entries()
+    smap = capability_status_map(profile) if profile else {}
+    usable = bool(profile)
+    ignored = []
+    delta_out, aux_out = [], []
+
+    for d in deltas:
+        sig = d.get("question")
+        ent = roles.get(sig) or {}
+        role = ent.get("role")
+        pv = ((profile or {}).get("signals") or {}).get(sig) or {}
+        base = {"source_signal": sig, "attribute": d.get("target"),
+                "target": d.get("target"),   # 旧键名，前端 applyDeltas 还在读；逐步淘汰
+                "grade": pv.get("grade"), "role": role,
+                "status": smap.get(sig), "semantic_zh": ent.get("semantic_zh")}
+        if role != "state_shift":
+            ignored.append(dict(base, reason=[
+                "role=%s，不是 state_shift —— 它没有写 Actor State 的资格，"
+                "只能进对应的输出块" % (role or "(未声明)")]))
+            continue
+        if not usable:
+            ignored.append(dict(base, reason=[
+                "能力档案不可用（%s）→ 该检查点上没有任何 signal 被验证过，一条 delta 都不产出"
+                % ("；".join(check.get("problems") or []) or "原因未知")]))
+            continue
+        if smap.get(sig) == "active":
+            delta_out.append({
+                "attribute": d.get("target"), "delta": d.get("delta"),
+                "target": d.get("target"),   # 旧键名，前端 applyDeltas 还在读；逐步淘汰
+                "source_signal": sig, "grade": pv.get("grade"), "status": "active",
+                "role": role, "label": d.get("label"),
+                "raw": d.get("raw"), "attribution": d.get("attribution"),
+                "range": d.get("range"),
+                "checkpoint": (profile or {}).get("checkpoint"),
+                "profile_id": (profile or {}).get("profile_id"),
+            })
+        elif smap.get(sig) == "auxiliary":
+            aux_out.append(dict(base, applied=False,
+                                delta_if_enabled=d.get("delta"),
+                                raw=d.get("raw"), attribution=d.get("attribution"),
+                                reason=[
+                                    "grade=%s → auxiliary：只能当合取/修正项，不能单独驱动状态变化。"
+                                    % pv.get("grade"),
+                                    "P2 阶段对它会写状态的量更保守：只登记「若启用是多少」，"
+                                    "不产生数值效果（applied=false）",
+                                ]))
+        else:
+            ignored.append(dict(base, reason=list(pv.get("status_reasons") or
+                                                  ["status=%r，不接入正式链路" % smap.get(sig)])))
+
+    # 档案里 status=disabled / semantic_review 的 signal 若本轮根本没出值，也要列出来 ——
+    # 「因为它没出现所以没被过滤」和「因为它不可用所以没被过滤」是两件事。
+    for name in all_signal_names():
+        ent = roles.get(name) or {}
+        if ent.get("role") != "state_shift":
+            continue
+        if smap.get(name) in (None, "active", "auxiliary"):
+            continue
+        if any(x.get("source_signal") == name for x in ignored):
+            continue
+        pv = ((profile or {}).get("signals") or {}).get(name) or {}
+        ignored.append({"source_signal": name, "attribute": ent.get("target"),
+                        "grade": pv.get("grade"), "role": "state_shift",
+                        "status": smap.get(name), "semantic_zh": ent.get("semantic_zh"),
+                        "reason": list(pv.get("status_reasons") or []) +
+                                  ["本轮该 signal 未产出值，且按档案本来也不可用"]})
+
+    proposal = {
+        "is_proposal": True,
+        "authority": "none",
+        "note": ("state_proposal 是**推演建议**，不是 Actor State 的最终写入值。"
+                 "正式链路应为 Laya Proposal → 后端 Validate → State Transition → Commit；"
+                 "浏览器端 applyDeltas() 只是 Demo 的演示手段，**不是状态权威**。"),
+        "profile": {
+            "checkpoint": check.get("checkpoint"),
+            "profile_id": check.get("profile_id"),
+            "matched": check.get("matched"),
+            "fresh": check.get("fresh"),
+            "code_changed": check.get("code_changed"),
+            "problems": list(check.get("problems") or []),
+            "source_file": check.get("profile_file"),
+            "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        "delta": delta_out,
+        "auxiliary": aux_out,
+        "ignored_signals": ignored,
+        "gate": {
+            "can_commit_state": bool(delta_out),
+            "n_delta": len(delta_out),
+            "n_auxiliary": len(aux_out),
+            "n_ignored": len(ignored),
+            "why": ("有 %d 条 delta 来自 role=state_shift 且 status=active 的 signal，"
+                    "可以交给 State Transition 层裁决" % len(delta_out)) if delta_out else
+                   ("不产出 delta。" + ("能力档案不可用。" if not usable
+                                      else "该检查点上没有 state_shift 类 signal 达到 active。")),
+        },
+    }
+    bt = _role_block("behavior_tendency", signal_values, profile, usable)
+    sa = _role_block("situation_assessment", signal_values, profile, usable)
+    return proposal, bt, sa
+
+
+def cmd_capability():
+    """Phase3-P2 Task8：从实验产物生成机器可读的 Checkpoint Capability Profile。
+
+    用法：
+        python laya_bridge.py capability                  # tests/runs/ 里出现的所有检查点
+        python laya_bridge.py capability typed-decisions  # 只做指定的
+        python laya_bridge.py capability --check          # 只核对现有档案是否仍与磁盘一致
+
+    ★ 本命令**不跑模型** —— 它只读 tests/runs/*.json，把已经算好的等级整理成档案。
+      所以它是秒级的，可以在每次改动后随手重跑。
+    """
+    argv = sys.argv[2:]
+    only = [a for a in argv if not a.startswith("-")]
+    do_check = "--check" in argv
+
+    runs_by_ck, names_by_ck = _load_run_results()
+    if not runs_by_ck:
+        print("★ tests/runs/ 里没有任何 <checkpoint>__<run>.json，没有实验数据可依据。")
+        print("  先跑：LAYA_MODEL=<ckpt> python laya_bridge.py signalmetrics")
+        print("  ★ 本命令拒绝在缺实验数据时凭猜测生成档案 —— 那就是「硬写等级」。")
+        return 1
+
+    if do_check:
+        blob = load_capability_profiles(force=True) or {}
+        profs = blob.get("profiles") or {}
+        print("=" * 96)
+        print("能力档案核对（不重新生成，只看现档案与磁盘是否一致）")
+        print("=" * 96)
+        for ck in sorted((profs.keys() if profs else [])) or sorted(runs_by_ck.keys()):
+            prof, check = load_capability_profile(ck)
+            tag = "✅ fresh" if check["fresh"] else "★ 需重新生成"
+            print("  %-18s %s ｜ profile_id=%s ｜ code_changed=%s"
+                  % (ck, tag, (check.get("profile_id") or "")[:12], check["code_changed"]))
+            for x in check["problems"]:
+                print("        · %s" % x)
+        return 0
+
+    # ---- 生成 ----------------------------------------------------------
+    roles = _signal_roles(strict=True)
+    if roles is None:
+        return 2
+
+    ckpts = [c for c in (only or sorted(runs_by_ck.keys())) if c in runs_by_ck]
+    skipped = [c for c in (only or []) if c not in runs_by_ck]
+    for c in skipped:
+        print("⚠ %s 在 tests/runs/ 里没有数据，跳过" % c)
+    if not ckpts:
+        print("★ 没有可生成的检查点。tests/runs/ 里现有：%s" % "、".join(sorted(runs_by_ck.keys())))
+        return 1
+
+    profiles = {}
+    for ck in ckpts:
+        runs = runs_by_ck[ck]
+        if len(runs) < 3:
+            print("⚠ %s 只有 %d 次运行 —— 档案会记录这个事实，"
+                  "但「跨跑次稳不稳」这一项在它上面是**未验证**的。" % (ck, len(runs)))
+        prof = _build_profile(ck, runs, names_by_ck.get(ck) or [])
+        if prof is None:
+            return 2
+        profiles[ck] = prof
+
+    # ---- 打印 ----------------------------------------------------------
+    print("=" * 104)
+    print("Checkpoint Capability Profile ｜ 由实验产物推导（不跑模型，只读 tests/runs/）")
+    print("★ 等级来自 signalmetrics 的 grade；status 由 _derive_status() 推导；"
+          "policy_override 的条目在下方标 [P]")
+    print("=" * 104)
+    for ck in ckpts:
+        p = profiles[ck]
+        print("\n■ %s ｜ role_in_phase3=%s ｜ %d 次运行 ｜ profile_id=%s"
+              % (ck, p["role_in_phase3"], p["runs"]["n_runs"], p["profile_id"][:16]))
+        print("  role 分布：%s"
+              % " ｜ ".join("%s=%d" % (r, sum(1 for v in p["signals"].values() if v["role"] == r))
+                            for r in _ROLE_NAMES))
+        c = p["counts"]
+        print("  status 分布：active=%d auxiliary=%d disabled=%d semantic_review=%d"
+              % (c.get("active", 0), c.get("auxiliary", 0), c.get("disabled", 0),
+                 c.get("semantic_review", 0)))
+        if not p["evidence"]["consistency"]["consistent"]:
+            print("  ★★ 条件一致性检查未通过：")
+            for x in p["evidence"]["consistency"]["problems"]:
+                print("      · %s" % x)
+        print("  %-15s %-21s %-6s %-6s %-16s %-6s %s"
+              % ("signal", "role", "kind", "grade", "status", "auc", "por"))
+        print("  " + "-" * 100)
+        for s in all_signal_names():
+            v = p["signals"][s]
+            mark = "[P]" if v["status_source"] == "policy_override" else "   "
+            # 只让 active + state_shift 真的能写状态 —— 这是全系统最关键的一条约束
+            wr = "→state" if v["may_write_state"] else ""
+            print("  %-15s %-21s %-6s %-6s %-16s %-6s %-4s %s %s"
+                  % (s, v["role"], v["kind"], v["grade"], v["status"],
+                     ("%.3f" % v["metrics"]["auc_median"])
+                     if v["metrics"]["auc_median"] is not None else "—",
+                     v["portability"].split(" ")[0], mark, wr))
+        print("  ★ 可写 Actor State 的 signal（role=state_shift 且 status=active）：%s"
+              % ("、".join(s for s in all_signal_names() if p["signals"][s]["may_write_state"]) or "无"))
+        print("  ★ 需在换检查点时重新验证的：%s"
+              % ("、".join(s for s in all_signal_names() if p["signals"][s]["revalidate_on_switch"]) or "无"))
+
+    out = {
+        "_readme": ["Phase3-P2 Task8：每个 checkpoint 一份能力档案。",
+                    "由 python laya_bridge.py capability 生成；等级读自 tests/runs/，status 由代码推导。",
+                    "运行时由 load_capability_profile() 按五个哈希核对后才敢用。"],
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "runs_dir": str(TESTS_DIR / "runs"),
+        "index": dict((ck, {"profile_id": profiles[ck]["profile_id"],
+                            "role_in_phase3": profiles[ck]["role_in_phase3"],
+                            "n_runs": profiles[ck]["runs"]["n_runs"],
+                            "counts": profiles[ck]["counts"],
+                            "consistent": profiles[ck]["evidence"]["consistency"]["consistent"]})
+                      for ck in ckpts),
+        "profiles": profiles,
+    }
+    # 合并进旧文件（保留本次没生成的检查点，但仍然逐条记录它的哈希状态由 --check 负责）
+    try:
+        old = load_capability_profiles(force=True)
+        if old and isinstance(old.get("profiles"), dict):
+            merged = dict(old["profiles"])
+            merged.update(profiles)
+            out["profiles"] = merged
+            for ck, ent in (old.get("index") or {}).items():
+                out["index"].setdefault(ck, ent)
+    except Exception:
+        pass
+    CAPABILITY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CAPABILITY_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("\n已写入 %s（%d 个检查点：%s）"
+          % (CAPABILITY_PATH, len(out["profiles"]), "、".join(sorted(out["profiles"]))))
+    print("运行时核对：python laya_bridge.py capability --check")
+    return 0
 
 
 def cmd_signalmetrics():
@@ -4318,6 +5309,8 @@ def main():
         return cmd_signaltest()
     if len(sys.argv) > 1 and sys.argv[1] == "signalmetrics":
         return cmd_signalmetrics()
+    if len(sys.argv) > 1 and sys.argv[1] == "capability":
+        return cmd_capability()
     if len(sys.argv) > 1 and sys.argv[1] == "ckptcompare":
         return cmd_ckptcompare()
     if len(sys.argv) > 1 and sys.argv[1] == "personatest":

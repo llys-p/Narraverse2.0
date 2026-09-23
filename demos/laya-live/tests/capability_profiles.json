@@ -1,0 +1,2143 @@
+{
+ "_readme": [
+  "Phase3-P2 Task8：每个 checkpoint 一份能力档案。",
+  "由 python laya_bridge.py capability 生成；等级读自 tests/runs/，status 由代码推导。",
+  "运行时由 load_capability_profile() 按五个哈希核对后才敢用。"
+ ],
+ "generated_at": "2026-09-24 07:07:07",
+ "runs_dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs",
+ "index": {
+  "english": {
+   "profile_id": "3b80be9014d6f084124c6642c70f0f2c4d52e8338979be2039de0d04e2c71881",
+   "role_in_phase3": "capability_comparison",
+   "n_runs": 3,
+   "counts": {
+    "active": 1,
+    "auxiliary": 6,
+    "disabled": 7,
+    "semantic_review": 1
+   },
+   "consistent": true
+  },
+  "typed-decisions": {
+   "profile_id": "f77f7f06ba82fd2a22697cd9415e75623b51aa31507a3ea3a5dc78b2f928f52d",
+   "role_in_phase3": "production_candidate",
+   "n_runs": 3,
+   "counts": {
+    "active": 3,
+    "auxiliary": 9,
+    "disabled": 2,
+    "semantic_review": 1
+   },
+   "consistent": true
+  }
+ },
+ "profiles": {
+  "english": {
+   "_readme": [
+    "Phase3-P2 Task8：Checkpoint Capability Profile（机器可读，由 laya_bridge.py capability 生成，不要手改）。",
+    "★ 等级 (grade) 一律读自 tests/runs/*.json 里 signalmetrics 算好的值，本文件不重新定级。",
+    "★ status 由 _derive_status() 推导；status_source=policy_override 的条目来自",
+    "  narra_config.json 的 capability_policy.override，是**可见的**声明式覆盖。",
+    "★ 只能由 role=state_shift 且 status=active 的 signal 产生 state_proposal 的 delta。",
+    "  role 决定「能流向哪里」，status 决定「够不够格」，两者正交。",
+    "★ metrics.best_threshold_median 只是统计输出，禁止写回 config / Policy。",
+    "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。"
+   ],
+   "checkpoint": "english",
+   "profile_id": "3b80be9014d6f084124c6642c70f0f2c4d52e8338979be2039de0d04e2c71881",
+   "generated_at": "2026-09-24 07:07:07",
+   "generator": "laya_bridge.py capability",
+   "role_in_phase3": "capability_comparison",
+   "runs": {
+    "n_runs": 3,
+    "files": [
+     "english__run1.json",
+     "english__run2.json",
+     "english__run3.json"
+    ],
+    "run_ids": [
+     "run1",
+     "run2",
+     "run3"
+    ]
+   },
+   "evidence": {
+    "dataset": {
+     "dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\cases",
+     "files": {
+      "contextual.json": "e34edc68989f601c9e55756d530fa7a4daa82d123ae3bbedcdfeebf174bd8a0e",
+      "hidden_truth.json": "64933965adcebf56c717228e0eb5017f81446b5a9d99b607dd123a03d3a1fb8d",
+      "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc"
+     },
+     "sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e",
+     "n_files": 3
+    },
+    "checkpoint": {
+     "model": "english",
+     "dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_models\\laya-english",
+     "exists": true,
+     "config_files": {
+      "rl_agent_config.json": "ae287b56bbcf5f8c4f4541ae9dfd00c914c4c48b940b8398c3058af37ba92bbd",
+      "tokenizer/tokenizer_config.json": "50044de60daaa73df97d262e15a40d4faf0160e7d742df64b377877a1320dd12"
+     },
+     "top_level_files": [
+      [
+       "model.safetensors",
+       842609210
+      ],
+      [
+       "rl_agent_config.json",
+       745
+      ]
+     ],
+     "id": "eef335dec0b6086162f513092eb0d7005ea1ac570b89252b377ec6c7ab625bce"
+    },
+    "config": {
+     "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\narra_config.json",
+     "sha": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a"
+    },
+    "translation_cache": {
+     "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json",
+     "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+     "kind": "case_subset",
+     "subset": {
+      "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+      "kind": "case_subset",
+      "n_texts": 137,
+      "n_present": 137,
+      "n_missing": 0,
+      "missing_sample": [],
+      "source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json"
+     },
+     "file_sha_now": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+     "file_sha_per_run": [
+      [
+       "english__run1.json",
+       "bfa17f6de3798a69"
+      ],
+      [
+       "english__run2.json",
+       "bfa17f6de3798a69"
+      ],
+      [
+       "english__run3.json",
+       "bfa17f6de3798a69"
+      ]
+     ]
+    },
+    "code": {
+     "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\laya_bridge.py",
+     "sha": "cdb0723b7a5640f21c53ca9d11f6b8f09e019f111f9cdeaf7fc907edff34df2d"
+    },
+    "consistency": {
+     "checks": {
+      "models": [
+       "english"
+      ],
+      "cache_sha": [
+       [
+        "english__run1.json",
+        "bfa17f6de3798a69"
+       ],
+       [
+        "english__run2.json",
+        "bfa17f6de3798a69"
+       ],
+       [
+        "english__run3.json",
+        "bfa17f6de3798a69"
+       ]
+      ],
+      "cache_sha_unique": [
+       "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40"
+      ],
+      "case_counts_now": {
+       "observable": 70,
+       "contextual": 48,
+       "hidden_truth": 20
+      },
+      "case_counts_runs": [
+       {
+        "observable": 70,
+        "contextual": 48,
+        "hidden_truth": 20
+       },
+       {
+        "observable": 70,
+        "contextual": 48,
+        "hidden_truth": 20
+       },
+       {
+        "observable": 70,
+        "contextual": 48,
+        "hidden_truth": 20
+       }
+      ],
+      "invalid_per_run": [
+       0,
+       0,
+       0
+      ]
+     },
+     "consistent": true,
+     "problems": [],
+     "checkpoint_id": "eef335dec0b6086162f513092eb0d7005ea1ac570b89252b377ec6c7ab625bce",
+     "dataset_sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e"
+    }
+   },
+   "status_rule": [
+    "0) capability_policy.override 显式点名 → 覆盖（source=policy_override）",
+    "1) grade=N → disabled；2) 跑次等级不一致 → disabled",
+    "3) grade=R → semantic_review（方向/语义问题，禁止静默取反）",
+    "4) grade=A → active；5) grade=B → auxiliary；6) grade=C → auxiliary；7) grade=D → disabled",
+    "★ portability 不参与降级：档案是按检查点生成的，换检查点必须重新生成。"
+   ],
+   "counts": {
+    "active": 1,
+    "auxiliary": 6,
+    "disabled": 7,
+    "semantic_review": 1
+   },
+   "signals": {
+    "hostility": {
+     "name": "hostility",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对玩家表现出敌意、攻击性言语或态度的倾向。",
+     "semantic_en": "Tendency to show hostility or aggression toward the player.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 22
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6352,
+       0.6352,
+       0.6352
+      ],
+      "auc_median": 0.6352,
+      "ctx_signed_median": 0.042,
+      "mean_gap_median": 0.0423,
+      "best_threshold_median": 0.2739,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "cooperation": {
+     "name": "cooperation",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "愿意配合玩家、提供帮助或信息的倾向。",
+     "semantic_en": "Tendency to cooperate with, assist, or inform the player.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 17
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.7719,
+       0.7719,
+       0.7719
+      ],
+      "auc_median": 0.7719,
+      "ctx_signed_median": 0.0394,
+      "mean_gap_median": 0.2004,
+      "best_threshold_median": 0.3612,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "withdraw": {
+     "name": "withdraw",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "想结束、回避或抽离当前互动的倾向。",
+     "semantic_en": "Tendency to end, avoid, or disengage from the current interaction.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "B",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "B",
+       "B",
+       "B"
+      ],
+      "n_ctx_pairs": 12
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.5047,
+       0.5047,
+       0.5047
+      ],
+      "auc_median": 0.5047,
+      "ctx_signed_median": 0.2795,
+      "mean_gap_median": 0.0048,
+      "best_threshold_median": 0.4899,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "confront": {
+     "name": "confront",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "直接质问、逼问玩家的倾向（与 withdraw 是两条不同的退路，不是同一维的两端）。",
+     "semantic_en": "Tendency to confront or press the player directly.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": 1
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.4143,
+       0.4143,
+       0.4143
+      ],
+      "auc_median": 0.4143,
+      "ctx_signed_median": 0.0639,
+      "mean_gap_median": -0.0414,
+      "best_threshold_median": 0.4941,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "disclose": {
+     "name": "disclose",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "主动透露自己的秘密/隐私信息的倾向。",
+     "semantic_en": "Tendency to voluntarily disclose the actor's own secrets or private information.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "A",
+     "grade_by_run": [
+      "A",
+      "A",
+      "A"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.8889,
+       0.8889,
+       0.8889
+      ],
+      "auc_median": 0.8889,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.1645,
+      "best_threshold_median": 0.4294,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "policy_override",
+     "status_reasons": [
+      "跨检查点符号相反：typed D(0.464) → english A(0.889)，方向整个翻过来。",
+      "★ 危险点在于：只看 english 的等级会判成 active，于是「透露秘密」在换检查点后",
+      "  会变成相反的行为倾向 —— 不存在一个对所有检查点都正确的阈值或方向。",
+      "因此它不能作为正式的行为控制信号，只能留在实验层。"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "investigate": {
+     "name": "investigate",
+     "role": "behavior_tendency",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": null,
+     "semantic_zh": "★ 语义存疑：面板上叫「调查需求」，但实测在上下文方向上稳定反向。",
+     "semantic_en": "★ Semantics under review: labelled 'investigation need', but stably inverted on the contextual axis.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "R",
+     "grade_by_run": [
+      "R",
+      "R",
+      "R"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "R",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "R",
+       "R",
+       "R"
+      ],
+      "n_ctx_pairs": 10
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6895,
+       0.6895,
+       0.6895
+      ],
+      "auc_median": 0.6895,
+      "ctx_signed_median": -0.4098,
+      "mean_gap_median": 0.0682,
+      "best_threshold_median": 2.2941,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "semantic_review",
+     "status_source": "policy_override",
+     "status_reasons": [
+      "判别力最强（typed AUC 0.895，15 个 signal 里最高），但上下文轴稳定反向，最终被拉到 R。",
+      "「方向反了」和「信号弱」是两回事：反向会主动骗人，弱信号只是没用。",
+      "在查清「用例期望写反」还是「这个量的语义其实是信息缺口/不确定性」之前，",
+      "禁止按原方向使用，**也禁止静默取反**（取反等于把一个没查清的假设写进状态）。"
+     ],
+     "portability": "③ 不可靠-反向",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "trust": {
+     "name": "trust",
+     "role": "situation_assessment",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对玩家可信度的总体评估（当下情境判断，不是累积关系值）。",
+     "semantic_en": "Overall assessment of the player's trustworthiness in the current situation.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "B",
+     "grade_by_run": [
+      "B",
+      "B",
+      "B"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "B",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "B",
+       "B",
+       "B"
+      ],
+      "n_ctx_pairs": 16
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.778,
+       0.778,
+       0.778
+      ],
+      "auc_median": 0.778,
+      "ctx_signed_median": 0.0987,
+      "mean_gap_median": 0.1184,
+      "best_threshold_median": 0.3499,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=B（CI 下界 >0.50 且 AUC ≥0.60）：可作强提示，但上层必须有规则约束 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "doubt": {
+     "name": "doubt",
+     "role": "situation_assessment",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对玩家陈述真实性的怀疑评估（情境判断）。",
+     "semantic_en": "Assessment of doubt about the truthfulness of the player's statements.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 25
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6144,
+       0.6144,
+       0.6144
+      ],
+      "auc_median": 0.6144,
+      "ctx_signed_median": -0.0038,
+      "mean_gap_median": 0.0223,
+      "best_threshold_median": 0.2722,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "danger": {
+     "name": "danger",
+     "role": "situation_assessment",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对当前情境危险程度的评估。",
+     "semantic_en": "Assessment of how dangerous the current situation is.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "B",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "B",
+       "B",
+       "B"
+      ],
+      "n_ctx_pairs": 10
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.447,
+       0.447,
+       0.447
+      ],
+      "auc_median": 0.447,
+      "ctx_signed_median": 0.0515,
+      "mean_gap_median": -0.0045,
+      "best_threshold_median": 0.235,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "trust_shift": {
+     "name": "trust_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "relationship.trust",
+     "semantic_zh": "这句话使 relationship.trust 变化的方向与强度（score 期望值，0~4）。",
+     "semantic_en": "Direction and strength of change this line causes to relationship.trust.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "A",
+     "grade_by_run": [
+      "A",
+      "A",
+      "A"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.8067,
+       0.8067,
+       0.8067
+      ],
+      "auc_median": 0.8067,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.1445,
+      "best_threshold_median": 2.1417,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "active",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": true,
+     "need_upper_constraint": false
+    },
+    "respect_shift": {
+     "name": "respect_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "relationship.respect",
+     "semantic_zh": "这句话使 relationship.respect 变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to relationship.respect.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6692,
+       0.6692,
+       0.6692
+      ],
+      "auc_median": 0.6692,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.1183,
+      "best_threshold_median": 2.0596,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "doubt_shift": {
+     "name": "doubt_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "relationship.doubt",
+     "semantic_zh": "这句话使 relationship.doubt 变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to relationship.doubt.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.4067,
+       0.4067,
+       0.4067
+      ],
+      "auc_median": 0.4067,
+      "ctx_signed_median": null,
+      "mean_gap_median": -0.0183,
+      "best_threshold_median": 2.2356,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "fondness_shift": {
+     "name": "fondness_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "emotion.fondness",
+     "semantic_zh": "这句话使 emotion.fondness 变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to emotion.fondness.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.7238,
+       0.7238,
+       0.7238
+      ],
+      "auc_median": 0.7238,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.1704,
+      "best_threshold_median": 1.7524,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "alert_shift": {
+     "name": "alert_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "emotion.alert",
+     "semantic_zh": "这句话使 emotion.alert（警觉）变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to emotion.alert.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.5,
+       0.5,
+       0.5
+      ],
+      "auc_median": 0.5,
+      "ctx_signed_median": null,
+      "mean_gap_median": -0.0465,
+      "best_threshold_median": 2.0228,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "goal_shift": {
+     "name": "goal_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "goals.identify_player",
+     "semantic_zh": "这句话对「查明玩家身份」这个目标的推力方向与强度。",
+     "semantic_en": "Direction and strength of push this line gives to the goal 'identify the player'.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.45,
+       0.45,
+       0.45
+      ],
+      "auc_median": 0.45,
+      "ctx_signed_median": null,
+      "mean_gap_median": -0.0178,
+      "best_threshold_median": 1.8983,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    }
+   }
+  },
+  "typed-decisions": {
+   "_readme": [
+    "Phase3-P2 Task8：Checkpoint Capability Profile（机器可读，由 laya_bridge.py capability 生成，不要手改）。",
+    "★ 等级 (grade) 一律读自 tests/runs/*.json 里 signalmetrics 算好的值，本文件不重新定级。",
+    "★ status 由 _derive_status() 推导；status_source=policy_override 的条目来自",
+    "  narra_config.json 的 capability_policy.override，是**可见的**声明式覆盖。",
+    "★ 只能由 role=state_shift 且 status=active 的 signal 产生 state_proposal 的 delta。",
+    "  role 决定「能流向哪里」，status 决定「够不够格」，两者正交。",
+    "★ metrics.best_threshold_median 只是统计输出，禁止写回 config / Policy。",
+    "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。"
+   ],
+   "checkpoint": "typed-decisions",
+   "profile_id": "f77f7f06ba82fd2a22697cd9415e75623b51aa31507a3ea3a5dc78b2f928f52d",
+   "generated_at": "2026-09-24 07:07:07",
+   "generator": "laya_bridge.py capability",
+   "role_in_phase3": "production_candidate",
+   "runs": {
+    "n_runs": 3,
+    "files": [
+     "typed-decisions__run1.json",
+     "typed-decisions__run2.json",
+     "typed-decisions__run3.json"
+    ],
+    "run_ids": [
+     "run1",
+     "run2",
+     "run3"
+    ]
+   },
+   "evidence": {
+    "dataset": {
+     "dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\cases",
+     "files": {
+      "contextual.json": "e34edc68989f601c9e55756d530fa7a4daa82d123ae3bbedcdfeebf174bd8a0e",
+      "hidden_truth.json": "64933965adcebf56c717228e0eb5017f81446b5a9d99b607dd123a03d3a1fb8d",
+      "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc"
+     },
+     "sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e",
+     "n_files": 3
+    },
+    "checkpoint": {
+     "model": "typed-decisions",
+     "dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_models\\laya-typed-decisions",
+     "exists": true,
+     "config_files": {
+      "rl_agent_config.json": "ebf0cd524d92342a6be5e48e9fca3d7c2babfb5a56ccd79d2171ef5d8c7f7be8",
+      "tokenizer/tokenizer_config.json": "08d4cf3ac4dca381759441b85b91a6d40e688471dcd33d15d6649eb0a9a854d1"
+     },
+     "top_level_files": [
+      [
+       "model.safetensors",
+       842609220
+      ],
+      [
+       "rl_agent_config.json",
+       847
+      ]
+     ],
+     "id": "ac57624ecc956cb7620f176aa8c53e22e822123ed5e44b221b76be33a18b4c83"
+    },
+    "config": {
+     "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\narra_config.json",
+     "sha": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a"
+    },
+    "translation_cache": {
+     "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json",
+     "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+     "kind": "case_subset",
+     "subset": {
+      "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+      "kind": "case_subset",
+      "n_texts": 137,
+      "n_present": 137,
+      "n_missing": 0,
+      "missing_sample": [],
+      "source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json"
+     },
+     "file_sha_now": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+     "file_sha_per_run": [
+      [
+       "typed-decisions__run1.json",
+       "bfa17f6de3798a69"
+      ],
+      [
+       "typed-decisions__run2.json",
+       "bfa17f6de3798a69"
+      ],
+      [
+       "typed-decisions__run3.json",
+       "bfa17f6de3798a69"
+      ]
+     ]
+    },
+    "code": {
+     "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\laya_bridge.py",
+     "sha": "cdb0723b7a5640f21c53ca9d11f6b8f09e019f111f9cdeaf7fc907edff34df2d"
+    },
+    "consistency": {
+     "checks": {
+      "models": [
+       "typed-decisions"
+      ],
+      "cache_sha": [
+       [
+        "typed-decisions__run1.json",
+        "bfa17f6de3798a69"
+       ],
+       [
+        "typed-decisions__run2.json",
+        "bfa17f6de3798a69"
+       ],
+       [
+        "typed-decisions__run3.json",
+        "bfa17f6de3798a69"
+       ]
+      ],
+      "cache_sha_unique": [
+       "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40"
+      ],
+      "case_counts_now": {
+       "observable": 70,
+       "contextual": 48,
+       "hidden_truth": 20
+      },
+      "case_counts_runs": [
+       {
+        "observable": 70,
+        "contextual": 48,
+        "hidden_truth": 20
+       },
+       {
+        "observable": 70,
+        "contextual": 48,
+        "hidden_truth": 20
+       },
+       {
+        "observable": 70,
+        "contextual": 48,
+        "hidden_truth": 20
+       }
+      ],
+      "invalid_per_run": [
+       0,
+       0,
+       0
+      ]
+     },
+     "consistent": true,
+     "problems": [],
+     "checkpoint_id": "ac57624ecc956cb7620f176aa8c53e22e822123ed5e44b221b76be33a18b4c83",
+     "dataset_sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e"
+    }
+   },
+   "status_rule": [
+    "0) capability_policy.override 显式点名 → 覆盖（source=policy_override）",
+    "1) grade=N → disabled；2) 跑次等级不一致 → disabled",
+    "3) grade=R → semantic_review（方向/语义问题，禁止静默取反）",
+    "4) grade=A → active；5) grade=B → auxiliary；6) grade=C → auxiliary；7) grade=D → disabled",
+    "★ portability 不参与降级：档案是按检查点生成的，换检查点必须重新生成。"
+   ],
+   "counts": {
+    "active": 3,
+    "auxiliary": 9,
+    "disabled": 2,
+    "semantic_review": 1
+   },
+   "signals": {
+    "hostility": {
+     "name": "hostility",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对玩家表现出敌意、攻击性言语或态度的倾向。",
+     "semantic_en": "Tendency to show hostility or aggression toward the player.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "B",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "B",
+       "B",
+       "B"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 22
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6649,
+       0.6649,
+       0.6649
+      ],
+      "auc_median": 0.6649,
+      "ctx_signed_median": 0.0253,
+      "mean_gap_median": 0.0377,
+      "best_threshold_median": 0.4619,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "cooperation": {
+     "name": "cooperation",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "愿意配合玩家、提供帮助或信息的倾向。",
+     "semantic_en": "Tendency to cooperate with, assist, or inform the player.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 17
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.7061,
+       0.7061,
+       0.7061
+      ],
+      "auc_median": 0.7061,
+      "ctx_signed_median": 0.0061,
+      "mean_gap_median": 0.051,
+      "best_threshold_median": 0.3746,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "withdraw": {
+     "name": "withdraw",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "想结束、回避或抽离当前互动的倾向。",
+     "semantic_en": "Tendency to end, avoid, or disengage from the current interaction.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 12
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.5714,
+       0.5714,
+       0.5714
+      ],
+      "auc_median": 0.5714,
+      "ctx_signed_median": -0.0026,
+      "mean_gap_median": 0.0107,
+      "best_threshold_median": 0.3565,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "confront": {
+     "name": "confront",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "直接质问、逼问玩家的倾向（与 withdraw 是两条不同的退路，不是同一维的两端）。",
+     "semantic_en": "Tendency to confront or press the player directly.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": 1
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6643,
+       0.6643,
+       0.6643
+      ],
+      "auc_median": 0.6643,
+      "ctx_signed_median": 0.0761,
+      "mean_gap_median": 0.0272,
+      "best_threshold_median": 0.4617,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "disclose": {
+     "name": "disclose",
+     "role": "behavior_tendency",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "主动透露自己的秘密/隐私信息的倾向。",
+     "semantic_en": "Tendency to voluntarily disclose the actor's own secrets or private information.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "D",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.4639,
+       0.4639,
+       0.4639
+      ],
+      "auc_median": 0.4639,
+      "ctx_signed_median": null,
+      "mean_gap_median": -0.0117,
+      "best_threshold_median": 0.3973,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "policy_override",
+     "status_reasons": [
+      "跨检查点符号相反：typed D(0.464) → english A(0.889)，方向整个翻过来。",
+      "★ 危险点在于：只看 english 的等级会判成 active，于是「透露秘密」在换检查点后",
+      "  会变成相反的行为倾向 —— 不存在一个对所有检查点都正确的阈值或方向。",
+      "因此它不能作为正式的行为控制信号，只能留在实验层。"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "investigate": {
+     "name": "investigate",
+     "role": "behavior_tendency",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": null,
+     "semantic_zh": "★ 语义存疑：面板上叫「调查需求」，但实测在上下文方向上稳定反向。",
+     "semantic_en": "★ Semantics under review: labelled 'investigation need', but stably inverted on the contextual axis.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "R",
+     "grade_by_run": [
+      "R",
+      "R",
+      "R"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "R",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "R",
+       "R",
+       "R"
+      ],
+      "n_ctx_pairs": 10
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.8947,
+       0.8947,
+       0.8947
+      ],
+      "auc_median": 0.8947,
+      "ctx_signed_median": -0.1512,
+      "mean_gap_median": 0.2092,
+      "best_threshold_median": 2.809,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "semantic_review",
+     "status_source": "policy_override",
+     "status_reasons": [
+      "判别力最强（typed AUC 0.895，15 个 signal 里最高），但上下文轴稳定反向，最终被拉到 R。",
+      "「方向反了」和「信号弱」是两回事：反向会主动骗人，弱信号只是没用。",
+      "在查清「用例期望写反」还是「这个量的语义其实是信息缺口/不确定性」之前，",
+      "禁止按原方向使用，**也禁止静默取反**（取反等于把一个没查清的假设写进状态）。"
+     ],
+     "portability": "③ 不可靠-反向",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "trust": {
+     "name": "trust",
+     "role": "situation_assessment",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对玩家可信度的总体评估（当下情境判断，不是累积关系值）。",
+     "semantic_en": "Overall assessment of the player's trustworthiness in the current situation.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 16
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.7162,
+       0.7162,
+       0.7162
+      ],
+      "auc_median": 0.7162,
+      "ctx_signed_median": 0.0196,
+      "mean_gap_median": 0.035,
+      "best_threshold_median": 0.3974,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "doubt": {
+     "name": "doubt",
+     "role": "situation_assessment",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对玩家陈述真实性的怀疑评估（情境判断）。",
+     "semantic_en": "Assessment of doubt about the truthfulness of the player's statements.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "C",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "n_ctx_pairs": 25
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6184,
+       0.6184,
+       0.6184
+      ],
+      "auc_median": 0.6184,
+      "ctx_signed_median": 0.013,
+      "mean_gap_median": 0.0128,
+      "best_threshold_median": 0.4615,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "danger": {
+     "name": "danger",
+     "role": "situation_assessment",
+     "kind": "prob",
+     "range": [
+      0,
+      1
+     ],
+     "state_target": null,
+     "semantic_zh": "对当前情境危险程度的评估。",
+     "semantic_en": "Assessment of how dangerous the current situation is.",
+     "validated_on": [
+      "observable",
+      "contextual"
+     ],
+     "grade": "D",
+     "grade_by_run": [
+      "D",
+      "D",
+      "D"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "D",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "D",
+       "D",
+       "D"
+      ],
+      "n_ctx_pairs": 10
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.5758,
+       0.5758,
+       0.5758
+      ],
+      "auc_median": 0.5758,
+      "ctx_signed_median": -0.0062,
+      "mean_gap_median": 0.0107,
+      "best_threshold_median": 0.5277,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "disabled",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": false
+    },
+    "trust_shift": {
+     "name": "trust_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "relationship.trust",
+     "semantic_zh": "这句话使 relationship.trust 变化的方向与强度（score 期望值，0~4）。",
+     "semantic_en": "Direction and strength of change this line causes to relationship.trust.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "A",
+     "grade_by_run": [
+      "A",
+      "A",
+      "A"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.8267,
+       0.8267,
+       0.8267
+      ],
+      "auc_median": 0.8267,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.162,
+      "best_threshold_median": 2.2343,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "active",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": true,
+     "need_upper_constraint": false
+    },
+    "respect_shift": {
+     "name": "respect_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "relationship.respect",
+     "semantic_zh": "这句话使 relationship.respect 变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to relationship.respect.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6154,
+       0.6154,
+       0.6154
+      ],
+      "auc_median": 0.6154,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.07,
+      "best_threshold_median": 2.2178,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "① 跨检查点稳定",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": false,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "doubt_shift": {
+     "name": "doubt_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "relationship.doubt",
+     "semantic_zh": "这句话使 relationship.doubt 变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to relationship.doubt.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "A",
+     "grade_by_run": [
+      "A",
+      "A",
+      "A"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.8467,
+       0.8467,
+       0.8467
+      ],
+      "auc_median": 0.8467,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.1881,
+      "best_threshold_median": 2.6295,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "active",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": true,
+     "need_upper_constraint": false
+    },
+    "fondness_shift": {
+     "name": "fondness_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "emotion.fondness",
+     "semantic_zh": "这句话使 emotion.fondness 变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to emotion.fondness.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "A",
+     "grade_by_run": [
+      "A",
+      "A",
+      "A"
+     ],
+     "discrimination_grade": "A",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "A",
+       "A",
+       "A"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.7905,
+       0.7905,
+       0.7905
+      ],
+      "auc_median": 0.7905,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.1954,
+      "best_threshold_median": 2.1023,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "active",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": true,
+     "need_upper_constraint": false
+    },
+    "alert_shift": {
+     "name": "alert_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "emotion.alert",
+     "semantic_zh": "这句话使 emotion.alert（警觉）变化的方向与强度。",
+     "semantic_en": "Direction and strength of change this line causes to emotion.alert.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.6882,
+       0.6882,
+       0.6882
+      ],
+      "auc_median": 0.6882,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.0808,
+      "best_threshold_median": 2.5264,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    },
+    "goal_shift": {
+     "name": "goal_shift",
+     "role": "state_shift",
+     "kind": "level",
+     "range": [
+      0,
+      4
+     ],
+     "state_target": "goals.identify_player",
+     "semantic_zh": "这句话对「查明玩家身份」这个目标的推力方向与强度。",
+     "semantic_en": "Direction and strength of push this line gives to the goal 'identify the player'.",
+     "validated_on": [
+      "observable"
+     ],
+     "grade": "C",
+     "grade_by_run": [
+      "C",
+      "C",
+      "C"
+     ],
+     "discrimination_grade": "C",
+     "context_grade": "N",
+     "grade_detail": {
+      "discrimination_by_run": [
+       "C",
+       "C",
+       "C"
+      ],
+      "context_by_run": [
+       "N",
+       "N",
+       "N"
+      ],
+      "n_ctx_pairs": null
+     },
+     "metrics": {
+      "auc_by_run": [
+       0.59,
+       0.59,
+       0.59
+      ],
+      "auc_median": 0.59,
+      "ctx_signed_median": null,
+      "mean_gap_median": 0.0881,
+      "best_threshold_median": 2.63,
+      "best_threshold_is_statistical_only": true
+     },
+     "status": "auxiliary",
+     "status_source": "derived",
+     "status_reasons": [
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+     ],
+     "portability": "② 检查点特有",
+     "portability_source": "tests/ckpt_replication.json",
+     "revalidate_on_switch": true,
+     "may_write_state": false,
+     "need_upper_constraint": true
+    }
+   }
+  }
+ }
+}

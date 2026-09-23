@@ -1,0 +1,196 @@
+{
+ "_readme": [
+  "Phase3-P2 验收结果（tests/p2_acceptance.py 生成）。",
+  "PASS/FAIL 是断言级别的证据，用来回答提示词的验收问题 A–F。"
+ ],
+ "passed": [
+  "可定级 signal 共 15 个",
+  "signals.roles 覆盖全部 signal（strict 通过）",
+  "每个 signal 的 role 都属于 {state_shift、behavior_tendency、situation_assessment}",
+  "每个 signal 都有语义描述（semantic_zh）",
+  "每个 signal 都标了取值范围",
+  "三个 role 都被用到（没有空层）",
+  "tests/capability_profiles.json 存在且含 profiles",
+  "[A] 档案的 checkpoint 与运行中的一致",
+  "[A] 档案 fresh（输入侧四个哈希全部对得上）",
+  "[B] 档案覆盖全部 15 个 signal",
+  "[B] 所有 status 都属于 {active、auxiliary、disabled、semantic_review}",
+  "[B] status 分布合计 = 15",
+  "[B] 每个 signal 的 status 都附了非空理由",
+  "[B] status_source 只有 derived / policy_override 两种",
+  "[B] 只有 role=state_shift 的 active 才会 may_write_state",
+  "[B] 每个 signal 都记了逐次运行的 grade（可回溯到 tests/runs/）",
+  "[B] 等级非空 —— 没有「凭印象写」的 signal",
+  "[C] 引擎已初始化（Laya 或回退）",
+  "[C] 每一条原始增量都被明确分类（active/auxiliary/ignored 三者之和 = 全部）",
+  "[C] delta 的 trust_shift 可追溯到「role=state_shift + status=active + grade=A」",
+  "[C] delta 的 doubt_shift 可追溯到「role=state_shift + status=active + grade=A」",
+  "[C] delta 的 fondness_shift 可追溯到「role=state_shift + status=active + grade=A」",
+  "[C] 每个 auxiliary 都写清了「为什么只能当修正项」",
+  "[C] 每个 blocked 的 signal 都写清了理由（不是只说「忽略了 N 个」）",
+  "[C] auxiliary 在 P2 阶段一律 applied=false（比提示词更严：不产生数值效果）",
+  "[D] 未登记的检查点 → 拒绝使用档案（返回 None，不退回「全都可用」）",
+  "[D] 拒绝时给出了原因",
+  "[D] 档案不可用时一条状态增量都不产出",
+  "[D] gate.can_commit_state = False",
+  "[D] 被拦下的 signal 逐条给了理由（6 条）",
+  "[D] 用例集变化 → 判为 stale（拒绝沿用旧档案）",
+  "[D] 复原后重新判为 fresh（没有把 stale 状态粘住）",
+  "[E] state_proposal.is_proposal = True",
+  "[E] state_proposal.authority = none（无写入权限）",
+  "[E] delta / auxiliary 都是并列的建议项，没有任何「已提交」语义",
+  "[E] proposal 里不存在 committed / actor_state / write 这类字段",
+  "[E] 过滤过程不修改原始增量对象（原样保留给审计）",
+  "[F] active 集合一致",
+  "[F] auxiliary 集合一致",
+  "[F] 被拦下的集合一致",
+  "[F] 反向信号 investigate 既没进 delta 也没进 auxiliary（禁止静默取反）",
+  "[F] 反向信号 investigate 的 status 是 semantic_review（先去查语义，不是直接丢弃）",
+  "[F] role=behavior_tendency 的 hostility 不产生状态增量",
+  "[F] role=behavior_tendency 的 cooperation 不产生状态增量",
+  "[F] role=behavior_tendency 的 withdraw 不产生状态增量",
+  "[F] role=behavior_tendency 的 confront 不产生状态增量",
+  "[F] role=behavior_tendency 的 disclose 不产生状态增量",
+  "[F] role=behavior_tendency 的 investigate 不产生状态增量",
+  "[F] role=situation_assessment 的 trust 不产生状态增量",
+  "[F] role=situation_assessment 的 doubt 不产生状态增量",
+  "[F] role=situation_assessment 的 danger 不产生状态增量",
+  "[F] disabled / semantic_review 的信号一律标为不可消费",
+  "★ 两个检查点可写状态的 signal **不同** —— 这就是「不能透明互换」的量化证据",
+  "[english] semantic_review 的 investigate 不可写状态"
+ ],
+ "failed": [],
+ "skipped": [],
+ "notes": [
+  "state_shift           6 个：trust_shift、respect_shift、doubt_shift、fondness_shift、alert_shift、goal_shift",
+  "behavior_tendency     6 个：hostility、cooperation、withdraw、confront、disclose、investigate",
+  "situation_assessment  3 个：trust、doubt、danger",
+  "运行中的检查点 = typed-decisions",
+  "档案里的检查点 = typed-decisions ｜ profile_id = f77f7f06ba82fd2a",
+  "code_changed=True（只提示不阻断）：代码在生成档案后被改过，判据在代码里，所以重新跑一次 capability 即可消除",
+  "active           3 个：trust_shift、doubt_shift、fondness_shift",
+  "auxiliary        9 个：hostility、cooperation、withdraw、confront、trust、doubt、respect_shift、alert_shift、goal_shift",
+  "disabled         2 个：disclose、danger",
+  "semantic_review  1 个：investigate",
+  "声明式覆盖（status_source=policy_override，可见、不伪装成推导）：disclose、investigate",
+  "全量未过滤增量仍完整保留在 raw_deltas_all_signals / 这里的 deltas 里，但两者都不具备写入权限；写入属于 Narraverse 的 State Transition 层",
+  "english 上可写 Actor State 的 signal：trust_shift",
+  "typed-decisions 上可写的是：trust_shift、doubt_shift、fondness_shift"
+ ],
+ "results": {
+  "roles": {
+   "hostility": "behavior_tendency",
+   "cooperation": "behavior_tendency",
+   "withdraw": "behavior_tendency",
+   "confront": "behavior_tendency",
+   "disclose": "behavior_tendency",
+   "investigate": "behavior_tendency",
+   "trust": "situation_assessment",
+   "doubt": "situation_assessment",
+   "danger": "situation_assessment",
+   "trust_shift": "state_shift",
+   "respect_shift": "state_shift",
+   "doubt_shift": "state_shift",
+   "fondness_shift": "state_shift",
+   "alert_shift": "state_shift",
+   "goal_shift": "state_shift"
+  },
+  "A_checkpoint": {
+   "running": "typed-decisions",
+   "matched": true,
+   "fresh": true,
+   "profile_id": "f77f7f06ba82fd2a22697cd9415e75623b51aa31507a3ea3a5dc78b2f928f52d",
+   "code_changed": true,
+   "problems": []
+  },
+  "B_status": {
+   "counts": {
+    "active": 3,
+    "auxiliary": 9,
+    "disabled": 2,
+    "semantic_review": 1
+   },
+   "by_status": {
+    "active": [
+     "trust_shift",
+     "doubt_shift",
+     "fondness_shift"
+    ],
+    "auxiliary": [
+     "hostility",
+     "cooperation",
+     "withdraw",
+     "confront",
+     "trust",
+     "doubt",
+     "respect_shift",
+     "alert_shift",
+     "goal_shift"
+    ],
+    "disabled": [
+     "disclose",
+     "danger"
+    ],
+    "semantic_review": [
+     "investigate"
+    ]
+   },
+   "override": [
+    "disclose",
+    "investigate"
+   ],
+   "state_writable": [
+    "trust_shift",
+    "doubt_shift",
+    "fondness_shift"
+   ]
+  },
+  "C_proposal": {
+   "n_delta": 3,
+   "n_aux": 3,
+   "n_ignored": 0,
+   "delta_sources": [
+    "trust_shift",
+    "doubt_shift",
+    "fondness_shift"
+   ]
+  },
+  "D_switch": {
+   "unregistered": [
+    "档案里没有检查点 'multilingual' 的条目（有的：english、typed-decisions）。换检查点必须重新生成档案 —— 能力不是 Laya 的属性，是检查点的属性。"
+   ],
+   "blocked_deltas": 0,
+   "stale_detected": true
+  },
+  "E_proposal_only": {
+   "is_proposal": true,
+   "authority": "none"
+  },
+  "F_ignore": {
+   "active": [
+    "doubt_shift",
+    "fondness_shift",
+    "trust_shift"
+   ],
+   "auxiliary": [
+    "alert_shift",
+    "goal_shift",
+    "respect_shift"
+   ],
+   "blocked": [],
+   "reversed": {
+    "investigate": "semantic_review"
+   }
+  },
+  "english_compare": {
+   "english_writable": [
+    "trust_shift"
+   ],
+   "typed_writable": [
+    "trust_shift",
+    "doubt_shift",
+    "fondness_shift"
+   ]
+  }
+ }
+}
