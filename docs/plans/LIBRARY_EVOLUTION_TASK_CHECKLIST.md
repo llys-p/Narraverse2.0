@@ -1,15 +1,15 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-24 06:43（Asia/Shanghai，A1/A2 完成后更新）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-24 06:59（Asia/Shanghai，A1/A2 已推送、B0 完成后更新）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
 | 项 | 已核实事实 |
 | --- | --- |
-| 仓库 | `D:\Narraverse2.0`；A1/A2 完成后本地 `main` 在 `f503173b2ec0879c7bdab4d9e5248b022f4d30c0`，领先 `origin/main` 1 提交（本地提交未推送）。L1/L2 代码与文档均可从该 SHA 检出；并行任务的脏改动仍留在工作树。 |
+| 仓库 | `D:\Narraverse2.0`；A1/A2 已推送（`origin/main`=`968d1e2`，L1/L2 基线=`f503173`）。B0 产出本地提交 `50d6bcc`（契约）及本清单勾选提交，未推送。并行任务的脏改动仍留在工作树。 |
 | L1 | 独立作品设定库及其修复（来源形态、未保存草稿、跨库异步、事件时间戳、缺失更新基线）已随 `f503173` 提交。 |
-| L2 | 三档只读加载、Master 固定版本解析、预算、只读预览 API/UI 已随 `f503173` 提交；定向 Go 测试、前端 207 文件/1296 测试、构建和隔离 executable 23 项验收已通过；**未推送、未装配到用户 8080**。详细限制以验收报告为准。 |
-| L3 | [四模式接入方案](LIBRARY_L3_MODE_INTEGRATION_PLAN.md) 与 `internal/libraryruntime/README.md` 是骨架；**新 Library 尚未送入写作、游戏、叙界或 Module4 的模型输入**。旧 WorldContext 可用不等于新库接入。 |
+| L2 | 三档只读加载、Master 固定版本解析、预算、只读预览 API/UI 已随 `f503173` 提交；定向 Go 测试、前端 207 文件/1296 测试、构建和隔离 executable 23 项验收已通过；**未装配到用户 8080**。详细限制以验收报告为准。 |
+| L3 | B0 契约已冻结（[L3 计划 §8](LIBRARY_L3_MODE_INTEGRATION_PLAN.md)，提交 `50d6bcc`）；`internal/libraryruntime/README.md` 仍是骨架，**新 Library 尚未送入写作、游戏、叙界或 Module4 的模型输入**。旧 WorldContext 可用不等于新库接入。 |
 | L4 | [迁移方案](LIBRARY_L4_MIGRATION_PLAN.md) 与 `internal/librarymigration/README.md` 是骨架；**没有迁移旧 World/Lore，也没有迁移 API**。 |
 | 运行实例 | 隔离验收 18082 已停；用户已有 8080 未被替换。本地 `artifacts/`、`.denova/`、exe、dist、截图和用户资料不得暂存入 Git。 |
 | 并行改动 | 主工作树还有 Module4 UI、Agent Skills、知识库、Laya Demo 等他人工作；`CHANGELOG.md`、`项目协作日志.md` 等共享文件混有多个任务的内容。禁止 reset/clean/整树暂存或还原。 |
@@ -18,9 +18,10 @@
 
 已完成但尚未共享的本地里程碑（后续 AI 核对证据即可，不要重做）：
 
-- [x] L1 修复和本地保存/重启验收；证据：L1/L2 验收报告第 2、3 节。**代码已随 `f503173` 提交（未推送）。**
-- [x] L2 只读核心、来源解析、HTTP 与 UI 预览及隔离 executable 23 项验收；证据：同报告第 3、4 节。**代码已随 `f503173` 提交（未推送）。**
+- [x] L1 修复和本地保存/重启验收；证据：L1/L2 验收报告第 2、3 节。**代码已随 `f503173` 提交并推送。**
+- [x] L2 只读核心、来源解析、HTTP 与 UI 预览及隔离 executable 23 项验收；证据：同报告第 3、4 节。**代码已随 `f503173` 提交并推送。**
 - [x] L3/L4 边界方案及目录职责骨架；证据：对应计划和 README。**功能尚未实现。**
+- [x] B0 transport/读取授权契约冻结（真实调用点锚点）；证据：L3 计划 §8 与 B0 完成记录。**仅契约，未接线。**
 
 ## 2. 多 AI 工作协议
 
@@ -56,9 +57,9 @@
 
 ### B0 · 冻结真实 transport 和读取授权（AI2 主责，AI1 审合；依赖 A2）
 
-- [ ] 对照当前 chat、interactive、受控 iframe、模型/工具调用点，冻结 `legacy | library | none` 的入口字段、冲突拒绝、服务端派生 consumer/运行身份、单次库 revision 与 manual 授权；明确 L2 `autoItemIds` 只是预览选择，不是长期授权。
-- [ ] 明确常驻/目录/手动片段和后续按需工具的累计预算与错误码；要求初始模型输入、工具结果、压缩、Session/run ledger/展示存档逐处可验证。契约变化写回 L3 计划并给 AI3 对齐，不能新增模型网关或第二设定真源。
-- [ ] 用真实调用点证据确认旧 World/Lore 背景不会与新 Library 暗中叠加。**完成记录：待填。**
+- [x] 对照当前 chat、interactive、受控 iframe、模型/工具调用点，冻结 `legacy | library | none` 的入口字段、冲突拒绝、服务端派生 consumer/运行身份、单次库 revision 与 manual 授权；明确 L2 `autoItemIds` 只是预览选择，不是长期授权。
+- [x] 明确常驻/目录/手动片段和后续按需工具的累计预算与错误码；要求初始模型输入、工具结果、压缩、Session/run ledger/展示存档逐处可验证。契约变化写回 L3 计划并给 AI3 对齐，不能新增模型网关或第二设定真源。
+- [x] 用真实调用点证据确认旧 World/Lore 背景不会与新 Library 暗中叠加。**完成记录：2026-09-24 06:59（Asia/Shanghai，AI1 兼任 AI2 职责，依据用户指令）。契约冻结于 [L3 计划 §8](LIBRARY_L3_MODE_INTEGRATION_PLAN.md)，提交 `50d6bccf71e2943176040da6f1b5bd42d20b173d`（本地，未推送）。只读调查基线 968d1e2 工作树，未接线、未调用模型、未改生产代码；`internal/agent/prompt.go`、`config_manager_tools.go` 他人未提交改动未被引用。要点：① transport 冻结为 `background_source`（legacy|library|none）+ `library_context{libraryId,expectedRevision,manualItemIds[]}`，与 world 字段同现即 400 `background_source_conflict`，不做优先级吞并；consumer/scopeKey/runContextId 沿既有传输层拒绝模式。② 身份派生对齐真实锚点：写作 bind-before-start（world_context_writing.go:14-50,91-113,308-337）、游戏 InteractiveRun（world_context_interactive_runs.go:132-193,242-289）、iframe 信任根（handler_world_context_host.go:100-106,168-205）。③ 单库单 revision、manual 授权语义（L2 autoItemIds 仅预览）、累计预算（系统提示+历史+初始装配+按需工具结果+预留输出，定点测量沿用 librarycontext.Build）。④ 错误语义：绑定期失败阻断启动不静默降级；运行期 unavailable/stale/denied/budget_exceeded 显式；状态 wire 脱敏。⑤ 持久化逐处锚点：ephemeral 唯一注入（chat.go:418-428）、lore 工具结果会持久化到 display（chat_display.go:167-181）——library 工具不得沿用、压缩源（context_compaction.go）、run ledger（chat.go:157,204,218）。⑥ 不叠加证据=通道穷举：world ephemeral、**lore 工具（builder.go:483-571，独立于 world_context 必然存在）**、系统提示词资料库指引（system_prompt.go:132-147）、Director lore-context.md（system_prompt.go:142）共 4 条独立通道，library 模式须逐一关闭并留验证点。未验证边界：锚点行号基于当前工作树，L3.0 实现时须逐个复核；lore 工具禁用需实现层确认 ReadPolicy 钩子语义；未运行任何测试（纯文档产出）。**
 
 ### B1 · 临时读取授权核心（AI2；依赖 B0）
 
