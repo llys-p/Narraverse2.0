@@ -993,7 +993,7 @@ policy = policy_resolve(signal_values, gated_id)   # ← 旧代码：传的是 g
 | **workspace 级成功案例** | `docs/finetune_browser_agent.md`：单张 16 GB 卡微调，元素 top-1 从 **0.10 → 0.66**，真实任务成功率 **0% → 62%**，17–23 ms/步 | 证明「微调能把 near-chance 抬到可用」在同类任务上已经发生过 |
 | **`laya-serve`** | 官方 Jev 兼容 HTTP 服务（`POST /v1/systemone`），`pip install "laya[serve]"` | 我们手写了 `laya_bridge.py`（更贴合本项目，但上游有现成的） |
 | **内置预设** | `router_questions()` / `guard_questions()` / `moderation_questions()` / **`triage_questions()`**（intent / urgency / frustration / churn） | 未用。**`triage_questions` 就是现成的意图识别问题集** |
-| **0.3.7 加载提速** | 「checkpoint 不再做一次无用的随机权重初始化」，CPU 冷加载 **22 s → 2 s**，且答案位级一致 | ⚠️ **我们装的是 0.3.5，实测冷加载 45 s。升级到 0.3.7 可直接解决** |
+| **0.3.7 加载提速** | 「checkpoint 不再做一次无用的随机权重初始化」，CPU 冷加载 **22 s → 2 s**，且答案位级一致（原文见下） | ⚠️ **我们装的是 0.3.5，实测冷加载 45 s。但 0.3.7 装不上——见下** |
 | **`predict_shortlist`** | 选项多时先用 embedding 召回 top-k 再前向 | 我们没这个问题（7 个行为） |
 
 ★ **检查点选择要修正**：上游在 **MASSIVE intent（20 选项，随机 0.050）** 上，
@@ -1001,6 +1001,37 @@ policy = policy_resolve(signal_values, gated_id)   # ← 旧代码：传的是 g
 **「意图识别」这类 `choice` 任务，表现最好的检查点是英文根检查点，不是 `typed-decisions`**。
 我们因为 state 预算选了 `typed-decisions`（`english` 余量只有 319 token）。
 → 若要做意图识别，正确路线是：**压缩 state → 换回 `english` 检查点**，而不是继续用 `typed-decisions`。
+
+### 13.3.1 ★ 0.3.7 加载提速：查证结果与两个更正（2026-09-23 17:50 核对）
+
+| 项 | 查证结果 |
+|---|---|
+| 上游最新版本 | **v0.3.7，发布于 2026-09-23T07:25Z**（今天上午，我们核对前约 2 小时） |
+| 相关 PR | **#195 `Skip redundant initialization when loading checkpoints`** |
+| 原始声明（README，v0.3.7 tag） | “**About 10x faster loading.** Checkpoints are built without the throwaway random weight initialisation, so `laya.load()` drops from about 22 s to about 2 s on CPU **with bit-identical answers**. This also skips the pass that **crashed on Windows with Python 3.14 (#123)**.” |
+| ★ 更正一：**PyPI 上拿不到** | `pip index versions laya` → `Available versions: … 0.3.5`（**LATEST: 0.3.5**）。0.3.5 是 PyPI 最新，**0.3.6 / 0.3.7 只在 GitHub 上**。 |
+| ★ 更正二：**22 s → 2 s 不是本机数字** | 22 s 是上游参考机上的冷加载。**本机实测 45 s**，且冷加载瓶颈在磁盘 + tokenizer，不在那段被跳过的初始化。所以「升级即 2 s」是错的预期 —— 得实测才知道本机能降到多少。 |
+
+**安装方式（PyPI 装不到，只能从 git 装）：**
+
+```bash
+./.venv-cuda/Scripts/python.exe -m pip install "git+https://github.com/NandhaKishorM/laya@v0.3.7"
+```
+
+★ 装之前必须做两件事，否则会白忙：
+
+1. **记录当前基线**：`python laya_bridge.py bench` 与 `signaltest` 各跑一次存档，升级后**同设备**复跑对照。
+   上游说的是 "bit-identical answers"，但那是**他们自己**跨版本的对照；我们不能替他们担保。
+   §12.4 已经证明**同一版本换设备都会漂 0.033**，跨版本必须重新验。
+2. **别指望它治准确率**：这次提速改的是「加载时多做了一遍随机权重初始化」，与推理、与信号质量无关。
+   0.3.7 的其它条目（`lang_guess=`、错误信息带上问题名、Router 常驻两个检查点）对我们都是体验级改进，
+   **不会把 49.5% 变成可用**。
+
+**顺带一条对本项目直接有用的**（README「Production Preload & Memory」）：
+`Router()` 默认常驻 `english` + `multilingual` 两个检查点；而 `max_loaded=1` 会导致**每次语言切换都重建被驱逐的那个**，
+上游实测中位重载 **7.4 s（CPU）/ 10.3 s（T4）**。
+→ 我们 `laya_bridge.py` 自己也持有检查点，且**按 actor 缓存**；若之后加多语言切换，
+要注意别退化成这种「每次切换重建」的模式。
 
 ### 13.4 同类型项目（和我们这个 Demo 是同一物种）
 

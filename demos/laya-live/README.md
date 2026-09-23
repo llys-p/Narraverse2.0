@@ -332,6 +332,11 @@ state 塞太满，都会在无声无息中失效。
 ## 上游
 
 - Laya 决策引擎：<https://github.com/NandhaKishorM/laya>（PyPI `laya` 0.3.5）
+- ⚠️ **PyPI 停在 0.3.5，上游已经到 v0.3.7**（2026-09-23 发布，PR #195 跳过检查点加载时的无用初始化，
+  上游自称 CPU 冷加载 22 s → 2 s 且答案位级一致）。**PyPI 上装不到**，要升只能从 git：
+  `pip install "git+https://github.com/NandhaKishorM/laya@v0.3.7"`。
+  本机实测冷加载 **45 s**，瓶颈在磁盘 + tokenizer，所以别预期升完就是 2 s —— 升级前后要在**同一设备**上各跑一次
+  `bench` + `signaltest` 对存，确认答案真的一致。（细节见 `Laya接入报告.md` §13.3.1）
 - 训练方式：RLCD + 严格适当评分规则
 - 上游对 `typed-decisions` 的说明：「在四种合成工作流上微调，不应作为静默默认」——
   我们没有更好的选择（`english` 装不下 state），但这个警告仍然成立。
