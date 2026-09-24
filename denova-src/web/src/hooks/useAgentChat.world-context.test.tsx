@@ -8,6 +8,8 @@ import {
   type WritingWorldContextLaunch,
 } from '@/features/world-context-runtime/WorldContextLaunchProvider'
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
+import { LibraryContextLaunchProvider } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import { LibraryContextRunProvider } from '@/features/library-context-runtime/LibraryContextRunProvider'
 import { useAgentChat } from './useAgentChat'
 
 const chatMock = vi.hoisted(() => ({
@@ -83,7 +85,11 @@ function makeWrapper(seedRef: { current: WritingWorldContextLaunch | null }) {
     return (
       <WorldContextLaunchProvider>
         <Seeder />
-        <WorldContextRunProvider>{children}</WorldContextRunProvider>
+        <WorldContextRunProvider>
+          <LibraryContextLaunchProvider>
+            <LibraryContextRunProvider>{children}</LibraryContextRunProvider>
+          </LibraryContextLaunchProvider>
+        </WorldContextRunProvider>
       </WorldContextLaunchProvider>
     )
   }

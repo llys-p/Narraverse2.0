@@ -756,7 +756,11 @@ export function ModeRouter(props: ModeRouterProps) {
       {mountedRoutes.has('library') && (
         <MainRouteLayer visible={visibleMainRoute === 'library'}>
           <Suspense fallback={null}>
-            <LibraryWorkspaceRoute workspace={workspace} onClose={() => onSetMode(booksReturnMode)} />
+            <LibraryWorkspaceRoute
+              workspace={workspace}
+              onClose={() => onSetMode(booksReturnMode)}
+              onLaunchWriting={() => onSetMode('ide')}
+            />
           </Suspense>
         </MainRouteLayer>
       )}

@@ -1,7 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkLibrary } from '@/lib/api-client'
 import { LibraryContextPreview } from './LibraryContextPreview'
+import {
+  LibraryContextLaunchProvider,
+  useLibraryContextLaunch,
+  type WritingLibraryContextLaunch,
+} from '@/features/library-context-runtime/LibraryContextLaunchProvider'
 import { previewWorkLibrary } from '../library-context-api'
 
 vi.mock('../library-context-api', () => ({ previewWorkLibrary: vi.fn() }))
@@ -15,11 +22,20 @@ const result = { libraryId: library.id, revision: 'one', name: '测试库', summ
   catalog: { items: [], offset: 0, total: 0 }, loaded: [], relations: [], issues: [],
   budget: { bytes: 300, maxBytes: 262144, estimatedTokens: 100, maxEstimatedTokens: 16000 } }
 
+/** B2b：组件无条件消费 launch Provider，测试统一在 Provider 内渲染。 */
+function renderPreview(props: Partial<Parameters<typeof LibraryContextPreview>[0]>) {
+  return render(
+    <LibraryContextLaunchProvider>
+      <LibraryContextPreview library={library} revision="one" dirty={false} {...props} />
+    </LibraryContextLaunchProvider>,
+  )
+}
+
 describe('library load preview', () => {
   beforeEach(() => vi.resetAllMocks())
   it('requests only after a click and excludes disabled entries', async () => {
     vi.mocked(previewWorkLibrary).mockResolvedValue(result)
-    render(<LibraryContextPreview library={library} revision="one" dirty={false} />)
+    renderPreview({})
     expect(previewWorkLibrary).not.toHaveBeenCalled()
     expect(screen.queryByText(/禁用项/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '生成加载预览' }))
@@ -30,24 +46,76 @@ describe('library load preview', () => {
     expect(screen.getByText(/尚未发送模型/)).toBeInTheDocument()
   })
   it('never generates from an unsaved draft', () => {
-    render(<LibraryContextPreview library={library} revision="one" dirty />)
+    renderPreview({ dirty: true })
     expect(screen.getByRole('button', { name: '生成加载预览' })).toBeDisabled()
     expect(previewWorkLibrary).not.toHaveBeenCalled()
   })
   it('discards a late response after revision changes and keeps prior results stale', async () => {
     let resolve!: (value: typeof result) => void
     vi.mocked(previewWorkLibrary).mockReturnValue(new Promise((done) => { resolve = done }))
-    const view = render(<LibraryContextPreview library={library} revision="one" dirty={false} />)
+    const view = renderPreview({})
     fireEvent.click(screen.getByRole('button', { name: '生成加载预览' }))
-    view.rerender(<LibraryContextPreview library={library} revision="two" dirty={false} />)
+    view.rerender(
+      <LibraryContextLaunchProvider>
+        <LibraryContextPreview library={library} revision="two" dirty={false} />
+      </LibraryContextLaunchProvider>,
+    )
     await act(async () => resolve(result))
     expect(screen.queryByText(/100.*16000/)).toBeNull()
     expect(screen.getByRole('button', { name: '生成加载预览' })).not.toBeDisabled()
   })
   it('shows failures without claiming content was loaded', async () => {
     vi.mocked(previewWorkLibrary).mockRejectedValue({ code: 'revision_conflict' })
-    render(<LibraryContextPreview library={library} revision="one" dirty={false} />)
+    renderPreview({})
     fireEvent.click(screen.getByRole('button', { name: '生成加载预览' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('资料库已变化'))
+  })
+})
+
+describe('library launch to writing (B2b)', () => {
+  beforeEach(() => vi.resetAllMocks())
+  it('disables the launch button for unsaved drafts and when no book is open', () => {
+    renderPreview({ dirty: true, hasWritingBook: true })
+    expect(screen.getByRole('button', { name: '带入写作' })).toBeDisabled()
+
+    renderPreview({ hasWritingBook: false })
+    const button = screen.getAllByRole('button', { name: '带入写作' }).at(-1)!
+    expect(button).toBeDisabled()
+    expect(screen.getByText(/先打开一本书，再带入写作/)).toBeInTheDocument()
+  })
+  it('launches with the saved revision and filtered manual selection, then enters writing', async () => {
+    const user = userEvent.setup()
+    const onLaunchWriting = vi.fn()
+    const captured: WritingLibraryContextLaunch[] = []
+    function LaunchCapture() {
+      // 直接读取 Provider 中的待消费交接（peek）：take 的时序语义由 hook 测试覆盖，
+      // 这里只断言交接负载不含 autoItemIds/服务端派生身份字段。
+      const { pendingLibrary } = useLibraryContextLaunch()
+      useEffect(() => {
+        if (pendingLibrary) captured.push(pendingLibrary)
+      }, [pendingLibrary])
+      return null
+    }
+    render(
+      <LibraryContextLaunchProvider>
+        <LaunchCapture />
+        <LibraryContextPreview library={library} revision="one" dirty={false} hasWritingBook onLaunchWriting={onLaunchWriting} />
+      </LibraryContextLaunchProvider>,
+    )
+    await user.selectOptions(screen.getByLabelText('明确选择的手动资料'), 'm')
+    await user.click(screen.getByRole('button', { name: '带入写作' }))
+
+    expect(captured).toHaveLength(1)
+    // 只交接已保存库的 Ref 与摘要；不含 autoItemIds、不含任何服务端派生身份字段。
+    expect(captured[0]).toEqual({
+      libraryId: 'abcdefghijklmnop',
+      expectedRevision: 'one',
+      manualItemIds: ['m'],
+      libraryName: '测试库',
+      revisionLabel: 'one',
+      selectedCount: 1,
+    })
+    expect(Object.keys(captured[0])).toEqual(['libraryId', 'expectedRevision', 'manualItemIds', 'libraryName', 'revisionLabel', 'selectedCount'])
+    expect(onLaunchWriting).toHaveBeenCalledOnce()
   })
 })

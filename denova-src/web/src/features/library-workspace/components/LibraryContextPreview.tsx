@@ -2,13 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { WorkLibrary } from '@/lib/api-client'
+import { useLibraryContextLaunch } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
 import { previewWorkLibrary, type LibraryPreview } from '../library-context-api'
 
-interface Props { library: WorkLibrary; revision: string; dirty: boolean }
+interface Props {
+  library: WorkLibrary
+  revision: string
+  dirty: boolean
+  /** 当前写作侧是否已有打开的书；库与书无关，但带入写作必须落在有书的写作上下文。 */
+  hasWritingBook?: boolean
+  /** 用户显式发起带入写作：写入一次性交接并返回写作模式（由上层完成模式切换）。 */
+  onLaunchWriting?: () => void
+}
 
 /** Session-only read preview. Opening the tab never issues a request. */
-export function LibraryContextPreview({ library, revision, dirty }: Props) {
+export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting }: Props) {
   const { t } = useTranslation()
+  const { launchWritingLibrary } = useLibraryContextLaunch()
   const [manual, setManual] = useState<string[]>([])
   const [auto, setAuto] = useState<string[]>([])
   const [offset, setOffset] = useState(0)
@@ -51,6 +61,21 @@ export function LibraryContextPreview({ library, revision, dirty }: Props) {
   }
   const stale = result !== null && (result.key !== key || dirty)
   const data = result?.data
+  // B2b：用户显式选择库并带入写作。只交接已保存库的 Ref（libraryId+expectedRevision+
+  // manualItemIds）；L2 预览的 autoItemIds 是预览专属选择，不进入运行授权（B0 §8.2）；
+  // 无书时禁用（交接必须落在有书的写作上下文），与生成预览一样拒绝未保存草稿。
+  const launchToWriting = () => {
+    if (dirty || !revision || !hasWritingBook) return
+    launchWritingLibrary({
+      libraryId: library.id,
+      expectedRevision: revision,
+      manualItemIds: manualIDs,
+      libraryName: library.name,
+      revisionLabel: revision,
+      selectedCount: manualIDs.length,
+    })
+    onLaunchWriting?.()
+  }
   return (
     <section className="min-h-0 flex-1 overflow-y-auto p-3" aria-label={t('workLibrary.tab.preview')}>
       <p className="mb-3 text-sm text-muted-foreground">{t('workLibrary.preview.hint')}</p>
@@ -75,9 +100,19 @@ export function LibraryContextPreview({ library, revision, dirty }: Props) {
         <Button type="button" disabled={dirty || loading || !revision} onClick={() => void generate()}>
           {loading ? t('workLibrary.loading') : t('workLibrary.preview.generate')}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision || !hasWritingBook}
+          onClick={launchToWriting}
+          title={!hasWritingBook ? t('workLibrary.preview.launchNeedBook') : undefined}
+        >
+          {t('workLibrary.preview.launchWriting')}
+        </Button>
         <Button type="button" variant="ghost" onClick={() => { setAuto([]); setManual([]); setOffset(0) }}>{t('workLibrary.preview.clear')}</Button>
         {dirty ? <span role="status">{t('workLibrary.preview.saveFirst')}</span> : null}
         {stale ? <span role="status">{t('workLibrary.preview.stale')}</span> : null}
+        {!hasWritingBook ? <span role="status">{t('workLibrary.preview.launchNeedBook')}</span> : null}
       </div>
       {error ? <p role="alert" className="mb-3 text-sm">{error}</p> : null}
       {data ? <div className="space-y-4" aria-busy={loading}>

@@ -6,6 +6,8 @@ const workLibrary = {
   'workLibrary.preview.manual': "Explicitly selected manual entries",
   'workLibrary.preview.selectionHint': "Use Ctrl/Command or Shift for multiple selection. Disabled entries are excluded. Generate again after changing pages.",
   'workLibrary.preview.generate': "Generate loading preview",
+  'workLibrary.preview.launchWriting': "Bring into writing",
+  'workLibrary.preview.launchNeedBook': "Open a book first, then bring it into writing.",
   'workLibrary.preview.clear': "Clear selections",
   'workLibrary.preview.saveFirst': "Save your draft first.",
   'workLibrary.preview.stale': "This preview is stale. Generate it again.",

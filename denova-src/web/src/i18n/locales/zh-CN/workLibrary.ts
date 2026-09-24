@@ -6,6 +6,8 @@ const workLibrary = {
   'workLibrary.preview.manual': "明确选择的手动资料",
   'workLibrary.preview.selectionHint': "可用 Ctrl/Command 或 Shift 多选；禁用条目不会出现在选择或结果中。翻页后请重新生成预览。",
   'workLibrary.preview.generate': "生成加载预览",
+  'workLibrary.preview.launchWriting': "带入写作",
+  'workLibrary.preview.launchNeedBook': "先打开一本书，再带入写作。",
   'workLibrary.preview.clear': "清空本次选择",
   'workLibrary.preview.saveFirst': "请先保存资料草稿。",
   'workLibrary.preview.stale': "此预览已过期，请重新生成。",

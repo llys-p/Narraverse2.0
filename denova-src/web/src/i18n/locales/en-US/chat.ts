@@ -363,6 +363,12 @@ const chat = {
   'chat.worldContext.error.invalid_request': 'Malformed request; re-attach the world',
   'chat.worldContext.error.context_ref_mismatch': 'The world background reference mismatches; re-attach it',
   'chat.worldContext.error.generic': 'Unknown reason; retry or clear and re-attach',
+  // B2b: library writing background state bar (no degraded for library: bind-phase failures block the run; errors surface via chat errors).
+  'chat.libraryContext.bound': 'Will bring in the “{{name}}” library background{{rev}}{{count}} (applies to the next send; read-only)',
+  'chat.libraryContext.active': 'Using library background “{{name}}”{{rev}}{{count}} (read-only, never written back)',
+  'chat.libraryContext.selectedCount': '{{count}} items selected',
+  'chat.libraryContext.unnamed': 'Unnamed library',
+  'chat.libraryContext.clear': 'Clear the library background for new turns',
   'chat.planUsage': 'Usage: /plan <requirement>\n\nExample: /plan add a new skill system for the protagonist',
   'chat.plan.short': 'Plan',
   'chat.plan.chatShort': 'Chat',

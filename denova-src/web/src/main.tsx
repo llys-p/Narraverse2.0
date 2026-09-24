@@ -13,6 +13,8 @@ import { installGlobalRuntimeLoggers, recordRuntimeLog, scheduleWhiteScreenCheck
 import { fetchSettings } from '@/features/settings/api'
 import { applyFontSettings, fontSettingsFromEffective } from '@/features/settings/font-variables'
 import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import { LibraryContextLaunchProvider } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import { LibraryContextRunProvider } from '@/features/library-context-runtime/LibraryContextRunProvider'
 import { GameWorldContextLaunchProvider } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 import { WorldContextHostProvider } from '@/features/world-context-runtime/WorldContextHostProvider'
@@ -52,9 +54,13 @@ if (!isRedirectingToCanonicalOrigin) {
                 <IframeWorldContextLaunchProvider>
                   <WorldContextLaunchProvider>
                     <WorldContextRunProvider>
-                      <GameWorldContextLaunchProvider>
-                        <App />
-                      </GameWorldContextLaunchProvider>
+                      <LibraryContextLaunchProvider>
+                        <LibraryContextRunProvider>
+                          <GameWorldContextLaunchProvider>
+                            <App />
+                          </GameWorldContextLaunchProvider>
+                        </LibraryContextRunProvider>
+                      </LibraryContextLaunchProvider>
                     </WorldContextRunProvider>
                   </WorldContextLaunchProvider>
                 </IframeWorldContextLaunchProvider>

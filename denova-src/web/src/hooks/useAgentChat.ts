@@ -33,6 +33,14 @@ import {
   type WorldContextRunState,
 } from '@/features/world-context-runtime/world-context-wire'
 import { useWorldContextRun } from '@/features/world-context-runtime/WorldContextRunProvider'
+import { useLibraryContextLaunch } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import {
+  normalizeLibraryContextState,
+  toLibraryContextRequestBody,
+  type LibraryContextRunState,
+  type WritingLibraryContextRef,
+} from '@/features/library-context-runtime/library-context-wire'
+import { useLibraryContextRun } from '@/features/library-context-runtime/LibraryContextRunProvider'
 
 interface ChatOptions {
   workspace?: string
@@ -87,9 +95,38 @@ export function useAgentChat(options: ChatOptions = {}) {
     analysisHandleRef.current = handle
     setAnalysisHandleState(handle)
   }, [])
+  // B2b：作品设定库写作背景运行态（纯组件内存，不持久化、不进 Zustand）。库背景与
+  // 世界背景互斥单选——后带入者获胜，另一侧清除并恢复 none 原状态，发送体永不携带冲突载体。
+  const { pendingLibrary, takeWritingLibraryLaunch } = useLibraryContextLaunch()
+  const { setView: setLibraryRunView, registerClear: registerLibraryClear } = useLibraryContextRun()
+  const [boundLibraryRef, setBoundLibraryRef] = useState<WritingLibraryContextRef | null>(null)
+  const boundLibraryRefRef = useRef<WritingLibraryContextRef | null>(null)
+  const [librarySummary, setLibrarySummary] = useState<{
+    libraryName?: string
+    revisionLabel?: string
+    selectedCount?: number
+  } | null>(null)
+  const [libraryContextState, setLibraryContextState] = useState<LibraryContextRunState>('none')
+  // 清除「后续新 run」的设定库背景：清 Ref/摘要/状态，但不影响当前已开始的运行，也不修改库。
+  const clearLibraryContext = useCallback(() => {
+    boundLibraryRefRef.current = null
+    setBoundLibraryRef(null)
+    setLibrarySummary(null)
+    setLibraryContextState('none')
+  }, [])
+  // 清除「后续新 run」的世界背景：清 Ref/handle/状态，但不影响当前已开始的运行，也不修改 World。
+  const clearWorldContext = useCallback(() => {
+    boundWorldRefRef.current = null
+    setBoundWorldRef(null)
+    setBoundWorldSummary(null)
+    setAnalysisHandle(null)
+    setAnalysisHandleStatus(null)
+    setWorldErrorCode(null)
+    setWorldContextState('none')
+  }, [setAnalysisHandle])
   useEffect(() => {
     // World Console 可能在本 Hook 挂载后才写入交接 Ref；pendingWriting 变化时立即一次性取走。
-    // 刷新/重挂载后 Provider 为空，仍保持 bare。
+    // 刷新/重挂载后 Provider 为空，仍保持 bare。显式带入世界背景时清除库背景（互斥单选）。
     if (!pendingWriting) return
     const launch = takeWritingLaunch()
     if (!launch) return
@@ -107,7 +144,31 @@ export function useAgentChat(options: ChatOptions = {}) {
     })
     setWorldContextState('bound')
     setWorldErrorCode(null)
-  }, [pendingWriting, takeWritingLaunch])
+    // 背景单选：显式带入世界背景时清除库背景，恢复其「无背景」原状态。
+    clearLibraryContext()
+  }, [pendingWriting, takeWritingLaunch, clearLibraryContext])
+  useEffect(() => {
+    // 库工作区可在本 Hook 挂载后才写入交接（pendingLibrary 变化即消费一次性取走）；
+    // 刷新/重挂载后 Provider 为空，仍保持 bare。
+    if (!pendingLibrary) return
+    const launch = takeWritingLibraryLaunch()
+    if (!launch) return
+    const ref: WritingLibraryContextRef = {
+      libraryId: launch.libraryId,
+      expectedRevision: launch.expectedRevision,
+      manualItemIds: launch.manualItemIds,
+    }
+    boundLibraryRefRef.current = ref
+    setBoundLibraryRef(ref)
+    setLibrarySummary({
+      libraryName: launch.libraryName,
+      revisionLabel: launch.revisionLabel,
+      selectedCount: launch.selectedCount,
+    })
+    setLibraryContextState('bound')
+    // 背景单选：显式带入库背景时清除世界 Ref/handle，恢复其「无背景」原状态。
+    clearWorldContext()
+  }, [pendingLibrary, takeWritingLibraryLaunch, clearWorldContext])
   const {
     messages: uiMessages,
     setMessages: setUIMessages,
@@ -128,6 +189,19 @@ export function useAgentChat(options: ChatOptions = {}) {
         setAnalysisHandleStatus(status.analysisHandleStatus ?? null)
         setBoundWorldSummary((prev) => ({
           worldName: status.worldName ?? prev?.worldName,
+          revisionLabel: status.revisionLabel ?? prev?.revisionLabel,
+          selectedCount: status.selectedCount ?? prev?.selectedCount,
+        }))
+        return
+      }
+      if (part.type === 'data-library-context-state') {
+        // 模型内容前恰好一次的设定库背景状态（active|none，无 degraded：绑定期失败直接阻断启动）；
+        // 只更新展示摘要，不修改任何已发送请求或设定库。
+        const status = normalizeLibraryContextState((part as { data?: unknown }).data)
+        if (!status) return
+        setLibraryContextState(status.state === 'active' ? 'active' : 'none')
+        setLibrarySummary((prev) => ({
+          libraryName: status.libraryName ?? prev?.libraryName,
           revisionLabel: status.revisionLabel ?? prev?.revisionLabel,
           selectedCount: status.selectedCount ?? prev?.selectedCount,
         }))
@@ -366,11 +440,23 @@ export function useAgentChat(options: ChatOptions = {}) {
       })),
     } as Parameters<typeof buildAgentChatRequestBody>[0] & { message: string }) as Record<string, unknown>
     body.message = prepared.message
-    // A6：携带已保存 Ref（后续新 run 持续复用，直到用户清除）与一次性 analysisHandle。
-    // reconnect 走 GET /api/chat/stream（无 body），因此天然不会提交这两个字段。
+    // A6/B2b：携带已保存 Ref（后续新 run 持续复用，直到用户清除）与一次性 analysisHandle。
+    // reconnect 走 GET /api/chat/stream（无 body），因此天然不会提交这些字段。
+    const activeLibraryRef = boundLibraryRefRef.current
     const activeWorldRef = boundWorldRefRef.current
     const pendingHandle = analysisHandleRef.current
-    if (pendingHandle) {
+    if (activeLibraryRef) {
+      // B2a 冻结契约：显式声明 background_source=library 并携带库载体（camelCase）。
+      // lore_references 与库背景互斥（B2a 修正轮：携带即 400 background_source_conflict），
+      // 前端剥离旧资料引用而非发送必被拒绝的冲突请求；world_context/analysis_handle
+      // 载体同现亦会被传输层 400 拒绝，互斥单选已在交接消费时保证，此处防御性不携带。
+      body.background_source = 'library'
+      body.library_context = toLibraryContextRequestBody(activeLibraryRef)
+      body.lore_references = []
+      delete body.analysis_handle
+      delete body.world_context
+      if (pendingHandle) setAnalysisHandle(null)
+    } else if (pendingHandle) {
       // 先分析后首次发送：handle 已锁定同一 pending runContext，首次只带 handle（不再重复带 Ref）。
       body.analysis_handle = pendingHandle
     } else if (activeWorldRef) {
@@ -400,6 +486,9 @@ export function useAgentChat(options: ChatOptions = {}) {
         setWorldContextState('bound')
         setWorldErrorCode(null)
         setAnalysisHandleStatus(null)
+      }
+      if (activeLibraryRef) {
+        setLibraryContextState('bound')
       }
       sendOptions.onSubmissionStart?.()
       await pendingRequest
@@ -489,16 +578,20 @@ export function useAgentChat(options: ChatOptions = {}) {
     stopAIStream()
   }, [stopAIStream])
 
-  // 清除「后续新 run」的世界背景：清 Ref/handle/状态，但不影响当前已开始的运行，也不修改 World。
-  const clearWorldContext = useCallback(() => {
-    boundWorldRefRef.current = null
-    setBoundWorldRef(null)
-    setBoundWorldSummary(null)
-    setAnalysisHandle(null)
-    setAnalysisHandleStatus(null)
-    setWorldErrorCode(null)
-    setWorldContextState('none')
-  }, [setAnalysisHandle])
+  // 把库背景运行状态同步给 AgentPanel 的展示桥；clear 由 useAgentChat 执行以保证状态真源唯一。
+  useEffect(() => {
+    setLibraryRunView({
+      state: libraryContextState,
+      hasBound: boundLibraryRef !== null,
+      libraryName: librarySummary?.libraryName,
+      revisionLabel: librarySummary?.revisionLabel,
+      selectedCount: librarySummary?.selectedCount,
+    })
+  }, [libraryContextState, boundLibraryRef, librarySummary, setLibraryRunView])
+  useEffect(() => {
+    registerLibraryClear(clearLibraryContext)
+    return () => registerLibraryClear(null)
+  }, [registerLibraryClear, clearLibraryContext])
 
   // 把运行状态同步给 AgentPanel 的展示桥；clear 由 useAgentChat 执行以保证状态真源唯一。
   useEffect(() => {
@@ -573,6 +666,10 @@ export function useAgentChat(options: ChatOptions = {}) {
     analysisHandleStatus,
     hasBoundWorldContext: boundWorldRef !== null,
     clearWorldContext,
+    libraryContextState,
+    libraryContextSummary: librarySummary,
+    hasBoundLibraryContext: boundLibraryRef !== null,
+    clearLibraryContext,
     setPlanMode: setActivePlanMode,
     togglePlanMode,
     send,

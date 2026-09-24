@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, Bot, FileText, Globe2, PenLine, Plus, SearchCheck, Sparkles, WandSparkles, X } from 'lucide-react'
+import { Activity, Bot, FileText, Globe2, Library, PenLine, Plus, SearchCheck, Sparkles, WandSparkles, X } from 'lucide-react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -26,6 +26,7 @@ import { MAX_REVIEW_FEEDBACK_COMMENT_COUNT, MAX_REVIEW_FEEDBACK_CONTEXT_BYTES, r
 import { toast } from 'sonner'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
 import { useWorldContextRun } from '@/features/world-context-runtime/WorldContextRunProvider'
+import { useLibraryContextRun } from '@/features/library-context-runtime/LibraryContextRunProvider'
 
 type AgentPanelView = 'chat' | 'sessions' | 'traces'
 
@@ -142,6 +143,50 @@ function WorldContextStateBar() {
         aria-label={t('chat.worldContext.clear')}
         title={t('chat.worldContext.clear')}
         data-testid="writing-world-context-clear"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
+// B2b：作品设定库写作背景运行状态条。none 且未绑定不显示；库模式没有 degraded
+// （B2a 修正轮：绑定期失败直接阻断启动，错误经 agent-error 呈现），active/bound 明确区分。
+function LibraryContextStateBar() {
+  const { t } = useTranslation()
+  const { view, requestClear } = useLibraryContextRun()
+  if (view.state === 'none' && !view.hasBound) return null
+
+  const name = view.libraryName || t('chat.libraryContext.unnamed')
+  const rev = view.revisionLabel ? ` · ${view.revisionLabel}` : ''
+  const count = typeof view.selectedCount === 'number' ? ` · ${t('chat.libraryContext.selectedCount', { count: view.selectedCount })}` : ''
+  const tone =
+    view.state === 'active'
+      ? 'border-[var(--nova-success,#16a34a)]/30 bg-[var(--nova-success-bg,rgba(22,163,74,0.10))] text-[var(--nova-text)]'
+      : 'border-[var(--nova-border)] bg-[var(--nova-surface-2)] text-[var(--nova-text-muted)]'
+  const stateLabel =
+    view.state === 'active'
+      ? t('chat.libraryContext.active', { name, rev, count })
+      : t('chat.libraryContext.bound', { name, rev, count })
+
+  return (
+    <div
+      className={`flex shrink-0 items-start gap-2 border-b px-3 py-1.5 text-[11px] leading-snug ${tone}`}
+      data-testid="writing-library-context-state"
+      data-state={view.state}
+      role="status"
+    >
+      <Library className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="truncate">{stateLabel}</div>
+      </div>
+      <button
+        type="button"
+        onClick={requestClear}
+        className="shrink-0 rounded p-0.5 text-[var(--nova-text-faint)] hover:text-[var(--nova-text)]"
+        aria-label={t('chat.libraryContext.clear')}
+        title={t('chat.libraryContext.clear')}
+        data-testid="writing-library-context-clear"
       >
         <X className="h-3 w-3" />
       </button>
@@ -517,6 +562,8 @@ export function AgentPanel({
       </div>
 
       <WorldContextStateBar />
+
+      <LibraryContextStateBar />
 
       {view === 'chat' ? (
         <>

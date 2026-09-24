@@ -4,12 +4,18 @@ import { getMessagesPage, getSessions, switchSession, type SessionSummary } from
 import type { ReactNode } from 'react'
 import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
+import { LibraryContextLaunchProvider } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import { LibraryContextRunProvider } from '@/features/library-context-runtime/LibraryContextRunProvider'
 import { useAgentChat } from './useAgentChat'
 
 function WorldProviders({ children }: { children: ReactNode }) {
   return (
     <WorldContextLaunchProvider>
-      <WorldContextRunProvider>{children}</WorldContextRunProvider>
+      <WorldContextRunProvider>
+        <LibraryContextLaunchProvider>
+          <LibraryContextRunProvider>{children}</LibraryContextRunProvider>
+        </LibraryContextLaunchProvider>
+      </WorldContextRunProvider>
     </WorldContextLaunchProvider>
   )
 }

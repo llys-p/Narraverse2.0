@@ -14,9 +14,13 @@ import { useWorkLibraryCreation, useWorkLibraryEditor, useWorkLibraryList, useWo
 interface LibraryWorkspacePageProps {
   onClose: () => void
   onDirtyChange?: (dirty: boolean) => void
+  /** 写作侧是否已有打开的书（B2b 带入写作的可用条件）。 */
+  hasWritingBook?: boolean
+  /** 用户显式发起带入写作：写入一次性交接并切回写作模式。 */
+  onLaunchWriting?: () => void
 }
 
-export function LibraryWorkspacePage({ onClose, onDirtyChange }: LibraryWorkspacePageProps) {
+export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = false, onLaunchWriting }: LibraryWorkspacePageProps) {
   const { t } = useTranslation()
   const [openId, setOpenId] = useState<string | null>(null)
   const [listToken, setListToken] = useState(0)
@@ -43,6 +47,8 @@ export function LibraryWorkspacePage({ onClose, onDirtyChange }: LibraryWorkspac
         <LibraryEditorPanel
           editor={editor}
           vocabulary={vocabulary}
+          hasWritingBook={hasWritingBook}
+          onLaunchWriting={onLaunchWriting}
           onDirtyChange={(value) => {
             setDirty(value)
             onDirtyChange?.(value)

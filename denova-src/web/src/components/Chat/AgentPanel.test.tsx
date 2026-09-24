@@ -8,6 +8,7 @@ import { fetchSettings, updateUserSettings } from '@/features/settings/api'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import { AgentPanel, WRITING_COMPOSER_SETTING_DEFAULTS, type WritingComposerSettingsController } from './AgentPanel'
 import { WorldContextRunProvider, useWorldContextRun, type WritingWorldRunView } from '@/features/world-context-runtime/WorldContextRunProvider'
+import { LibraryContextRunProvider, useLibraryContextRun, type LibraryContextRunView } from '@/features/library-context-runtime/LibraryContextRunProvider'
 
 const useWritingSkillOptionsMock = vi.hoisted(() => vi.fn())
 const useWorkspaceChangeGroupsMock = vi.hoisted(() => vi.fn())
@@ -281,7 +282,9 @@ describe('AgentPanel', () => {
     const view = render(
       <VirtuosoMockContext.Provider value={{ viewportHeight: 1200, itemHeight: 52 }}>
         <WorldContextRunProvider>
-          <Owner open />
+          <LibraryContextRunProvider>
+            <Owner open />
+          </LibraryContextRunProvider>
         </WorldContextRunProvider>
       </VirtuosoMockContext.Provider>,
     )
@@ -298,7 +301,9 @@ describe('AgentPanel', () => {
     view.rerender(
       <VirtuosoMockContext.Provider value={{ viewportHeight: 1200, itemHeight: 52 }}>
         <WorldContextRunProvider>
-          <Owner open={false} />
+          <LibraryContextRunProvider>
+            <Owner open={false} />
+          </LibraryContextRunProvider>
         </WorldContextRunProvider>
       </VirtuosoMockContext.Provider>,
     )
@@ -448,6 +453,36 @@ type AgentPanelOverrides = Partial<Omit<ComponentProps<typeof AgentPanel>, 'comp
     // 不抛错即通过；真正的清除逻辑由 useAgentChat 注册并在 hook 测试覆盖。
   })
 
+  it('库背景状态条：none 隐藏，bound/active 展示且不泄漏内部 ID（B2b）', () => {
+    renderAgentPanel()
+    expect(screen.queryByTestId('writing-library-context-state')).not.toBeInTheDocument()
+
+    renderAgentPanel({}, null, { state: 'bound', hasBound: true, libraryName: '测试设定库', revisionLabel: 'rev·9', selectedCount: 2 })
+    const bound = screen.getAllByTestId('writing-library-context-state').at(-1)!
+    expect(bound).toHaveAttribute('data-state', 'bound')
+    expect(bound).toHaveTextContent('测试设定库')
+    expect(bound).toHaveTextContent('rev·9')
+    expect(bound).toHaveTextContent('已选 2 条')
+
+    renderAgentPanel({}, null, { state: 'active', hasBound: true, libraryName: '测试设定库', selectedCount: 2 })
+    const active = screen.getAllByTestId('writing-library-context-state').at(-1)!
+    expect(active).toHaveAttribute('data-state', 'active')
+    expect(active).toHaveTextContent('只读，不回写设定库')
+    expect(active).not.toHaveTextContent(/runContext|scopeKey|consumer|manualItemIds|libraryId|expectedRevision/i)
+
+    // 服务端 none + 本地已绑定：状态条仍在（Ref 供下次发送生效），data-state 与服务端一致。
+    renderAgentPanel({}, null, { state: 'none', hasBound: true, libraryName: '测试设定库' })
+    const pending = screen.getAllByTestId('writing-library-context-state').at(-1)!
+    expect(pending).toHaveAttribute('data-state', 'none')
+  })
+
+  it('库背景状态条清除按钮可点击（B2b）', async () => {
+    const user = userEvent.setup()
+    renderAgentPanel({}, null, { state: 'active', hasBound: true, libraryName: '测试设定库' })
+    await user.click(screen.getAllByTestId('writing-library-context-clear').at(-1)!)
+    // 不抛错即通过；清除后恢复 none 原状态由 useAgentChat 注册并在 hook 测试覆盖。
+  })
+
 function RunViewSeeder({ view }: { view: WritingWorldRunView | null }) {
   const { setView } = useWorldContextRun()
   useEffect(() => {
@@ -456,7 +491,15 @@ function RunViewSeeder({ view }: { view: WritingWorldRunView | null }) {
   return null
 }
 
-function renderAgentPanel(overrides: AgentPanelOverrides = {}, worldView: WritingWorldRunView | null = null) {
+function LibraryRunViewSeeder({ view }: { view: LibraryContextRunView | null }) {
+  const { setView } = useLibraryContextRun()
+  useEffect(() => {
+    if (view) setView(view)
+  }, [view, setView])
+  return null
+}
+
+function renderAgentPanel(overrides: AgentPanelOverrides = {}, worldView: WritingWorldRunView | null = null, libraryView: LibraryContextRunView | null = null) {
   function Owner() {
     const composerSettings = usePersistedUserSettings({
       workspace: overrides.workspace || '/workspace',
@@ -468,7 +511,10 @@ function renderAgentPanel(overrides: AgentPanelOverrides = {}, worldView: Writin
     <VirtuosoMockContext.Provider value={{ viewportHeight: 1200, itemHeight: 52 }}>
       <WorldContextRunProvider>
         <RunViewSeeder view={worldView} />
-        <Owner />
+        <LibraryContextRunProvider>
+          <LibraryRunViewSeeder view={libraryView} />
+          <Owner />
+        </LibraryContextRunProvider>
       </WorldContextRunProvider>
     </VirtuosoMockContext.Provider>,
   )
