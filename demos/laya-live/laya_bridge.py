@@ -163,7 +163,12 @@ CFG = json.loads(CFG_PATH.read_text(encoding="utf-8"))
 #    就直接用本地目录，完全不碰 huggingface_hub（见 _fetch_laya.py 的说明：
 #    hf 下载过程中的临时目录/锁文件删除会撞上本机的删除配额守卫）。
 # ==========================================================================
-MODELS_DIR = HERE / "_models"
+# ★ P1（2026-09-24）：模型目录可配置。worktree/新 checkout 默认没有 _models/，
+#   本机模型可能放在别处（如外部运行副本的 _models）。LAYA_MODELS_DIR 显式指定后，
+#   推理（find_local_models）与 checkpoint 校验（_checkpoint_fingerprint）用的是
+#   **同一个**有效目录 —— 两处读不同目录 = 校验的是 A、跑的是 B，必须杜绝。
+#   优先级与 LAYA_MODEL 一致：系统环境变量 > .env（见 load_env_file）。
+MODELS_DIR = Path(os.environ.get("LAYA_MODELS_DIR") or (HERE / "_models"))
 MODEL_NAMES = ("typed-decisions", "english", "multilingual")
 DEFAULT_MODEL_NAME = os.environ.get("LAYA_MODEL", "typed-decisions")
 
@@ -332,12 +337,26 @@ class LayaEngine:
 
         self.local_models = find_local_models()
         want = os.environ.get("LAYA_MODEL", DEFAULT_MODEL_NAME)
+        # ★★ P1 fail-closed（2026-09-24）：不再「退到已经有的那个」。
+        #   旧逻辑在本地缺用户指定检查点时，会静默换成 sorted(local)[0] 继续跑 ——
+        #   而能力档案是**按检查点**生成的（typed-decisions 可写 doubt_shift、
+        #   english 可写 fondness_shift）。静默换检查点 = 拿另一套可写信号集
+        #   冒充用户选择，状态层会按错误的档案写状态。宁可起不来，也不能装对。
+        if want not in MODEL_NAMES:
+            self.last_error = ("未知检查点名 %r（可选：%s）。拒绝加载任何检查点 —— "
+                               "不能以默认检查点冒充用户选择。"
+                               % (want, "、".join(MODEL_NAMES)))
+            self.detail = "LAYA_MODEL 无效，fail-closed 不加载"
+            self.load_ms = int((time.time() - t0) * 1000)
+            return
+        self.model_name = want
         if self.local_models and want not in self.local_models:
-            # 想要的检查点没下到本地，退到已经有的那个（避免又去联网下载）
-            self.model_name = sorted(self.local_models)[0]
-            self.last_error = "本机没有 %r 检查点，已退到 %r" % (want, self.model_name)
-        else:
-            self.model_name = want
+            self.last_error = ("模型目录 %s 里没有 %r 检查点（本地有：%s）。"
+                               "可用 LAYA_MODELS_DIR 指定模型目录；拒绝退到其它检查点冒充。"
+                               % (MODELS_DIR, want, "、".join(sorted(self.local_models)) or "无"))
+            self.detail = "请求的检查点在模型目录缺失，fail-closed 不加载"
+            self.load_ms = int((time.time() - t0) * 1000)
+            return
 
         device = os.environ.get("LAYA_DEVICE")
         preload = os.environ.get("LAYA_PRELOAD", "1") == "1"
@@ -369,7 +388,10 @@ class LayaEngine:
             cands = []
             if self.model_name in self.local_models:
                 cands.append((self.local_models[self.model_name], None))
-            cands += [("convaiinnovations/laya", "typed-decisions"), ("convaiinnovations/laya", None)]
+            # ★ P1：兜底只加载**用户指定的**检查点。旧代码会退到硬编码的
+            #   typed-decisions 或 repo 默认（english）—— 又一处「冒充用户选择」。
+            #   指定名不合法时让 HF 明确报错，不换名重试。
+            cands.append(("convaiinnovations/laya", self.model_name))
             for repo, sub in cands:
                 try:
                     self.obj = laya.load(repo, subfolder=sub) if sub else laya.load(repo)
@@ -3157,6 +3179,45 @@ TESTS_DIR = HERE / "tests"
 # 注意别叫 _XLATE_CACHE —— 那个名字已经被 translate_to_en 的**内存**翻译记忆占用了，
 # 重名会把 dict 换成 Path，直到调用翻译时才崩（TypeError: WindowsPath is not iterable）。
 _XLATE_DISK = HERE / "_diag" / "translation_cache.json"
+# ★★ P1（2026-09-24）：冻结基线与运行缓存彻底分家。
+#   旧实现里档案校验（_xlate_subset_fingerprint）和实验翻译读的是**同一个**
+#   可写文件 _diag/translation_cache.json —— 换机器/新 checkout 上它不存在，
+#   就出现 P0 撞到的怪象：「翻译明明能命中（内存已载入冻结译文），
+#   校验却报缺 137/137」。现在基线固定为 tests/assets/translation_cache.json
+#   （选项 B 已入库：264 条，sha256 ac954c9494cde484…，见 tests/assets/README.md），
+#   **只读**；日常运行缓存仍走 _diag，只能追加、永不覆盖基线。
+#   LAYA_XLATE_FROZEN 可显式指定基线路径；优先级同 LAYA_MODEL（系统环境 > .env）。
+_XLATE_FROZEN = Path(os.environ.get("LAYA_XLATE_FROZEN") or
+                     (TESTS_DIR / "assets" / "translation_cache.json"))
+_FROZEN_XLATE_MEMO = {"path": None, "mtime": None, "blob": None}
+
+
+def _load_frozen_xlate():
+    """读**冻结**翻译基线（只读，绝不写任何文件）。缺失/损坏返回 None。
+
+    ★ 返回 None 时调用方必须 fail-closed（档案校验拒用 / 实验拒绝开跑），
+      **不允许**静默回落运行缓存或在线补译 —— 那是把「校验读 A、翻译读 B」
+      的原始 bug 换个地方重演。聚焦测试用 LAYA_XLATE_FROZEN 指向临时副本，
+      真基线永不被测试触碰。
+    """
+    p = _XLATE_FROZEN
+    m = _FROZEN_XLATE_MEMO
+    try:
+        mt = p.stat().st_mtime
+    except OSError:
+        m.update({"path": str(p), "mtime": None, "blob": None})
+        return None
+    if m.get("path") == str(p) and m.get("mtime") == mt and m.get("blob") is not None:
+        return m["blob"]
+    try:
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(blob, dict):
+            raise ValueError("顶层不是 JSON 对象")
+    except Exception:
+        m.update({"path": str(p), "mtime": mt, "blob": None})
+        return None
+    m.update({"path": str(p), "mtime": mt, "blob": blob})
+    return blob
 
 
 def _load_fixture(name):
@@ -3177,7 +3238,16 @@ def _cached_translate(text, cache):
       但 translate_to_en 当时是**原样返回 text**，所以判据恰好把中文挡在了缓存外、
       却把 `en`（=中文）继续交给下游用了。判据对了一半，毒还在。
       现在源头就抛/返回空，下游无从误用。
+
+    ★ P1（2026-09-24）查找顺序：**冻结基线 → 传入的运行缓存 → 在线**。
+      基准用例的英文以冻结基线为准（与档案校验同源），命中即返回 ——
+      不联网、不写盘，也不会被运行缓存里可能的漂移译文覆盖（基线是权威）。
+      只有基线没有的新输入才走在线翻译，且**只写运行缓存**（_XLATE_DISK），
+      基线文件永远不会被写（纪律见 tests/assets/README.md）。
     """
+    frozen = _load_frozen_xlate()
+    if frozen is not None and text in frozen:
+        return frozen[text]
     if text in cache:
         return cache[text]
     try:
@@ -3676,16 +3746,30 @@ def _dataset_fingerprint():
 
     ★ 只哈希文件名列表是不够的 —— 改了用例内容必须能看出来，
       而「改了什么用例」恰恰是 P1→P1.5 之间最大的变量。
+
+    ★ P1（2026-09-24）增加行尾兼容哈希：.gitattributes 对 JSON 只标了 `text`，
+      Windows 检出会把工作区变成 CRLF，raw 哈希随之改变，但用例内容一个字节没变
+      （P0 已证明：三文件转 LF 后与档案逐字节一致）。`sha_lf` 是每个文件**仅做
+      CRLF→LF**后重算的聚合指纹 —— raw 不符而 `sha_lf` 与档案一致，即可断定
+      「内容未变、只有行尾不同」；任何真实内容改动（改用例 / 增删文件 / 改编码）
+      两个哈希会同时失配，照样拒绝。归一化只此一种：去空白、重排序、重序列化、
+      读 Git HEAD 代替工作区，一律不做。
     """
     d = TESTS_DIR / "cases"
-    per = {}
+    per, per_lf, crlf = {}, {}, []
     try:
         for p in sorted(d.glob("*.json")):
-            per[p.name] = _sha256_file(p)
+            b = p.read_bytes()
+            per[p.name] = hashlib.sha256(b).hexdigest()
+            b_lf = b.replace(b"\r\n", b"\n")
+            per_lf[p.name] = hashlib.sha256(b_lf).hexdigest()
+            if per[p.name] != per_lf[p.name]:
+                crlf.append(p.name)
     except Exception:
         pass
     return {"dir": str(d), "files": per, "sha": _sha256_blob(per),
-            "n_files": len(per)}
+            "files_lf": per_lf, "sha_lf": _sha256_blob(per_lf),
+            "crlf_files": crlf, "n_files": len(per)}
 
 
 def _checkpoint_fingerprint(model):
@@ -3744,17 +3828,22 @@ def _xlate_subset_fingerprint():
     ★ n_missing > 0 表示这批输入根本没进过缓存 —— 那 signalmetrics 也不会开跑
       （开跑前的完备性断言会拦住），所以这个数字应当永远是 0；
       它不是 0 就说明缓存被换过 / 被删过。
+
+    ★ P1（2026-09-24）：读取源改为**冻结基线**（_XLATE_FROZEN，默认
+      tests/assets/translation_cache.json），与运行缓存（_XLATE_DISK）分离 ——
+      校验和翻译必须同源（P0 的核心结论）。基线缺失/损坏时 source_error
+      会给出原因，档案校验据此拒绝，绝不静默换源。
     """
     texts = sorted(set(_case_texts()))
-    try:
-        cache = json.loads(_XLATE_DISK.read_text(encoding="utf-8"))
-    except Exception:
-        cache = {}
+    fr = _load_frozen_xlate()
+    cache = fr if fr is not None else {}
     sub = dict((t, cache.get(t)) for t in texts if t in cache)
     missing = [t for t in texts if t not in cache]
     return {"sha": _sha256_blob(sub), "kind": "case_subset",
             "n_texts": len(texts), "n_present": len(sub), "n_missing": len(missing),
-            "missing_sample": missing[:5], "source": str(_XLATE_DISK)}
+            "missing_sample": missing[:5], "source": str(_XLATE_FROZEN),
+            "source_file_sha": _sha256_file(_XLATE_FROZEN),
+            "source_error": None if fr is not None else "冻结基线缺失或不是合法 JSON 对象"}
 
 
 def _code_fingerprint():
@@ -4167,11 +4256,14 @@ def _build_profile(model, runs, names, era_ids=None):
             #   file_sha_now / file_sha_per_run 只作旁证：前者会随日常使用增长，
             #   后者用来发现「运行期间缓存被改写」（那次静默条件漂移事故的指纹）。
             "translation_cache": {
-                "path": str(_XLATE_DISK),
+                # ★ P1：权威来源是冻结基线（与 _xlate_subset_fingerprint 同源）。
+                #   runtime_file 只是日常缓存的位置，供追查用，不参与哈希比对。
+                "path": str(_XLATE_FROZEN),
                 "sha": _xlate_subset_fingerprint()["sha"],
                 "kind": "case_subset",
                 "subset": _xlate_subset_fingerprint(),
-                "file_sha_now": _sha256_file(_XLATE_DISK),
+                "file_sha_now": _sha256_file(_XLATE_FROZEN),
+                "runtime_file": str(_XLATE_DISK),
                 "file_sha_per_run": ev["checks"].get("cache_sha"),
             },
             "code": code_fp,
@@ -4313,9 +4405,22 @@ def load_capability_profile(model=None):
 
     ev = prof.get("evidence") or {}
     # 输入侧：不一致就拒用
-    ds_now = _dataset_fingerprint().get("sha")
-    if (ev.get("dataset") or {}).get("sha") != ds_now:
-        check["problems"].append("用例集已变（dataset sha 不符）→ 等级是在另一批输入上算的")
+    ds_now = _dataset_fingerprint()
+    ds_arch = (ev.get("dataset") or {}).get("sha")
+    if ds_arch != ds_now.get("sha"):
+        # ★ P1 行尾兼容（2026-09-24）：raw 不符时允许**仅 CRLF→LF** 的核对 ——
+        #   且必须**完整文件集合**的 LF 聚合指纹与档案一致才放行。
+        #   放行时把证据写进 check（--check 会打印），内容有任何真实改动仍拒绝。
+        if ds_arch and ds_arch == ds_now.get("sha_lf"):
+            check["line_ending_compat"] = {
+                "matched_via": "CRLF→LF（工作区行尾不同，用例内容与档案完全一致）",
+                "crlf_files": ds_now.get("crlf_files") or [],
+                "raw_sha": ds_now.get("sha"), "lf_sha": ds_now.get("sha_lf"),
+            }
+        else:
+            check["problems"].append(
+                "用例集已变（dataset sha 不符，且 CRLF→LF 兼容核对也不匹配）"
+                "→ 等级是在另一批输入上算的")
     cfg_now = _config_fingerprint().get("sha")
     if (ev.get("config") or {}).get("sha") != cfg_now:
         check["problems"].append("narra_config.json 已变（config sha 不符）→ signal 定义可能已变")
@@ -4324,11 +4429,16 @@ def load_capability_profile(model=None):
         check["problems"].append("检查点本体已变（checkpoint id 不符）→ 必须重新验证")
     # ★ 比对的是「实验用例译文的哈希」，不是缓存文件哈希 ——
     #   日常使用会让文件增长，那不是实验条件变化（见 _xlate_subset_fingerprint 的说明）。
+    #   ★ P1：读的是冻结基线；基线本身缺失/损坏要单独报出，不能笼统说「译文已变」。
     xsub_now = _xlate_subset_fingerprint()
-    if (ev.get("translation_cache") or {}).get("sha") != xsub_now["sha"]:
+    if xsub_now.get("source_error"):
         check["problems"].append(
-            "实验用例的译文已变（缺 %d/%d 条）→ 英文侧的输入条件与生成档案时不同"
-            % (xsub_now["n_missing"], xsub_now["n_texts"]))
+            "冻结译文基线不可读（%s）：%s → 拒绝猜测，不在线补译、不静默换源"
+            % (xsub_now["source"], xsub_now["source_error"]))
+    elif (ev.get("translation_cache") or {}).get("sha") != xsub_now["sha"]:
+        check["problems"].append(
+            "实验用例的译文已变（缺 %d/%d 条，基线：%s）→ 英文侧的输入条件与生成档案时不同"
+            % (xsub_now["n_missing"], xsub_now["n_texts"], xsub_now["source"]))
     # 旁证：生成档案时那几次运行本身是否条件一致（运行期缓存被改写等），
     # 由 _evidence_check 在生成阶段已经判定并存进 consistency —— 这里只透出结论，
     # 不在每次 decide 里重读 6 个运行文件（那是几百 KB 的 I/O，且结论不会变）。
@@ -4543,11 +4653,20 @@ def cmd_capability():
         print("=" * 96)
         print("能力档案核对（不重新生成，只看现档案与磁盘是否一致）")
         print("=" * 96)
+        # ★ P1：先报有效资产来源，让「校验读的是哪份资产」有据可查（不含任何密钥）。
+        print("  模型目录   ：%s（存在=%s）" % (MODELS_DIR, MODELS_DIR.is_dir()))
+        print("  冻结译文基线：%s（存在=%s）" % (_XLATE_FROZEN, _XLATE_FROZEN.exists()))
+        print("  运行翻译缓存：%s（存在=%s，只增不参与基线校验）"
+              % (_XLATE_DISK, _XLATE_DISK.exists()))
         for ck in sorted((profs.keys() if profs else [])) or sorted(runs_by_ck.keys()):
             prof, check = load_capability_profile(ck)
             tag = "✅ fresh" if check["fresh"] else "★ 需重新生成"
             print("  %-18s %s ｜ profile_id=%s ｜ code_changed=%s"
                   % (ck, tag, (check.get("profile_id") or "")[:12], check["code_changed"]))
+            lec = check.get("line_ending_compat")
+            if lec:
+                print("        · 行尾兼容匹配（%s）；CRLF 文件：%s"
+                      % (lec.get("matched_via"), "、".join(lec.get("crlf_files") or []) or "无"))
             for x in check["problems"]:
                 print("        · %s" % x)
         return 0
@@ -4699,20 +4818,33 @@ def cmd_signalmetrics():
                   if _XLATE_DISK.exists() else None)
 
     if LANG == "en":
+        # ★ P1（2026-09-24）：基准输入的完备性以**冻结基线**为准（与档案校验同源）。
+        #   旧实现查的是可写的 _diag 运行缓存 —— 新 checkout 上它不存在，
+        #   会误报 137/137 缺失（P0 撞到）；反过来只靠运行缓存又会允许
+        #   「基线被换掉但缓存凑齐了」的假通过。现在：基线缺失/缺条目一律拒绝开跑，
+        #   不在线补译、不回落运行缓存凑数 —— 恢复基线是唯一出路。
+        _frozen = _load_frozen_xlate()
         _all = []
         for _k in ("observable", "contextual", "hidden_truth"):
             for _c in (sets.get(_k) or ({}, []))[1]:
                 _all.append(_c["text"])
-        _missing = sorted(set(t for t in _all if t not in cache))
+        if _frozen is None:
+            print("★ 开跑前检查未通过：冻结译文基线不可读（%s）。" % _XLATE_FROZEN)
+            print("  基准输入的英文以冻结基线为准（fail-closed）。")
+            print("  纪律见 tests/assets/README.md；不得用运行缓存或在线补译凑齐条件。")
+            return 2
+        _missing = sorted(set(t for t in _all if t not in _frozen))
         if _missing:
-            print("★ 开跑前检查未通过：%d 条输入不在翻译缓存里，拒绝开跑。" % len(_missing))
-            print("  继续跑的话，「哪些用例被剔除」会取决于运行途中的缓存写入时机 ——")
-            print("  同一组多次运行之间条件就不一致了（这个坑已经踩过一次）。请先预热：")
-            print("      ./.venv-cuda/Scripts/python.exe tests/replication/prewarm_cache.py")
+            print("★ 开跑前检查未通过：%d 条基准输入不在**冻结基线**（%s）里，拒绝开跑。"
+                  % (len(_missing), _XLATE_FROZEN))
+            print("  基线缺失/被换必须先恢复冻结资产（tests/assets/README.md），")
+            print("  不允许靠运行缓存或在线补译凑齐 —— 那会让这批 run 与档案不可比。")
             for _t in _missing[:6]:
                 print("      · %s" % _t[:44])
             return 2
-        print("翻译缓存完备且冻结：%d 条 ｜ sha256=%s" % (len(cache), (_cache_sha or "")[:16]))
+        print("冻结基线完备：%d/%d 条基准输入全部命中（基线共 %d 条）｜ sha256=%s"
+              % (len(set(_all)), len(set(_all)), len(_frozen),
+                 (_sha256_file(_XLATE_FROZEN) or "")[:16]))
 
     def run_one(doc):
         dt, rows, by_name = _run_signals(model, doc, qs)
