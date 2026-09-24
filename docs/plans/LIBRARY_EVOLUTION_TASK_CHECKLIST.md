@@ -1,17 +1,17 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-24 07:56（Asia/Shanghai，A1/A2 已推送；B0 完成、B1 完成+修复轮在分支 `library-b2a`，均本地未推送）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-24 10:35（Asia/Shanghai，A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c 均完成，在分支 `library-b2a` 本地未推送）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
 | 项 | 已核实事实 |
 | --- | --- |
-| 仓库 | `D:\Narraverse2.0`；A1/A2 已推送（`origin/main`=`968d1e2`，L1/L2 基线=`f503173`）。B0 本地提交 `50d6bcc`（契约）、B1 本地提交 `eab8f57`（授权核心）+ 修复轮提交 `6b5c996`、B2a 提交 `c363056`（写作后端接线），均未推送；B1 修复轮起在独立分支 `library-b2a`（工作树 `D:\Narraverse2.0-b2a`，自 `2b1bad1` 接手，B2a 亦在该分支）。期间并行 laya 提交（`48a34f2`/`1f0763e`/`b708cde`/`532f706`）与本任务文件零交集。并行任务的脏改动仍留在主工作树。 |
+| 仓库 | `D:\Narraverse2.0`；A1/A2 已推送（`origin/main`=`968d1e2`，L1/L2 基线=`f503173`）。B0 本地提交 `50d6bcc`（契约）、B1 本地提交 `eab8f57`（授权核心）+ 修复轮提交 `6b5c996`、B2a 提交 `c363056`（写作后端接线）+ 修正轮提交 `33acf2f`、B2b 提交 `a8ca27a`（写作前端接线）、B2c 记录提交，均未推送；B1 修复轮起在独立分支 `library-b2a`（工作树 `D:\Narraverse2.0-b2a`，自 `2b1bad1` 接手，B2a/B2b/B2c 亦在该分支）。期间并行 laya 提交（`48a34f2`/`1f0763e`/`b708cde`/`532f706`）与本任务文件零交集。并行任务的脏改动仍留在主工作树。 |
 | L1 | 独立作品设定库及其修复（来源形态、未保存草稿、跨库异步、事件时间戳、缺失更新基线）已随 `f503173` 提交。 |
 | L2 | 三档只读加载、Master 固定版本解析、预算、只读预览 API/UI 已随 `f503173` 提交；定向 Go 测试、前端 207 文件/1296 测试、构建和隔离 executable 23 项验收已通过；**未装配到用户 8080**。详细限制以验收报告为准。 |
-| L3 | B0 契约已冻结（[L3 计划 §8](LIBRARY_L3_MODE_INTEGRATION_PLAN.md)，提交 `50d6bcc`；B2a wire 契约回写于 §8.8）；B1 授权核心已实现（提交 `eab8f57`+修复轮 `6b5c996`，见 B1 完成记录）；B2a 写作后端已接线（transport `background_source`+`library_context`、bind-before-start、`read_library_item` 按需读取、旧 lore 通道关闭、持久化隔离、状态事件，提交 `c363056`，见 B2a 完成记录）。**写作前端入口与真实模型闭环是 B2b/B2c；游戏/叙界/沙盒接线是 B3/B4**。旧 WorldContext 可用不等于新库接入。 |
+| L3 | B0 契约已冻结（[L3 计划 §8](LIBRARY_L3_MODE_INTEGRATION_PLAN.md)，提交 `50d6bcc`；wire 契约回写于 §8.8）；B1 授权核心已实现（提交 `eab8f57`+修复轮 `6b5c996`）；B2a 写作后端已接线并过修正轮（提交 `c363056`+`33acf2f`：transport、bind-before-start、`read_library_item`、旧 lore 三通道关闭、单源计费、持久化隔离、状态事件）；B2b 写作前端已接线（提交 `a8ca27a`）；**B2c 隔离 executable 带库写作真实模型闭环验收已通过**（真实生成、重启/取消、预览与真实输入一致、原库/书/Session/run ledger 无库正文写入）。**写作链路 B 段全部完成；游戏/叙界/沙盒接线是 B3/B4**。旧 WorldContext 可用不等于新库接入。 |
 | L4 | [迁移方案](LIBRARY_L4_MIGRATION_PLAN.md) 与 `internal/librarymigration/README.md` 是骨架；**没有迁移旧 World/Lore，也没有迁移 API**。 |
-| 运行实例 | 隔离验收 18082 已停；用户已有 8080 未被替换。本地 `artifacts/`、`.denova/`、exe、dist、截图和用户资料不得暂存入 Git。 |
+| 运行实例 | 隔离验收 18082（L2）、18083（B2c）均已停；用户已有 8080 未被替换。本地 `artifacts/`、`.denova/`、exe、dist、截图和用户资料不得暂存入 Git。 |
 | 并行改动 | 主工作树还有 Module4 UI、Agent Skills、知识库、Laya Demo 等他人工作；`CHANGELOG.md`、`项目协作日志.md` 等共享文件混有多个任务的内容。禁止 reset/clean/整树暂存或还原。 |
 
 入场阅读：根 `AGENTS.md`、`项目协作日志.md` 最新条目、`denova-src/AGENTS.md`、本清单、[L1/L2 实施记录](LIBRARY_RUNTIME_IMPLEMENTATION_PLAN.md)、[L2 契约](LIBRARY_L2_READ_CONTRACT.md)，再按领取的任务读 L3 或 L4 方案和相关代码。不要按聊天里的旧 SHA 猜测当前分支。
@@ -80,7 +80,7 @@
 
 ### B2c · 写作正式闭环（AI1；依赖 B2a、B2b）
 
-- [ ] 隔离 executable 完成带库写作真实模型生成、重启/取消、预览与真实输入一致性；检查原库、书、Session、压缩与 run ledger 无额外正文写入。模型凭据不可用时保持未完成。**完成记录：待填。**
+- [x] 隔离 executable 完成带库写作真实模型生成、重启/取消、预览与真实输入一致性；检查原库、书、Session、压缩与 run ledger 无额外正文写入。模型凭据不可用时保持未完成。**完成记录：2026-09-24 10:35（Asia/Shanghai，AI1 职责由 AI2 兼任，依用户"修完可连同 B2b/B2c 一起做闭环验收"授权连做）。验收实例：`artifacts/library-b2c/denova-b2c.exe`（分支 `library-b2a` HEAD=`e0c2c2c` 构建，`go build` 过）+ 独立运行目录 `artifacts/library-b2c/run-acceptance/`（自动生成独立 `.denova`，端口 18083，`-no-open`；另以 `-dev-mode`+运行目录 `config.toml` `llm_input_log_enabled=true` 仅取证送模输入，该日志默认关闭且仅存 artifacts 不入 Git；验收后已停服；用户 8080 未动）。模型凭据：环境变量 `DEEPSEEK_API_KEY` 对 api.deepseek.com 实测 401 无效（已证，值不记录）；改用用户主工作树既有配置文件中的密钥，仅注入隔离实例进程环境（不落盘、不打印、不入 Git），`OPENAI_MODEL=deepseek-v4-flash`（用户配置默认型号）真实生成成功；真实模型调用共 4 次（1 次 401 失败尝试 + 1 次 165 字完整生成 + 1 次短生成完成 + 1 次 600 字请求中途取消）。验收数据：虚构书 "B2c Library Acceptance" + 库 "B2c琉璃双月设定库"（resident 琉璃双月 / auto 灰雾林 / manual 守灯人苏眠；正文各嵌独特标记串 QZX7391/7392/7393 用于落盘泄漏断言）。九项结果：① L2 preview 端点（`POST /work-libraries/:id/context-preview`）：resident+manual 全文载入、auto 仅目录、budget 1220B/599tok；② 带库写作（`background_source=library`+`library_context` camelCase）：SSE start 后首帧 `data-library-context-state`（state=active+libraryName/revisionLabel/selectedCount=1，先于全部模型内容帧），真实生成 165 字开篇直接使用 resident 与 manual 细节（琉璃双月/淡蓝圆月/草木微光/苏眠/月牙形旧疤），未摘抄原文、无标记串；③ 预览与真实输入一致：送模第 2 条消息 `[Library Setting Context · Read Only]`，resident+manual 正文与 preview loaded 逐字节一致，auto 仅名目（QZX7392 不在输入），冻结抬头在；④ 旧 Lore 通道关闭运行时证据：实际系统提示无任何旧 lore 工具指引（search/read/get/query_lore 全 0）、read_library_item 指引在、仅保留"不要改写 .denova/lore/items.json"禁令；稳定上下文消息无 lore 正文；run ledger 工具表含 read_library_item、无 lore 工具；⑤ 计费/审计单源运行时证据：服务日志 billed composition（chars=9333/bytes=20185/sha=178011864ebd）与实际送模系统提示同源同前缀，实际提示含库模式指引（若回落默认 composition 必含旧 lore 指引——未出现），字节级等值由 B2a 修正轮单测锁定（deep-agent 平台包装层两模式同构、不计入 composition，与基线计费口径一致）；⑥ 互斥：library+lore_references→400 `background_source_conflict`（field=lore_references）；⑦ 取消：t+2s running 中 abort→ok、active=false(aborted)、二次 abort 幂等 ok、SSE 优雅收尾（1 finish/0 error），取消后库可读、revision 不变、preview 可用；⑧ 重启一致性：库文件 SHA256 与 revision 自创建→401 失败轮→成功轮→取消轮→重启全程逐字节一致，重启后 preview 可重新派生（loaded=2/1220B）、书可读、库自动恢复绑定；⑨ 持久化隔离：全书工作区+全局数据+服务日志 grep 三标记串 0 命中（除库文件本身、dev-mode llm-inputs 取证日志、evidence 捕获），session jsonl 含生成正文但无 `[Library Setting Context]` 头（ephemeral 不入 Session），run ledger 记 `library_id`/`library_revision` 且 context_ledger 无库正文，旧 lore 存储 `.denova/lore` 未被写入。未验证边界：① 本轮模型未调用 read_library_item/auto 按需读取/budget_exceeded 运行时路径（B1/B2a 单测已覆盖；tool_result 脱敏 `[library-item-read] <name>` 的运行时表现未复现）；② 压缩未触发（会话过短；压缩源无库正文由装配路径+B2a 单测保证）；③ 浏览器人工页面验证未做（接口层闭环全过；B2b UI 人工确认待用户日常使用）；④ 4 次模型调用消耗用户 DeepSeek 额度；⑤ 验收证据（SSE/输入日志/哈希清单）留存 `artifacts/library-b2c/`，不入 Git。**
 
 ### B3a · 游戏后端接线（AI2；依赖 B1、B2a 契约）
 
