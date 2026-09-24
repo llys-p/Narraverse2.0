@@ -520,11 +520,15 @@ func TestStartInteractiveTaskLibraryTurnRegenerateAndMissIntegration(t *testing.
 // ── D1 修复轮（2026-09-25）：read_library_item 真实触发后的全通道落盘扫描 ──
 
 // findGameRunLedgers 返回隔离数据目录下全部 run ledger JSONL（<workspace>/.denova/runs/*.jsonl）。
+// 目录遍历错误一律上抛（复审加固：漏扫不得静默通过）。
 func findGameRunLedgers(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
 			return nil
 		}
 		if filepath.Ext(path) == ".jsonl" && filepath.Base(filepath.Dir(path)) == "runs" {
@@ -539,11 +543,15 @@ func findGameRunLedgers(t *testing.T, root string) []string {
 }
 
 // findGameStoryFiles 返回隔离数据目录下全部故事存档 JSONL（story-*.jsonl，含备份副本）。
+// 目录遍历错误一律上抛（复审加固：漏扫不得静默通过）。
 func findGameStoryFiles(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
 			return nil
 		}
 		base := filepath.Base(path)
@@ -559,17 +567,20 @@ func findGameStoryFiles(t *testing.T, root string) []string {
 }
 
 // scanGameFixtureMarkers 对隔离数据目录逐文件做标记串直扫（非 n-gram），
-// 返回 文件绝对路径 → 命中标记列表。
+// 返回 文件绝对路径 → 命中标记列表；目录遍历与读取错误一律上抛（复审加固：漏扫不得静默通过）。
 func scanGameFixtureMarkers(t *testing.T, root string, markers []string) map[string][]string {
 	t.Helper()
 	hits := map[string][]string{}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
 			return nil
 		}
 		raw, readErr := os.ReadFile(path)
 		if readErr != nil {
-			t.Fatalf("scan read %s: %v", path, readErr)
+			return readErr
 		}
 		for _, marker := range markers {
 			if strings.Contains(string(raw), marker) {
