@@ -59,6 +59,32 @@ for k in ("observable", "contextual", "hidden_truth"):
     for c in (sets.get(k) or ({}, []))[1]:
         if c["text"] not in need:
             need.append(c["text"])
+
+# ★ 除三组标准用例集外，还要扫 tests/cases/ 下**任何**额外的用例文件。
+#   否则新加一个专项用例集（如 P2.5 的 trust_context.json）时，
+#   预热脚本会「看起来通过了」，而那个集的输入根本没进缓存 ——
+#   运行期再靠 _cached_translate 边跑边写，就又回到「跑途中改条件」那个坑。
+#   宁可多预热几条无关文本，也不要漏掉一个将要被断言的输入。
+import glob as _glob
+_extra = 0
+for _p in sorted(_glob.glob(os.path.join(ROOT, "tests", "cases", "*.json"))):
+    try:
+        _blob = json.load(open(_p, encoding="utf-8"))
+    except Exception:
+        continue
+    for _c in (_blob.get("cases") or []):
+        if _c.get("text") and _c["text"] not in need:
+            need.append(_c["text"])
+            _extra += 1
+        # 专项集的 A/B 两态各自的 text 也一并预热（有的集会写成 A.text / B.text）
+        for _side in ("A", "B"):
+            _t = (_c.get(_side) or {}).get("text")
+            if _t and _t not in need:
+                need.append(_t)
+                _extra += 1
+if _extra:
+    print("额外用例文件补入 %d 条文本" % _extra)
+
 missing = [t for t in need if t not in cache]
 print("用例输入去重后 %d 条，其中 %d 条缺缓存" % (len(need), len(missing)))
 

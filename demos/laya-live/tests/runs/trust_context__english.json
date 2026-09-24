@@ -1,0 +1,165 @@
+{
+ "_readme": [
+  "P2.5 trust_shift 上下文敏感性原始结果。",
+  "checkpoint=english ｜ 每态只跑一次（模型在固定输入下已确认 deterministic，见 §16 方法论更正）。",
+  "本文件只测 trust_shift，不改问题定义/评分规则/阈值/能力档案。"
+ ],
+ "checkpoint": "english",
+ "cases_sha": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6",
+ "validity": {
+  "dataset_sha": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6",
+  "config_sha": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a",
+  "config_sha_after": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a",
+  "config_unchanged": true,
+  "code_sha": "cdb0723b7a5640f21c53ca9d11f6b8f09e019f111f9cdeaf7fc907edff34df2d",
+  "cache_sha_before": "5b2dfa55b4ea885f1a5299e0cc8dcd05f73a31abb9bb84d4338efcb7529c861c",
+  "cache_sha_after": "5b2dfa55b4ea885f1a5299e0cc8dcd05f73a31abb9bb84d4338efcb7529c861c",
+  "subset_sha_after": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+  "n_cases": 6,
+  "n_rows_ok": 4,
+  "problems": [
+   "tr_kepthistory_vs_brokehistory：state 溢出（room=319），A/B 态之一被截断，结论不成立",
+   "tr_firstpromise_vs_keptmany：state 溢出（room=319），A/B 态之一被截断，结论不成立"
+  ]
+ },
+ "summary": {
+  "directional_all": {
+   "label": "全部定向 pair（flip）",
+   "n": 3,
+   "sign_rate": 0.6667,
+   "sign_ok": 2,
+   "mean_signed": -0.0681,
+   "median_signed": 0.0114,
+   "mean_abs_delta": 0.1138,
+   "n_beyond_noise": 2,
+   "ids": [
+    "tr_stranger_vs_companion",
+    "tr_lowtrust_vs_hightrust_same_offer",
+    "tr_helped_vs_betrayed"
+   ]
+  },
+  "axis_state": {
+   "label": "通道=当前关系（单变量）",
+   "n": 2,
+   "sign_rate": 1.0,
+   "sign_ok": 2,
+   "mean_signed": 0.0343,
+   "median_signed": 0.0343,
+   "mean_abs_delta": 0.0343,
+   "n_beyond_noise": 1,
+   "ids": [
+    "tr_stranger_vs_companion",
+    "tr_lowtrust_vs_hightrust_same_offer"
+   ]
+  },
+  "axis_history": {
+   "label": "通道=历史证据（单变量）",
+   "n": 1,
+   "sign_rate": 0.0,
+   "sign_ok": 0,
+   "mean_signed": -0.2728,
+   "median_signed": -0.2728,
+   "mean_abs_delta": 0.2728,
+   "n_beyond_noise": 1,
+   "ids": [
+    "tr_helped_vs_betrayed"
+   ]
+  },
+  "attenuation": null
+ },
+ "rows": [
+  {
+   "id": "tr_stranger_vs_companion",
+   "family": "关系底色",
+   "axis": "state",
+   "kind": "flip",
+   "A": {
+    "label": "陌生人（低 trust，无历史）",
+    "trust_shift": 2.2097
+   },
+   "B": {
+    "label": "长期可靠同伴（高 trust，无历史）",
+    "trust_shift": 2.2211
+   },
+   "delta": 0.0114,
+   "beyond_noise": false,
+   "why": "A 态 NPC 与玩家是陌生人（trust=15）：一个刚认识的人让你独自去城外取不明货物，是可回避的风险敞口，信任应下降。B 态 NPC 与玩家是长期同伴（trust=85）：同样的安排只是常规交接，且体现玩家在避免把 NPC 暴露给城里人，信任应上升。两者都不需要 NPC 知道货物是什么。",
+   "want_A": -1,
+   "want_B": 1,
+   "want_signed": 1,
+   "signed_delta": 0.0114,
+   "A_ok": false,
+   "B_ok": true,
+   "signed_ok": true,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_lowtrust_vs_hightrust_same_offer",
+   "family": "关系底色",
+   "axis": "state",
+   "kind": "flip",
+   "A": {
+    "label": "低信任（trust=20）",
+    "trust_shift": 2.4506
+   },
+   "B": {
+    "label": "高信任（trust=80）",
+    "trust_shift": 2.5077
+   },
+   "delta": 0.0571,
+   "beyond_noise": true,
+   "why": "A 态 trust=20：对刚认识的人先索要保密承诺再给信息，是典型的单方面约束，NPC 有理由认为对方在为日后翻脸做准备，信任应下降。B 态 trust=80：对已信任的人提出同样的保密要求，是共享风险而非转嫁风险，信任应上升。两态 NPC 都知道的就是「对方要求保密」这一件事本身。",
+   "want_A": -1,
+   "want_B": 1,
+   "want_signed": 1,
+   "signed_delta": 0.0571,
+   "A_ok": false,
+   "B_ok": true,
+   "signed_ok": true,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_helped_vs_betrayed",
+   "family": "历史证据",
+   "axis": "history",
+   "kind": "flip",
+   "A": {
+    "label": "最近受到帮助",
+    "trust_shift": 2.0766
+   },
+   "B": {
+    "label": "最近受到背叛",
+    "trust_shift": 2.3494
+   },
+   "delta": 0.2728,
+   "beyond_noise": true,
+   "why": "A 态历史：玩家上一轮刚替 NPC 挡下了一次盘查（NPC 在场）。同样的「我替你挡了」与刚发生过的行为互为印证，信任应上升。B 态历史：玩家上一轮刚把 NPC 的行踪卖给过别人（NPC 事后已经知道）。同样的「我什么都没说」落在一个已经出卖过自己的人身上，NPC 会倾向认为这是另一次待价而沽而非保护，信任应下降。两态关系数值相同。",
+   "want_A": 1,
+   "want_B": -1,
+   "want_signed": -1,
+   "signed_delta": -0.2728,
+   "A_ok": true,
+   "B_ok": false,
+   "signed_ok": false,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_state_x_history_interaction",
+   "family": "交互（2×2）",
+   "axis": "both",
+   "kind": "interaction",
+   "A": {
+    "label": "低 trust + 欺骗史",
+    "trust_shift": 2.4173
+   },
+   "B": {
+    "label": "高 trust + 无欺骗史",
+    "trust_shift": 2.4952
+   },
+   "delta": 0.0779,
+   "beyond_noise": true,
+   "why": "本 pair 不预设单一符号，用于检验两通道的交互结构：若二者独立可加，则 Δ(低+欺骗) 最负、Δ(高+无欺骗) 最正；若历史覆盖状态，则有无欺骗史的两格差异应显著大于信任底色造成的差异。预先声明：本 pair 的结论只用于解释前五条的机制，不单独作为通过判据。",
+   "counts_toward": "mechanism_only"
+  }
+ ]
+}

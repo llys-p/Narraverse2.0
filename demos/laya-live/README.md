@@ -67,6 +67,13 @@ Policy Resolver → ★ 行为权威
 > 换到 `english`，level 组 AUC 均值 0.750→**0.607**、prob 组 0.623→**0.632**，**两组的差反号**。
 > 所以「哪种 kind 可用」不是 Laya 的属性，**是检查点的属性**。
 > 现在真正的判据不再是 kind，而是每个检查点一份的**能力档案**（`laya_bridge.py capability`）。
+>
+> ⚠️ **还有一条对 `*_shift` 的额外限制（§18 / P2.5）：**
+> `*_shift`（`trust_shift` 等 score 型）问的是「**这句话**带来多少变化」，**是变化量不是状态量**。
+> 实测：`trust_shift` 随 `relationship.trust` 变化（两检查点 100% 方向正确），
+> 但**不随 `decision_history` 的内容反号**（两检查点 0%）。
+> 所以拿 `*_shift` 去验收「随历史变化」是**口径用错**，不是模型缺陷。
+> 需要状态量时应当看 `trust` / `doubt` 这类 noul 信号。详见报告 §18.5。
 
 `narra_config.json` 的 `signals.order` 定义 **9 个面板信号**，两类量纲**不要混用**：
 
@@ -267,6 +274,7 @@ $PY laya_bridge.py langtest     # 旧版 4 句极端输入区分度测试
 
 $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶 + 提交门控，需先起桥）
 $PY tests/p2_acceptance.py --json   # ★ Phase3 P2 验收（能力档案 / 角色分层 / Proposal 过滤，54 条断言）
+$PY tests/p25_acceptance.py --json  # ★ Phase3 P2.5 验收（trust_shift 上下文敏感性，14 PASS / 2 FAIL）
 ```
 
 诊断子集（结果单独存放，不影响正式对照）：
@@ -403,12 +411,12 @@ state 塞太满，都会在无声无息中失效。
 | `laya_bridge.py` | HTTP 桥 + 决策编排 + CLI 自检（纯标准库） |
 | `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals`（含 **`roles`：15 个 signal 的职责分层**）、**`capability_policy`**（检查点身份 + 声明式 status 覆盖） |
 | `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent，外加 **⓿ Checkpoint Capability Profile**（P2） |
-| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 English 跨检查点复现（P2 信号选择依据）、§17 ★ Phase3-P2 能力档案与 Proposal + Phase3 最终设计原则** |
-| `tests/cases/` | **三组用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率） |
-| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py` / **`p2_acceptance.py`** / **`capability_profiles.json`**）。**这些是证据，要提交** |
+| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 English 跨检查点复现（P2 信号选择依据）、§17 ★ Phase3-P2 能力档案与 Proposal + Phase3 最终设计原则、§18 ★ Phase3-P2.5 trust_shift 上下文敏感性（state 轴可用 / history 轴不可用）** |
+| `tests/cases/` | **三组标准用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率）；另有 **`trust_context.json`（P2.5 专项，6 条 pair，只测 `trust_shift`）** |
+| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py` / **`p2_acceptance.py`** / **`p25_acceptance.py`** / **`capability_profiles.json`**）。**这些是证据，要提交** |
 | `tests/runs/` | ★ **每次运行一份原始结果**（`<检查点>__<run_id>.json`，含逐用例 `budgets`）。跨检查点对照靠它，不能只留最新一次 |
 | `tests/capability_profiles.json` | ★ **P2：每个检查点的能力档案**（机器可读）。由 `capability` 从 `tests/runs/` 推导，**不要手改**；运行时按五类哈希核对后才敢用 |
-| `tests/replication/` | 复现实验工具：`prewarm_cache.py`（预热翻译缓存）/ `budget_check.py`（静态预算）/ `ckpt_analysis.py`（跨检查点分类，**classify() 的唯一权威实现**） |
+| `tests/replication/` | 复现实验工具：`prewarm_cache.py`（预热翻译缓存，**自动扫 `tests/cases/*.json`**）/ `budget_check.py`（静态预算）/ `ckpt_analysis.py`（跨检查点分类，**classify() 的唯一权威实现**）/ **`trust_context_probe.py`（P2.5 主实验）/ `p25_control.py`（自我证伪：同态重复 + 反序配对）/ `p25_attribution.py`（变化量 vs 状态量归因）** |
 | `启动Laya桥.bat` | Windows 一键启动（**GBK 编码**，由 `_gen_bat.py` 生成，勿手改） |
 | `.env.example` | 配置样例，**由 `_gen_env_example.py` 生成，手改会被下次生成覆盖** |
 | `.gitignore` / `.gitattributes` | 排除 `.env`、虚拟环境、检查点权重；`.bat` 标为 binary 防止换行改写 |

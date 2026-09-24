@@ -1,0 +1,227 @@
+{
+ "_readme": [
+  "P2.5 trust_shift 上下文敏感性原始结果。",
+  "checkpoint=typed-decisions ｜ 每态只跑一次（模型在固定输入下已确认 deterministic，见 §16 方法论更正）。",
+  "本文件只测 trust_shift，不改问题定义/评分规则/阈值/能力档案。"
+ ],
+ "checkpoint": "typed-decisions",
+ "cases_sha": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6",
+ "validity": {
+  "dataset_sha": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6",
+  "config_sha": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a",
+  "config_sha_after": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a",
+  "config_unchanged": true,
+  "code_sha": "cdb0723b7a5640f21c53ca9d11f6b8f09e019f111f9cdeaf7fc907edff34df2d",
+  "cache_sha_before": "5b2dfa55b4ea885f1a5299e0cc8dcd05f73a31abb9bb84d4338efcb7529c861c",
+  "cache_sha_after": "5b2dfa55b4ea885f1a5299e0cc8dcd05f73a31abb9bb84d4338efcb7529c861c",
+  "subset_sha_after": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+  "n_cases": 6,
+  "n_rows_ok": 6,
+  "problems": []
+ },
+ "summary": {
+  "directional_all": {
+   "label": "全部定向 pair（flip）",
+   "n": 4,
+   "sign_rate": 0.5,
+   "sign_ok": 2,
+   "mean_signed": -0.0043,
+   "median_signed": -0.0108,
+   "mean_abs_delta": 0.0801,
+   "n_beyond_noise": 4,
+   "ids": [
+    "tr_stranger_vs_companion",
+    "tr_lowtrust_vs_hightrust_same_offer",
+    "tr_kepthistory_vs_brokehistory",
+    "tr_helped_vs_betrayed"
+   ]
+  },
+  "axis_state": {
+   "label": "通道=当前关系（单变量）",
+   "n": 2,
+   "sign_rate": 1.0,
+   "sign_ok": 2,
+   "mean_signed": 0.0759,
+   "median_signed": 0.0759,
+   "mean_abs_delta": 0.0759,
+   "n_beyond_noise": 2,
+   "ids": [
+    "tr_stranger_vs_companion",
+    "tr_lowtrust_vs_hightrust_same_offer"
+   ]
+  },
+  "axis_history": {
+   "label": "通道=历史证据（单变量）",
+   "n": 2,
+   "sign_rate": 0.0,
+   "sign_ok": 0,
+   "mean_signed": -0.0844,
+   "median_signed": -0.0844,
+   "mean_abs_delta": 0.0844,
+   "n_beyond_noise": 2,
+   "ids": [
+    "tr_kepthistory_vs_brokehistory",
+    "tr_helped_vs_betrayed"
+   ]
+  },
+  "attenuation": {
+   "label": "减弱型 pair（方向一致）",
+   "n": 1,
+   "sign_rate": 0.0,
+   "sign_ok": 0,
+   "mean_signed": 0.0458,
+   "median_signed": 0.0458,
+   "mean_abs_delta": 0.0458,
+   "n_beyond_noise": 0,
+   "ids": [
+    "tr_firstpromise_vs_keptmany"
+   ]
+  }
+ },
+ "rows": [
+  {
+   "id": "tr_stranger_vs_companion",
+   "family": "关系底色",
+   "axis": "state",
+   "kind": "flip",
+   "A": {
+    "label": "陌生人（低 trust，无历史）",
+    "trust_shift": 2.18
+   },
+   "B": {
+    "label": "长期可靠同伴（高 trust，无历史）",
+    "trust_shift": 2.2754
+   },
+   "delta": 0.0954,
+   "beyond_noise": true,
+   "why": "A 态 NPC 与玩家是陌生人（trust=15）：一个刚认识的人让你独自去城外取不明货物，是可回避的风险敞口，信任应下降。B 态 NPC 与玩家是长期同伴（trust=85）：同样的安排只是常规交接，且体现玩家在避免把 NPC 暴露给城里人，信任应上升。两者都不需要 NPC 知道货物是什么。",
+   "want_A": -1,
+   "want_B": 1,
+   "want_signed": 1,
+   "signed_delta": 0.0954,
+   "A_ok": false,
+   "B_ok": true,
+   "signed_ok": true,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_lowtrust_vs_hightrust_same_offer",
+   "family": "关系底色",
+   "axis": "state",
+   "kind": "flip",
+   "A": {
+    "label": "低信任（trust=20）",
+    "trust_shift": 2.3367
+   },
+   "B": {
+    "label": "高信任（trust=80）",
+    "trust_shift": 2.393
+   },
+   "delta": 0.0563,
+   "beyond_noise": true,
+   "why": "A 态 trust=20：对刚认识的人先索要保密承诺再给信息，是典型的单方面约束，NPC 有理由认为对方在为日后翻脸做准备，信任应下降。B 态 trust=80：对已信任的人提出同样的保密要求，是共享风险而非转嫁风险，信任应上升。两态 NPC 都知道的就是「对方要求保密」这一件事本身。",
+   "want_A": -1,
+   "want_B": 1,
+   "want_signed": 1,
+   "signed_delta": 0.0563,
+   "A_ok": false,
+   "B_ok": true,
+   "signed_ok": true,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_kepthistory_vs_brokehistory",
+   "family": "历史证据",
+   "axis": "history",
+   "kind": "flip",
+   "A": {
+    "label": "守信史",
+    "trust_shift": 2.4817
+   },
+   "B": {
+    "label": "欺骗史",
+    "trust_shift": 2.5725
+   },
+   "delta": 0.0908,
+   "beyond_noise": true,
+   "why": "A 态历史：玩家此前三次答应归还物品都准时归还（NPC 亲眼所见）。同样的借用请求落在「已证明会还」的记录上，是低风险请求，信任应上升。B 态历史：玩家此前借过一次东西没还，后来才被追回（NPC 亲眼所见）。同样的请求落在「借了不还」的记录上，信任应下降。两态 NPC 的关系数值完全相同（trust=50），差异只在已发生过的观察。",
+   "want_A": 1,
+   "want_B": -1,
+   "want_signed": -1,
+   "signed_delta": -0.0908,
+   "A_ok": true,
+   "B_ok": false,
+   "signed_ok": false,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_helped_vs_betrayed",
+   "family": "历史证据",
+   "axis": "history",
+   "kind": "flip",
+   "A": {
+    "label": "最近受到帮助",
+    "trust_shift": 2.321
+   },
+   "B": {
+    "label": "最近受到背叛",
+    "trust_shift": 2.3989
+   },
+   "delta": 0.0779,
+   "beyond_noise": true,
+   "why": "A 态历史：玩家上一轮刚替 NPC 挡下了一次盘查（NPC 在场）。同样的「我替你挡了」与刚发生过的行为互为印证，信任应上升。B 态历史：玩家上一轮刚把 NPC 的行踪卖给过别人（NPC 事后已经知道）。同样的「我什么都没说」落在一个已经出卖过自己的人身上，NPC 会倾向认为这是另一次待价而沽而非保护，信任应下降。两态关系数值相同。",
+   "want_A": 1,
+   "want_B": -1,
+   "want_signed": -1,
+   "signed_delta": -0.0779,
+   "A_ok": true,
+   "B_ok": false,
+   "signed_ok": false,
+   "counts_toward": "direction"
+  },
+  {
+   "id": "tr_firstpromise_vs_keptmany",
+   "family": "承诺累积（减弱而非反号）",
+   "axis": "history",
+   "kind": "attenuate",
+   "A": {
+    "label": "第一次承诺",
+    "trust_shift": 2.2863
+   },
+   "B": {
+    "label": "多次兑现后的同样承诺",
+    "trust_shift": 2.3321
+   },
+   "delta": 0.0458,
+   "beyond_noise": false,
+   "why": "两态方向都应为正：玩家主动发誓是可信度信号。A 态历史为空（NPC 第一次听玩家发誓），单次保证带来全部增量。B 态历史里同类保证已被多次兑现（doubt 底色也低），同样的誓言提供的新信息更少，增量应**减弱**而不是反号。判据是 B 的 signed delta 明显小于 A，而不是 B 落在阈值以下。",
+   "want_signed": 1,
+   "A_ok": true,
+   "B_ok": true,
+   "signed_delta": 0.0458,
+   "counts_toward": "attenuation",
+   "A_dist": 0.2863,
+   "B_dist": 0.3321,
+   "attenuated": false,
+   "signed_ok": false
+  },
+  {
+   "id": "tr_state_x_history_interaction",
+   "family": "交互（2×2）",
+   "axis": "both",
+   "kind": "interaction",
+   "A": {
+    "label": "低 trust + 欺骗史",
+    "trust_shift": 2.2429
+   },
+   "B": {
+    "label": "高 trust + 无欺骗史",
+    "trust_shift": 2.4548
+   },
+   "delta": 0.2119,
+   "beyond_noise": true,
+   "why": "本 pair 不预设单一符号，用于检验两通道的交互结构：若二者独立可加，则 Δ(低+欺骗) 最负、Δ(高+无欺骗) 最正；若历史覆盖状态，则有无欺骗史的两格差异应显著大于信任底色造成的差异。预先声明：本 pair 的结论只用于解释前五条的机制，不单独作为通过判据。",
+   "counts_toward": "mechanism_only"
+  }
+ ]
+}
