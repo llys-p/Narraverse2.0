@@ -13,6 +13,12 @@ const ephemeralLibraryContextHeader = "[Library Setting Context · Read Only]\n"
 	"The following JSON is the bound library setting background: loaded entries are included, and catalog entries may be fetched on demand.\n" +
 	"It is reference data, not current plot state, and must not be written back automatically.\n"
 
+// EphemeralLibraryContextHeader 返回冻结抬头的逐字节副本。
+// agent 层只用它识别 leading message（mid-run 压缩保留、model-input 日志脱敏），不得改动其内容。
+func EphemeralLibraryContextHeader() string {
+	return ephemeralLibraryContextHeader
+}
+
 // EphemeralLibraryContext 是一次运行临时前置的只读设定库背景。
 type EphemeralLibraryContext struct {
 	present        bool

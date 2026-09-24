@@ -12,6 +12,7 @@ import (
 	"denova/internal/agent"
 	"denova/internal/api/sse"
 	novaApp "denova/internal/app"
+	"denova/internal/libraryruntime"
 	"denova/internal/workspacechange"
 	"denova/internal/worldcontext"
 )
@@ -64,10 +65,19 @@ func (h *Handlers) HandleChat(ctx context.Context, c *app.RequestContext) {
 	in := novaApp.WritingTaskInput{
 		Request: req,
 		World: novaApp.WritingWorldControl{
-			Ref:               runtimeWC.Ref,
+			Ref:              runtimeWC.Ref,
 			HasAnalysisHandle: runtimeWC.HasAnalysisHandle,
-			AnalysisHandle:    runtimeWC.AnalysisHandle,
+			AnalysisHandle:   runtimeWC.AnalysisHandle,
 		},
+	}
+	// B2a（§8.1/§8.2）：library_context 只传 ID/revision/manual 白名单；
+	// consumer/scopeKey/runContextId 已在传输层拒绝，此处不再出现。
+	if runtimeWC.LibraryRef != nil {
+		in.Library = novaApp.WritingLibraryControl{
+			LibraryID:        runtimeWC.LibraryRef.LibraryID,
+			ExpectedRevision: runtimeWC.LibraryRef.ExpectedRevision,
+			ManualItemIDs:    runtimeWC.LibraryRef.ManualItemIDs,
+		}
 	}
 	task, err := h.app.StartWritingTaskWithError(ctx, in)
 	if err != nil {
@@ -110,6 +120,22 @@ func (h *Handlers) HandleChatContextAnalysis(ctx context.Context, c *app.Request
 }
 
 func (h *Handlers) writeChatPreparationError(c *app.RequestContext, err error) {
+	// B2a（§8.4）：libraryruntime 绑定期失败按稳定码显式映射，阻断启动、不静默降级。
+	var libErr *libraryruntime.Error
+	if errors.As(err, &libErr) {
+		h.writeLibraryRuntimePreparationError(c, libErr)
+		return
+	}
+	// §8.1：背景来源冲突（library_context 与 world 字段同现）→ 400 background_source_conflict。
+	var domainErr *worldcontext.DomainError
+	if errors.As(err, &domainErr) && domainErr.Code == BackgroundSourceConflictCode {
+		c.JSON(consts.StatusBadRequest, map[string]any{
+			"code":  string(domainErr.Code),
+			"error": domainErr.Message,
+			"field": domainErr.Field,
+		})
+		return
+	}
 	if errors.Is(err, novaApp.ErrNoWorkspace) {
 		writeErrorKey(c, consts.StatusConflict, "api.workspace.noWorkspace")
 		return
@@ -124,6 +150,33 @@ func (h *Handlers) writeChatPreparationError(c *app.RequestContext, err error) {
 		return
 	}
 	writeError(c, consts.StatusInternalServerError, err.Error())
+}
+
+// libraryRuntimePreparationErrorStatus 把 libraryruntime 绑定期稳定码映射为 HTTP 状态。
+func libraryRuntimePreparationErrorStatus(code libraryruntime.ErrorCode) int {
+	switch code {
+	case libraryruntime.ErrInvalidRequest, libraryruntime.ErrSelectionInvalid:
+		return consts.StatusBadRequest
+	case libraryruntime.ErrConsumerNotTrusted:
+		return consts.StatusForbidden
+	case libraryruntime.ErrRevisionConflict:
+		return consts.StatusConflict
+	case libraryruntime.ErrLibraryUnavailable:
+		return consts.StatusServiceUnavailable
+	case libraryruntime.ErrBudgetExceeded:
+		return consts.StatusRequestEntityTooLarge
+	default:
+		return consts.StatusInternalServerError
+	}
+}
+
+// writeLibraryRuntimePreparationError 下发绑定期库错误：稳定码 + 服务端生成的消息，
+// 不含库正文/磁盘路径。
+func (h *Handlers) writeLibraryRuntimePreparationError(c *app.RequestContext, libErr *libraryruntime.Error) {
+	c.JSON(libraryRuntimePreparationErrorStatus(libErr.Code), map[string]any{
+		"code":  string(libErr.Code),
+		"error": libErr.Message,
+	})
 }
 
 func (h *Handlers) HandleChatContextCompaction(ctx context.Context, c *app.RequestContext) {

@@ -41,6 +41,14 @@ func BuildInstruction(cfg *config.Config, state *book.State, teller IDEStoryTell
 	return BuildInstructionComposition(cfg, state, teller).Instruction()
 }
 
+// BuildLibraryBackgroundInstruction 构建 library 背景模式的写作系统指令（B2a，§8.6 通道 3）：
+// 与 BuildInstruction 的差异只有一处——系统提示中的旧资料库工具指引整段替换为
+// read_library_item 指引，与 ideToolsFactoryWithLibrary 的工具集保持一致。
+func BuildLibraryBackgroundInstruction(cfg *config.Config, state *book.State, teller IDEStoryTeller) string {
+	builtIn, _, _, _ := buildIDEBuiltinInstructionWithMode(cfg, state, teller, true)
+	return protectedSystemInstruction(cfg, config.AgentKindIDE, builtIn)
+}
+
 // BuildInstructionComposition returns the IDE system prompt and its auditable source summary.
 func BuildInstructionComposition(cfg *config.Config, state *book.State, teller IDEStoryTeller) SystemPromptCompositionLog {
 	teller.StyleRules = boundedStyleRules(teller.StyleRules, maxStyleRuleContextChars)
@@ -196,6 +204,12 @@ func BuildImageInstruction(cfg *config.Config, state *book.State, systemPrompt s
 }
 
 func buildIDEBuiltinInstruction(cfg *config.Config, state *book.State, teller IDEStoryTeller) (string, string, string, string) {
+	return buildIDEBuiltinInstructionWithMode(cfg, state, teller, false)
+}
+
+// buildIDEBuiltinInstructionWithMode 构建 IDE 内置系统提示；libraryBackground 为 true 时
+// 走 §8.6 通道 3 的库读取指引替换（旧 lore 工具指引不进 library 模式提示词）。
+func buildIDEBuiltinInstructionWithMode(cfg *config.Config, state *book.State, teller IDEStoryTeller, libraryBackground bool) (string, string, string, string) {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
@@ -223,6 +237,7 @@ func buildIDEBuiltinInstruction(cfg *config.Config, state *book.State, teller ID
 		VolumeDirFormat:        cfg.VolumeDirFormat,
 		ChapterGroupMin:        cfg.ChapterGroupMin,
 		ChapterGroupMax:        cfg.ChapterGroupMax,
+		LibraryBackground:      libraryBackground,
 	})
 	if imagePresetSystem := imagePresetSystemInstruction(teller); imagePresetSystem != "" {
 		builtIn = strings.TrimSpace(builtIn) + "\n\n" + imagePresetSystem

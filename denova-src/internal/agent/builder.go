@@ -19,6 +19,7 @@ import (
 	"denova/config"
 	agenttools "denova/internal/agent/tools"
 	"denova/internal/book"
+	"denova/internal/libraryruntime"
 	"denova/internal/prompts"
 	"denova/internal/providercompat"
 	novaskills "denova/internal/skills"
@@ -38,6 +39,25 @@ func Build(ctx context.Context, cfg *config.Config, state *book.State, teller ID
 		Instruction:       BuildInstruction(cfg, state, teller),
 		EnableSkills:      true,
 		ExtraToolsFactory: ideToolsFactory(cfg),
+	})
+}
+
+// BuildWithLibraryBackground 构建 library 背景模式的写作 Agent（B2a）。
+// 与 Build 的差异（§8.6 通道 2/3）：不挂载旧 lore 读取工具（防止新旧两套设定叠加），
+// 改挂载持有本次绑定 Run 的 read_library_item 按需读取工具；系统提示中的旧 lore
+// 工具指引同步替换为 read_library_item 指引。其余工具集逐字节一致。
+// libRun 必须是本次写作任务在 bind-before-start 阶段绑定的运行；nil 时退回 Build。
+func BuildWithLibraryBackground(ctx context.Context, cfg *config.Config, state *book.State, teller IDEStoryTeller, libRun *libraryruntime.Run) (adk.Agent, error) {
+	if libRun == nil {
+		return Build(ctx, cfg, state, teller)
+	}
+	return buildDeepAgent(ctx, cfg, deepAgentSpec{
+		Kind:              config.AgentKindIDE,
+		Name:              "DenovaAgent",
+		Description:       "AI 小说创作助手",
+		Instruction:       BuildLibraryBackgroundInstruction(cfg, state, teller),
+		EnableSkills:      true,
+		ExtraToolsFactory: ideToolsFactoryWithLibrary(cfg, libRun),
 	})
 }
 
@@ -504,6 +524,31 @@ func ideToolsFactory(cfg *config.Config) func(config.ResolvedAgentToolSettings) 
 			return nil, err
 		}
 		tools := append([]tool.BaseTool{}, loreTools...)
+		tools = append(tools, imageTools...)
+		return tools, nil
+	}
+}
+
+// ideToolsFactoryWithLibrary 是 library 背景模式的 IDE 工具工厂（B2a，§8.6 通道 2）：
+// 不挂载旧 lore 工具（新旧设定不得叠加），改挂载持有本次绑定 Run 的库按需读取工具；
+// 插图工具保持不变。libRun 为 nil 时退回旧工厂（防御性，正常由 BuildWithLibraryBackground 挡住）。
+func ideToolsFactoryWithLibrary(cfg *config.Config, libRun *libraryruntime.Run) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		if cfg == nil {
+			return nil, nil
+		}
+		if libRun == nil {
+			return ideToolsFactory(cfg)(config.ResolvedAgentToolSettings{})
+		}
+		libraryTools, err := newLibraryReadTools(libRun)
+		if err != nil {
+			return nil, err
+		}
+		imageTools, err := newIllustrationTools(cfg)
+		if err != nil {
+			return nil, err
+		}
+		tools := append([]tool.BaseTool{}, libraryTools...)
 		tools = append(tools, imageTools...)
 		return tools, nil
 	}

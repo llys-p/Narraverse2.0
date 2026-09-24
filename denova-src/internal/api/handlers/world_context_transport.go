@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"denova/internal/agent"
 	"denova/internal/worldcontext"
@@ -48,10 +49,60 @@ type RuntimeWorldContext struct {
 	// HasAnalysisHandle 表示是否携带非空 analysis_handle（"" 与 null 都视为未携带）。
 	HasAnalysisHandle bool
 	AnalysisHandle    string
+	// BackgroundSource 是裁定后的背景来源：legacy | library | none（§8.1）。
+	// 显式声明或结构推断，始终非空出站。
+	BackgroundSource string
+	// LibraryRef 为 nil 表示请求未携带 library_context（library 模式必非 nil）。
+	LibraryRef *LibraryContextRef
 }
 
 // HasWorldContext 报告是否携带有效 world_context。
 func (r RuntimeWorldContext) HasWorldContext() bool { return r.Ref != nil }
+
+// HasLibraryContext 报告是否携带有效 library_context。
+func (r RuntimeWorldContext) HasLibraryContext() bool { return r.LibraryRef != nil }
+
+// 背景来源枚举（§8.1 冻结：background_source 顶层 snake_case）。
+const (
+	BackgroundSourceLegacy  = "legacy"
+	BackgroundSourceLibrary = "library"
+	BackgroundSourceNone    = "none"
+)
+
+// BackgroundSourceConflictCode 是 library_context 与 world_context/analysis_handle
+// 同现时的拒绝码：HTTP 400 background_source_conflict，禁止任何优先级吞并。
+const BackgroundSourceConflictCode worldcontext.ErrorCode = "background_source_conflict"
+
+// transportBackgroundSourceConflict 构造背景来源冲突领域错误。
+func transportBackgroundSourceConflict(field, msg string) *worldcontext.DomainError {
+	return &worldcontext.DomainError{
+		Code:    BackgroundSourceConflictCode,
+		Field:   field,
+		Message: msg,
+	}
+}
+
+// LibraryContextRef 是传输层解码后的库控制字段（handler-owned，服务端持有）。
+// consumer/scopeKey/runContextId 等运行身份字段在传输层一律拒绝，不在此结构出现。
+type LibraryContextRef struct {
+	LibraryID        string
+	ExpectedRevision string
+	ManualItemIDs    []string
+}
+
+// libraryContextRefWire 是 library_context 子树的冻结 wire 形态（严格 camelCase 白名单，
+// 内层命名与 L2 preview DTO 一致）。
+type libraryContextRefWire struct {
+	LibraryID        string   `json:"libraryId"`
+	ExpectedRevision string   `json:"expectedRevision"`
+	ManualItemIDs    []string `json:"manualItemIds"`
+}
+
+var libraryContextRefWireKeys = map[string]struct{}{
+	"libraryId":        {},
+	"expectedRevision": {},
+	"manualItemIds":    {},
+}
 
 // worldContextEnvelope 只声明受控的两个顶层键；其余顶层键是 agent.ChatRequest 的领域，
 // 解码到 map 时原样保留但不在此消费（默认放行，保证旧请求兼容）。
@@ -151,7 +202,151 @@ func DecodeWorldContextTransport(body []byte, policy WorldContextEndpointPolicy)
 		}
 	}
 
+	// B2a（§8.1）：背景来源声明与 library 载体。二者都必须先于裁定完成形状/越权校验。
+	explicitSource := ""
+	if raw, ok := top["background_source"]; ok {
+		source, present, err := decodeBackgroundSource(raw)
+		if err != nil {
+			return RuntimeWorldContext{}, err
+		}
+		if present {
+			explicitSource = source
+		}
+	}
+	if raw, ok := top["library_context"]; ok {
+		ref, err := decodeLibraryContextRef(raw)
+		if err != nil {
+			return RuntimeWorldContext{}, err
+		}
+		out.LibraryRef = ref
+	}
+	source, resolveErr := resolveBackgroundSource(explicitSource, out, policy)
+	if resolveErr != nil {
+		return RuntimeWorldContext{}, resolveErr
+	}
+	out.BackgroundSource = source
 	return out, nil
+}
+
+// resolveBackgroundSource 裁定最终背景来源并执行冲突/一致性拒绝（§8.1）。
+//   - library_context 与 world_context/analysis_handle 同现 → background_source_conflict，
+//     禁止任何优先级吞并；
+//   - 显式声明与控制字段不一致（library 无载体、none 带字段、legacy 带 library 载体）→ invalid_request；
+//   - 缺省时结构推断：有 library_context→library，有 world 字段→legacy，全无→none；旧请求行为不变。
+//   - PolicyContextAnalysis 不支持 library 背景交接（§8.3：库预览走 L2 preview 端点，咨询性）。
+func resolveBackgroundSource(explicit string, out RuntimeWorldContext, policy WorldContextEndpointPolicy) (string, error) {
+	hasLibrary := out.LibraryRef != nil
+	hasWorldCarrier := out.Ref != nil || out.HasAnalysisHandle
+	if hasLibrary && hasWorldCarrier {
+		return "", transportBackgroundSourceConflict(
+			"library_context",
+			"library_context 与 world_context/analysis_handle 互斥，不能同时提交背景控制字段",
+		)
+	}
+	switch explicit {
+	case BackgroundSourceLibrary:
+		if !hasLibrary {
+			return "", transportInvalidRequest("background_source", "background_source=library 必须携带 library_context")
+		}
+	case BackgroundSourceLegacy:
+		if hasLibrary {
+			return "", transportBackgroundSourceConflict("background_source", "background_source=legacy 不能携带 library_context")
+		}
+	case BackgroundSourceNone:
+		if hasLibrary || hasWorldCarrier {
+			return "", transportInvalidRequest("background_source", "background_source=none 不能携带任何背景控制字段")
+		}
+	case "":
+		// 缺省：结构推断。
+		switch {
+		case hasLibrary:
+			explicit = BackgroundSourceLibrary
+		case hasWorldCarrier:
+			explicit = BackgroundSourceLegacy
+		default:
+			explicit = BackgroundSourceNone
+		}
+	}
+	if explicit == BackgroundSourceLibrary && policy == PolicyContextAnalysis {
+		return "", transportInvalidRequest(
+			"library_context",
+			"context-analysis 不支持 library 背景交接；请使用作品设定库预览端点（咨询性，不建立运行授权）",
+		)
+	}
+	return explicit, nil
+}
+
+// decodeBackgroundSource 解码顶层 background_source：null/""/缺省视为未声明；
+// 非字符串或非 legacy|library|none 一律拒绝。
+func decodeBackgroundSource(raw json.RawMessage) (string, bool, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "", false, nil
+	}
+	var source string
+	if err := json.Unmarshal(trimmed, &source); err != nil {
+		return "", false, transportInvalidRequest("background_source", "background_source 必须是字符串")
+	}
+	if source == "" {
+		return "", false, nil
+	}
+	switch source {
+	case BackgroundSourceLegacy, BackgroundSourceLibrary, BackgroundSourceNone:
+		return source, true, nil
+	default:
+		return "", false, transportInvalidRequest(
+			"background_source",
+			"background_source 必须是 legacy|library|none",
+		)
+	}
+}
+
+// decodeLibraryContextRef 严格解码 library_context 子树：越权字段与未知字段精确拒绝，
+// manualItemIds 只做形状校验（去空白），条目存在性/启用/归属属于 app 绑定期校验。
+func decodeLibraryContextRef(raw json.RawMessage) (*LibraryContextRef, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		// library_context: null 等同未携带。
+		return nil, nil
+	}
+
+	// 必须是 JSON 对象（拒绝数组/字符串/数字/布尔）。
+	keys := map[string]json.RawMessage{}
+	if err := json.Unmarshal(trimmed, &keys); err != nil {
+		return nil, transportInvalidRequest("library_context", "library_context 必须是 JSON 对象")
+	}
+	for key := range keys {
+		if msg, forbidden := forbiddenWorldContextKeys[key]; forbidden {
+			return nil, transportInvalidRequest("library_context."+key, msg)
+		}
+		if _, allowed := libraryContextRefWireKeys[key]; !allowed {
+			return nil, transportInvalidRequest("library_context."+key, "library_context 包含未知字段")
+		}
+	}
+
+	var wire libraryContextRefWire
+	if err := decodeStrictJSON(trimmed, &wire); err != nil {
+		return nil, transportInvalidRequest("library_context", "library_context 包含非法字段或类型: "+err.Error())
+	}
+	if strings.TrimSpace(wire.LibraryID) == "" {
+		return nil, transportInvalidRequest("library_context.libraryId", "library_context.libraryId 不能为空")
+	}
+	if strings.TrimSpace(wire.ExpectedRevision) == "" {
+		return nil, transportInvalidRequest("library_context.expectedRevision", "library_context.expectedRevision 不能为空")
+	}
+	manualIDs := make([]string, 0, len(wire.ManualItemIDs))
+	for _, id := range wire.ManualItemIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil, transportInvalidRequest("library_context.manualItemIds", "library_context.manualItemIds 包含空条目")
+		}
+		manualIDs = append(manualIDs, id)
+	}
+	return &LibraryContextRef{
+		LibraryID:        strings.TrimSpace(wire.LibraryID),
+		ExpectedRevision: strings.TrimSpace(wire.ExpectedRevision),
+		ManualItemIDs:    manualIDs,
+	}, nil
 }
 
 // decodeWorldContextRef 严格解码 world_context 子树：越权字段精确拦截，其余未知字段由

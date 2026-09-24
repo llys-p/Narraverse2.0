@@ -18,6 +18,11 @@ func logToolPath(name, id, path string) {
 }
 
 func logToolResult(name, id, content string) {
+	// §8.5：库按需读取工具的结果正文绝不进日志（含失败关键词触发的 preview 路径），只记字节数。
+	if isLibraryReadToolName(name) {
+		log.Printf("[agent-tool] result name=%s id=%s bytes=%d", name, id, len(content))
+		return
+	}
 	if looksLikeToolFailure(content) {
 		log.Printf("[agent-tool] result suspected_failure=true name=%s id=%s bytes=%d preview=%q", name, id, len(content), safeLogPreview(content, 300))
 		return

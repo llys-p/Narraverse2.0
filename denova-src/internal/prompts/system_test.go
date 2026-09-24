@@ -73,3 +73,35 @@ func TestIDEWritingFlowKeepsChapterStatusIndependentFromStateSync(t *testing.T) 
 		t.Fatalf("写作流程提示存在多余 fmt 参数:\n%s", instruction)
 	}
 }
+
+// TestBuildIDEWritingFlowInstructionLibraryBackgroundReplacesLoreGuidance 守护
+// §8.6 通道 3：library 背景模式下旧 lore 工具指引整段替换为 read_library_item 指引；
+// 同时守护替换表左侧与 systemInstructionBody 逐字节同步（默认模式必须包含每个旧片段）。
+func TestBuildIDEWritingFlowInstructionLibraryBackgroundReplacesLoreGuidance(t *testing.T) {
+	in := SystemInstructionInput{Workspace: "/tmp/book"}
+	defaultFlow := BuildIDEWritingFlowInstruction(in)
+	for i := 0; i+1 < len(loreToLibraryGuidancePairs); i += 2 {
+		if !strings.Contains(defaultFlow, loreToLibraryGuidancePairs[i]) {
+			t.Fatalf("replacement pair %d is out of sync with systemInstructionBody; missing:\n%s", i/2, loreToLibraryGuidancePairs[i])
+		}
+	}
+
+	libraryFlow := BuildIDEWritingFlowInstruction(SystemInstructionInput{Workspace: "/tmp/book", LibraryBackground: true})
+	for _, banned := range []string{"read_lore_items", "list_lore_items", "write_lore_items"} {
+		if strings.Contains(libraryFlow, banned) {
+			t.Fatalf("library background flow must not reference legacy lore tool %q:\n%s", banned, libraryFlow)
+		}
+	}
+	for i := 0; i+1 < len(loreToLibraryGuidancePairs); i += 2 {
+		if !strings.Contains(libraryFlow, loreToLibraryGuidancePairs[i+1]) {
+			t.Fatalf("library background flow must contain replacement guidance %d:\n%s", i/2, loreToLibraryGuidancePairs[i+1])
+		}
+	}
+	if strings.Contains(libraryFlow, "%!(EXTRA") {
+		t.Fatalf("library background flow has fmt artifacts:\n%s", libraryFlow)
+	}
+	// 非 lore 差异之外，两种模式共享同一 body（工作流、目录结构等逐字节一致）。
+	if strings.Contains(defaultFlow, "read_library_item") {
+		t.Fatal("default flow must not reference read_library_item (tool only mounted in library mode)")
+	}
+}

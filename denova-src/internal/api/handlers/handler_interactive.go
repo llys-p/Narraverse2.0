@@ -308,6 +308,13 @@ func (h *Handlers) HandleInteractiveChat(ctx context.Context, c *app.RequestCont
 		h.writeChatBodyDecodeError(c, err)
 		return
 	}
+	// B2a 边界：游戏纵向（B2b）尚未接线 library 背景；显式拒绝而不是静默忽略，
+	// 防止客户端误以为库背景已生效（§8.4：不得静默降级/吞并）。
+	if runtimeWC.LibraryRef != nil || runtimeWC.BackgroundSource == BackgroundSourceLibrary {
+		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail",
+			"detail", "interactive 尚未支持 library 背景，请在写作链使用或等待 B2b 接线")
+		return
+	}
 	var body struct {
 		Mode               string   `json:"mode"`
 		StoryID            string   `json:"story_id"`

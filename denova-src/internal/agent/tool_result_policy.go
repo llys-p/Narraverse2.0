@@ -22,6 +22,9 @@ const (
 	ToolSourceHistory ToolSource = "history"
 	ToolSourceWeb     ToolSource = "web"
 	ToolSourceImage   ToolSource = "image"
+	// ToolSourceLibrary 标记 B2a 库按需读取工具：只读、不改工作区，
+	// 与旧 lore 工具（ToolSourceLore）互不影响（§8.6 通道 2）。
+	ToolSourceLibrary ToolSource = "library"
 )
 
 // ToolManifest describes the loop-level contract for a model-visible tool result.
@@ -70,6 +73,9 @@ func ManifestForTool(name string) ToolManifest {
 	case normalized == "read_lore_items" || normalized == "list_lore_items":
 		manifest.Source = ToolSourceLore
 		manifest.Capability = config.AgentToolLoreRead
+	case isLibraryReadToolName(normalized):
+		// 库按需读取是受控读取（服务端授权对象），不属于文件系统读取能力。
+		manifest.Source = ToolSourceLibrary
 	case isMasterReadTool(normalized):
 		manifest.Source = ToolSourceRead
 	case normalized == "search_story_history":

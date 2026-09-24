@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"denova/internal/libraryruntime"
 )
 
 const (
@@ -36,6 +38,20 @@ type RunOptions struct {
 	// EphemeralWorldContext 是本次运行临时前置的只读世界背景，仅存在于调用栈，
 	// 不进入 Session/压缩摘要/ledger/display/export/日志；零值表示 bare 运行。
 	EphemeralWorldContext EphemeralWorldContextInput
+	// EphemeralLibraryContext 是本次运行临时前置的只读设定库背景（B2a，与
+	// EphemeralWorldContext 由传输层互斥）；同样仅存在于调用栈，零值表示未携带。
+	EphemeralLibraryContext EphemeralLibraryContextInput
+	// LibraryRuntimeRun 是本次写作运行绑定的设定库临时读取授权运行。
+	// 模型送入前用它把“系统提示 + 已组装历史 + 新消息”量测后计入累计预算
+	// （§8.3），失败以显式 budget_exceeded 终止运行；nil 表示非 library 模式。
+	// 它只用于计费钩子，工具持有同一 Run 的引用由 builder 侧注入。
+	LibraryRuntimeRun *libraryruntime.Run
+}
+
+// ExternalCostCharger 是运行期外部成本计费通道（§8.3 累计预算），
+// *libraryruntime.Run 实现该接口；测试可用假实现替代。
+type ExternalCostCharger interface {
+	ChargeExternal(bytes, tokens int) error
 }
 
 func (o RunOptions) normalized(defaultWorkspace string) RunOptions {
@@ -109,6 +125,13 @@ func runTraceMetadataForConversation(options RunOptions, conversation Conversati
 		TurnID:          options.TurnID,
 		MaintenanceTask: options.MaintenanceTask,
 	}
+	// §8.5：library 模式在 run ledger 只增记库 ID/revision 元数据，禁止正文。
+	if options.LibraryRuntimeRun != nil {
+		if st := options.LibraryRuntimeRun.Status(); st.LibraryID != "" {
+			metadata.LibraryID = st.LibraryID
+			metadata.LibraryRevision = st.Revision
+		}
+	}
 	if reporter, ok := conversation.(RunTraceMetadataReporter); ok {
 		reported := reporter.RunTraceMetadata()
 		if strings.TrimSpace(reported.StoryID) != "" {
@@ -128,6 +151,8 @@ func runTraceMetadataForConversation(options RunOptions, conversation Conversati
 	metadata.BranchID = boundedRunTraceMetadataValue(metadata.BranchID)
 	metadata.TurnID = boundedRunTraceMetadataValue(metadata.TurnID)
 	metadata.MaintenanceTask = boundedRunTraceMetadataValue(metadata.MaintenanceTask)
+	metadata.LibraryID = boundedRunTraceMetadataValue(metadata.LibraryID)
+	metadata.LibraryRevision = boundedRunTraceMetadataValue(metadata.LibraryRevision)
 	return metadata
 }
 
@@ -136,7 +161,8 @@ func boundedRunTraceMetadataValue(value string) string {
 }
 
 func (m RunTraceMetadata) empty() bool {
-	return m.StoryID == "" && m.BranchID == "" && m.TurnID == "" && m.MaintenanceTask == ""
+	return m.StoryID == "" && m.BranchID == "" && m.TurnID == "" && m.MaintenanceTask == "" &&
+		m.LibraryID == "" && m.LibraryRevision == ""
 }
 
 func (m RunTraceMetadata) record() map[string]any {
@@ -145,5 +171,7 @@ func (m RunTraceMetadata) record() map[string]any {
 		"branch_id":        m.BranchID,
 		"turn_id":          m.TurnID,
 		"maintenance_task": m.MaintenanceTask,
+		"library_id":       m.LibraryID,
+		"library_revision": m.LibraryRevision,
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"denova/internal/agent"
 	"denova/internal/book"
 	"denova/internal/interactive"
+	"denova/internal/libraryruntime"
 	"denova/internal/prompts"
 	"denova/internal/session"
 )
@@ -87,6 +88,17 @@ func buildAgentRunner(ctx context.Context, cfg *config.Config, state *book.State
 		teller = tellers[0]
 	}
 	builtAgent, err := agent.Build(ctx, cfg, state, teller)
+	if err != nil {
+		return nil, fmt.Errorf("构建 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindIDE, Workspace: cfg.Workspace}), nil
+}
+
+// buildAgentRunnerWithLibrary 构建 library 背景模式的写作 runner（B2a）：
+// lore 工具不挂载（§8.6 通道 2），改挂载持有本次绑定 Run 的库按需读取工具。
+// 其余（runner 选项、模型网关、Skill 中间件）与 buildAgentRunner 逐字节一致。
+func buildAgentRunnerWithLibrary(ctx context.Context, cfg *config.Config, state *book.State, teller agent.IDEStoryTeller, libRun *libraryruntime.Run) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildWithLibraryBackground(ctx, cfg, state, teller, libRun)
 	if err != nil {
 		return nil, fmt.Errorf("构建 Agent 失败: %w", err)
 	}

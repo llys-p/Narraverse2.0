@@ -148,6 +148,51 @@ func TestStreamEncoderWorldContextStatePrecedesModelContent(t *testing.T) {
 	}
 }
 
+// B2a：library_context_state 必须在任何模型 chunk 之前下发，且只携带脱敏摘要
+// （state/libraryName/revisionLabel/selectedCount；禁发运行身份与库正文）。
+func TestStreamEncoderLibraryContextStatePrecedesModelContent(t *testing.T) {
+	var out bytes.Buffer
+	encoder := NewStreamEncoder(&out)
+	events := []agent.Event{
+		{Type: "library_context_state", Data: map[string]any{
+			"state":         "active",
+			"libraryName":   "测试设定库",
+			"revisionLabel": "r1",
+			"selectedCount": 2,
+		}},
+		{Type: "chunk", Data: map[string]any{"content": "正文"}},
+		{Type: "done", Data: map[string]any{}},
+	}
+	for _, event := range events {
+		if err := encoder.WriteEvent(event); err != nil {
+			t.Fatalf("WriteEvent(%s) failed: %v", event.Type, err)
+		}
+	}
+	chunks, done := parseUIStreamChunks(t, out.String())
+	if !done {
+		t.Fatalf("expected [DONE], got:\n%s", out.String())
+	}
+	got := chunkTypes(chunks)
+	want := []string{"start", DataTypeLibraryContextState, "text-start", "text-delta", "text-end", "finish"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("library_context_state ordering mismatch\nwant: %v\n got: %v", want, got)
+	}
+	var state map[string]any
+	for _, c := range chunks {
+		if c["type"] == DataTypeLibraryContextState {
+			state, _ = c["data"].(map[string]any)
+		}
+	}
+	if state == nil || state["state"] != "active" || state["libraryName"] != "测试设定库" {
+		t.Fatalf("library context state payload mismatch: %#v", state)
+	}
+	for _, banned := range []string{"runContextId", "scopeKey", "fingerprint", "libraryId", "expectedRevision", "manualItemIds", "body", "catalog"} {
+		if _, ok := state[banned]; ok {
+			t.Fatalf("library_context_state leaked internal field %q: %#v", banned, state)
+		}
+	}
+}
+
 func parseUIStreamChunks(t *testing.T, raw string) ([]map[string]any, bool) {
 	t.Helper()
 	chunks := []map[string]any{}

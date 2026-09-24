@@ -187,7 +187,8 @@ func logFullModelInput(opts modelInputLogOptions) string {
 }
 
 // messagesWithoutEphemeralWorldContext keeps the opt-in full-input log useful for
-// developer diagnostics without persisting the temporary World ModelView body.
+// developer diagnostics without persisting the temporary World ModelView body or the
+// temporary Library background body (B2a, same head-of-input injection point).
 // The actual model input is not modified.
 func messagesWithoutEphemeralWorldContext(messages []*schema.Message) []*schema.Message {
 	if len(messages) == 0 {
@@ -195,9 +196,9 @@ func messagesWithoutEphemeralWorldContext(messages []*schema.Message) []*schema.
 	}
 	filtered := make([]*schema.Message, 0, len(messages))
 	for index, message := range messages {
-		// A3 only injects this message at the head. Limiting the filter to index 0
+		// A3/B2a only inject this message at the head. Limiting the filter to index 0
 		// avoids hiding an ordinary later user message that happens to quote the header.
-		if index == 0 && isEphemeralWorldContextMessage(message) {
+		if index == 0 && (isEphemeralWorldContextMessage(message) || isEphemeralLibraryContextMessage(message)) {
 			continue
 		}
 		filtered = append(filtered, message)
