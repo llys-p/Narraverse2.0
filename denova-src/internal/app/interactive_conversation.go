@@ -47,6 +47,10 @@ type interactiveConversation struct {
 	ruleResolution          *interactive.RuleResolution
 	turnProtocol            interactiveTurnProtocol
 	baseParentID            *string
+	// backgroundMode 是本次运行的背景模式（B3a）：""（legacy）/ library / none。
+	// 非 legacy 时 PrepareMessages 与导演上下文排除旧 Lore 注入通道，与库背景或
+	// 显式无背景对齐；legacy 保持基线逐字节行为。
+	backgroundMode          string
 	directorTasks           *workspaceDirectorTaskGroup
 	directorGenerator       interactiveDirectorGenerator
 	customDirectorGenerator bool
@@ -84,6 +88,21 @@ func (c *interactiveConversation) withBaseParentID(parentID string) *interactive
 		c.baseParentID = &parentID
 	}
 	return c
+}
+
+// withBackgroundMode 记录本次运行的背景模式（B3a）：startInteractiveTask 在背景
+// 模式裁定后调用（regenerate 用服务端复用的模式）。legacy（""）不改变任何行为。
+func (c *interactiveConversation) withBackgroundMode(mode string) *interactiveConversation {
+	if c != nil {
+		c.backgroundMode = strings.TrimSpace(mode)
+	}
+	return c
+}
+
+// noLegacyLore 报告本次运行是否必须排除旧 Lore 注入通道（B3a）：library 与显式
+// none 模式下，系统提示 lore 片段、稳定上下文 lore 片段与 lore 工具三通道全关。
+func (c *interactiveConversation) noLegacyLore() bool {
+	return c != nil && c.backgroundMode != agent.BackgroundModeLegacy
 }
 
 func (c *interactiveConversation) withOpeningStateSchema(storyCtx interactive.StoryContext) *interactiveConversation {
@@ -219,28 +238,36 @@ func (c *interactiveConversation) PrepareMessages(originalMessage, agentMessage 
 		directorPlan = *storyCtx.Snapshot.DirectorPlan
 		directorPlanVisible = interactive.DirectorPlanVisibleContext(directorPlan, interactiveStoryRuntimeContextBytes)
 	}
-	loreRuntime, err := buildInteractiveStoryLoreContext(c.workspace, directorPlan, agentMessage)
-	if err != nil {
-		return nil, err
-	}
-	loreStore := book.NewLoreStore(c.workspace)
-	residentLore, err := loreStore.ResidentContextMarkdown()
-	if err != nil {
-		return nil, fmt.Errorf("读取常驻资料失败: %w", err)
-	}
-	residentContentBytes, err := loreStore.ResidentContentBytes()
-	if err != nil {
-		return nil, fmt.Errorf("读取常驻资料预算失败: %w", err)
-	}
-	if residentContentBytes > book.ResidentLoreSafetyMaxBytes {
-		return nil, fmt.Errorf("常驻资料正文异常过大（%d KB）；请检查是否误将大型文件设为常驻资料", (residentContentBytes+1023)/1024)
-	}
-	if len([]byte(residentLore)) > interactiveResidentLoreMessageMaxBytes {
-		return nil, fmt.Errorf("常驻资料模型上下文过大: %d > %d bytes", len([]byte(residentLore)), interactiveResidentLoreMessageMaxBytes)
-	}
-	loreRevision, err := loreStore.Revision()
-	if err != nil {
-		return nil, fmt.Errorf("读取资料库 revision 失败: %w", err)
+	loreRuntime := ""
+	residentLore := ""
+	loreRevision := ""
+	// B3a：library/显式 none 模式关闭旧 Lore 注入通道——不读 lore 工作集与常驻
+	// 资料、不构造常驻资料独立消息；来源审计与 ledger 同步排除（空串不产出条目）。
+	// legacy 保持原有读取与大小校验（基线逐字节行为）。
+	if !c.noLegacyLore() {
+		loreRuntime, err = buildInteractiveStoryLoreContext(c.workspace, directorPlan, agentMessage)
+		if err != nil {
+			return nil, err
+		}
+		loreStore := book.NewLoreStore(c.workspace)
+		residentLore, err = loreStore.ResidentContextMarkdown()
+		if err != nil {
+			return nil, fmt.Errorf("读取常驻资料失败: %w", err)
+		}
+		residentContentBytes, err := loreStore.ResidentContentBytes()
+		if err != nil {
+			return nil, fmt.Errorf("读取常驻资料预算失败: %w", err)
+		}
+		if residentContentBytes > book.ResidentLoreSafetyMaxBytes {
+			return nil, fmt.Errorf("常驻资料正文异常过大（%d KB）；请检查是否误将大型文件设为常驻资料", (residentContentBytes+1023)/1024)
+		}
+		if len([]byte(residentLore)) > interactiveResidentLoreMessageMaxBytes {
+			return nil, fmt.Errorf("常驻资料模型上下文过大: %d > %d bytes", len([]byte(residentLore)), interactiveResidentLoreMessageMaxBytes)
+		}
+		loreRevision, err = loreStore.Revision()
+		if err != nil {
+			return nil, fmt.Errorf("读取资料库 revision 失败: %w", err)
+		}
 	}
 	ruleSummary := interactive.StoryDirectorRuleSummary(storyDirector, interactiveStoryRuntimeContextBytes)
 	actorStateRuntime := interactive.ActorStateRuntimeContext(storyDirector.ActorState, storyCtx.Snapshot.State, interactiveStoryRuntimeContextBytes, storyCtx.Meta.ChoiceCount)
@@ -261,6 +288,8 @@ func (c *interactiveConversation) PrepareMessages(originalMessage, agentMessage 
 		StoryDirectorStrategyPrompt: strategyPrompt,
 		PreviousTurnsSummary:        turnHistory.PreviousSummary,
 		LoreContext:                 loreRuntime,
+		// B3a：背景模式随回合上下文下发（legacy 为空串=缺省，与基线一致）。
+		BackgroundMode: c.backgroundMode,
 	})
 	history := make([]*schema.Message, 0, len(turnHistory.Turns)*2+4)
 	stableLeadingMessage := ""
@@ -280,7 +309,13 @@ func (c *interactiveConversation) PrepareMessages(originalMessage, agentMessage 
 		history = append(history, schema.AssistantMessage(turn.Narrative, nil))
 	}
 	history = agent.ApplyToolResultContextPolicyForConversation(history, c.ToolResultContextPolicy())
-	history = append(history, schema.UserMessage(prompts.InteractiveStoryTurnInstruction(agentMessage, tellerTurnContextPrompt, runtimeContext)))
+	// B3a：library/显式 none 模式用带背景模式的回合指令变体（角色落地规则随模式
+	// 替换）；legacy 保持既有 InteractiveStoryTurnInstruction 调用不变。
+	turnInstruction := prompts.InteractiveStoryTurnInstruction(agentMessage, tellerTurnContextPrompt, runtimeContext)
+	if c.noLegacyLore() {
+		turnInstruction = prompts.InteractiveStoryTurnInstructionWithBackground(agentMessage, tellerTurnContextPrompt, runtimeContext, c.backgroundMode)
+	}
+	history = append(history, schema.UserMessage(turnInstruction))
 	sourceParts := interactiveStoryContextSources(storyCtx.Meta.Title, storyCtx.Meta.Origin, teller, checkpointSummary, directorPlanVisible, residentLore, loreRevision, loreRuntime, ruleSummary, actorStateRuntime, stateSchemaInitialization, strategyPrompt, turnHistory, agentMessage)
 	sourceSummary := interactiveContextSourceListSummary(sourceParts)
 	contextLedgerParts := interactiveContextLedgerParts(sourceParts, history, c.ToolResultContextPolicy())
@@ -1145,20 +1180,28 @@ func (c *interactiveConversation) BuildDirectorInstruction(turn interactive.Turn
 }
 
 func (c *interactiveConversation) buildDirectorModelInput(turn interactive.TurnEvent) (interactiveDirectorStableContext, string, error) {
-	stableContext, err := buildInteractiveDirectorStableContext(c.workspace)
-	if err != nil {
-		return interactiveDirectorStableContext{}, "", err
+	stableContext := interactiveDirectorStableContext{}
+	// B3a：library/显式 none 模式不装配常驻 Lore 稳定上下文，也不做 Lore revision
+	// 一致性守卫（旧 Lore 通道全关）；legacy 保持基线行为。
+	if !c.noLegacyLore() {
+		var err error
+		stableContext, err = buildInteractiveDirectorStableContext(c.workspace)
+		if err != nil {
+			return interactiveDirectorStableContext{}, "", err
+		}
 	}
 	instruction, err := c.buildDirectorInstruction(turn, stableContext)
 	if err != nil {
 		return interactiveDirectorStableContext{}, "", err
 	}
-	assembledRevision, err := book.NewLoreStore(c.workspace).Revision()
-	if err != nil {
-		return interactiveDirectorStableContext{}, "", fmt.Errorf("读取导演资料库装配后 revision 失败: %w", err)
-	}
-	if strings.TrimSpace(assembledRevision) != strings.TrimSpace(stableContext.Revision) {
-		return interactiveDirectorStableContext{}, "", fmt.Errorf("资料库在导演上下文装配期间发生变化: stable=%s dynamic=%s", strings.TrimSpace(stableContext.Revision), strings.TrimSpace(assembledRevision))
+	if !c.noLegacyLore() {
+		assembledRevision, err := book.NewLoreStore(c.workspace).Revision()
+		if err != nil {
+			return interactiveDirectorStableContext{}, "", fmt.Errorf("读取导演资料库装配后 revision 失败: %w", err)
+		}
+		if strings.TrimSpace(assembledRevision) != strings.TrimSpace(stableContext.Revision) {
+			return interactiveDirectorStableContext{}, "", fmt.Errorf("资料库在导演上下文装配期间发生变化: stable=%s dynamic=%s", strings.TrimSpace(stableContext.Revision), strings.TrimSpace(assembledRevision))
+		}
 	}
 	return stableContext, instruction, nil
 }
@@ -1181,9 +1224,15 @@ func (c *interactiveConversation) buildDirectorInstruction(turn interactive.Turn
 	} else if plan, err := c.store.DirectorPlan(c.storyID, storyCtx.Snapshot.BranchID); err == nil {
 		directorPlan = plan
 	}
-	loreContext, err := buildInteractiveDirectorLoreContext(c.workspace, directorPlan, turn)
-	if err != nil {
-		return "", err
+	// B3a：library/显式 none 模式不装配旧 Lore 发现上下文（lore.relevant 为空，
+	// 指令由 BackgroundMode 门控资料工作集段）；legacy 保持基线装配与 revision
+	// 一致性守卫。
+	loreContext := ""
+	if !c.noLegacyLore() {
+		loreContext, err = buildInteractiveDirectorLoreContext(c.workspace, directorPlan, turn)
+		if err != nil {
+			return "", err
+		}
 	}
 	actorStateSnapshot := interactive.ActorStateRuntimeProjection(storyDirector.ActorState, storyCtx.Snapshot.State)
 	openingInitialization := strings.TrimSpace(c.directorTask) == interactiveDirectorTaskOpeningPlan
@@ -1237,6 +1286,8 @@ func (c *interactiveConversation) buildDirectorInstruction(turn interactive.Turn
 		DirectorEventCatalog:        eventCatalog,
 		EventOpportunity:            budget.take("director.event_opportunity", boundedJSON(eventOpportunity, 4*1024), 4*1024),
 		EventRuntime:                budget.take("director.event_runtime", boundedJSON(eventRuntime, 8*1024), 8*1024),
+		// B3a：背景模式门控资料工作集段与 lore-context.md 维护指引（legacy 空串=缺省）。
+		BackgroundMode: c.backgroundMode,
 	})
 	log.Printf("[interactive-director-agent] context budget story_id=%s branch_id=%s turn_id=%s instruction_bytes=%d stable_bytes=%d model_window_tokens=%d threshold_tokens=%d source_budget_tokens=%d fragments=%s", c.storyID, storyCtx.Snapshot.BranchID, turn.ID, len(instruction), len([]byte(stableContext.Content)), budget.contextWindowTokens, budget.thresholdTokens, budget.initialTokens, budget.trace())
 	log.Printf(

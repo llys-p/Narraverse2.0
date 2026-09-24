@@ -7,11 +7,14 @@ import (
 	"log"
 	"strings"
 
+	"github.com/cloudwego/eino/adk"
+
 	"denova/config"
 	"denova/internal/agent"
 	"denova/internal/book"
 	"denova/internal/imagepreset"
 	"denova/internal/interactive"
+	"denova/internal/libraryruntime"
 	"denova/internal/worldcontext"
 )
 
@@ -550,7 +553,7 @@ func (a *App) StartInteractiveTask(ctx context.Context, storyID, branchID, messa
 }
 
 func (s *InteractiveAppService) StartInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, locale string) *Task {
-	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, "", locale, InteractiveWorldControl{})
+	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, "", locale, InteractiveTaskInput{})
 }
 
 func (a *App) StartInteractiveRegenerateTask(ctx context.Context, storyID, branchID, turnID, message string, styleScenes []string, locale string) *Task {
@@ -558,7 +561,7 @@ func (a *App) StartInteractiveRegenerateTask(ctx context.Context, storyID, branc
 }
 
 func (s *InteractiveAppService) StartInteractiveRegenerateTask(ctx context.Context, storyID, branchID, turnID, message string, styleScenes []string, locale string) *Task {
-	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, turnID, locale, InteractiveWorldControl{})
+	return s.startInteractiveTask(ctx, storyID, branchID, message, styleScenes, turnID, locale, InteractiveTaskInput{})
 }
 
 // StartInteractiveTaskWithWorld is the B1 entry that carries WorldContext control.
@@ -567,8 +570,27 @@ func (a *App) StartInteractiveTaskWithWorld(ctx context.Context, in InteractiveT
 	return a.interactiveService().StartInteractiveTaskWithWorld(ctx, in)
 }
 
+// InteractiveTaskInput 是一次游戏回合启动请求（B3a 前仅含 world 控制；B3a 起由
+// handler 从 transport 解码后传入背景来源三态与库控制，world 与 library 已在传输层互斥）。
+type InteractiveTaskInput struct {
+	StoryID              string
+	BranchID             string
+	Message              string
+	StyleScenes          []string
+	RegenerateFromTurnID string
+	Locale               string
+	World                InteractiveWorldControl
+	// Library 是 library_context 的服务端投影（B3a）；Present()=false 表示未选库。
+	Library InteractiveLibraryControl
+	// BackgroundSource / BackgroundSourceExplicit 是 background_source 的解码结果
+	// （B3a）：Explicit=false 表示未声明（结构推断），Explicit=true 且值为 none 才走
+	// 显式无背景；推断请求保持 legacy 旧路径逐字节兼容。
+	BackgroundSource         string
+	BackgroundSourceExplicit bool
+}
+
 func (s *InteractiveAppService) StartInteractiveTaskWithWorld(ctx context.Context, in InteractiveTaskInput) *Task {
-	return s.startInteractiveTask(ctx, in.StoryID, in.BranchID, in.Message, in.StyleScenes, in.RewindTurnID, in.Locale, in.World)
+	return s.startInteractiveTask(ctx, in.StoryID, in.BranchID, in.Message, in.StyleScenes, in.RegenerateFromTurnID, in.Locale, in)
 }
 
 func (a *App) AnalyzeInteractiveContext(storyID, branchID, message string, styleScenes []string, locale string) (agent.ContextAnalysis, error) {
@@ -841,7 +863,8 @@ func (s *InteractiveAppService) RemoveInteractiveContextCompaction(storyID, bran
 	return true, nil
 }
 
-func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, rewindTurnID string, locale string, world InteractiveWorldControl) *Task {
+func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyID, branchID, message string, styleScenes []string, rewindTurnID string, locale string, in InteractiveTaskInput) *Task {
+	world := in.World // B3a：world/library 已由传输层互斥；library 编排见后续接线（library_game.go）
 	a := s.app
 	a.mu.Lock()
 	if a.interactive == nil || a.bookState == nil || a.cfg == nil {
@@ -894,24 +917,9 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 	if interactive.StoryStateSchemaPolicyUsesOpeningGameAgent(storyCtx.Meta.StateSchemaPolicy) && storyCtx.Meta.StateSchemaInitialization != nil && storyCtx.Meta.StateSchemaInitialization.Status == interactive.StateSchemaInitializationWaitingOpening && len(storyCtx.Snapshot.Turns) == 0 {
 		submitOpeningStateSchema = conversation.SubmitOpeningStateSchemaBatch
 	}
-	runner, err := buildInteractiveStoryRunner(ctx, &runtimeCfg, state, tellerSystemInput, agent.InteractiveStoryToolContext{
-		Store:                  store,
-		StoryID:                storyID,
-		BranchID:               storyCtx.Snapshot.BranchID,
-		SubmitStateSchemaBatch: submitOpeningStateSchema,
-		PrepareTurn:            conversation.PrepareInteractiveTurn,
-		SubmitTurnResult:       conversation.SubmitTurnResult,
-		TurnResultReady:        conversation.InteractiveNarrativeReady,
-	})
-	if err != nil {
-		log.Printf("[interactive-agent-task] 刷新互动故事 Agent Runner 失败 workspace=%s err=%v", workspace, err)
-		return nil
-	}
-	a.mu.Lock()
-	if a.workspace == workspace {
-		a.interactiveStoryRunner = runner
-	}
-	a.mu.Unlock()
+	// B3a：runner 构建移到 InteractiveRun 派生与库绑定（bind-before-start）之后——
+	// runner 的系统提示与工具集合取决于背景模式，且构建失败必须回滚 run 绑定并
+	// 释放库运行，不能先占位。
 
 	req := agent.ChatRequest{
 		Message:     message,
@@ -923,9 +931,16 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 	worldContexts := a.worldContext()
 	runBinding, runErr := worldContexts.prepareInteractiveTaskRun(storyID, storyCtx.Snapshot.BranchID, rewindTurnID, task.ID())
 	var worldContextErr error
+	// libraryContextErr 是 B3a 库背景的阻断性错误（绑定/复用/冲突）；非 nil 时回合
+	// 以显式 error 事件结束，不启动模型，也不静默降级为 bare。
+	var libraryContextErr error
 	if runErr != nil {
 		if world.Present() {
 			worldContextErr = runErr
+		} else if in.Library.Present() {
+			// B3a：库回合必须有 InteractiveRun 身份才能服务端派生 scopeKey；
+			// 身份不可用即显式阻断。
+			libraryContextErr = &libraryruntime.Error{Code: libraryruntime.ErrInvalidRequest, Message: "interactive run identity unavailable for library binding"}
 		} else {
 			// Bare turns retain the legacy path when only the derived run index is
 			// unavailable; there is no World request to report as silently degraded.
@@ -969,14 +984,120 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 		worldContexts.rollbackInteractiveTaskRun(runBinding, task.ID())
 	}
 
+	// B3a：背景模式裁定与库绑定（bind-before-start）。默认 legacy 计划兜底未跟踪
+	// 的 bare 路径，保证 RunOptions.SystemPromptLog 恒有单源组成。
+	plan := interactiveBackgroundPlanForMode(&runtimeCfg, state, tellerSystemInput, agent.BackgroundModeLegacy)
+	var libRun *interactiveLibraryRun
+	if libraryContextErr == nil && runBinding.tracked {
+		record, _ := worldContexts.interactiveRuns.snapshot(runBinding.runID)
+		scopeKey := ""
+		if record != nil {
+			scopeKey = record.scopeKey
+		}
+		if strings.TrimSpace(rewindTurnID) != "" {
+			// regenerate：不看请求——服务端复用原运行记录的背景模式与库绑定（§8.2）。
+			// 客户端重发不同背景控制、对 bare 运行携带 library_context、对库运行显式
+			// none 均显式冲突，不静默吞并。
+			storedMode := worldContexts.interactiveRuns.backgroundOf(runBinding.runID)
+			storedBinding, hasBinding := worldContexts.interactiveRuns.libraryBinding(runBinding.runID)
+			if conflictCode := interactiveRegenerateBackgroundConflict(storedMode, storedBinding, in); conflictCode != "" {
+				libraryContextErr = &libraryruntime.Error{Code: libraryruntime.ErrorCode(conflictCode), Message: "regenerate background control conflicts with the original run binding"}
+			} else if storedMode == agent.BackgroundModeLibrary {
+				if !hasBinding {
+					libraryContextErr = &libraryruntime.Error{Code: libraryruntime.ErrInvalidRequest, Message: "interactive library reuse requires a complete stored binding"}
+				} else {
+					libRun, libraryContextErr = reuseInteractiveLibraryBinding(ctx, a, scopeKey, storedBinding)
+				}
+			}
+			plan = interactiveBackgroundPlanForMode(&runtimeCfg, state, tellerSystemInput, storedMode)
+		} else {
+			plan = planInteractiveBackground(&runtimeCfg, state, tellerSystemInput, in)
+			if plan.Mode == agent.BackgroundModeLibrary {
+				libRun, libraryContextErr = resolveInteractiveLibraryRun(ctx, a, scopeKey, in.Library)
+				if libraryContextErr == nil && libRun != nil {
+					if bindErr := worldContexts.interactiveRuns.bindLibrary(runBinding.runID, libRun.binding); bindErr != nil {
+						releaseInteractiveLibraryRun(libRun, false)
+						libRun = nil
+						libraryContextErr = bindErr
+					}
+				}
+			}
+			// 新回合三种背景模式都写入运行记录，供 regenerate/reconnect 服务端复用
+			//（none 与 legacy 都无库绑定，靠该字段区分）。
+			if libraryContextErr == nil {
+				if bindErr := worldContexts.interactiveRuns.bindBackground(runBinding.runID, plan.Mode); bindErr != nil {
+					if libRun != nil {
+						releaseInteractiveLibraryRun(libRun, false)
+						libRun = nil
+					}
+					libraryContextErr = bindErr
+				}
+			}
+		}
+	}
+	if libraryContextErr != nil && libRun != nil {
+		releaseInteractiveLibraryRun(libRun, false)
+		libRun = nil
+	}
+	conversation.withBackgroundMode(plan.Mode)
+
+	toolContext := agent.InteractiveStoryToolContext{
+		Store:                  store,
+		StoryID:                storyID,
+		BranchID:               storyCtx.Snapshot.BranchID,
+		SubmitStateSchemaBatch: submitOpeningStateSchema,
+		PrepareTurn:            conversation.PrepareInteractiveTurn,
+		SubmitTurnResult:       conversation.SubmitTurnResult,
+		TurnResultReady:        conversation.InteractiveNarrativeReady,
+		NoLegacyLore:           plan.NoLegacyLore,
+		BackgroundMode:         plan.Mode,
+	}
+	var runner *adk.Runner
+	if libraryContextErr == nil {
+		var buildErr error
+		switch plan.Mode {
+		case agent.BackgroundModeLibrary:
+			runner, buildErr = buildInteractiveStoryRunnerWithLibrary(ctx, &runtimeCfg, state, tellerSystemInput, plan.Composition.Instruction(), libRun.run, toolContext)
+		case agent.BackgroundModeNone:
+			runner, buildErr = buildInteractiveStoryRunnerWithNoBackground(ctx, &runtimeCfg, state, tellerSystemInput, plan.Composition.Instruction(), toolContext)
+		case agent.BackgroundModeLegacy:
+			runner, buildErr = buildInteractiveStoryRunner(ctx, &runtimeCfg, state, tellerSystemInput, toolContext)
+		default:
+			buildErr = fmt.Errorf("未知的互动故事背景模式: %q", plan.Mode)
+		}
+		if buildErr != nil {
+			worldContexts.rollbackInteractiveTaskRun(runBinding, task.ID())
+			releaseInteractiveLibraryRun(libRun, false)
+			log.Printf("[interactive-agent-task] 刷新互动故事 Agent Runner 失败 workspace=%s err=%v", workspace, buildErr)
+			return nil
+		}
+	}
+	a.mu.Lock()
+	if a.workspace == workspace {
+		a.interactiveStoryRunner = runner
+	}
+	a.mu.Unlock()
+
 	runTask := func(ctx context.Context, task *Task, emit func(agent.Event)) {
 		defer worldContexts.markInteractiveTaskTerminal(runBinding, task.ID())
+		// B3a：回合任务结束（成功/失败/取消）幂等释放库绑定；Task 仍是执行尝试，
+		// regenerate 各自的任务重绑各自的 Run，互不共享计费状态。
+		defer releaseInteractiveLibraryRun(libRun, ctx.Err() != nil)
 		if worldContextErr != nil {
 			emit(interactiveWorldContextErrorEvent(worldContextErr))
 			return
 		}
-		// B2: emit world_context_state before any model content (active/degraded/none).
-		emit(interactiveWorldContextStateEvent(worldRun))
+		if libraryContextErr != nil {
+			emit(interactiveLibraryContextErrorEvent(libraryContextErr))
+			return
+		}
+		// B2/B3a：模型内容前恰好下发一次背景状态事件；library 与 world 由传输层
+		// 互斥，各模式只发自己的一次性状态（active/none）。
+		if libRun != nil {
+			emit(interactiveLibraryContextStateEvent(libRun))
+		} else {
+			emit(interactiveWorldContextStateEvent(worldRun))
+		}
 		log.Printf("[interactive-agent-task] run begin id=%s story_id=%s branch_id=%s rewind_turn_id=%s message_len=%d style_scenes=%d", task.ID(), storyID, branchID, rewindTurnID, len(message), len(styleScenes))
 		if strings.TrimSpace(rewindTurnID) != "" {
 			if err := store.RewindToTurnParent(storyID, interactive.RewindTurnRequest{BranchID: branchID, TurnID: rewindTurnID}); err != nil {
@@ -1042,6 +1163,15 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 			}
 			emit(event)
 		}
+		// B3a：library 模式用绑定期装配的临时库背景（冻结抬头+ModelView JSON），
+		// 并把绑定 Run 交给运行层做模型送入前的预算计量；与 EphemeralWorldContext
+		// 由传输层互斥，同一运行至多一组背景输入。
+		var ephemeralLibrary agent.EphemeralLibraryContextInput
+		var libraryRuntimeRun *libraryruntime.Run
+		if libRun != nil {
+			ephemeralLibrary = agent.NewEphemeralLibraryContextInput(libRun.ephemeral.LeadingText())
+			libraryRuntimeRun = libRun.run
+		}
 		chatService.RunWithOptions(ctx, runner, conversation, bookService, req, agent.RunOptions{
 			AgentKind:             agent.AgentKindInteractiveStory,
 			TaskID:                task.ID(),
@@ -1051,8 +1181,12 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 			Mode:                  "interactive",
 			IdleTimeout:           agentIdleTimeout(runtimeCfg),
 			ToolResultMaxBytes:    agentToolResultMaxBytes(runtimeCfg),
-			SystemPromptLog:       agent.BuildInteractiveStoryInstructionComposition(&runtimeCfg, state, tellerSystemInput),
+			// B3a：计费/审计使用与 runner 装配同一来源的单源 composition（legacy 与
+			// 既有 BuildInteractiveStoryInstructionComposition 调用同值）。
+			SystemPromptLog:       plan.Composition,
 			EphemeralWorldContext: interactiveEphemeralWorldInput(worldRun),
+			EphemeralLibraryContext: ephemeralLibrary,
+			LibraryRuntimeRun:       libraryRuntimeRun,
 			OnMutationsVerified: a.verifiedWorkspaceMutationCallback(
 				"interactive_agent_post_run",
 				versionService,
@@ -1074,6 +1208,7 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 	}, runTask) {
 		task.discard()
 		worldContexts.rollbackInteractiveTaskRun(runBinding, task.ID())
+		releaseInteractiveLibraryRun(libRun, false)
 		log.Printf("[interactive-agent-task] discard task before start after workspace changed id=%s workspace=%s story_id=%s branch_id=%s", task.ID(), workspace, storyID, storyCtx.Snapshot.BranchID)
 		return nil
 	}

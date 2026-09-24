@@ -26,10 +26,16 @@ type InteractiveStoryToolContext struct {
 	MaintenanceTask string
 	// StableContext is a bounded, source-labelled model prefix kept separate
 	// from the changing task instruction so providers can reuse prompt caches.
-	StableContextTitle       string
-	StableContext            string
-	StableContextMaxBytes    int
-	OnLoreItemsRead          func([]string)
+	StableContextTitle    string
+	StableContext         string
+	StableContextMaxBytes int
+	OnLoreItemsRead       func([]string)
+	// NoLegacyLore / BackgroundMode 是 B3a 背景模式门控（§8.6 通道 4）：
+	// NoLegacyLore=true 时导演工具工厂不挂载旧 lore 工具，导演系统提示切换到
+	// 对应变体；BackgroundMode 取 prompts.BackgroundMode*（仅在 NoLegacyLore
+	// 时有意义）。legacy 模式两者均为零值，行为与基线逐字节一致。
+	NoLegacyLore             bool
+	BackgroundMode           string
 	SubmitStateSchemaBatch   func(context.Context, interactive.ActorStateSchemaBatch) (interactive.ActorStateSchemaBatchResult, error)
 	SubmitDirectorPlanUpdate func(context.Context, interactive.DirectorPlanUpdateSubmission) (interactive.DirectorPlanUpdateReceipt, error)
 	// DisplayConversation receives display-only progress for background helper

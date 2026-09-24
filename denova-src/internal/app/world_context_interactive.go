@@ -47,17 +47,6 @@ func (c InteractiveWorldControl) Present() bool {
 	return c.Ref != nil || c.HasAnalysisHandle
 }
 
-// InteractiveTaskInput 是游戏后台任务的完整 app 层输入：业务参数 + World 控制信息分离。
-type InteractiveTaskInput struct {
-	StoryID      string
-	BranchID     string
-	Message      string
-	StyleScenes  []string
-	Locale       string
-	RewindTurnID string // 空表示新回合，非空表示 regenerate
-	World        InteractiveWorldControl
-}
-
 // interactiveWorldRun 是一次游戏 Task bind-before-start 的运行时结果（瞬态，不持久化）。
 type interactiveWorldRun struct {
 	runContext   *worldcontext.RunContext

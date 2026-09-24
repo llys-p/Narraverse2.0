@@ -158,6 +158,27 @@ func buildInteractiveStoryRunner(ctx context.Context, cfg *config.Config, state 
 	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindInteractiveStory, Workspace: cfg.Workspace}), nil
 }
 
+// buildInteractiveStoryRunnerWithLibrary 构建 library 背景模式的游戏回合 Runner（B3a）：
+// instruction 必须来自单源 composition（与 RunOptions.SystemPromptLog 同源），
+// libRun 必须是 bind-before-start 阶段绑定的库运行（提供 read_library_item 工具）。
+func buildInteractiveStoryRunnerWithLibrary(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, instruction string, libRun *libraryruntime.Run, toolContexts ...agent.InteractiveStoryToolContext) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildInteractiveStoryWithLibraryBackground(ctx, cfg, state, teller, instruction, libRun, toolContexts...)
+	if err != nil {
+		return nil, fmt.Errorf("构建互动故事 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindInteractiveStory, Workspace: cfg.Workspace}), nil
+}
+
+// buildInteractiveStoryRunnerWithNoBackground 构建显式无作品背景（background_source=none）
+// 的游戏回合 Runner（B3a）：不挂 lore 工具也不挂库工具。
+func buildInteractiveStoryRunnerWithNoBackground(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, instruction string, toolContexts ...agent.InteractiveStoryToolContext) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildInteractiveStoryWithNoBackground(ctx, cfg, state, teller, instruction, toolContexts...)
+	if err != nil {
+		return nil, fmt.Errorf("构建互动故事 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindInteractiveStory, Workspace: cfg.Workspace}), nil
+}
+
 func buildConfigManagerRunner(ctx context.Context, cfg *config.Config, state *book.State, resourceSkills ...agent.ConfigManagerResourceSkill) (*adk.Runner, error) {
 	builtAgent, err := agent.BuildConfigManagerAgent(ctx, cfg, state, resourceSkills...)
 	if err != nil {

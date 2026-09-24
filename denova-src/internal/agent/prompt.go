@@ -175,6 +175,23 @@ func BuildInteractiveStoryInstructionComposition(cfg *config.Config, state *book
 	return newInteractiveStoryInstructionComposition(cfg, state, teller)
 }
 
+// BuildInteractiveStoryBackgroundInstructionComposition 按背景来源模式构建游戏回合
+// 系统提示与来源审计（B3a，§8.8 单源约束）：backgroundMode 取 BackgroundModeLegacy /
+// BackgroundModeLibrary / BackgroundModeNone。legacy 与 BuildInteractiveStoryInstructionComposition
+// 逐字节一致（不设置 prompts.BackgroundMode 即缺省列）；library/none 列会替换旧 lore
+// 召回指引。返回值同时供 runner 装配与 RunOptions.SystemPromptLog（计费/审计单源）。
+func BuildInteractiveStoryBackgroundInstructionComposition(cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, backgroundMode string) SystemPromptCompositionLog {
+	switch backgroundMode {
+	case BackgroundModeLibrary:
+		teller.BackgroundMode = prompts.BackgroundModeLibrary
+	case BackgroundModeNone:
+		teller.BackgroundMode = prompts.BackgroundModeNone
+	default:
+		// legacy / 缺省：保持逐字节旧路径。
+	}
+	return newInteractiveStoryInstructionComposition(cfg, state, teller)
+}
+
 // BuildConfigManagerInstructionComposition returns the config manager prompt and its source summary.
 func BuildConfigManagerInstructionComposition(cfg *config.Config, state *book.State, resourceSkills ...ConfigManagerResourceSkill) SystemPromptCompositionLog {
 	builtIn, workspace, creator := buildConfigManagerBuiltinInstruction(cfg, state)
@@ -473,6 +490,7 @@ func buildInteractiveStoryBuiltinInstruction(cfg *config.Config, state *book.Sta
 		StoryTellerDescription:  teller.StoryTellerDescription,
 		StoryTellerSystemPrompt: teller.StoryTellerSystemPrompt,
 		StyleRules:              boundedStyleRules(teller.StyleRules, maxStyleRuleContextChars),
+		BackgroundMode:          teller.BackgroundMode,
 	})
 	return builtIn, workspace, creator
 }
