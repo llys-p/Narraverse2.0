@@ -116,8 +116,12 @@
       "  · 缓存文件必须纳入版本控制或单独备份（当前它不在 git 里，这是已知风险）。"
     ],
     "sha16": "ac954c9494cde484",
+    "sha256": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
     "n_entries": 264,
-    "frozen_at": "2026-09-24"
+    "frozen_at": "2026-09-24",
+    "decision": "2026-09-24 用户裁决：选项 B 落地（见 p3p2_impact.decision）。",
+    "baseline_path": "tests/assets/translation_cache.json",
+    "baseline_note": "冻结基线已入库；sha256 与本节一致即视为同一缓存。运行时仍读 _diag/translation_cache.json（只能追加），一旦增长须重新冻结入库并声明新 era。"
   },
   "p3p2_impact": {
     "_readme": [
@@ -171,6 +175,13 @@
         "doubt_shift": 50
       }
     },
-    "verdict": "BLOCKED_PENDING_DECISION"
+    "verdict": "DECIDED_B_FROZEN_CACHE_BASELINE (2026-09-24)",
+    "decision": {
+      "option": "B",
+      "decided_at": "2026-09-24",
+      "by": "user",
+      "content": "冻结缓存为不可再生基线并纳入版本控制（tests/assets/translation_cache.json，264 条，sha256 ac954c94…52abc7）；接受当前等级为正式现状——trust_shift/fondness_shift=C、可写信号仅 doubt_shift——不再追求回到 0.827。",
+      "echo": "新版重构 spec §6（input/cache/expected 三件套共同基线、禁止每次重译）与该选项互相印证；§9 的 100 条固定样本稳定性验收以该缓存为英文基线。"
+    }
   }
 }

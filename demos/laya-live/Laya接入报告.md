@@ -2738,3 +2738,17 @@ T10 钉住两条独立事实：① 源码里 `"engine": out.get("engine")` 恰�
 | `tests/experience/`（新目录） | 接收两个体验场景文件 |
 | `tests/p3_experience.py` 等 3 处 | 路径常量改指 `tests/experience/` |
 
+### 20.11 裁决落地：选项 B（2026-09-24 16:30，补记）
+
+用户裁决：**选项 B**。落地内容：
+
+| 动作 | 结果 |
+|---|---|
+| 冻结基线入库 | `_diag/translation_cache.json`（264 条）→ **`tests/assets/translation_cache.json`**，sha256 `ac954c9494cde484…52abc7` 与 `eras.json.cache_frozen` 一致 |
+| 决策记录 | `eras.json.p3p2_impact.verdict` → `DECIDED_B_FROZEN_CACHE_BASELINE (2026-09-24)`，并新增 `decision` 节 |
+| 纪律固化 | `tests/assets/README.md`：运行时缓存只能追加；合法增长须重新冻结 + 新 era；禁为等级重预热 |
+| 后果接受 | **此后所有等级以该缓存为准**：trust_shift/fondness_shift=C、td 可写信号仅 `doubt_shift` 为正式现状，不再追求回到 0.827 |
+
+§20.9 所述"缓存不在 git、无备份"的**单点风险自此解除**。
+与新版重构 spec §6（input/cache/expected 三件套共同基线、禁止每次重译）互相印证。
+
