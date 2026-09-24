@@ -65,23 +65,60 @@ for k in ("observable", "contextual", "hidden_truth"):
 #   预热脚本会「看起来通过了」，而那个集的输入根本没进缓存 ——
 #   运行期再靠 _cached_translate 边跑边写，就又回到「跑途中改条件」那个坑。
 #   宁可多预热几条无关文本，也不要漏掉一个将要被断言的输入。
+#
+# ★★ 2026-09-24 补：这段扫描**第一次写的时候只认 `cases[].text` 一种形状**，
+#    于是 P3 的 p3_experience.json（用 `scenarios[].lines[]`）被静默漏掉 ——
+#    脚本打印「额外用例文件补入 6 条」然后「0 条缺缓存」，看似一切正常，
+#    而实际上 15 条 P3 台词**一条都没进缓存**。
+#    这是同一类错误的第二次出现（第一次是 P2.5 之前根本没有这段扫描），
+#    所以修法不能是「再补一个 key」，而是**递归收集所有字符串值**，
+#    并对「加了新用例文件但收集到 0 条」显式告警。
+#    漏掉输入的代价是运行期边跑边写缓存 = 条件在途中改变，这正是本脚本存在的理由。
 import glob as _glob
+
+
+def _collect_texts(obj, out):
+    """递归收集 JSON 里所有看起来是「一句玩家台词」的字符串。
+
+    判据刻意宽：长度 >= 4 的 str 且在 `text`/`lines`/`line`/`message` 键下，
+    或出现在 cases/scenarios 的元素里且含中日韩字符。
+    宽比窄安全 —— 多预热几条无关文本无害，漏一条会让实验条件在途中变化。
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(v, str) and k in ("text", "line", "message", "player_input"):
+                if len(v) >= 2 and v not in out:
+                    out.append(v)
+            else:
+                _collect_texts(v, out)
+    elif isinstance(obj, list):
+        for it in obj:
+            if isinstance(it, str):
+                # 裸字符串出现在 lines 这类数组里 → 也是台词
+                if len(it) >= 4 and any("\u4e00" <= ch <= "\u9fff" for ch in it):
+                    if it not in out:
+                        out.append(it)
+            else:
+                _collect_texts(it, out)
+
+
 _extra = 0
 for _p in sorted(_glob.glob(os.path.join(ROOT, "tests", "cases", "*.json"))):
     try:
         _blob = json.load(open(_p, encoding="utf-8"))
     except Exception:
         continue
-    for _c in (_blob.get("cases") or []):
-        if _c.get("text") and _c["text"] not in need:
-            need.append(_c["text"])
-            _extra += 1
-        # 专项集的 A/B 两态各自的 text 也一并预热（有的集会写成 A.text / B.text）
-        for _side in ("A", "B"):
-            _t = (_c.get(_side) or {}).get("text")
-            if _t and _t not in need:
-                need.append(_t)
-                _extra += 1
+    _got = []
+    _collect_texts(_blob, _got)
+    # 去掉 _readme / 说明性长文本：它们是给人和 AI 读的，不是玩家台词
+    _got = [t for t in _got if t not in need and len(t) <= 120]
+    if not _got:
+        print("⚠ %s 里没收集到任何输入文本 —— 若该文件确实含用例输入，"
+              "说明它的结构又不被识别了（见本段注释），请补 _collect_texts 的判据。"
+              % os.path.basename(_p))
+    for _t in _got:
+        need.append(_t)
+        _extra += 1
 if _extra:
     print("额外用例文件补入 %d 条文本" % _extra)
 

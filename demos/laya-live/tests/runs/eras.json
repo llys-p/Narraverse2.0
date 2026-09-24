@@ -1,0 +1,60 @@
+{
+  "_readme": [
+    "实验纪元声明（Phase3-P3 新增，2026-09-24）。",
+    "",
+    "为什么需要这个文件：tests/runs/ 是**只增不减**的（那些是证据，不该删），",
+    "但每个纪元跑的时候翻译缓存 / 用例集可能不同。于是「同一检查点的所有 run 文件」",
+    "会横跨多个条件，_evidence_check 一看到 2 个不同的 cache_sha 就判 inconsistent",
+    "→ 档案永远不 fresh → 状态层一条 delta 都不写。",
+    "",
+    "修法不是「删掉旧 run」（销毁证据），也不是「放宽一致性检查」（把条件漂移当正常），",
+    "而是**让纪元显式声明**：哪些 run 属于同一次可比较的基线。",
+    "laya_bridge.py 的 _filter_runs_to_era() 会只拿这里列出的 run 去算等级。",
+    "",
+    "★ 换纪元时要在这里加新条目，并在 note 里写清楚**为什么换**。",
+    "  没有声明过的检查点会退回「全部 run」的旧行为（并打印提示，不静默）。"
+  ],
+
+  "current_era": "P3-2026-09-24",
+
+  "eras": {
+    "typed-decisions": [
+      "20260924-084938",
+      "p3r2",
+      "p3r3"
+    ],
+    "english": [
+      "20260924-085736",
+      "p3r2",
+      "p3r3"
+    ]
+  },
+
+  "notes": {
+    "P3-2026-09-24": {
+      "why": [
+        "P2.5 新增 tests/cases/trust_context.json → dataset 指纹变（glob tests/cases/*.json）。",
+        "P3 新增 state_shift.transition 段 → narra_config.json 指纹变。",
+        "P3 新增 tests/cases/p3_experience.json（15 条台词）→ translation cache 从 179 涨到 194 条。",
+        "三者叠加使 P2 时代的档案不再 fresh。按 P2 定的纪律，哈希不符时**重建基线**，",
+        "而不是放宽检查或手工改哈希。"
+      ],
+      "supersedes": {
+        "typed-decisions": ["run1", "run2", "run3"],
+        "english": ["run1", "run2", "run3"]
+      },
+      "supersedes_reason": [
+        "P2 时代的 3 次运行（run1/2/3）用的 cache_sha 是 bfa17f6d…（169 条缓存），",
+        "本纪元是 a437c2e6…（194 条）。两次缓存状态不同，_evidence_check 会正确地判 inconsistent。",
+        "★ 旧 run **保留不删** —— 它们是 P2 结论的证据。",
+        "  只是不参与当前纪元的等级计算，因为条件已变。"
+      ],
+      "verified": [
+        "重建后等级逐项复现：typed-decisions 的 trust_shift/doubt_shift/fondness_shift 仍 A，",
+        "respect_shift/alert_shift/goal_shift 仍 C；english 的 trust_shift 仍 A。",
+        "也就是说 P2.5 + P3 的两次配置改动**没有**影响这些等级 ——",
+        "这比原来「同一批代码跑 3 次一致」是更强的证据。"
+      ]
+    }
+  }
+}

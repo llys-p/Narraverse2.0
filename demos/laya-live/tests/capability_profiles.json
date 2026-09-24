@@ -4,11 +4,11 @@
   "由 python laya_bridge.py capability 生成；等级读自 tests/runs/，status 由代码推导。",
   "运行时由 load_capability_profile() 按五个哈希核对后才敢用。"
  ],
- "generated_at": "2026-09-24 07:07:07",
+ "generated_at": "2026-09-24 09:07:01",
  "runs_dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs",
  "index": {
   "english": {
-   "profile_id": "3b80be9014d6f084124c6642c70f0f2c4d52e8338979be2039de0d04e2c71881",
+   "profile_id": "a9679ca4670c97618c7b852df31ca865011bd76d0d4ff959c2ba58276fdaa082",
    "role_in_phase3": "capability_comparison",
    "n_runs": 3,
    "counts": {
@@ -20,7 +20,7 @@
    "consistent": true
   },
   "typed-decisions": {
-   "profile_id": "f77f7f06ba82fd2a22697cd9415e75623b51aa31507a3ea3a5dc78b2f928f52d",
+   "profile_id": "015cb800f287cadb91ec9f483b04ad390607d30b1ad20c1b0a9f8c80b708460a",
    "role_in_phase3": "production_candidate",
    "n_runs": 3,
    "counts": {
@@ -45,22 +45,30 @@
     "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。"
    ],
    "checkpoint": "english",
-   "profile_id": "3b80be9014d6f084124c6642c70f0f2c4d52e8338979be2039de0d04e2c71881",
-   "generated_at": "2026-09-24 07:07:07",
+   "profile_id": "a9679ca4670c97618c7b852df31ca865011bd76d0d4ff959c2ba58276fdaa082",
+   "generated_at": "2026-09-24 09:07:01",
    "generator": "laya_bridge.py capability",
    "role_in_phase3": "capability_comparison",
    "runs": {
     "n_runs": 3,
     "files": [
-     "english__run1.json",
-     "english__run2.json",
-     "english__run3.json"
+     "english__20260924-085736.json",
+     "english__p3r2.json",
+     "english__p3r3.json"
     ],
     "run_ids": [
-     "run1",
-     "run2",
-     "run3"
-    ]
+     "20260924-085736",
+     "p3r2",
+     "p3r3"
+    ],
+    "era_declared": true,
+    "era_ids": [
+     "20260924-085736",
+     "p3r2",
+     "p3r3"
+    ],
+    "era_source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs\\eras.json",
+    "era_note": "这批运行由 eras.json 显式声明为同一可比较纪元。"
    },
    "evidence": {
     "dataset": {
@@ -68,10 +76,12 @@
      "files": {
       "contextual.json": "e34edc68989f601c9e55756d530fa7a4daa82d123ae3bbedcdfeebf174bd8a0e",
       "hidden_truth.json": "64933965adcebf56c717228e0eb5017f81446b5a9d99b607dd123a03d3a1fb8d",
-      "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc"
+      "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc",
+      "p3_experience.json": "15b42563ff0d57256ddb7c5a58a6aa3d6fcea92d5d19ea8ee54649b9df102a47",
+      "trust_context.json": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6"
      },
-     "sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e",
-     "n_files": 3
+     "sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4",
+     "n_files": 5
     },
     "checkpoint": {
      "model": "english",
@@ -95,7 +105,7 @@
     },
     "config": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\narra_config.json",
-     "sha": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a"
+     "sha": "9c574eb3ce673313d105410da78b57c6bf1527bf72d54d1d3f787a791d30c11b"
     },
     "translation_cache": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json",
@@ -110,25 +120,25 @@
       "missing_sample": [],
       "source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json"
      },
-     "file_sha_now": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+     "file_sha_now": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
      "file_sha_per_run": [
       [
-       "english__run1.json",
-       "bfa17f6de3798a69"
+       "english__20260924-085736.json",
+       "a437c2e6d5d5a721"
       ],
       [
-       "english__run2.json",
-       "bfa17f6de3798a69"
+       "english__p3r2.json",
+       "a437c2e6d5d5a721"
       ],
       [
-       "english__run3.json",
-       "bfa17f6de3798a69"
+       "english__p3r3.json",
+       "a437c2e6d5d5a721"
       ]
      ]
     },
     "code": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\laya_bridge.py",
-     "sha": "cdb0723b7a5640f21c53ca9d11f6b8f09e019f111f9cdeaf7fc907edff34df2d"
+     "sha": "2504ac82540058750c80d4bdec840818c2d01fa1f9fcf418355b0687d8d26193"
     },
     "consistency": {
      "checks": {
@@ -137,20 +147,20 @@
       ],
       "cache_sha": [
        [
-        "english__run1.json",
-        "bfa17f6de3798a69"
+        "english__20260924-085736.json",
+        "a437c2e6d5d5a721"
        ],
        [
-        "english__run2.json",
-        "bfa17f6de3798a69"
+        "english__p3r2.json",
+        "a437c2e6d5d5a721"
        ],
        [
-        "english__run3.json",
-        "bfa17f6de3798a69"
+        "english__p3r3.json",
+        "a437c2e6d5d5a721"
        ]
       ],
       "cache_sha_unique": [
-       "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40"
+       "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40"
       ],
       "case_counts_now": {
        "observable": 70,
@@ -183,7 +193,7 @@
      "consistent": true,
      "problems": [],
      "checkpoint_id": "eef335dec0b6086162f513092eb0d7005ea1ac570b89252b377ec6c7ab625bce",
-     "dataset_sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e"
+     "dataset_sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4"
     }
    },
    "status_rule": [
@@ -1098,22 +1108,30 @@
     "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。"
    ],
    "checkpoint": "typed-decisions",
-   "profile_id": "f77f7f06ba82fd2a22697cd9415e75623b51aa31507a3ea3a5dc78b2f928f52d",
-   "generated_at": "2026-09-24 07:07:07",
+   "profile_id": "015cb800f287cadb91ec9f483b04ad390607d30b1ad20c1b0a9f8c80b708460a",
+   "generated_at": "2026-09-24 09:07:01",
    "generator": "laya_bridge.py capability",
    "role_in_phase3": "production_candidate",
    "runs": {
     "n_runs": 3,
     "files": [
-     "typed-decisions__run1.json",
-     "typed-decisions__run2.json",
-     "typed-decisions__run3.json"
+     "typed-decisions__20260924-084938.json",
+     "typed-decisions__p3r2.json",
+     "typed-decisions__p3r3.json"
     ],
     "run_ids": [
-     "run1",
-     "run2",
-     "run3"
-    ]
+     "20260924-084938",
+     "p3r2",
+     "p3r3"
+    ],
+    "era_declared": true,
+    "era_ids": [
+     "20260924-084938",
+     "p3r2",
+     "p3r3"
+    ],
+    "era_source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs\\eras.json",
+    "era_note": "这批运行由 eras.json 显式声明为同一可比较纪元。"
    },
    "evidence": {
     "dataset": {
@@ -1121,10 +1139,12 @@
      "files": {
       "contextual.json": "e34edc68989f601c9e55756d530fa7a4daa82d123ae3bbedcdfeebf174bd8a0e",
       "hidden_truth.json": "64933965adcebf56c717228e0eb5017f81446b5a9d99b607dd123a03d3a1fb8d",
-      "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc"
+      "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc",
+      "p3_experience.json": "15b42563ff0d57256ddb7c5a58a6aa3d6fcea92d5d19ea8ee54649b9df102a47",
+      "trust_context.json": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6"
      },
-     "sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e",
-     "n_files": 3
+     "sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4",
+     "n_files": 5
     },
     "checkpoint": {
      "model": "typed-decisions",
@@ -1148,7 +1168,7 @@
     },
     "config": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\narra_config.json",
-     "sha": "6215e4b24b82c55e876a1070c37ea196e7a865f400d0c7c65c3c604c478faf1a"
+     "sha": "9c574eb3ce673313d105410da78b57c6bf1527bf72d54d1d3f787a791d30c11b"
     },
     "translation_cache": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json",
@@ -1163,25 +1183,25 @@
       "missing_sample": [],
       "source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json"
      },
-     "file_sha_now": "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40",
+     "file_sha_now": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
      "file_sha_per_run": [
       [
-       "typed-decisions__run1.json",
-       "bfa17f6de3798a69"
+       "typed-decisions__20260924-084938.json",
+       "a437c2e6d5d5a721"
       ],
       [
-       "typed-decisions__run2.json",
-       "bfa17f6de3798a69"
+       "typed-decisions__p3r2.json",
+       "a437c2e6d5d5a721"
       ],
       [
-       "typed-decisions__run3.json",
-       "bfa17f6de3798a69"
+       "typed-decisions__p3r3.json",
+       "a437c2e6d5d5a721"
       ]
      ]
     },
     "code": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\laya_bridge.py",
-     "sha": "cdb0723b7a5640f21c53ca9d11f6b8f09e019f111f9cdeaf7fc907edff34df2d"
+     "sha": "2504ac82540058750c80d4bdec840818c2d01fa1f9fcf418355b0687d8d26193"
     },
     "consistency": {
      "checks": {
@@ -1190,20 +1210,20 @@
       ],
       "cache_sha": [
        [
-        "typed-decisions__run1.json",
-        "bfa17f6de3798a69"
+        "typed-decisions__20260924-084938.json",
+        "a437c2e6d5d5a721"
        ],
        [
-        "typed-decisions__run2.json",
-        "bfa17f6de3798a69"
+        "typed-decisions__p3r2.json",
+        "a437c2e6d5d5a721"
        ],
        [
-        "typed-decisions__run3.json",
-        "bfa17f6de3798a69"
+        "typed-decisions__p3r3.json",
+        "a437c2e6d5d5a721"
        ]
       ],
       "cache_sha_unique": [
-       "bfa17f6de3798a69d8782ec2937d048aa0d285290ce099d087d360cf89472f40"
+       "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40"
       ],
       "case_counts_now": {
        "observable": 70,
@@ -1236,7 +1256,7 @@
      "consistent": true,
      "problems": [],
      "checkpoint_id": "ac57624ecc956cb7620f176aa8c53e22e822123ed5e44b221b76be33a18b4c83",
-     "dataset_sha": "71507e95cfc21ab28e55fe5f4f15ea39596db1dd61e6265ba961eef41b5be66e"
+     "dataset_sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4"
     }
    },
    "status_rule": [

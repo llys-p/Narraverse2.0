@@ -275,7 +275,70 @@ $PY laya_bridge.py langtest     # 旧版 4 句极端输入区分度测试
 $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶 + 提交门控，需先起桥）
 $PY tests/p2_acceptance.py --json   # ★ Phase3 P2 验收（能力档案 / 角色分层 / Proposal 过滤，54 条断言）
 $PY tests/p25_acceptance.py --json  # ★ Phase3 P2.5 验收（trust_shift 上下文敏感性，14 PASS / 2 FAIL）
+$PY tests/p3_experience.py          # ★ Phase3 P3：4 类最小体验测试（需跑模型，输出 runs/p3_experience__*.json）
+$PY tests/replication/neutral_probe.py  # 只读 raw trust_shift 分数（解释 E3 的工具，不判对错）
+$PY tests/p3_acceptance.py --json   # ★ Phase3 P3 验收（闭环 / 自然度 / 跳变 / 隔离 / 状态层契约，秒级）
 ```
+
+### ★ Phase3 P3：`trust_shift` 的最小闭环（2026-09-24）
+
+**P3 之前整条链路是无状态的。** `/decide` 从 payload 读 `actor`，算完给一份
+`state_proposal`，然后**忘掉** —— 下一轮又是原来那个 `relationship.trust = 60`。
+也就是说「连续交互让关系变化」在架构上**不可能发生**，与模型好坏无关。P3 补的是这个缺失。
+
+```
+player input → Laya trust_shift proposal → State Transition → Commit
+             → relationship.trust 更新 → 下一轮重新进入 Laya
+```
+
+| 环节 | 位置 | 说明 |
+|---|---|---|
+| Proposal | `build_state_proposal()` | 只有 `role=state_shift` **且** `status=active` 才产出 delta（P2 的能力档案裁决） |
+| Transition | `state_transition()` | `final_delta = clamp(proposal, per_turn_min, per_turn_max)` → 再 clamp 到 `paths.*.range` |
+| Commit | `apply_state_transition()` | 写回 `(session_id, actor_id)` 桶；返回 `old / proposal / final_delta / new_value` |
+
+三条硬约束（改 `state_shift.transition` 前必读）：
+
+1. **范围复用** `state_shift.paths.*.range`。`relationship.trust` 就是 `[0,100]`，
+   不新建第二套格式；读不到 range 就**拒绝写**，不猜一个范围。
+2. **单轮上限不是分数上限**。0~100 的字段单轮最多 ±12 ——
+   这是「自然感」的结构来源：从 50 涨到 80 至少要 3 轮，一句话打不满。
+3. **歧义轮不 commit 状态**。`behavior_is_null` / `awaiting_upstream` 时整轮不写。
+   状态变化本身就是事实认定，而歧义轮的事实认定权在上游 ——
+   先写再等否决会造出「被否决的轮次却留下了关系变化」，那正是 P2 修掉的假交接。
+
+接口：`POST /turn`（一步走完闭环，体验测试走这条）、`GET /state`（查桶 + commit 审计）、
+`/decide` 的返回里新增 `state_commits` / `state_skipped` / `actor_state`。
+
+★ **改过 `laya_bridge.py` 或 `narra_config.json` 后必须重建能力档案基线**，否则
+`load_capability_profile()` 会因哈希不符返回 `(None, …)`，状态层**一条 delta 都不写** ——
+看起来像「状态层坏了」，实际是门禁在按设计工作（P3 第一次跑就撞上过）：
+
+```bash
+$PY laya_bridge.py signalmetrics && $PY laya_bridge.py capability
+$PY laya_bridge.py capability --check   # 核对是否 fresh
+```
+
+注意 `_dataset_fingerprint()` 对 `tests/cases/*.json` 做 glob，所以**在 `tests/cases/`
+下新增任何一个文件都会换基线**（P2.5 的 `trust_context.json`、P3 的 `p3_experience.json` 都触发过）。
+
+#### 实测结论（2026-09-24）
+
+| 检查点 | 体验测试 | 验收 |
+|---|---|---|
+| `typed-decisions`（默认） | 8 PASS / 0 FAIL | 14 PASS / 0 FAIL |
+| `english` | 7 PASS / 1 FAIL（E3） | 同上（G2 不掩盖 E3） |
+
+正向 5 轮 **+5.3~+5.4**、负向 5 轮 **−5.9~−8.7**、单轮最大 **3.9**（上限 12）、
+两桶终值 **72.49 vs 56.87** 互不串线 —— 闭环、自然度、无跳变、隔离四项全部成立。
+
+★ **唯一未解决项：中性输入被系统性读成轻微负向。**
+`english` 4/5 句、`typed-decisions` 3/5 句的 raw `trust_shift` score < 2.0（2.0 = 不变）；
+`english` 把「屋檐还在滴水」读成 **0.940**（0~4 刻度偏下）。后果是**持续闲聊会让关系缓慢下滑**。
+已定位到 raw score（状态层无关）、逐句 ×3 复现，**本轮不修** ——
+要修得动模型校准。详见报告 §19.6c。
+
+`decision_history` 读取不稳定仍记为**已知限制**，本轮未触及 —— 注意是「未触及」，不是「已验证无害」。
 
 诊断子集（结果单独存放，不影响正式对照）：
 `LAYA_QSET=signals`、`LAYA_CASES=id1,id2`、`LAYA_SETS=observable,contextual`（排除隐藏真相组）。

@@ -761,6 +761,25 @@ def _dig(obj, path, default=None):
     return cur
 
 
+def _set_path(obj, path, value):
+    """按 "relationship.trust" 这种点路径写值。中间层不存在则返回 False。
+
+    ★ 刻意**不**自动造中间层：target 指向一个 Actor State 里本来没有的字段，
+      是配置和状态结构对不上（该报出来），而不是该被静默补齐的东西。
+      静默造字段会让「这个 signal 到底有没有接上」变得看不出来。
+    """
+    parts = path.split(".")
+    cur = obj
+    for part in parts[:-1]:
+        if not isinstance(cur, dict) or part not in cur:
+            return False
+        cur = cur[part]
+    if not isinstance(cur, dict) or parts[-1] not in cur:
+        return False
+    cur[parts[-1]] = value
+    return True
+
+
 def apply_gates(answers, choice_id):
     """用 noul 门限覆盖 choice 的 argmax，返回 (最终行为 id, 命中信息或 None)。
 
@@ -1643,6 +1662,226 @@ def commit_turn(turn_id):
     return True, "已提交，该桶现有 %d 条" % len(bucket)
 
 
+# ============================================================================
+# ★★ Phase3-P3 第一阶段：Actor State 存储 + State Transition v1
+# ============================================================================
+# 为什么必须有这一段：P2 之前整条链路是**无状态**的 —— /decide 从 payload 里读
+# actor，算完给一份 state_proposal，然后**忘掉**。下一轮又是原来的 relationship.trust。
+# 于是「连续交互让关系变化」在架构上根本不可能发生，跟模型好坏无关。
+# 这一段只补一件事：让 trust_shift 的 proposal 真的能落到下一轮的输入里。
+#
+# 三个刻意的设计约束（都来自用户 P3 的明确要求，不是我的偏好）：
+#   1) 范围**复用** state_shift.paths.*.range，不新建第二套格式。
+#      relationship.trust 就是 0~100，不另起一套 0~1。
+#   2) 单轮上限**不是**分数上限。range 0~100 的字段单轮最多走 ±12，
+#      所以「一句话就把关系打满/打到底」在结构上不可能 —— 这是体验的自然感来源。
+#   3) 只有 active 能写。auxiliary 依然只登记不写；ambiguous / awaiting_upstream 不 commit。
+#      P2 已经把「谁能写」交给能力档案裁决，P3 只是尊重那个裁决，不在这里重新定级。
+
+_ACTOR_STATE = {}       # (session_id, actor_id) -> {"relationship": {...}, "emotion": {...}, "goals": {...}}
+_STATE_TRACE = {}       # (session_id, actor_id) -> [ 每轮 commit 的审计记录 ]
+_STATE_TRACE_MAX = 30
+
+
+def _blank_actor_state(actor):
+    """从 actor 模板抽出「会被状态层改写」的那几组字段。深拷贝，绝不共享引用。"""
+    import copy as _copy
+    a = actor or CFG.get("actor") or {}
+    return {
+        "name": a.get("name"), "name_en": a.get("name_en"),
+        "relationship": _copy.deepcopy(a.get("relationship") or {}),
+        "emotion": _copy.deepcopy(a.get("emotion") or {}),
+        "goals": _copy.deepcopy(a.get("goals") or {}),
+        "traits": _copy.deepcopy(a.get("traits") or {}),
+    }
+
+
+def actor_state_for(session_id, actor_id, actor=None, create=True):
+    """取某桶的 Actor State。不存在且 create=True 时，用 actor 模板初始化。
+
+    ★ 键与 history 完全一致（session_id, actor_id）—— 两者必须同桶，
+      否则「历史属于 A、状态属于 B」这种串线在架构上就成立了。
+    """
+    k = bucket_key(session_id, actor_id)
+    st = _ACTOR_STATE.get(k)
+    if st is None and create:
+        st = _blank_actor_state(actor)
+        st["_created_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _ACTOR_STATE[k] = st
+    return st
+
+
+def actor_state_view(session_id, actor_id):
+    """给前端/测试看的只读快照（含本轮之后的取值）。"""
+    k = bucket_key(session_id, actor_id)
+    st = _ACTOR_STATE.get(k)
+    return {"bucket": "%s/%s" % k, "exists": st is not None,
+            "state": st, "trace": list(_STATE_TRACE.get(k, []))}
+
+
+def _transition_cfg():
+    t = (CFG.get("state_shift") or {}).get("transition") or {}
+    return t
+
+
+def state_transition(signal, proposal_delta, current_value, allowed=True):
+    """Phase3-P3 第一版 State Transition。
+
+    输入：
+      signal          —— 如 "trust_shift"（key 必须存在于 state_shift.paths）
+      proposal_delta  —— Laya 算出的原始增量（build_deltas 的产物）
+      current_value   —— 该 target 当前值
+      allowed         —— 前置准入（status==active / 不是 ambiguous / 不是 awaiting_upstream）
+
+    返回一份**完整可审计**的裁决，字段固定为：
+        old / proposal / final_delta / new_value
+    外加 clamped_by / range / per_turn / skipped_reason，方便调试。
+
+    ★ 顺序很重要：先按单轮上限截 proposal，再按合法区间截结果值。
+      反过来做会得到一个「区间内合法、但本轮变化超过单轮上限」的 new_value，
+      即漏掉单轮限制。这两种顺序在信任已接近 100 时才看得出差别，
+      但正是那种情况最容易出现「最后一句话把关系推满」的跳变。
+    """
+    t = _transition_cfg()
+    paths = (CFG.get("state_shift") or {}).get("paths") or {}
+    p = paths.get(signal) or {}
+    rng = p.get("range")
+    target = p.get("target")
+    label = p.get("label") or signal
+    out = {
+        "signal": signal, "target": target, "label": label,
+        "old": current_value, "proposal": proposal_delta,
+        "final_delta": 0.0, "new_value": current_value,
+        "range": list(rng) if rng else None,
+        "committed": False, "skipped_reason": None, "clamped_by": [],
+    }
+    if not t or not t.get("enabled", True):
+        out["skipped_reason"] = "state_shift.transition 未启用（配置里 enabled=false 或缺段）"
+        return out
+    if not rng:
+        out["skipped_reason"] = ("state_shift.paths.%s 没有 range —— 没有合法区间的字段不许写状态"
+                                 "（宁可不动，也不猜一个范围）" % signal)
+        return out
+    if not allowed:
+        out["skipped_reason"] = "前置准入未通过（status 非 active / 歧义 / 等上游）"
+        return out
+    if current_value is None:
+        out["skipped_reason"] = ("Actor State 里 %s 没有当前值 —— 不猜初值"
+                                 % target)
+        return out
+    if proposal_delta is None:
+        out["skipped_reason"] = "本轮没有拿到该 signal 的数值（未出值或未达 active）"
+        return out
+
+    lo_max = (t.get("per_turn_max") or {}).get(signal,
+             (t.get("per_turn_max") or {}).get("default"))
+    lo_min = (t.get("per_turn_min") or {}).get(signal,
+             (t.get("per_turn_min") or {}).get("default"))
+    if lo_max is None or lo_min is None:
+        out["skipped_reason"] = "transition 配置缺 per_turn_max / per_turn_min（含 default）"
+        return out
+    if lo_min > lo_max:
+        out["skipped_reason"] = "per_turn_min(%s) > per_turn_max(%s)，配置自相矛盾" % (lo_min, lo_max)
+        return out
+
+    # ① 单轮上限
+    d = float(proposal_delta)
+    capped = min(max(d, float(lo_min)), float(lo_max))
+    if abs(capped - d) > 1e-9:
+        out["clamped_by"].append("per_turn:%s~%s" % (lo_min, lo_max))
+    # ② 合法区间（在**结果值**上截，不是在增量上）
+    new = float(current_value) + capped
+    final_new = min(max(new, float(rng[0])), float(rng[1]))
+    if abs(final_new - new) > 1e-9:
+        out["clamped_by"].append("range:%s~%s" % (rng[0], rng[1]))
+    out["final_delta"] = round(final_new - float(current_value), 6)
+    out["new_value"] = round(final_new, 6)
+    out["committed"] = True
+    out["skipped_reason"] = None
+    out["per_turn"] = {"min": lo_min, "max": lo_max}
+    return out
+
+
+def apply_state_transition(session_id, actor_id, state_proposal, decision, actor=None):
+    """把一份 state_proposal 过一遍 State Transition，并**写回** Actor State。
+
+    返回 (commits, skipped, view)。commits 里每一项都带 old/proposal/final_delta/new_value。
+
+    ★ 只在「这一轮真的产生了可采纳事实」时才写：
+      · decision.awaiting_upstream == True（判为歧义 / 没给行为）→ 整轮不写。
+        理由：状态变化本身就是一种「事实认定」，而歧义轮的事实认定权已交上游。
+        先写状态、再等上游否决，会造成「被否决的轮次却留下了关系变化」——
+        这正是 P2 修掉的那类假交接，不能从状态层再开一个口子。
+      · 单个 signal 还要过 status==active（由 state_proposal 的过滤保证）与本配置的 write_status。
+    """
+    t = _transition_cfg()
+    st = actor_state_for(session_id, actor_id, actor)
+    k = bucket_key(session_id, actor_id)
+    commit_when = t.get("commit_when") or {}
+    commits, skipped = [], []
+
+    upstream = None
+    if decision:
+        if decision.get("behavior_is_null"):
+            upstream = "behavior_is_null" if decision.get("awaiting_upstream") else "behavior_is_null"
+        elif decision.get("awaiting_upstream"):
+            upstream = "awaiting_upstream"
+
+    if upstream:
+        for d in (state_proposal or {}).get("delta") or []:
+            skipped.append({
+                "source_signal": d.get("source_signal"), "target": d.get("target"),
+                "proposal": d.get("delta"), "old": _dig(st, d.get("target")),
+                "final_delta": 0.0, "new_value": _dig(st, d.get("target")),
+                "committed": False,
+                "skipped_reason": ("本轮 %s（歧义 / 未给行为）→ 不 commit 状态。"
+                                   "事实认定权在上游，状态层不抢跑。" % upstream),
+            })
+        return commits, skipped, actor_state_view(session_id, actor_id)
+
+    for d in (state_proposal or {}).get("delta") or []:
+        sig = d.get("source_signal")
+        stt = d.get("status")
+        allowed = stt in (t.get("write_status") or ["active"])
+        if not allowed:
+            skipped.append({"source_signal": sig, "target": d.get("target"),
+                            "proposal": d.get("delta"), "old": _dig(st, d.get("target")),
+                            "final_delta": 0.0, "new_value": _dig(st, d.get("target")),
+                            "committed": False,
+                            "skipped_reason": "status=%s 不在 write_status=%s 里"
+                                              % (stt, t.get("write_status"))})
+            continue
+        r = state_transition(sig, d.get("delta"), _dig(st, d.get("target")), allowed=True)
+        r.update(grade=d.get("grade"), status=stt, role=d.get("role"),
+                 attribute=d.get("attribute"), checkpoint=d.get("checkpoint"))
+        if r["committed"]:
+            _set_path(st, d.get("target"), r["new_value"])
+            commits.append(r)
+        else:
+            skipped.append(dict(r, proposal=d.get("delta")))
+    if commits:
+        tr = _STATE_TRACE.setdefault(k, [])
+        tr.append({"t": time.time(),
+                   "turn_id": (decision or {}).get("turn_id"),
+                   "n": len(commits), "commits": commits})
+        del tr[:-_STATE_TRACE_MAX]
+    return commits, skipped, actor_state_view(session_id, actor_id)
+
+
+def reset_actor_state(session_id=None, actor_id=None):
+    """清 Actor State（与 reset_history 同样的三个参数语义）。"""
+    hit = []
+    for k in list(_ACTOR_STATE):
+        if session_id is not None and k[0] != str(session_id):
+            continue
+        if actor_id is not None and k[1] != str(actor_id):
+            continue
+        _ACTOR_STATE.pop(k, None)
+        _STATE_TRACE.pop(k, None)
+        hit.append("%s/%s" % k)
+    return hit
+
+
 def reset_history(session_id=None, actor_id=None):
     """清历史。三个参数都不给 = 全清；给 session = 清该 session 下所有 actor。"""
     hit = []
@@ -1673,6 +1912,26 @@ def decide(payload):
     session_id = payload.get("session_id") or "default"
     actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
     turn_id = next_turn_id(session_id, actor_id)
+    # ★★ Phase3-P3：Actor State 就是**按同一个桶**取的当前人物状态。
+    #   传了 actor 就说明调用方要显式指定这一轮的模板 —— 此时状态以传入的 actor 为准
+    #   （多 NPC 演示就是这么用的：同一 session 下给不同 actor 对象）。
+    #   没传 actor 就说明调用方想走**连续剧情**：从桶里取上一轮 commit 之后的状态。
+    #   这两条路径必须写清楚，否则「为什么我的状态没变化」会变成一个谜。
+    if payload.get("actor"):
+        _st = actor_state_for(session_id, actor_id, actor, create=False) \
+            or actor_state_for(session_id, actor_id, actor)
+    else:
+        _st = actor_state_for(session_id, actor_id, CFG.get("actor"))
+    state_source = "payload.actor" if payload.get("actor") else "bucket"
+    # ★ 把桶里的状态合进这一轮要喂给 Laya 的 actor：relationship / emotion / goals 用状态，
+    #   其余（identity / personality / situation）仍来自模板。
+    #   只合会变的那几组，是刻意的 —— 把整个 actor 覆盖掉等于把「人物设定」也交给状态层，
+    #   那不是本阶段的职责。
+    if _st:
+        actor = dict(actor or {})
+        for _grp in ("relationship", "emotion", "goals"):
+            if _st.get(_grp):
+                actor[_grp] = dict(_st[_grp])
     # ★ 是否真的隔离（Phase3-Task2）：只有调用方显式传了 session_id **和** actor 标识才算。
     #   退到 default 桶时不报错（单角色 Demo 必须能用），但要在本轮输出里**标出来**，
     #   否则会有人把「多角色共用一条历史」的演示结果当成隔离证据。
@@ -1864,6 +2123,19 @@ def decide(payload):
     conf = answers.get("npc_behavior", {}).get("confidence")
     prob = answers.get("npc_behavior", {}).get("_probabilities")
 
+    # ★★ Phase3-P3：State Transition + Commit —— 本桥**唯一**真正写状态的动作。
+    #   放在这里（而不是 build_state_proposal 之后、final_id 之前）是有原因的：
+    #   它要读 `bh`（最终行为）来判断「这一轮是否成立」。歧义轮的事实认定权已交上游，
+    #   状态层不能先写再等否决 —— 那会造成「被否决的轮次却留下了关系变化」，
+    #   正是 P2 修掉的那类假交接。
+    #   注意「行为」和「状态」是两件事：本轮不给行为 ≠ 关系不会变，
+    #   但两者都要求「事实成立」，所以共用同一个门。
+    state_commits, state_skipped, state_view = apply_state_transition(
+        session_id, actor_id, state_proposal,
+        {"behavior_is_null": bh is None, "awaiting_upstream": bh is None,
+         "source": policy.get("source"), "turn_id": turn_id},
+        actor=CFG.get("actor"))
+
     # ★ behavior=null 的原因（Phase3-Task1）：必须能用一句话说清「为什么没给行为」。
     #   上游拿到一个裸 null 只能猜；而且歧义是**正常裁决**，不是故障，两者要分开。
     if bh is not None:
@@ -1916,6 +2188,21 @@ def decide(payload):
         "state_proposal": state_proposal,
         "behavior_tendency": behavior_tendency,
         "situation_assessment": situation_assessment,
+        # ★★ Phase3-P3：这一层才是**真的写了状态**。上面 state_proposal 只是建议。
+        #   commits 里每项固定带 old / proposal / final_delta / new_value，可直接调前端显示。
+        "state_commits": state_commits,
+        "state_skipped": state_skipped,
+        "actor_state": {"source": state_source, **(state_view or {})},
+        "state_transition_meta": {
+            "is_proposal": False,
+            "authority": "bridge",
+            "n_committed": len(state_commits),
+            "n_skipped": len(state_skipped),
+            "note": ("state_commits 是**已写入** Actor State 的变化（经 State Transition："
+                     "单轮上限 → 合法区间；只有 active 能写）。"
+                     "state_proposal 仍是建议，两者不要混用。"
+                     "本轮状态取自 %s。" % state_source),
+        },
         "checkpoint_profile": state_proposal["profile"],
         "proposed_deltas": state_proposal["delta"],
         "deltas": state_proposal["delta"],           # 兼容旧前端，逐步淘汰
@@ -2114,6 +2401,35 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/config":
             return self._json(CFG)
+        if path == "/state":
+            # ★★ Phase3-P3：查某桶的 Actor State（含最近若干轮 commit 审计）。
+            #   为什么必须有这个只读口：没有它，"状态到底有没有变化"只能靠再跑一轮来推断，
+            #   而那种推断分不清「状态没变」和「状态变了但没接进输入」。
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sid = (qs.get("session_id") or [None])[0]
+            aid = (qs.get("actor_id") or [None])[0]
+            tr_cfg = (CFG.get("state_shift") or {}).get("transition") or {}
+            if sid is not None and aid is not None:
+                views = {("%s/%s" % (sid, aid)): actor_state_view(sid, aid)}
+            else:
+                views = {}
+                for k in _ACTOR_STATE:
+                    if sid is not None and k[0] != sid:
+                        continue
+                    if aid is not None and k[1] != aid:
+                        continue
+                    views["%s/%s" % k] = actor_state_view(k[0], k[1])
+                if not views and sid is None and aid is None:
+                    views["(空)"] = {"bucket": None, "exists": False, "state": None, "trace": []}
+            return self._json({
+                "n_buckets": len(_ACTOR_STATE),
+                "buckets": views,
+                "ranges": dict((sig, (p or {}).get("range"))
+                               for sig, p in ((CFG.get("state_shift") or {}).get("paths") or {}).items()),
+                "per_turn": {"max": tr_cfg.get("per_turn_max"), "min": tr_cfg.get("per_turn_min")},
+                "note": ("Actor State 按 (session_id, actor_id) 分桶，与 history 同键。"
+                         "ranges 直接读 state_shift.paths.*.range —— 本桥不维护第二套范围。"),
+            })
         if path in ("/demo", "/demo.html", "/index.html"):
             # 直接从桥上提供页面：省掉一个静态服务器，也避免 file:// 打开时
             # 跨源 fetch 到 http://127.0.0.1 的各种不确定行为（本地文件源是 opaque origin）。
@@ -2149,8 +2465,8 @@ class Handler(BaseHTTPRequestHandler):
                 "filter": {"session_id": sid, "actor_id": aid},
             })
         return self._json({"error": "not found",
-                           "try": ["/health", "/config", "/demo", "/history", "/decide", "/commit",
-                                   "/narrate", "/world", "/reset", "/predict"]}, 404)
+                           "try": ["/health", "/config", "/demo", "/history", "/state", "/decide",
+                                   "/turn", "/commit", "/narrate", "/world", "/reset", "/predict"]}, 404)
 
     def do_POST(self):
         path = self.path.split("?")[0]
@@ -2188,6 +2504,43 @@ class Handler(BaseHTTPRequestHandler):
             })
             return self._json(out)
 
+        if path == "/turn":
+            # ★★ Phase3-P3：一步走完闭环 —— /decide（含 State Transition + Commit）
+            #   → 立刻 commit 历史。语义是「这一轮玩家输入**确定发生了**」。
+            #   与 /decide + /commit 两步走的关系：
+            #     /turn   = 单人连续剧情 / 体验测试。默认认定本轮成立。
+            #     /decide+/commit = 上游（Story / Director）可能否决的正式链路。
+            #   两者共用同一套状态层，不存在"快路绕过校验"。
+            #   确实要在 /turn 上也不写状态时传 commit_state=false。
+            try:
+                out = decide(payload)
+            except Exception as e:
+                return self._json({"error": repr(e)}, 500)
+            turn = out.get("turn") or {}
+            dec = out.get("decision") or {}
+            beh = dec.get("behavior") or {}
+            do_commit = payload.get("commit_state", True)
+            ok, note = (False, "commit_state=false → 本轮不写状态、不写历史")
+            if do_commit and beh.get("id"):
+                propose_turn(turn.get("turn_id"), turn.get("session_id"),
+                             turn.get("actor_id"), beh.get("id"),
+                             (dec.get("player_intent") or {}).get("id"), dec.get("source"))
+                ok, note = commit_turn(turn.get("turn_id"))
+            elif do_commit:
+                note = ("本轮无行为（歧义 / 未给行为）→ 按 P3 第一版规则：不 commit 状态、"
+                        "不写历史。状态变化本身就是事实认定，歧义轮不抢跑。")
+            _HISTORY.append({"t": time.time(), "player": payload_text(payload),
+                             "engine": out["engine"], "behavior": beh.get("id"),
+                             "source": beh.get("source"), "turn_id": turn.get("turn_id"),
+                             "bucket": turn.get("history_bucket")})
+            del _HISTORY[:-50]
+            return self._json(dict(out, state_gate={
+                "stage": "committed" if ok else "not_committed",
+                "history_committed": bool(ok),
+                "state_commits": out.get("state_commits") or [],
+                "note": note,
+            }))
+
         if path == "/commit":
             # ★ 提交门（Phase3-Task3）：只有这一步才把决策写进 (session, actor) 桶。
             #   语义上＝「上游 Story / Director 真的采纳了这轮行为」。
@@ -2205,12 +2558,16 @@ class Handler(BaseHTTPRequestHandler):
             sid = payload.get("session_id")
             aid = payload.get("actor_id")
             hit = reset_history(sid, aid)
+            hit_state = reset_actor_state(sid, aid)
             cleared = []
             if sid is None and aid is None:
                 del _HISTORY[:]
                 cleared.append("history_display")
             return self._json({"ok": True, "cleared": cleared,
                                "buckets_cleared": hit,
+                               # ★ Phase3-P3：Actor State 与 history 同桶，就一起清。
+                               #   只清一个会造出「历史清了但关系还在 82」的拧巴状态。
+                               "actor_state_cleared": hit_state,
                                "scope": ("全部" if sid is None and aid is None
                                          else "session=%s actor=%s" % (sid, aid))})
 
@@ -3186,29 +3543,58 @@ def _capability_policy():
     return CFG.get("capability_policy") or {}
 
 
-def _load_run_results(runs_dir=None):
-    """读 tests/runs/<checkpoint>__<run>.json，按检查点分组。
+def parse_run_filename(stem):
+    """从 `tests/runs/<a>__<b>.json` 拆出 (候选检查点名, run_id)。仅作**兜底**。
 
-    返回 (分组, 文件名分组)。文件名里没有 `__` 的直接跳过 —— 目录里可能有别的产物。
+    ★ 为什么只算兜底、最终以文件内的 `model` 字段为准 —— 因为这里踩过一个静默坑：
+      格式 `<checkpoint>__<run_id>` 用 `__` 分隔，但**检查点名自己也可能含 `__`**。
+      实测：`trust_context__typed-decisions.json`（P2.5 产物，真检查点=typed-decisions）
+      被旧实现的 `stem.rsplit("__", 1)` 解析成 检查点=`trust_context`、run=`typed-decisions`，
+      于是凭空多出一个叫 `trust_context` 的"检查点"——**没有任何报错**。
+      若那时跑 `capability`，就会拿两份 P2.5 结果去算一个不存在的检查点的等级，
+      产出一份**看起来完全正常**的错误档案。静默错配比崩溃危险。
+    """
+    if "__" not in stem:
+        return stem, "run1"
+    i = stem.rfind("__")
+    return stem[:i], stem[i + 2:]
+
+
+def _load_run_results(runs_dir=None):
+    """读 tests/runs/*.json，按**文件内的 model 字段**分组（文件名只作兜底）。
+
+    返回 (分组, 文件名分组, 跳过的文件名)。
+
+    ★ 判定顺序是刻意的：文件内容 > 文件名。
+      文件名是人手写的、可以含 `__`、可以改；`model` 字段是写文件时代码填的，
+      与那次运行实际加载的检查点一一对应。用内容判定把上面那类错配根除掉。
+      解析不出 model 又不满足兜底规则的文件，**列出来并跳过**，不猜。
     """
     d = Path(runs_dir) if runs_dir else (TESTS_DIR / "runs")
-    out, names = {}, {}
+    out, names, skipped = {}, {}, []
     try:
         files = sorted(d.glob("*.json"))
     except Exception:
         files = []
     for p in files:
-        if "__" not in p.stem:
-            continue
-        ck, _run = p.stem.rsplit("__", 1)
         try:
             blob = json.loads(p.read_text(encoding="utf-8"))
         except Exception as e:
             print("⚠ 解析 %s 失败：%r（跳过）" % (p.name, e))
+            skipped.append(p.name)
             continue
+        ck = blob.get("model")
+        if not ck:
+            # 兜底：文件名解析。要能被当作检查点的，至少得像个 signalmetrics 产物
+            cand, _run = parse_run_filename(p.stem)
+            if not (blob.get("discrimination") or blob.get("final_grades")):
+                skipped.append(p.name)
+                continue
+            ck = cand
+        ck = str(ck)
         out.setdefault(ck, []).append(blob)
         names.setdefault(ck, []).append(p.name)
-    return out, names
+    return out, names, skipped
 
 
 def _median(xs):
@@ -3414,8 +3800,14 @@ def _portability_from_analysis(name):
     return "未跨检查点验证", None
 
 
-def _build_profile(model, runs, names):
-    """为一个检查点生成能力档案。"""
+def _build_profile(model, runs, names, era_ids=None):
+    """为一个检查点生成档案。
+
+    era_ids —— 若给了，表示这批 run 是被 tests/runs/eras.json **显式声明**为
+    同一个可比较纪元的。它会被写进档案（`runs.era_ids`），让「这份等级是在哪几次
+    运行上算的」可被独立核对。没有它时写明 `era_declared=False` ——
+    「未声明」和「声明了就是这些」必须能区分。
+    """
     roles = _signal_roles(strict=True)
     if roles is None:
         return None
@@ -3502,7 +3894,14 @@ def _build_profile(model, runs, names):
         "generator": "laya_bridge.py capability",
         "role_in_phase3": ("production_candidate" if model == prod
                            else ("capability_comparison" if model in cmp_list else "unregistered")),
-        "runs": {"n_runs": len(runs), "files": names, "run_ids": [r.get("run_id") for r in runs]},
+        "runs": {"n_runs": len(runs), "files": names, "run_ids": [r.get("run_id") for r in runs],
+                 "era_declared": bool(era_ids),
+                 "era_ids": list(era_ids or []),
+                 "era_source": str(ERA_PATH) if era_ids else None,
+                 "era_note": (("这批运行由 %s 显式声明为同一可比较纪元。" % ERA_PATH.name)
+                              if era_ids else
+                              "未声明纪元 → 本档案是在该检查点的**全部** run 上算的，"
+                              "若 runs/ 横跨多次缓存改动，跨跑次一致性可能不成立。")},
         "evidence": {
             "dataset": ds_fp, "checkpoint": ckpt_fp, "config": cfg_fp,
             # ★ 英文侧输入条件的权威哈希 = 实验用例译文的哈希（不是整个缓存文件）。
@@ -3538,6 +3937,69 @@ def _build_profile(model, runs, names):
 
 
 CAPABILITY_PATH = TESTS_DIR / "capability_profiles.json"
+# ★★ 实验纪元声明（2026-09-24 P3 新增）。
+#   为什么需要这个文件：tests/runs/ 是**只增不减**的（那些是证据，不该删），
+#   但每个纪元跑的时候翻译缓存 / 用例集可能不同。于是「同一检查点的所有 run 文件」
+#   会横跨多个条件，`_evidence_check` 一旦看到 2 个不同的 cache_sha 就判 inconsistent
+#   → 档案永远不 fresh → 状态层一条都不写。
+#   这是同一个类的第三次出现（前两次：run 文件名错配、prewarm 漏扫形状）。
+#   修法不是「删掉旧 run」也不是「放宽一致性检查」（那等于把条件漂移当正常），
+#   而是**让纪元显式声明**：哪些 run 属于同一次可比较的基线。
+#   文件缺失时退回「全部 run」的旧行为，但会打印提示 —— 不静默。
+ERA_PATH = TESTS_DIR / "runs" / "eras.json"
+
+
+def _load_eras():
+    """读 tests/runs/eras.json → {checkpoint: [run_id, ...]}。缺失/坏掉则返回 {}。"""
+    try:
+        blob = json.loads(ERA_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    out = {}
+    for ck, v in (blob.get("eras") or {}).items():
+        if isinstance(v, list):
+            out[ck] = [str(x) for x in v]
+        elif isinstance(v, dict):
+            out[ck] = [str(x) for x in (v.get("run_ids") or [])]
+    return out
+
+
+def _filter_runs_to_era(model, runs, names):
+    """把某检查点的 runs 收敛到「声明的那一个纪元」。
+
+    ★ 判据是 run_id（文件内字段），不是文件名 —— 与 _load_run_results 同源。
+      返回 (runs, names, era_ids, note)；note 说明做了什么，永远不静默。
+    """
+    eras = _load_eras()
+    want = eras.get(model)
+    if not want:
+        if runs:
+            return runs, names, None, (
+                "未声明纪元（%s 不存在或没有 %s 条目）→ 使用 tests/runs/ 里该检查点的**全部** run"
+                % (ERA_PATH.name, model))
+        return runs, names, None, None
+    keep_r, keep_n, hit = [], [], []
+    for r, n in zip(runs, names):
+        rid = str(r.get("run_id") or "")
+        if rid in want:
+            keep_r.append(r)
+            keep_n.append(n)
+            hit.append(rid)
+    missing = [x for x in want if x not in hit]
+    if not keep_r:
+        return runs, names, None, (
+            "★ 声明了纪元 %s，但 tests/runs/ 里一个都匹配不到（run_id=%s）→ 退回全部 run。"
+            "这通常意味着 runs 文件被移动/改名了，请核对。" % (model, want))
+    note = ("已按纪元收敛到 %d/%d 次运行：%s"
+            % (len(keep_r), len(runs), "、".join(hit)))
+    if len(keep_r) < len(runs):
+        note += "（未计入：%s）" % "、".join(
+            str(r.get("run_id")) for r in runs if str(r.get("run_id")) not in want)
+    if missing:
+        note += " ★ 声明里这些 run 不存在：%s" % "、".join(missing)
+    return keep_r, keep_n, hit, note
+
+
 _CAP_PROFILE_CACHE = {"mtime": None, "blob": None}
 
 
@@ -3804,7 +4266,12 @@ def cmd_capability():
     only = [a for a in argv if not a.startswith("-")]
     do_check = "--check" in argv
 
-    runs_by_ck, names_by_ck = _load_run_results()
+    runs_by_ck, names_by_ck, run_skipped = _load_run_results()
+    if run_skipped:
+        # ★ 显式列出来：这些文件既没有 model 字段、也不像 signalmetrics 产物，
+        #   所以**没有被算进任何检查点**。不列的话，"少读了一个文件"是看不出来的。
+        print("（以下 %d 个文件没有 model 字段且不似 signalmetrics 产物，未计入任何检查点：%s）"
+              % (len(run_skipped), "、".join(run_skipped)))
     if not runs_by_ck:
         print("★ tests/runs/ 里没有任何 <checkpoint>__<run>.json，没有实验数据可依据。")
         print("  先跑：LAYA_MODEL=<ckpt> python laya_bridge.py signalmetrics")
@@ -3841,11 +4308,18 @@ def cmd_capability():
 
     profiles = {}
     for ck in ckpts:
-        runs = runs_by_ck[ck]
+        runs_all_ck = runs_by_ck[ck]
+        names_all_ck = names_by_ck.get(ck) or []
+        # ★ 按纪元收敛：只拿「同一次可比较基线」里的 run 去算等级。
+        #   不做这一步时，runs/ 里横跨多次缓存的 run 会被判 inconsistent，
+        #   档案永远不 fresh，状态层一条都不写（见 ERA_PATH 的注释）。
+        runs, names_ck, era_hit, era_note = _filter_runs_to_era(ck, runs_all_ck, names_all_ck)
+        if era_note:
+            print("  [%s] %s" % (ck, era_note))
         if len(runs) < 3:
             print("⚠ %s 只有 %d 次运行 —— 档案会记录这个事实，"
                   "但「跨跑次稳不稳」这一项在它上面是**未验证**的。" % (ck, len(runs)))
-        prof = _build_profile(ck, runs, names_by_ck.get(ck) or [])
+        prof = _build_profile(ck, runs, names_ck, era_ids=era_hit)
         if prof is None:
             return 2
         profiles[ck] = prof

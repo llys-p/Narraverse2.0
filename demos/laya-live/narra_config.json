@@ -541,50 +541,85 @@
       "hostility": {
         "role": "behavior_tendency",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "对玩家表现出敌意、攻击性言语或态度的倾向。",
         "semantic_en": "Tendency to show hostility or aggression toward the player.",
-        "validated_on": ["observable", "contextual"]
+        "validated_on": [
+          "observable",
+          "contextual"
+        ]
       },
       "cooperation": {
         "role": "behavior_tendency",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "愿意配合玩家、提供帮助或信息的倾向。",
         "semantic_en": "Tendency to cooperate with, assist, or inform the player.",
-        "validated_on": ["observable", "contextual"]
+        "validated_on": [
+          "observable",
+          "contextual"
+        ]
       },
       "withdraw": {
         "role": "behavior_tendency",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "想结束、回避或抽离当前互动的倾向。",
         "semantic_en": "Tendency to end, avoid, or disengage from the current interaction.",
-        "validated_on": ["observable", "contextual"]
+        "validated_on": [
+          "observable",
+          "contextual"
+        ]
       },
       "confront": {
         "role": "behavior_tendency",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "直接质问、逼问玩家的倾向（与 withdraw 是两条不同的退路，不是同一维的两端）。",
         "semantic_en": "Tendency to confront or press the player directly.",
-        "validated_on": ["observable", "contextual"]
+        "validated_on": [
+          "observable",
+          "contextual"
+        ]
       },
       "disclose": {
         "role": "behavior_tendency",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "主动透露自己的秘密/隐私信息的倾向。",
         "semantic_en": "Tendency to voluntarily disclose the actor's own secrets or private information.",
-        "validated_on": ["observable"]
+        "validated_on": [
+          "observable"
+        ]
       },
       "investigate": {
         "role": "behavior_tendency",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "semantic_zh": "★ 语义存疑：面板上叫「调查需求」，但实测在上下文方向上稳定反向。",
         "semantic_en": "★ Semantics under review: labelled 'investigation need', but stably inverted on the contextual axis.",
-        "validated_on": ["observable", "contextual"],
+        "validated_on": [
+          "observable",
+          "contextual"
+        ],
         "_semantic_review": [
           "两种解释，**本轮不裁决、不改名、不取反**：",
           "  (1) 用例期望写反了；",
@@ -597,18 +632,30 @@
       "trust": {
         "role": "situation_assessment",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "对玩家可信度的总体评估（当下情境判断，不是累积关系值）。",
         "semantic_en": "Overall assessment of the player's trustworthiness in the current situation.",
-        "validated_on": ["observable", "contextual"]
+        "validated_on": [
+          "observable",
+          "contextual"
+        ]
       },
       "doubt": {
         "role": "situation_assessment",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "对玩家陈述真实性的怀疑评估（情境判断）。",
         "semantic_en": "Assessment of doubt about the truthfulness of the player's statements.",
-        "validated_on": ["observable", "contextual"],
+        "validated_on": [
+          "observable",
+          "contextual"
+        ],
         "_collision_note": [
           "★ 与 state_shift 的 doubt_shift 同名不同义，不要混：",
           "  doubt       = 此刻怀疑多少（情境评估，无方向）",
@@ -619,37 +666,58 @@
       "danger": {
         "role": "situation_assessment",
         "kind": "prob",
-        "range": [0, 1],
+        "range": [
+          0,
+          1
+        ],
         "semantic_zh": "对当前情境危险程度的评估。",
         "semantic_en": "Assessment of how dangerous the current situation is.",
-        "validated_on": ["observable", "contextual"]
+        "validated_on": [
+          "observable",
+          "contextual"
+        ]
       },
       "trust_shift": {
         "role": "state_shift",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "target": "relationship.trust",
         "semantic_zh": "这句话使 relationship.trust 变化的方向与强度（score 期望值，0~4）。",
         "semantic_en": "Direction and strength of change this line causes to relationship.trust.",
-        "validated_on": ["observable"]
+        "validated_on": [
+          "observable"
+        ]
       },
       "respect_shift": {
         "role": "state_shift",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "target": "relationship.respect",
         "semantic_zh": "这句话使 relationship.respect 变化的方向与强度。",
         "semantic_en": "Direction and strength of change this line causes to relationship.respect.",
-        "validated_on": ["observable"]
+        "validated_on": [
+          "observable"
+        ]
       },
       "doubt_shift": {
         "role": "state_shift",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "target": "relationship.doubt",
         "semantic_zh": "这句话使 relationship.doubt 变化的方向与强度。",
         "semantic_en": "Direction and strength of change this line causes to relationship.doubt.",
-        "validated_on": ["observable"],
+        "validated_on": [
+          "observable"
+        ],
         "_portability_note": [
           "★ 本 signal 在 typed-decisions 是 A、在 english 是 D —— 检查点特有。",
           "不要因为 english 上差就把它从 typed 的能力档案里删掉：typed 才是 Phase3 的生产候选。",
@@ -659,29 +727,44 @@
       "fondness_shift": {
         "role": "state_shift",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "target": "emotion.fondness",
         "semantic_zh": "这句话使 emotion.fondness 变化的方向与强度。",
         "semantic_en": "Direction and strength of change this line causes to emotion.fondness.",
-        "validated_on": ["observable"]
+        "validated_on": [
+          "observable"
+        ]
       },
       "alert_shift": {
         "role": "state_shift",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "target": "emotion.alert",
         "semantic_zh": "这句话使 emotion.alert（警觉）变化的方向与强度。",
         "semantic_en": "Direction and strength of change this line causes to emotion.alert.",
-        "validated_on": ["observable"]
+        "validated_on": [
+          "observable"
+        ]
       },
       "goal_shift": {
         "role": "state_shift",
         "kind": "level",
-        "range": [0, 4],
+        "range": [
+          0,
+          4
+        ],
         "target": "goals.identify_player",
         "semantic_zh": "这句话对「查明玩家身份」这个目标的推力方向与强度。",
         "semantic_en": "Direction and strength of push this line gives to the goal 'identify the player'.",
-        "validated_on": ["observable"]
+        "validated_on": [
+          "observable"
+        ]
       }
     }
   },
@@ -697,7 +780,9 @@
       "  没有列在这里的 signal，status 完全由 _derive_status() 从 grade + portability 推导。"
     ],
     "production_candidate": "typed-decisions",
-    "comparison_checkpoints": ["english"],
+    "comparison_checkpoints": [
+      "english"
+    ],
     "override": {
       "investigate": {
         "status": "semantic_review",
@@ -853,6 +938,30 @@
         "goal_shift"
       ],
       "trait": "traits.suspicion"
+    },
+    "transition": {
+      "_note": "Phase3-P3 第一版 State Transition（过渡层）。刻意保持极简：final_delta = clamp(proposal, per_turn_min, per_turn_max)，再 clamp 到 paths 里已有的 range。per_turn_max 是按「单轮最大变化」设的，不是按分数上限：range 0~100 的字段单轮最多走 12，意味着从 50 涨到 80 至少要 3 轮 —— 这是刻意的，避免一句话就把关系打到底/打满。",
+      "per_turn_max": {
+        "default": 12,
+        "trust_shift": 12,
+        "respect_shift": 10,
+        "doubt_shift": 10
+      },
+      "per_turn_min": {
+        "default": -8,
+        "trust_shift": -12,
+        "respect_shift": -10,
+        "doubt_shift": -10
+      },
+      "enabled": true,
+      "write_status": [
+        "active"
+      ],
+      "commit_when": {
+        "behavior_is_null": "skip",
+        "ambiguous": "skip",
+        "awaiting_upstream": "skip"
+      }
     }
   },
   "director": {
