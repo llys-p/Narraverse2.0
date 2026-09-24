@@ -85,6 +85,9 @@ import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# ★ P2-B1：Analyze/Commit 状态协议 v1 的存储与编排（独立小模块，不复制推理引擎）。
+from laya_state_protocol import LayaStateProtocol, _ProtoError, MAX_BODY_BYTES
+
 HERE = Path(__file__).resolve().parent
 CFG_PATH = HERE / "narra_config.json"
 DEMO_HTML = HERE / "laya-live-demo.html"
@@ -492,6 +495,9 @@ class LayaEngine:
 
 
 ENGINE = LayaEngine()
+
+# ★ P2-B1：协议实例（注入 bridge 模块引用；锁/版本/候选/事件都在协议模块内）。
+PROTOCOL = LayaStateProtocol(sys.modules[__name__])
 
 # ==========================================================================
 # 2. 回退引擎
@@ -1977,10 +1983,19 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
 
 
 
-def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=None):
-    """纯校验 state proposal；返回可提交项、跳过项和提交后的预览，不写全局状态。"""
+def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=None,
+                         frozen_state=None):
+    """纯校验 state proposal；返回可提交项、跳过项和提交后的预览，不写全局状态。
+
+    ★ P2-B1（2026-09-25）：`frozen_state` 由**协议层在锁内捕获的服务器快照**提供
+      （不接受客户端）。提供时不再读桶，避免「外层验版本、内层又读另一份状态」
+      的竞态 —— 协议层先固定快照与版本，再在快照上完成分析/校验，发布前复核。
+    """
     t = _transition_cfg()
-    st = actor_state_snapshot(session_id, actor_id, actor)
+    if frozen_state is not None:
+        st = _copy.deepcopy(frozen_state)
+    else:
+        st = actor_state_snapshot(session_id, actor_id, actor)
     validated, skipped = [], []
 
     upstream = None
@@ -2089,8 +2104,13 @@ def reset_history(session_id=None, actor_id=None):
     return hit
 
 
-def analyze_core(payload, turn_id=None):
-    """运行 Laya 判断并生成 Proposal；只读 Actor State，不提交任何状态变化。"""
+def analyze_core(payload, turn_id=None, frozen_state=None):
+    """运行 Laya 判断并生成 Proposal；只读 Actor State，不提交任何状态变化。
+
+    ★ P2-B1（2026-09-25）：`frozen_state` 由协议层在锁内捕获（服务器内部，不接受
+      客户端快照伪装）。提供时跳过读桶，直接用冻结快照合并进本轮 actor 与校验，
+      保证「分析用的状态」与「对外承诺的基础版本」是同一份。
+    """
     actor = payload.get("actor") or CFG["actor"]
     history = payload.get("history") or []
     # ★ 历史分桶键（Phase3-Task2）：不传就退到 "default"，但会**报出来**，
@@ -2103,7 +2123,9 @@ def analyze_core(payload, turn_id=None):
     #   （多 NPC 演示就是这么用的：同一 session 下给不同 actor 对象）。
     #   没传 actor 就说明调用方想走**连续剧情**：从桶里取上一轮 commit 之后的状态。
     #   这两条路径必须写清楚，否则「为什么我的状态没变化」会变成一个谜。
-    if payload.get("actor"):
+    if frozen_state is not None:
+        _st = _copy.deepcopy(frozen_state)
+    elif payload.get("actor"):
         _st = actor_state_snapshot(session_id, actor_id, actor)
     else:
         _st = actor_state_snapshot(session_id, actor_id, CFG.get("actor"))
@@ -2343,7 +2365,7 @@ def analyze_core(payload, turn_id=None):
     state_validated, state_skipped, state_preview = validate_state_delta(
         session_id, actor_id, state_proposal,
         state_decision,
-        actor=actor)
+        actor=actor, frozen_state=frozen_state)
     state_view = actor_state_analysis_view(session_id, actor_id, actor=actor)
 
     # ★ behavior=null 的原因（Phase3-Task1）：必须能用一句话说清「为什么没给行为」。
@@ -2580,6 +2602,22 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _read_protocol(self):
+        """协议端点专用读取：区分空 body / 超限(413) / 坏 JSON(400)。"""
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > MAX_BODY_BYTES:
+            raise _ProtoError(413, "PAYLOAD_TOO_LARGE", "请求体超过 64 KiB 上限")
+        if not n:
+            raise _ProtoError(400, "INVALID_JSON", "请求体为空")
+        try:
+            raw = self.rfile.read(n).decode("utf-8")
+        except Exception as e:
+            raise _ProtoError(400, "INVALID_JSON", "读取请求体失败：%r" % (e,))
+        try:
+            return json.loads(raw)
+        except Exception:
+            raise _ProtoError(400, "INVALID_JSON", "JSON 无法解析")
+
     # ---- routes ----
     def do_OPTIONS(self):
         self.send_response(204)
@@ -2627,6 +2665,7 @@ class Handler(BaseHTTPRequestHandler):
             # ★★ Phase3-P3：查某桶的 Actor State（含最近若干轮 commit 审计）。
             #   为什么必须有这个只读口：没有它，"状态到底有没有变化"只能靠再跑一轮来推断，
             #   而那种推断分不清「状态没变」和「状态变了但没接进输入」。
+            #   ★ P2-B1：显式给 session_id+actor_id 时追加协议 `current`（版本/初始化/快照）。
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             sid = (qs.get("session_id") or [None])[0]
             aid = (qs.get("actor_id") or [None])[0]
@@ -2643,7 +2682,7 @@ class Handler(BaseHTTPRequestHandler):
                     views["%s/%s" % k] = actor_state_view(k[0], k[1])
                 if not views and sid is None and aid is None:
                     views["(空)"] = {"bucket": None, "exists": False, "state": None, "trace": []}
-            return self._json({
+            out = {
                 "n_buckets": len(_ACTOR_STATE),
                 "buckets": views,
                 "ranges": dict((sig, (p or {}).get("range"))
@@ -2651,7 +2690,28 @@ class Handler(BaseHTTPRequestHandler):
                 "per_turn": {"max": tr_cfg.get("per_turn_max"), "min": tr_cfg.get("per_turn_min")},
                 "note": ("Actor State 按 (session_id, actor_id) 分桶，与 history 同键。"
                          "ranges 直接读 state_shift.paths.*.range —— 本桥不维护第二套范围。"),
-            })
+            }
+            if sid is not None and aid is not None:
+                try:
+                    out.update(PROTOCOL.get_state(sid, aid))
+                except _ProtoError as e:
+                    return self._json(e.body(), e.http)
+            return self._json(out)
+        if path.startswith("/analysis/"):
+            # ★ P2-B1：候选生命周期查询（只读，必须给 scope）。
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sid = (qs.get("session_id") or [None])[0]
+            aid = (qs.get("actor_id") or [None])[0]
+            analysis_id = path[len("/analysis/"):]
+            if not sid or not aid:
+                return self._json({"protocol_version": "laya-state-v1",
+                                   "error": {"code": "INVALID_REQUEST",
+                                             "message": "GET /analysis/{id} 必须提供 session_id/actor_id 查询参数",
+                                             "details": None}}, 422)
+            try:
+                return self._json(PROTOCOL.get_analysis(analysis_id, sid, aid))
+            except _ProtoError as e:
+                return self._json(e.body(), e.http)
         if path in ("/demo", "/demo.html", "/index.html"):
             # 直接从桥上提供页面：省掉一个静态服务器，也避免 file:// 打开时
             # 跨源 fetch 到 http://127.0.0.1 的各种不确定行为（本地文件源是 opaque origin）。
@@ -2688,10 +2748,35 @@ class Handler(BaseHTTPRequestHandler):
             })
         return self._json({"error": "not found",
                            "try": ["/health", "/config", "/demo", "/history", "/state", "/decide",
-                                   "/turn", "/commit", "/narrate", "/world", "/reset", "/predict"]}, 404)
+                                   "/turn", "/commit", "/narrate", "/world", "/reset", "/predict",
+                                   "/analyze", "/analysis/{id}", "/commit_state", "/reject_analysis"]}, 404)
 
     def do_POST(self):
         path = self.path.split("?")[0]
+
+        # ★ P2-B1：协议端点（错误统一按 §8；响应带 protocol_version）。
+        #   必须用 _read_protocol 单独读 body —— do_POST 开头的 _read()
+        #   只用于旧端点；协议端点最先读，避免 body 被提前消费导致空读。
+        if path in ("/analyze", "/commit_state", "/reject_analysis"):
+            try:
+                payload = self._read_protocol()
+            except _ProtoError as e:
+                return self._json(e.body(), e.http)
+            try:
+                if path == "/analyze":
+                    res = PROTOCOL.analyze(payload)
+                elif path == "/commit_state":
+                    res = PROTOCOL.commit_state(payload)
+                else:
+                    res = PROTOCOL.reject_analysis(payload)
+                return self._json(res)
+            except _ProtoError as e:
+                return self._json(e.body(), e.http)
+            except Exception as e:
+                return self._json({"protocol_version": "laya-state-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": repr(e), "details": None}}, 500)
+
         payload = self._read()
 
         if path == "/decide":
