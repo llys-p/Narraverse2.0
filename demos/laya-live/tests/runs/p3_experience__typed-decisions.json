@@ -1,22 +1,27 @@
 {
  "_readme": [
-  "P3 第一版最小体验测试的原始结果（4 类场景 / 共 6 次顺序走查）。",
+  "P3 最小体验测试的原始结果（体验场景 + 顺序走查）。",
   "checkpoint=typed-decisions ｜ 走的是 B.decide() 真路径，不绕过状态层。",
-  "判据是体验口径：总体方向 + 不暴涨 + 中性不漂移 + 不串线。",
-  "decision_history 的已知限制**不在判据里**，单独放 history_observation。"
+  "判据是体验口径：总体方向 + 不暴涨 + 中性不漂移 + 不串线 + 维度不硬绑定。",
+  "decision_history 的已知限制**不在判据里**，单独放 history_observation。",
+  "Phase2 追加：N1（10 轮闲聊）/ D（doubt 方向）/ F（fondness 方向）/",
+  "  X1（维度不硬绑定）/ X2（trust高+fondness低 组合存在）/ R1（respect 不写状态）。"
  ],
  "checkpoint": "typed-decisions",
- "device": "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)",
- "scenarios_sha": "15b42563ff0d57256ddb7c5a58a6aa3d6fcea92d5d19ea8ee54649b9df102a47",
- "config_sha": "9c574eb3ce673313d105410da78b57c6bf1527bf72d54d1d3f787a791d30c11b",
- "cache_sha_before": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
- "cache_sha_after": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
+ "device": "cpu (torch 2.14.0+cpu, 无 CUDA)",
+ "scenarios_sha": "38139b86f81261439d64108416f9e9d1b5f66b3fe6434e12eb586725497873f6",
+ "config_sha": "6cee69bbc86a74e5d18a595e1a2be8b1b124e91a3dfd9bf0ca3af37467080a72",
+ "cache_sha_before": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
+ "cache_sha_after": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
  "per_turn_max_trust": 12,
- "capability_profile_id": "015cb800f287cadb91ec9f483b04ad390607d30b1ad20c1b0a9f8c80b708460a",
+ "deadzone": {
+  "trust_shift": 1.0,
+  "doubt_shift": 1.0,
+  "fondness_shift": 0.002
+ },
+ "capability_profile_id": "46a5bca11d1955739fad0829eb26b94b81af848e1b6643f5e5b42c1d0319146a",
  "state_writable_signals": [
-  "trust_shift",
-  "doubt_shift",
-  "fondness_shift"
+  "doubt_shift"
  ],
  "trace": [
   {
@@ -28,31 +33,20 @@
      "i": 1,
      "text": "我会替你挡下那些追兵，你信我一次。",
      "label": "挡刀",
-     "trust_after": 63.72,
+     "trust_after": 60,
+     "doubt_after": 28.74,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 60,
-       "proposal": 3.72,
-       "final_delta": 3.72,
-       "new_value": 63.72,
-       "clamped_by": []
-      },
       {
        "signal": "doubt_shift",
        "old": 30,
-       "proposal": -1.257,
-       "final_delta": -1.257,
-       "new_value": 28.743,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.35,
-       "proposal": 0.029,
-       "final_delta": 0.029,
-       "new_value": 0.379,
-       "clamped_by": []
+       "proposal": -1.26,
+       "after_deadzone": -1.26,
+       "final_delta": -1.26,
+       "new_value": 28.74,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -63,31 +57,20 @@
      "i": 2,
      "text": "这是我用命换来的情报，一个字不留全给你。",
      "label": "交情报",
-     "trust_after": 67.631,
+     "trust_after": 60,
+     "doubt_after": 31.362,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 63.72,
-       "proposal": 3.911,
-       "final_delta": 3.911,
-       "new_value": 67.631,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 28.743,
-       "proposal": 3.3,
-       "final_delta": 3.3,
-       "new_value": 32.043,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.379,
-       "proposal": 0.038,
-       "final_delta": 0.038,
-       "new_value": 0.417,
-       "clamped_by": []
+       "old": 28.74,
+       "proposal": 2.622,
+       "after_deadzone": 2.622,
+       "final_delta": 2.622,
+       "new_value": 31.362,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -98,66 +81,20 @@
      "i": 3,
      "text": "我发誓绝不会把你的事说出去，说出去就让我死。",
      "label": "立誓守密",
-     "trust_after": 68.054,
+     "trust_after": 60,
+     "doubt_after": 35.77,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 67.631,
-       "proposal": 0.423,
-       "final_delta": 0.423,
-       "new_value": 68.054,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 32.043,
-       "proposal": 2.871,
-       "final_delta": 2.871,
-       "new_value": 34.914,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.417,
-       "proposal": 0.002,
-       "final_delta": 0.002,
-       "new_value": 0.419,
-       "clamped_by": []
-      }
-     ],
-     "n_skipped": 0,
-     "behavior": "distance",
-     "awaiting_upstream": false
-    },
-    {
-     "i": 4,
-     "text": "我知道你要查的人是谁，我把这条线也交给你。",
-     "label": "自曝风险",
-     "trust_after": 69.739,
-     "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 68.054,
-       "proposal": 1.685,
-       "final_delta": 1.685,
-       "new_value": 69.739,
-       "clamped_by": []
-      },
-      {
-       "signal": "doubt_shift",
-       "old": 34.914,
-       "proposal": 1.938,
-       "final_delta": 1.938,
-       "new_value": 36.852,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.419,
-       "proposal": 0.016,
-       "final_delta": 0.016,
-       "new_value": 0.435,
-       "clamped_by": []
+       "old": 31.362,
+       "proposal": 4.408,
+       "after_deadzone": 4.408,
+       "final_delta": 4.408,
+       "new_value": 35.77,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -165,34 +102,47 @@
      "awaiting_upstream": false
     },
     {
+     "i": 4,
+     "text": "我知道你要查的人是谁，我把这条线也交给你。",
+     "label": "自曝风险",
+     "trust_after": 60,
+     "doubt_after": 37.867,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 35.77,
+       "proposal": 2.097,
+       "after_deadzone": 2.097,
+       "final_delta": 2.097,
+       "new_value": 37.867,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
      "i": 5,
      "text": "上次是我判断错了，害你多绕了两天路，这是我的责任。",
      "label": "认错担责",
-     "trust_after": 69.168,
+     "trust_after": 60,
+     "doubt_after": 40.621,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 69.739,
-       "proposal": -0.571,
-       "final_delta": -0.571,
-       "new_value": 69.168,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 36.852,
-       "proposal": 1.245,
-       "final_delta": 1.245,
-       "new_value": 38.097,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.435,
-       "proposal": -0.014,
-       "final_delta": -0.014,
-       "new_value": 0.421,
-       "clamped_by": []
+       "old": 37.867,
+       "proposal": 2.754,
+       "after_deadzone": 2.754,
+       "final_delta": 2.754,
+       "new_value": 40.621,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -210,66 +160,44 @@
      "i": 1,
      "text": "你要是不肯说，我就把你今晚的行踪卖给别人。",
      "label": "威胁",
-     "trust_after": 60.572,
+     "trust_after": 60,
+     "doubt_after": 33.738,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 60,
-       "proposal": 0.572,
-       "final_delta": 0.572,
-       "new_value": 60.572,
-       "clamped_by": []
-      },
       {
        "signal": "doubt_shift",
        "old": 30,
-       "proposal": 3.637,
-       "final_delta": 3.637,
-       "new_value": 33.637,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.35,
-       "proposal": 0.006,
-       "final_delta": 0.006,
-       "new_value": 0.356,
-       "clamped_by": []
+       "proposal": 3.738,
+       "after_deadzone": 3.738,
+       "final_delta": 3.738,
+       "new_value": 33.738,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
-     "behavior": "ask",
+     "behavior": "probe",
      "awaiting_upstream": false
     },
     {
      "i": 2,
      "text": "我根本没去过你说的那个地方，我一直在酒馆里。",
      "label": "欺骗",
-     "trust_after": 59.359,
+     "trust_after": 60,
+     "doubt_after": 34.755,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 60.572,
-       "proposal": -1.213,
-       "final_delta": -1.213,
-       "new_value": 59.359,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 33.637,
-       "proposal": 1.314,
-       "final_delta": 1.314,
-       "new_value": 34.951,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.356,
-       "proposal": -0.017,
-       "final_delta": -0.017,
-       "new_value": 0.339,
-       "clamped_by": []
+       "old": 33.738,
+       "proposal": 1.017,
+       "after_deadzone": 1.017,
+       "final_delta": 1.017,
+       "new_value": 34.755,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -280,31 +208,20 @@
      "i": 3,
      "text": "上次答应你的事，我转头就忘了，也没打算补。",
      "label": "背诺",
-     "trust_after": 56.872,
+     "trust_after": 60,
+     "doubt_after": 35.828,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 59.359,
-       "proposal": -2.487,
-       "final_delta": -2.487,
-       "new_value": 56.872,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 34.951,
-       "proposal": -0.584,
-       "final_delta": -0.584,
-       "new_value": 34.367,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.339,
-       "proposal": -0.033,
-       "final_delta": -0.033,
-       "new_value": 0.306,
-       "clamped_by": []
+       "old": 34.755,
+       "proposal": 1.073,
+       "after_deadzone": 1.073,
+       "final_delta": 1.073,
+       "new_value": 35.828,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -315,71 +232,40 @@
      "i": 4,
      "text": "先把你的钱袋给我，别的等以后再说。",
      "label": "索取",
-     "trust_after": 55.325,
+     "trust_after": 60,
+     "doubt_after": 35.828,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 56.872,
-       "proposal": -1.547,
-       "final_delta": -1.547,
-       "new_value": 55.325,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 34.367,
-       "proposal": -0.298,
-       "final_delta": -0.298,
-       "new_value": 34.069,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.306,
-       "proposal": -0.017,
-       "final_delta": -0.017,
-       "new_value": 0.289,
-       "clamped_by": []
+       "old": 35.828,
+       "proposal": -0.748,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 35.828,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
       }
      ],
      "n_skipped": 0,
-     "behavior": "ask",
+     "behavior": "probe",
      "awaiting_upstream": false
     },
     {
      "i": 5,
      "text": "我瞒着你一件事，但我不会告诉你是什么。",
      "label": "隐瞒",
-     "trust_after": 54.707,
-     "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 55.325,
-       "proposal": -0.618,
-       "final_delta": -0.618,
-       "new_value": 54.707,
-       "clamped_by": []
-      },
-      {
-       "signal": "doubt_shift",
-       "old": 34.069,
-       "proposal": 0.575,
-       "final_delta": 0.575,
-       "new_value": 34.644,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.289,
-       "proposal": -0.011,
-       "final_delta": -0.011,
-       "new_value": 0.278,
-       "clamped_by": []
-      }
-     ],
-     "n_skipped": 0,
-     "behavior": "confide",
-     "awaiting_upstream": false
+     "trust_after": 60,
+     "doubt_after": 35.828,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [],
+     "n_skipped": 1,
+     "behavior": null,
+     "awaiting_upstream": true
     }
    ]
   },
@@ -392,66 +278,46 @@
      "i": 1,
      "text": "今晚的麦酒比上个月淡了不少。",
      "label": "天气",
-     "trust_after": 58.299,
+     "trust_after": 60,
+     "doubt_after": 28.643,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 60,
-       "proposal": -1.701,
-       "final_delta": -1.701,
-       "new_value": 58.299,
-       "clamped_by": []
-      },
       {
        "signal": "doubt_shift",
        "old": 30,
-       "proposal": -1.106,
-       "final_delta": -1.106,
-       "new_value": 28.894,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.35,
-       "proposal": -0.022,
-       "final_delta": -0.022,
-       "new_value": 0.328,
-       "clamped_by": []
+       "proposal": -1.357,
+       "after_deadzone": -1.357,
+       "final_delta": -1.357,
+       "new_value": 28.643,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
-     "behavior": "observe",
+     "behavior": "probe",
      "awaiting_upstream": false
     },
     {
      "i": 2,
      "text": "外面雨好像停了，屋檐还在滴水。",
      "label": "酒水",
-     "trust_after": 56.436,
+     "trust_after": 60,
+     "doubt_after": 28.643,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 58.299,
-       "proposal": -1.863,
-       "final_delta": -1.863,
-       "new_value": 56.436,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 28.894,
-       "proposal": 0.674,
-       "final_delta": 0.674,
-       "new_value": 29.568,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.328,
-       "proposal": -0.019,
-       "final_delta": -0.019,
-       "new_value": 0.309,
-       "clamped_by": []
+       "old": 28.643,
+       "proposal": 0.707,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 28.643,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
       }
      ],
      "n_skipped": 0,
@@ -462,31 +328,20 @@
      "i": 3,
      "text": "往北那条官道听说在修，不太好走。",
      "label": "路况",
-     "trust_after": 55.483,
+     "trust_after": 60,
+     "doubt_after": 30.392,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 56.436,
-       "proposal": -0.953,
-       "final_delta": -0.953,
-       "new_value": 55.483,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 29.568,
-       "proposal": 1.641,
-       "final_delta": 1.641,
-       "new_value": 31.209,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.309,
-       "proposal": -0.011,
-       "final_delta": -0.011,
-       "new_value": 0.298,
-       "clamped_by": []
+       "old": 28.643,
+       "proposal": 1.749,
+       "after_deadzone": 1.749,
+       "final_delta": 1.749,
+       "new_value": 30.392,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -497,31 +352,22 @@
      "i": 4,
      "text": "这屋子住一晚要多少钱？",
      "label": "价钱",
-     "trust_after": 55.213,
+     "trust_after": 60,
+     "doubt_after": 30.392,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 55.483,
-       "proposal": -0.27,
-       "final_delta": -0.27,
-       "new_value": 55.213,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 31.209,
-       "proposal": 0.849,
-       "final_delta": 0.849,
-       "new_value": 32.058,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.298,
-       "proposal": -0.008,
-       "final_delta": -0.008,
-       "new_value": 0.29,
-       "clamped_by": []
+       "old": 30.392,
+       "proposal": 0.78,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.392,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
       }
      ],
      "n_skipped": 0,
@@ -532,31 +378,20 @@
      "i": 5,
      "text": "已经这么晚了，你平时都什么时候歇？",
      "label": "时辰",
-     "trust_after": 55.719,
+     "trust_after": 60,
+     "doubt_after": 33.2,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 55.213,
-       "proposal": 0.506,
-       "final_delta": 0.506,
-       "new_value": 55.719,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 32.058,
-       "proposal": 3.07,
-       "final_delta": 3.07,
-       "new_value": 35.128,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.29,
-       "proposal": 0.0,
-       "final_delta": 0.0,
-       "new_value": 0.29,
-       "clamped_by": []
+       "old": 30.392,
+       "proposal": 2.808,
+       "after_deadzone": 2.808,
+       "final_delta": 2.808,
+       "new_value": 33.2,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -574,31 +409,20 @@
      "i": 1,
      "text": "我会替你挡下那些追兵，你信我一次。",
      "label": "挡刀",
-     "trust_after": 63.72,
+     "trust_after": 60,
+     "doubt_after": 28.74,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 60,
-       "proposal": 3.72,
-       "final_delta": 3.72,
-       "new_value": 63.72,
-       "clamped_by": []
-      },
       {
        "signal": "doubt_shift",
        "old": 30,
-       "proposal": -1.257,
-       "final_delta": -1.257,
-       "new_value": 28.743,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.35,
-       "proposal": 0.029,
-       "final_delta": 0.029,
-       "new_value": 0.379,
-       "clamped_by": []
+       "proposal": -1.26,
+       "after_deadzone": -1.26,
+       "final_delta": -1.26,
+       "new_value": 28.74,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -609,31 +433,20 @@
      "i": 2,
      "text": "这是我用命换来的情报，一个字不留全给你。",
      "label": "交情报",
-     "trust_after": 67.631,
+     "trust_after": 60,
+     "doubt_after": 31.362,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 63.72,
-       "proposal": 3.911,
-       "final_delta": 3.911,
-       "new_value": 67.631,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 28.743,
-       "proposal": 3.3,
-       "final_delta": 3.3,
-       "new_value": 32.043,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.379,
-       "proposal": 0.038,
-       "final_delta": 0.038,
-       "new_value": 0.417,
-       "clamped_by": []
+       "old": 28.74,
+       "proposal": 2.622,
+       "after_deadzone": 2.622,
+       "final_delta": 2.622,
+       "new_value": 31.362,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -644,31 +457,20 @@
      "i": 3,
      "text": "我发誓绝不会把你的事说出去，说出去就让我死。",
      "label": "立誓守密",
-     "trust_after": 69.264,
+     "trust_after": 60,
+     "doubt_after": 35.77,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 67.631,
-       "proposal": 1.633,
-       "final_delta": 1.633,
-       "new_value": 69.264,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 32.043,
-       "proposal": 4.347,
-       "final_delta": 4.347,
-       "new_value": 36.39,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.417,
-       "proposal": 0.013,
-       "final_delta": 0.013,
-       "new_value": 0.43,
-       "clamped_by": []
+       "old": 31.362,
+       "proposal": 4.408,
+       "after_deadzone": 4.408,
+       "final_delta": 4.408,
+       "new_value": 35.77,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -686,66 +488,44 @@
      "i": 1,
      "text": "你要是不肯说，我就把你今晚的行踪卖给别人。",
      "label": "威胁",
-     "trust_after": 60.572,
+     "trust_after": 60,
+     "doubt_after": 33.738,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
-      {
-       "signal": "trust_shift",
-       "old": 60,
-       "proposal": 0.572,
-       "final_delta": 0.572,
-       "new_value": 60.572,
-       "clamped_by": []
-      },
       {
        "signal": "doubt_shift",
        "old": 30,
-       "proposal": 3.637,
-       "final_delta": 3.637,
-       "new_value": 33.637,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.35,
-       "proposal": 0.006,
-       "final_delta": 0.006,
-       "new_value": 0.356,
-       "clamped_by": []
+       "proposal": 3.738,
+       "after_deadzone": 3.738,
+       "final_delta": 3.738,
+       "new_value": 33.738,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
-     "behavior": "ask",
+     "behavior": "probe",
      "awaiting_upstream": false
     },
     {
      "i": 2,
      "text": "我根本没去过你说的那个地方，我一直在酒馆里。",
      "label": "欺骗",
-     "trust_after": 59.359,
+     "trust_after": 60,
+     "doubt_after": 34.755,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 60.572,
-       "proposal": -1.213,
-       "final_delta": -1.213,
-       "new_value": 59.359,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 33.637,
-       "proposal": 1.314,
-       "final_delta": 1.314,
-       "new_value": 34.951,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.356,
-       "proposal": -0.017,
-       "final_delta": -0.017,
-       "new_value": 0.339,
-       "clamped_by": []
+       "old": 33.738,
+       "proposal": 1.017,
+       "after_deadzone": 1.017,
+       "final_delta": 1.017,
+       "new_value": 34.755,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -756,31 +536,20 @@
      "i": 3,
      "text": "上次答应你的事，我转头就忘了，也没打算补。",
      "label": "背诺",
-     "trust_after": 56.872,
+     "trust_after": 60,
+     "doubt_after": 35.828,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 59.359,
-       "proposal": -2.487,
-       "final_delta": -2.487,
-       "new_value": 56.872,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 34.951,
-       "proposal": -0.584,
-       "final_delta": -0.584,
-       "new_value": 34.367,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.339,
-       "proposal": -0.033,
-       "final_delta": -0.033,
-       "new_value": 0.306,
-       "clamped_by": []
+       "old": 34.755,
+       "proposal": 1.073,
+       "after_deadzone": 1.073,
+       "final_delta": 1.073,
+       "new_value": 35.828,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
@@ -798,35 +567,796 @@
      "i": 1,
      "text": "我会替你挡下那些追兵，你信我一次。",
      "label": "回到 A",
-     "trust_after": 72.49,
+     "trust_after": 60,
+     "doubt_after": 34.605,
+     "respect_after": 45,
+     "fondness_after": 0.35,
      "commits": [
       {
-       "signal": "trust_shift",
-       "old": 69.264,
-       "proposal": 3.226,
-       "final_delta": 3.226,
-       "new_value": 72.49,
-       "clamped_by": []
-      },
-      {
        "signal": "doubt_shift",
-       "old": 36.39,
-       "proposal": -1.153,
-       "final_delta": -1.153,
-       "new_value": 35.237,
-       "clamped_by": []
-      },
-      {
-       "signal": "fondness_shift",
-       "old": 0.43,
-       "proposal": 0.022,
-       "final_delta": 0.022,
-       "new_value": 0.452,
-       "clamped_by": []
+       "old": 35.77,
+       "proposal": -1.165,
+       "after_deadzone": -1.165,
+       "final_delta": -1.165,
+       "new_value": 34.605,
+       "clamped_by": [],
+       "deadzone_applied": false
       }
      ],
      "n_skipped": 0,
      "behavior": "ally",
+     "awaiting_upstream": false
+    }
+   ]
+  },
+  {
+   "id": "n1_neutral_long",
+   "session": "N1",
+   "actor": "Lia",
+   "rows": [
+    {
+     "i": 1,
+     "text": "今晚的麦酒比上个月淡了不少。",
+     "label": "天气",
+     "trust_after": 60,
+     "doubt_after": 28.643,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30,
+       "proposal": -1.357,
+       "after_deadzone": -1.357,
+       "final_delta": -1.357,
+       "new_value": 28.643,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 2,
+     "text": "外面雨好像停了，屋檐还在滴水。",
+     "label": "酒水",
+     "trust_after": 60,
+     "doubt_after": 28.643,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 28.643,
+       "proposal": 0.707,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 28.643,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "observe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 3,
+     "text": "往北那条官道听说在修，不太好走。",
+     "label": "路况",
+     "trust_after": 60,
+     "doubt_after": 30.392,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 28.643,
+       "proposal": 1.749,
+       "after_deadzone": 1.749,
+       "final_delta": 1.749,
+       "new_value": 30.392,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 4,
+     "text": "这屋子住一晚要多少钱？",
+     "label": "价钱",
+     "trust_after": 60,
+     "doubt_after": 30.392,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.392,
+       "proposal": 0.78,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.392,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 5,
+     "text": "已经这么晚了，你平时都什么时候歇？",
+     "label": "时辰",
+     "trust_after": 60,
+     "doubt_after": 33.2,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.392,
+       "proposal": 2.808,
+       "after_deadzone": 2.808,
+       "final_delta": 2.808,
+       "new_value": 33.2,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "ask",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 6,
+     "text": "风好像比刚才大了，窗户在响。",
+     "label": "天气",
+     "trust_after": 60,
+     "doubt_after": 37.311,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 33.2,
+       "proposal": 4.111,
+       "after_deadzone": 4.111,
+       "final_delta": 4.111,
+       "new_value": 37.311,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "observe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 7,
+     "text": "这酒馆的炉子烧得挺旺。",
+     "label": "酒水",
+     "trust_after": 60,
+     "doubt_after": 37.311,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 37.311,
+       "proposal": -0.003,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 37.311,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "observe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 8,
+     "text": "我看街上已经没什么人了。",
+     "label": "路况",
+     "trust_after": 60,
+     "doubt_after": 38.958,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 37.311,
+       "proposal": 1.647,
+       "after_deadzone": 1.647,
+       "final_delta": 1.647,
+       "new_value": 38.958,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "observe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 9,
+     "text": "这地方的水是井水还是河里的？",
+     "label": "价钱",
+     "trust_after": 60,
+     "doubt_after": 38.958,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 38.958,
+       "proposal": 0.205,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 38.958,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 10,
+     "text": "你晚上一般几点关店门？",
+     "label": "时辰",
+     "trust_after": 60,
+     "doubt_after": 40.094,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 38.958,
+       "proposal": 1.136,
+       "after_deadzone": 1.136,
+       "final_delta": 1.136,
+       "new_value": 40.094,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    }
+   ]
+  },
+  {
+   "id": "d1_doubt_rise",
+   "session": "D1",
+   "actor": "Lia",
+   "rows": [
+    {
+     "i": 1,
+     "text": "你要是不肯说，我就把你今晚的行踪卖给别人。",
+     "label": "威胁",
+     "trust_after": 60,
+     "doubt_after": 33.738,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30,
+       "proposal": 3.738,
+       "after_deadzone": 3.738,
+       "final_delta": 3.738,
+       "new_value": 33.738,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 2,
+     "text": "我昨天说没去过码头，其实我去了，只是不想让你知道。",
+     "label": "自相矛盾",
+     "trust_after": 60,
+     "doubt_after": 34.998,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 33.738,
+       "proposal": 1.26,
+       "after_deadzone": 1.26,
+       "final_delta": 1.26,
+       "new_value": 34.998,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 3,
+     "text": "把你身上所有的钥匙都给我，别问为什么。",
+     "label": "可疑要求",
+     "trust_after": 60,
+     "doubt_after": 34.998,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 34.998,
+       "proposal": 0.595,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 34.998,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "observe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 4,
+     "text": "你最好别挡我的路，不然我让你后悔。",
+     "label": "敌意",
+     "trust_after": 60,
+     "doubt_after": 39.558,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 34.998,
+       "proposal": 4.56,
+       "after_deadzone": 4.56,
+       "final_delta": 4.56,
+       "new_value": 39.558,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "leave",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 5,
+     "text": "我瞒着你一件事，但我不会告诉你是什么。",
+     "label": "隐瞒",
+     "trust_after": 60,
+     "doubt_after": 39.558,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [],
+     "n_skipped": 1,
+     "behavior": null,
+     "awaiting_upstream": true
+    }
+   ]
+  },
+  {
+   "id": "d2_doubt_fall",
+   "session": "D2",
+   "actor": "Lia",
+   "rows": [
+    {
+     "i": 1,
+     "text": "这件事我跟你一起办，出了事我兜着。",
+     "label": "明确合作",
+     "trust_after": 60,
+     "doubt_after": 30.0,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30,
+       "proposal": 0.275,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.0,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "ally",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 2,
+     "text": "上回答应给你的东西我带来了，你点一下。",
+     "label": "兑现承诺",
+     "trust_after": 60,
+     "doubt_after": 30.0,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.0,
+       "proposal": 0.349,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.0,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 3,
+     "text": "你手上有伤，让我帮你处理一下再走。",
+     "label": "主动帮助",
+     "trust_after": 60,
+     "doubt_after": 31.855,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.0,
+       "proposal": 1.855,
+       "after_deadzone": 1.855,
+       "final_delta": 1.855,
+       "new_value": 31.855,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 4,
+     "text": "我不瞒你，我这次来确实是受人所托。",
+     "label": "正常坦白",
+     "trust_after": 60,
+     "doubt_after": 31.855,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 31.855,
+       "proposal": 0.928,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 31.855,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 5,
+     "text": "我知道的全部都告诉你了，包括对我不利的部分。",
+     "label": "交出底牌",
+     "trust_after": 60,
+     "doubt_after": 31.855,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 31.855,
+       "proposal": 0.438,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 31.855,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    }
+   ]
+  },
+  {
+   "id": "f1_fondness_rise",
+   "session": "F1",
+   "actor": "Lia",
+   "rows": [
+    {
+     "i": 1,
+     "text": "你今晚没怎么吃东西，我让店家再上一份热的。",
+     "label": "关心",
+     "trust_after": 60,
+     "doubt_after": 30.0,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30,
+       "proposal": -0.249,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.0,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "distance",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 2,
+     "text": "你刚才那个表情，让我想起以前一个朋友。",
+     "label": "轻松互动",
+     "trust_after": 60,
+     "doubt_after": 30.0,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.0,
+       "proposal": 0.602,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.0,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 3,
+     "text": "这件事你做得对，我不该在旁边指手画脚。",
+     "label": "尊重",
+     "trust_after": 60,
+     "doubt_after": 30.0,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.0,
+       "proposal": 0.941,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 30.0,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 4,
+     "text": "前两天那场雨里，多亏你拉了我一把。",
+     "label": "共同经历",
+     "trust_after": 60,
+     "doubt_after": 31.955,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30.0,
+       "proposal": 1.955,
+       "after_deadzone": 1.955,
+       "final_delta": 1.955,
+       "new_value": 31.955,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "confide",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 5,
+     "text": "你累的话就靠着眯一会儿，我帮你看着门口。",
+     "label": "体谅",
+     "trust_after": 60,
+     "doubt_after": 31.955,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 31.955,
+       "proposal": -0.017,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 31.955,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "distance",
+     "awaiting_upstream": false
+    }
+   ]
+  },
+  {
+   "id": "f2_fondness_fall",
+   "session": "F2",
+   "actor": "Lia",
+   "rows": [
+    {
+     "i": 1,
+     "text": "你这种人也配谈什么誓言？别逗我笑了。",
+     "label": "羞辱",
+     "trust_after": 60,
+     "doubt_after": 33.538,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 30,
+       "proposal": 3.538,
+       "after_deadzone": 3.538,
+       "final_delta": 3.538,
+       "new_value": 33.538,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 2,
+     "text": "你的事跟我没关系，别再来找我。",
+     "label": "冷漠",
+     "trust_after": 60,
+     "doubt_after": 35.592,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 33.538,
+       "proposal": 2.054,
+       "after_deadzone": 2.054,
+       "final_delta": 2.054,
+       "new_value": 35.592,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "leave",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 3,
+     "text": "我就是想看你难受，这样我心里舒服点。",
+     "label": "恶意",
+     "trust_after": 60,
+     "doubt_after": 35.592,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 35.592,
+       "proposal": -0.348,
+       "after_deadzone": 0.0,
+       "final_delta": 0.0,
+       "new_value": 35.592,
+       "clamped_by": [
+        "deadzone:1.0"
+       ],
+       "deadzone_applied": true
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 4,
+     "text": "你算什么东西，也敢在我面前提条件？",
+     "label": "冒犯",
+     "trust_after": 60,
+     "doubt_after": 39.288,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 35.592,
+       "proposal": 3.696,
+       "after_deadzone": 3.696,
+       "final_delta": 3.696,
+       "new_value": 39.288,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "ask",
+     "awaiting_upstream": false
+    },
+    {
+     "i": 5,
+     "text": "你不就是运气好才活到现在的么。",
+     "label": "轻慢",
+     "trust_after": 60,
+     "doubt_after": 41.493,
+     "respect_after": 45,
+     "fondness_after": 0.35,
+     "commits": [
+      {
+       "signal": "doubt_shift",
+       "old": 39.288,
+       "proposal": 2.205,
+       "after_deadzone": 2.205,
+       "final_delta": 2.205,
+       "new_value": 41.493,
+       "clamped_by": [],
+       "deadzone_applied": false
+      }
+     ],
+     "n_skipped": 0,
+     "behavior": "probe",
      "awaiting_upstream": false
     }
    ]
@@ -836,94 +1366,193 @@
   {
    "id": "E1a",
    "name": "连续正向 → trust 总体上升",
-   "ok": true,
-   "detail": "起点 63.72 → 终点 69.168（净变化 +5.4）",
+   "ok": false,
+   "detail": "起点 60 → 终点 60（净变化 +0.0）",
    "warn_only": false
   },
   {
    "id": "E1b",
    "name": "连续正向 → 没有暴涨（单轮变化 ≤ 配置上限）",
    "ok": true,
-   "detail": "最大单轮 Δ=+3.911，配置上限=12",
+   "detail": "最大单轮 Δ=+0，配置上限=12",
    "warn_only": false
   },
   {
    "id": "E1c",
    "name": "连续正向 → 变化是逐轮累积的（不是一轮到位）",
-   "ok": true,
-   "detail": "3 轮产生了正向变化（共 4 轮有效）",
+   "ok": false,
+   "detail": "0 轮产生了正向变化（共 4 轮有效）",
    "warn_only": false
   },
   {
    "id": "E2",
    "name": "连续负向 → trust 总体下降",
-   "ok": true,
-   "detail": "起点 60.572 → 终点 54.707（净变化 -5.9）",
+   "ok": false,
+   "detail": "起点 60 → 终点 60（净变化 +0.0）",
    "warn_only": false
   },
   {
    "id": "E3",
    "name": "中性聊天 → 不造成大幅关系漂移",
    "ok": true,
-   "detail": "中性累计 |Δ|=3.6 ｜ 正向=6.6 负向=5.9（参照取两者较小值 5.9）",
+   "detail": "中性累计 |Δ|=0.0 ｜ 正向=0.0 负向=0.0（参照取两者较小值 —） ｜ 最大单轮 Δ=+0.00（「?」）｜ 0/4 轮为负向",
    "warn_only": false
   },
   {
    "id": "E4a",
    "name": "两个 session 的状态互不影响",
-   "ok": true,
-   "detail": "A(正向 session)=69.264 ｜ B(负向 session)=56.872 —— 同起点、相反方向，若串线两者会趋于相同",
+   "ok": false,
+   "detail": "A(正向 session)=60 ｜ B(负向 session)=60 —— 同起点、相反方向，若串线两者会趋于相同",
    "warn_only": false
   },
   {
    "id": "E4b",
    "name": "回到同一桶时状态被保留（不是每次重来）",
-   "ok": true,
-   "detail": "A 再来一轮后 trust=72.49（上一轮结束于 69.264，模板初值 60）",
+   "ok": false,
+   "detail": "A 再来一轮后 trust=60（上一轮结束于 60，模板初值 60）",
    "warn_only": false
   },
   {
    "id": "E4c",
    "name": "Actor State 按 (session, actor) 分桶",
    "ok": true,
-   "detail": "桶 S1/Lia 与 S2/Roth 各自存在，trust 分别 72.49 / 56.872",
+   "detail": "桶 S1/Lia 与 S2/Roth 各自存在，trust 分别 60 / 60",
+   "warn_only": false
+  },
+  {
+   "id": "N1",
+   "name": "10 轮闲聊 → 关系不明显漂移",
+   "ok": true,
+   "detail": "10 轮累计 |Δ|=0.0 ｜ 参照（5 轮场景折算到 10 轮）=-1.0 ｜ 死区拦下 0/10 轮 ｜ 起 60 → 终 60",
+   "warn_only": false
+  },
+  {
+   "id": "D1",
+   "name": "doubt 能连续 commit（闭环成立）",
+   "ok": true,
+   "detail": "应升场景 4/5 轮有 doubt commit ｜ 应降场景 5/5 轮",
+   "warn_only": false
+  },
+  {
+   "id": "D2",
+   "name": "doubt 方向与语义一致（威胁/矛盾→升，合作/坦白→降）",
+   "ok": false,
+   "detail": "应升组净 +5.82 ｜ 应降组净 +1.85",
+   "warn_only": false
+  },
+  {
+   "id": "F1",
+   "name": "fondness 能连续 commit（闭环成立）",
+   "ok": false,
+   "detail": "应升场景 0/5 轮有 fondness commit ｜ 应降场景 0/5 轮",
+   "warn_only": false
+  },
+  {
+   "id": "F2",
+   "name": "fondness 方向与语义一致（关心/尊重→升，羞辱/冷漠→降）",
+   "ok": false,
+   "detail": "应升组净 +0.0000 ｜ 应降组净 +0.0000",
+   "warn_only": false
+  },
+  {
+   "id": "X1",
+   "name": "关系维度不硬绑定（存在 trust 与 doubt/fondness 反向变化的轮次）",
+   "ok": false,
+   "detail": "trust↔doubt：同向 0 轮 / 反向 0 轮 ｜ trust↔fondness：同向 0 轮 / 反向 0 轮 （若硬绑定，反向应为 0）",
+   "warn_only": false
+  },
+  {
+   "id": "X2",
+   "name": "「trust 高 + fondness 低」组合能真实出现",
+   "ok": false,
+   "detail": "模板初值 trust=60 fondness=0.35 ｜ 满足「trust 高于初值且 fondness 不高于初值」的桶：（无）",
+   "warn_only": false
+  },
+  {
+   "id": "R1",
+   "name": "respect_shift（auxiliary）确实没有写入 Actor State",
+   "ok": true,
+   "detail": "respect 观测值=[45] ｜ 模板初值=45 ｜ ✅ 全程未写入 Actor State（respect 恒为 45），符合 auxiliary 不直接写的要求。",
    "warn_only": false
   }
  ],
- "n_pass": 8,
- "n_fail": 0,
+ "n_pass": 6,
+ "n_fail": 10,
  "history_observation": {
   "known_limitation": "decision_history 的读向跨检查点不稳定（P2.5 §18.4/§18.5）。P3 第一阶段不修，仅观察是否造成可见体验异常。",
   "observed": "本测试的 5 个场景都未传 decision_history（历史桶为空），因此**没有**观察到 history 造成的异常 —— 这是「未触及」，不是「已验证无害」。",
   "verdict": "未构成 P3 阻塞项；继续按已知限制记录。"
  },
+ "respect_observation": {
+  "status": "auxiliary",
+  "wrote_any": false,
+  "proposal_seen": true,
+  "verdict": "✅ 全程未写入 Actor State（respect 恒为 45），符合 auxiliary 不直接写的要求。",
+  "candidate_for_promotion": "本轮未发现反常，但**样本量不足以判断升级价值**；按 Task4 只记录 candidate_for_promotion，不改 Capability Grade。",
+  "grade": "C",
+  "auc": null,
+  "may_write_state": false,
+  "observed_values": [
+   45
+  ],
+  "template_value": 45
+ },
+ "findings": {
+  "e3": {
+   "cumulative_abs_delta": 0,
+   "ref_min_positive_negative": null,
+   "worst_turn": {
+    "text": null,
+    "delta": 0.0
+   },
+   "n_negative_turns": 0,
+   "n_turns": 4,
+   "systematic_negative_bias": false
+  }
+ },
  "corner": {
-  "e1_span": 6.0190000000000055,
+  "e1_span": 0,
   "e1_deltas": [
-   3.911,
-   0.423,
-   1.685,
-   -0.571
+   0,
+   0,
+   0,
+   0
   ],
   "e2_deltas": [
-   -1.213,
-   -2.487,
-   -1.547,
-   -0.618
+   0,
+   0,
+   0,
+   0
   ],
   "e3_abs_deltas": [
-   1.863,
-   0.953,
-   0.27,
-   0.506
+   0,
+   0,
+   0,
+   0
   ],
-  "drift_positive": 6.59,
-  "drift_negative": 5.865,
-  "drift_neutral": 3.5919999999999996,
+  "drift_positive": 0,
+  "drift_negative": 0,
+  "drift_neutral": 0,
+  "drift_neutral_10": 0,
+  "neutral_deadzone_hits": 0,
+  "doubt": {
+   "rise_net": 5.819999999999999,
+   "fall_net": 1.855
+  },
+  "fondness": {
+   "rise_net": 0.0,
+   "fall_net": 0.0
+  },
+  "independence": {
+   "trust_doubt_same": 0,
+   "trust_doubt_opp": 0,
+   "trust_fond_same": 0,
+   "trust_fond_opp": 0
+  },
   "e4": {
-   "a_end": 69.264,
-   "b_end": 56.872,
-   "a_reprise": 72.49
+   "a_end": 60,
+   "b_end": 60,
+   "a_reprise": 60
   }
  }
 }

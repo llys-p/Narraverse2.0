@@ -14,23 +14,61 @@
     "★ 换纪元时要在这里加新条目，并在 note 里写清楚**为什么换**。",
     "  没有声明过的检查点会退回「全部 run」的旧行为（并打印提示，不静默）。"
   ],
-
-  "current_era": "P3-2026-09-24",
-
+  "current_era": "P3P2-2026-09-24",
   "eras": {
     "typed-decisions": [
-      "20260924-084938",
-      "p3r2",
-      "p3r3"
+      "p3p2r1"
     ],
     "english": [
-      "20260924-085736",
-      "p3r2",
-      "p3r3"
+      "p3p2r1"
     ]
   },
-
   "notes": {
+    "P3P2-2026-09-24": {
+      "why": [
+        "P3 Phase2 把体验/试玩场景从 tests/cases/ 移到 tests/experience/（用户选的方案 B）",
+        "→ dataset 指纹从 5 个文件（含 p3_experience.json）变为 4 个纯判分基准文件。",
+        "同时翻译链修了两个 bug（fail-closed + max_tokens/reasoning 预算），",
+        "使缓存从 1 条重建为 264 条 → translation cache 指纹也变。",
+        "两者叠加使 P3-2026-09-24 纪元的档案不再 fresh → 按纪律重建基线。",
+        "★ 目录分工从此固定：cases/ 参与 grading，experience/ 不参与。"
+      ],
+      "supersedes": {
+        "typed-decisions": [
+          "20260924-084938",
+          "p3r2",
+          "p3r3"
+        ],
+        "english": [
+          "20260924-085736",
+          "p3r2",
+          "p3r3"
+        ]
+      },
+      "supersedes_reason": [
+        "上一纪元（P3-2026-09-24）用的是 cache a437c2e6…（194 条，且含 _readme 散文噪声）",
+        "且 dataset 含 p3_experience.json。本纪元是 ac954c94…（264 条，纯台词）",
+        "且 dataset 只含 4 个判分基准。条件不同，_evidence_check 会正确判 inconsistent。",
+        "★ 旧 run **保留不删** —— 它们是 P3 第一阶段结论的证据。"
+      ],
+      "verified": [
+        "★ 更正（原先的预期是错的）：重建后等级**并非**逐项一致。",
+        "typed-decisions 的 trust_shift A(0.827)→C(0.730)、fondness_shift A(0.790)→C(0.702)；",
+        "doubt_shift 保持 A(0.847→0.773)。english 的 trust_shift A(0.807)→C(0.740)。",
+        "",
+        "归因结论（已量化，脚本 tests/replication/xlate_drift.py）：**不是模型退化，是英文输入被换了**。",
+        "  ① 样本/种子/设备/溢出/invalid 全部未变（186 条、0 overflow、0 invalid、cuda、seed 20260923）。",
+        "  ② 缓存重建使 137 条英文整体换词：temperature=0.0 下重译同一句中文，逐字一致率仅 24%（25 句），",
+        "     最低相似度 0.71。旧 run1/2/3 的「位级一致」不是模型稳定，而是**缓存被冻结**。",
+        "  ③ trust_shift 的 bootstrap CI 本来就宽 0.33~0.44（n_high=15/n_low=10）；",
+        "     点估计从 0.827 移到 0.730，ci_low 就从 0.639 落到 0.478，跨过 0.50 判据线。",
+        "     即 A 与 C 的分界本就在噪声内 —— 由措辞决定，不由能力决定。",
+        "",
+        "★ 因此本 run 的等级**不再**与上一纪元逐项对齐，这是预期行为而非缺陷。",
+        "★ 纪律：不允许为了让等级回到 A 去调 grade_signal 阈值或 max_tokens（那是凑参数）。",
+        "  正确做法是承认「缓存 = 不可再生资产」，并从此**冻结缓存**（见下 frozen 节）。"
+      ]
+    },
     "P3-2026-09-24": {
       "why": [
         "P2.5 新增 tests/cases/trust_context.json → dataset 指纹变（glob tests/cases/*.json）。",
@@ -40,8 +78,16 @@
         "而不是放宽检查或手工改哈希。"
       ],
       "supersedes": {
-        "typed-decisions": ["run1", "run2", "run3"],
-        "english": ["run1", "run2", "run3"]
+        "typed-decisions": [
+          "run1",
+          "run2",
+          "run3"
+        ],
+        "english": [
+          "run1",
+          "run2",
+          "run3"
+        ]
       },
       "supersedes_reason": [
         "P2 时代的 3 次运行（run1/2/3）用的 cache_sha 是 bfa17f6d…（169 条缓存），",
@@ -56,5 +102,75 @@
         "这比原来「同一批代码跑 3 次一致」是更强的证据。"
       ]
     }
+  },
+  "cache_frozen": {
+    "_readme": [
+      "★ 翻译缓存自此**冻结**（2026-09-24，P3P2 之后）。",
+      "理由：translate_to_en 在 temperature=0.0 下重译同一句中文，逐字一致率仅 24%。",
+      "缓存一旦重建，全部 signal 的 AUC 就会整体平移，等级随之翻转 ——",
+      "这不是能力变化，却会污染所有跨纪元的比较。",
+      "",
+      "所以：_diag/translation_cache.json 视为**不可再生资产**。",
+      "  · 禁止为了让某个等级变好而重新预热缓存；",
+      "  · 需要新句子的英文时，只能**追加**，不得重译已有条目；",
+      "  · 缓存文件必须纳入版本控制或单独备份（当前它不在 git 里，这是已知风险）。"
+    ],
+    "sha16": "ac954c9494cde484",
+    "n_entries": 264,
+    "frozen_at": "2026-09-24"
+  },
+  "p3p2_impact": {
+    "_readme": [
+      "★ P3P2「干净重基线」的**后果记录**（2026-09-24，跑完体验测试后回填）。",
+      "",
+      "事实链（每一环都有数据）：",
+      "  ① 方案 B 搬目录 + 翻译链修复 → 缓存必须重建（1→264 条）。",
+      "  ② 重建后的英文与原英文**整体换词**（重译逐字一致率仅 24%，脚本 xlate_drift.py）。",
+      "  ③ Laya 对英文措辞敏感 → 判分用例的英文换了一批 → AUC 平移。",
+      "  ④ trust_shift 0.827→0.730、fondness_shift 0.790→0.702，双双 A→C。",
+      "  ⑤ 档案里只有 role=state_shift 且 status=active 才能写 Actor State。",
+      "  ⑥ 于是 typed-decisions 的可写信号从 3 个（trust/doubt/fondness）**塌缩到 1 个（doubt）**。",
+      "  ⑦ p3_experience（typed-decisions）→ 16 项 6 PASS / 10 FAIL。",
+      "     50 次 commit **全部**是 doubt_shift；trust 全程恒为 60（模板初值）。",
+      "",
+      "★ 停止规则：用户指令是「td 为主，若正常 30–50 轮试玩没有明显异常就通过这一阶段」。",
+      "  「10 项 FAIL、trust 一动不动、fondness 零次写入」不是「没有明显异常」，",
+      "  **不构成通过条件** → 停在这里交回决策，不继续往下做 Personality/Stage/Memory。",
+      "",
+      "★ 不许做的事：为了让等级回到 A 去调 grade_signal 阈值 / 放宽死区 / 改 max_tokens。",
+      "  那会让这份档案重新变成「参数凑出来的绿」。",
+      "",
+      "可选出路（需用户裁决，见 report §20）：",
+      "  A. 接受现状：只宣布 doubt 可用，trust/fondness 退回观察项，Phase2 缩水交付。",
+      "  B. 冻结缓存这一条写进铁律 + **把缓存纳入版本控制**（现在它不在 git，是最大单点风险），",
+      "     然后一次性重跑基线并接受此后所有等级以该缓存为准；不再追求回到 0.827。",
+      "  C. 复现旧缓存：不可行（旧英文已不可再生）。"
+    ],
+    "writable_signals_before": [
+      "trust_shift",
+      "doubt_shift",
+      "fondness_shift"
+    ],
+    "writable_signals_after": [
+      "doubt_shift"
+    ],
+    "grade_before": {
+      "trust_shift": "A(0.827)",
+      "doubt_shift": "A(0.847)",
+      "fondness_shift": "A(0.790)"
+    },
+    "grade_after": {
+      "trust_shift": "C(0.730)",
+      "doubt_shift": "A(0.773)",
+      "fondness_shift": "C(0.702)"
+    },
+    "experience_result_td": {
+      "n_pass": 6,
+      "n_fail": 10,
+      "commits_by_signal": {
+        "doubt_shift": 50
+      }
+    },
+    "verdict": "BLOCKED_PENDING_DECISION"
   }
 }

@@ -77,15 +77,29 @@ for k in ("observable", "contextual", "hidden_truth"):
 import glob as _glob
 
 
+# ★★ 2026-09-24 修：要整棵**跳过**说明性键，而不是只按长度过滤。
+#    上一版只做了 `len(t) <= 120`，但 `_readme` 是一大段**换行**的中文说明，
+#    长度过滤拦掉了整段、却拦不住它——因为收集器会把里面的**每一行**当独立字符串。
+#    实测后果：216 条「补入」里绝大多数是 `_readme` 的散文行，
+#    白花约 9 分钟去翻译文档，还制造 40+ 条永远翻译不出来的「失败」
+#    （长中文段落让 LLM 返回空串的概率高），把真正的失败淹没在噪声里。
+#    ⇒ 结构上跳过：这些键的子树的**任何**字符串都不是玩家台词。
+_SKIP_KEYS = ("_readme", "_note", "_comment", "_doc", "why", "desc", "description",
+              "note", "rationale", "short_en", "label")
+
+
 def _collect_texts(obj, out):
     """递归收集 JSON 里所有看起来是「一句玩家台词」的字符串。
 
     判据刻意宽：长度 >= 4 的 str 且在 `text`/`lines`/`line`/`message` 键下，
     或出现在 cases/scenarios 的元素里且含中日韩字符。
     宽比窄安全 —— 多预热几条无关文本无害，漏一条会让实验条件在途中变化。
+    ★ 例外：说明性键（`_readme` / `why` / `desc` …）整棵跳过，见 _SKIP_KEYS 注释。
     """
     if isinstance(obj, dict):
         for k, v in obj.items():
+            if k in _SKIP_KEYS:
+                continue
             if isinstance(v, str) and k in ("text", "line", "message", "player_input"):
                 if len(v) >= 2 and v not in out:
                     out.append(v)
@@ -102,25 +116,40 @@ def _collect_texts(obj, out):
                 _collect_texts(it, out)
 
 
+# ★★ 2026-09-24 补：目录分工 —— `tests/cases/` 是**判分基准**（参与 dataset 指纹，
+#    改动它会要求重建 capability profile）；`tests/experience/` 是**体验/试玩场景**
+#    （不参与 grading，改动它不应动基线）。两者**都必须预热**：体验场景同样要喂给
+#    Laya，翻译缺条一样会让条件在运行途中变化。
+#    所以这里扫**两个**目录 —— 只扫 cases/ 会把体验场景静默漏掉（本脚本已经栽过两次）。
+_scan_dirs = [os.path.join(ROOT, "tests", "cases"),
+              os.path.join(ROOT, "tests", "experience")]
 _extra = 0
-for _p in sorted(_glob.glob(os.path.join(ROOT, "tests", "cases", "*.json"))):
-    try:
-        _blob = json.load(open(_p, encoding="utf-8"))
-    except Exception:
-        continue
-    _got = []
-    _collect_texts(_blob, _got)
-    # 去掉 _readme / 说明性长文本：它们是给人和 AI 读的，不是玩家台词
-    _got = [t for t in _got if t not in need and len(t) <= 120]
-    if not _got:
-        print("⚠ %s 里没收集到任何输入文本 —— 若该文件确实含用例输入，"
-              "说明它的结构又不被识别了（见本段注释），请补 _collect_texts 的判据。"
-              % os.path.basename(_p))
-    for _t in _got:
-        need.append(_t)
-        _extra += 1
+for _dir in _scan_dirs:
+    for _p in sorted(_glob.glob(os.path.join(_dir, "*.json"))):
+        try:
+            _blob = json.load(open(_p, encoding="utf-8"))
+        except Exception:
+            continue
+        _got = []
+        _collect_texts(_blob, _got)
+        _found_n = len(_got)                       # ★ 在去重**之前**记数（见下）
+        # 去掉 _readme / 说明性长文本：它们是给人和 AI 读的，不是玩家台词
+        _got = [t for t in _got if t not in need and len(t) <= 120]
+        # ★★ 2026-09-24 修：告警判据曾经写成「去重后为空 → 结构不识别」，这是**错的**。
+        #    observable.json / hidden_truth.json 的全部台词早在上面的
+        #    `_load_case_sets()` 里就进了 `need`，去重后当然是空的 ——
+        #    于是这两个**完全正常**的文件每次预热都刷一条假告警。
+        #    假告警多了等于没有告警（同 §19 那条教训）。
+        #    正确判据是「**原始**收集到 0 条」才说明结构不被识别。
+        if _found_n == 0:
+            print("⚠ %s/%s 里没收集到任何输入文本 —— 若该文件确实含用例输入，"
+                  "说明它的结构又不被识别了（见本段注释），请补 _collect_texts 的判据。"
+                  % (os.path.basename(_dir), os.path.basename(_p)))
+        for _t in _got:
+            need.append(_t)
+            _extra += 1
 if _extra:
-    print("额外用例文件补入 %d 条文本" % _extra)
+    print("基准 + 体验场景共补入 %d 条文本" % _extra)
 
 missing = [t for t in need if t not in cache]
 print("用例输入去重后 %d 条，其中 %d 条缺缓存" % (len(need), len(missing)))
@@ -128,9 +157,18 @@ print("用例输入去重后 %d 条，其中 %d 条缺缓存" % (len(need), len(
 added, failed = 0, []
 for t in missing:
     got = ""
+    last_reason = ""
     for i in range(TRIES):
         # 用与运行期**同一个**函数，保证新增条目的来源和已有 172 条一致
-        en, src = B.translate_to_en(t)
+        # ★ fail-closed（2026-09-24）：translate_to_en 失败现在**抛异常**而不是
+        #   返回中文原文。预热脚本是「补缓存」这一件事，所以这里**接住**异常继续重试，
+        #   重试耗尽就记进 failed —— 与旧行为一致，但**不再**可能把中文当译文写进缓存。
+        try:
+            en, src = B.translate_to_en(t)
+        except B.TranslationFailure as e:
+            last_reason = e.reason
+            time.sleep(1.5 * (i + 1))
+            continue
         if en and en != t:
             got = en
             break
@@ -141,7 +179,8 @@ for t in missing:
         print("  ✅ %s\n     → %s" % (t[:40], got[:80]))
     else:
         failed.append(t)
-        print("  ★ %d 次尝试都拿到空串，失败：%s" % (TRIES, t[:40]))
+        print("  ★ %d 次尝试都拿不到译文，失败：%s（reason=%s）"
+              % (TRIES, t[:40], last_reason or "empty"))
 
 if added:
     DISK.parent.mkdir(parents=True, exist_ok=True)

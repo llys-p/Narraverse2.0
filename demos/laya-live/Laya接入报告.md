@@ -2552,3 +2552,189 @@ E3（中性不漂移）是**单独一条更严的判据**，它的失败没有�
 并且在 `p3_acceptance` 的输出里以「E3」的形式独立可见（本报告 19.6c 详述）。
 也就是说：**验收脚本给的是「核心闭环可用」的放行结论，不是「体验零瑕疵」。**
 
+
+---
+
+## 20. ★ Phase3 P3 第二阶段：目录分工、fail-closed 与「清理反而翻车」
+
+2026-09-24。本轮按用户指令执行的两项**阻断修复**（方案 B），以及随后的验收。
+★ **本轮结论是「阶段未通过」**，不是通过。下面是完整的失败链，一步一步都有数据。
+
+### 20.1 做了的两件事（这两件本身是成功的）
+
+**(1) 目录分工落地（用户选的方案 B）**
+
+| 目录 | 内容 | 是否参与判分 |
+|---|---|---|
+| `tests/cases/` | `observable` / `contextual` / `hidden_truth` / `trust_context`（4 个） | **是**，进 `_dataset_fingerprint()` |
+| `tests/experience/` | `p3_experience.json` / `p3p2_playthrough.json`（2 个） | **否** |
+
+从 `cases/` 移出体验场景后，dataset 指纹从 5 文件（`19e9b503…`）变为
+**4 文件（`0ff1475506c414bc…`）**。`_case_texts()` / `_xlate_subset_fingerprint()`
+本来就只读三组基准（137 条），所以体验场景一直是「放了也白放、却要一次 GPU 重跑」。
+**以后改体验场景不再要求重建档案** —— 这正是方案 B 想要的效果。
+同步改了 3 处路径常量（`p3_experience.py` / `p3p2_playthrough.py` / `neutral_probe.py`），
+并让 `prewarm_cache.py` 扫**两个**目录。
+
+**(2) 翻译失败改为 fail-closed**
+
+旧实现 `translate_to_en` 失败时 `return text, "none"` —— **原样返回中文**继续跑，
+中文进了英文校准的 ModernBERT。已改为抛 `TranslationFailure`，`decide()` 接住后整轮中止：
+**不调 Laya、不生成 proposal、不 commit、返回 `status="invalid"`**；
+`_cached_translate` 返回 `None`；失败原因**只记状态码**（`http_401`），不记 key/尾号/响应体。
+四条保证全部被 `tests/p3p2_unit.py` 的 T9 钉住。
+
+### 20.2 ★ 代价：翻译缓存重建 → 等级掉档 → 状态写入塌缩
+
+`/commit` 早前为了修缓存而重建（1 → 264 条）。重基线后 typed-decisions：
+
+| signal | 旧纪元 | P3P2 纪元 | 变化 |
+|---|---|---|---|
+| `trust_shift` | **A(0.827)** | **C(0.730)** | ★ 掉档 |
+| `doubt_shift` | A(0.847) | A(0.773) | 保持 A |
+| `fondness_shift` | **A(0.790)** | **C(0.702)** | ★ 掉档 |
+
+**先怀疑自己的实验**（铁律第 1 条）。逐项排除：样本量 186、种子 20260923、
+设备 cuda(RTX4060)、overflow 0、invalid 0 —— **全部未变**；`narra_config.json` 未改；
+检查点未改。**唯一变的就是那 137 条英文。**
+
+### 20.3 根因：`temperature=0.0` 不等于确定性（已量化）
+
+新增脚本 `tests/replication/xlate_drift.py`，判据**看结果前固定**。
+对缓存里的中文再翻一次（30 句样本）：
+
+| 类别 | 数量 |
+|---|---|
+| 逐字一致 | 4（13%） |
+| 近似（相似度 ≥0.90） | 8 |
+| **明显不同（<0.90，最低 0.50）** | **18（60%）** |
+
+逐字一致率 13% ≤ 判据 40% → **判定「重译不可复现」**。
+
+**这推翻了一个长期隐含假设**：旧 `run1/2/3` 的位级一致，
+**不是「模型 deterministic」，是「英文输入被冻结」**。
+缓存一重建，全部 signal 的 AUC 整体平移、等级随之翻转。
+
+第二个独立证据来自 CI 宽度：
+
+```
+typed-decisions__p3r2.json      auc=0.8267  CI=[0.639, 0.971]  宽度=0.332  A
+typed-decisions__p3p2r1.json    auc=0.73    CI=[0.478, 0.912]  宽度=0.434  C
+```
+
+`trust_shift` 的 bootstrap CI 本身就宽 **0.33~0.44**（`n_high=15` / `n_low=10`）。
+点估计从 0.827 移到 0.730，`ci_low` 就从 0.639 落到 0.478，**跨过 0.50 判据线**。
+→ **A 与 C 的分界本就在噪声内，由措辞决定，不由能力决定。**
+
+### 20.4 后果：可写信号 3 → 1，体验测试大面积 FAIL
+
+档案规则：**只有 `role=state_shift` 且 `status=active` 才写 Actor State**。
+两个 signal 掉到 C → `auxiliary` → **拒绝写**。
+`state_writable_signals` 从 `[trust_shift, doubt_shift, fondness_shift]` **塌缩为 `[doubt_shift]`**。
+
+`p3_experience`（typed-decisions）随即给出：
+
+```
+合计 16 项：6 PASS / 10 FAIL
+全部 commit 的 signal 分布: {'doubt_shift': 50}      ← 50 次 commit 全是 doubt
+trust 全程恒为 60（模板初值）                        ← 一次都没被写过
+fondness 应升/应降两组净变化均为 0.0000
+```
+
+逐条看**为什么**失败（不是「模型不行」，是「没接上线」）：
+
+| 判据 | 结果 | 真实原因 |
+|---|---|---|
+| E1a 正向 → trust 上升 | FAIL | `trust_shift` 是 auxiliary，**没有写入通路** |
+| E2 负向 → trust 下降 | FAIL | 同上 |
+| E1c 变化逐轮累积 | FAIL | 0 轮产生正向变化（没有 commit 就不会累积） |
+| E4a/E4b 分桶/保留 | FAIL | 两个桶都恒为模板初值 60 → 数值上无法区分「分桶」与「没写」 |
+| F1/F2 fondness 闭环/方向 | FAIL | `fondness_shift` auxiliary，0/5 轮有 commit |
+| D2 doubt 方向一致 | FAIL | `应升净+5.82` vs `应降净+1.85` —— **两组都升**，方向不成立 |
+| X1/X2 维度不硬绑定 | FAIL | 只有一个维度在动，无从观察 |
+| E3 中性不漂移 | **PASS** | 因为 trust 根本没动 —— **这个 PASS 是「没接线」的副产品，不是真通过** |
+| N1 10 轮闲聊不漂移 | **PASS** | 同上，同样是假通过 |
+| D1 doubt 连续 commit | PASS | 唯一真实工作的闭环 |
+| R1 respect 不写状态 | PASS | 符合 auxiliary 不写的要求 |
+| E1b 不暴涨 / E4c 分桶存在 | PASS | 结构正确，但缺内容 |
+
+★ **E3 与 N1 的 PASS 必须标注为「假通过」**：
+它们测的是「关系不漂移」，而当前关系**根本没被写过**，
+所以「不漂移」是必然的，不构成任何证据。这是本轮最容易骗人的地方。
+
+### 20.5 ★ 顺带修掉一个真 bug：路由层下标取值掐断连接
+
+不是清理带来的，是**真机撞到的**。`/decide`、`/turn`、`/commit` 在写历史日志时用了
+**`out["engine"]` 下标取值**。但 `decide()` 有**两条返回路径**：
+
+- 正常轮：带 `engine` / `device` / `routing` / `answers` …
+- **fail-closed 轮（翻译失败）：精简返回，没有 `engine` 键**
+
+→ 翻译失败那轮直接 `KeyError: 'engine'` → `BaseHTTPRequestHandler` 抛异常 →
+**HTTP 连接被掐断**（客户端看到 `ConnectionRefusedError 10061` / `RemoteDisconnected`）。
+
+**症状极具误导性**：表现为「桥挂了」，实际是「一个可控的干净拒绝把路由打崩了」。
+修法：两处改 `out.get("engine")`。
+★ 通用教训：**只要一个函数有多条返回路径，共享的消费代码一律 `.get`，不要下标。**
+
+### 20.6 验收结果
+
+| 项目 | 结果 |
+|---|---|
+| `tests/p3p2_unit.py`（含新增 T10） | **37 PASS / 0 FAIL** |
+| `tests/p0_acceptance.py` | **20 PASS / 0 FAIL**（修前会崩在 `/commit`） |
+| `capability --check` | 两检查点 ✅ fresh，`code_changed=False` |
+| `p3_experience`（td） | **6 PASS / 10 FAIL** |
+| `p3p2_playthrough`（td/en） | **未跑** —— 见 20.7 |
+| `p3p2_acceptance` | **未跑** —— 见 20.7 |
+
+T10 钉住两条独立事实：① 源码里 `"engine": out.get("engine")` 恰好 2 次、不得有下标形式；
+② fail-closed 返回**确实不含** `engine`/`decision`/`turn`（= 下标取值必崩的前提）。
+
+### 20.7 ★ 为什么停下来：不构成「通过这一阶段」
+
+用户给的通过条件是：
+> 「若正常 30–50 轮试玩没有明显关系暴涨、乱漂、串 NPC、错误 commit，就通过这一阶段。」
+
+**「16 项 6 PASS / 10 FAIL、trust 一动不动、fondness 零次写入」不满足这个条件。**
+它既不是「没有明显异常」，也不是「明显异常」——而是**根本测不到**：
+状态层按设计**拒绝写入**，所以试玩 30–50 轮也只会得到「关系恒为初值」。
+
+因此：
+- **不跑** `p3p2_playthrough` / `p3p2_acceptance` —— 在当前档案下它们的结论是预定的
+  （只会重复「只有 doubt 在动」），跑了也是在为已知结果烧 30+ 分钟 CPU。
+- **不进入** Personality / Relationship Stage / Memory / Behavior Tendency 中任何一个。
+- **不调参**。不许为了让等级回到 A 去动 `grade_signal` 阈值 / 放宽死区 / 改 `max_tokens` ——
+  那会让这份档案重新变成「参数凑出来的绿」。
+
+### 20.8 报给用户的三条出路（需裁决）
+
+| 选项 | 内容 | 代价 / 风险 |
+|---|---|---|
+| **A. 接受现状** | 只宣布 `doubt_shift` 可用；trust/fondness 明确降级为**观察项**；Phase2 缩水交付 | 体验上「关系只有怀疑在动」，玩法受限；但档案诚实 |
+| **B. 冻结缓存 + 纳入版本控制**（推荐） | 把 `cache_frozen` 写进铁律；**把 `_diag/translation_cache.json` 提交进 git**；此后所有等级以该缓存为准，不再追求回到 0.827 | 需要用户同意把缓存入库（它现在是最大单点风险）；`trust_shift` 仍是 C，**不会**回到 A |
+| **C. 复现旧缓存** | — | **不可行**：旧英文已不可再生（缓存曾被我自己的诊断脚本毁过一次） |
+
+★ 三者都**不会**让等级回到 A。差别只在于「要不要承认并制度化这件事」。
+
+### 20.9 一个必须写下来的历史教训
+
+缓存曾在 2026-09-24 上午被毁过一次（194 → 1 条，**不可恢复**）。
+原因是我自己的诊断脚本调用 `B._cached_translate('另一句测试台词。', {})` 时
+**传了一个空 dict** —— 该函数没有磁盘回落，会把它收到的 cache 直接落盘。
+
+★ **纪律**：测试里**永远不要**给 `_cached_translate` 传字面量 `{}`。
+★ 缓存**不在 git 里、无备份** —— 这是当前最大的单点风险，也是选项 B 的核心理由。
+
+### 20.10 本轮新增/修改的文件
+
+| 文件 | 变更 |
+|---|---|
+| `tests/replication/xlate_drift.py` | **新增**：量化重译抖动 + CI 宽度，判据先定后验 |
+| `tests/runs/eras.json` | 新增 `cache_frozen` 节（缓存冻结铁律）与 `p3p2_impact` 节（失败链，verdict=BLOCKED_PENDING_DECISION）；更正 `verified` 段（原写的「逐项一致」是错的） |
+| `tests/runs/typed-decisions__p3p2r1.json`、`english__p3p2r1.json` | 新增 `translation_drift` 节，把抖动事实固化进 run 文件 |
+| `laya_bridge.py` | `/decide`、`/turn` 两处 `out["engine"]` → `out.get("engine")` |
+| `tests/p3p2_unit.py` | 新增 T10（4 条断言），共 **37 PASS / 0 FAIL** |
+| `tests/experience/`（新目录） | 接收两个体验场景文件 |
+| `tests/p3_experience.py` 等 3 处 | 路径常量改指 `tests/experience/` |
+

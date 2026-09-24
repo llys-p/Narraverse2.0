@@ -1263,41 +1263,102 @@ LANG = CFG.get("laya_language", "en")
 
 _XLATE_CACHE = {}
 
+# ★★ fail-closed 开关（2026-09-24，用户明确要求）。
+#   历史行为是「翻译失败 → **原样返回中文** → 标 src='none' 继续跑」。那是一个
+#   **静默**失效：中文进的是英文校准的 ModernBERT（README 基准：非拉丁脚本
+#   0.952 置信 / 0.000 准确）→ 高置信 + 零准确，API 返回里毫无迹象。
+#   实测 2026-09-24 撞到过：key 失效时表现为「首次调用成功、随后失败」，
+#   随机且间歇，看起来像「模型今天不稳定」，实际输入早已是中文。
+#   ⇒ 默认改为 **fail-closed**：拿不到英文就明确报失败，由调用方**停在这一轮**，
+#     绝不用中文冒充英文继续算。
+#   为什么留开关而不是直接删掉旧行为：旧路径是 §16 / §19 那批历史实验的**执行条件**，
+#   重跑旧实验需要能复现它。开关默认关闭 fail-open，**只用于复现实验，不用于正常玩**。
+XLATE_FAIL_CLOSED = os.environ.get("LAYA_XLATE_FAIL_OPEN", "0") not in ("1", "true", "yes")
+
+
+class TranslationFailure(Exception):
+    """翻译失败。调用方**必须**据此中止本轮，不得回退中文原文。"""
+
+    def __init__(self, reason, text=""):
+        self.reason = reason
+        self.text = text
+        super().__init__("translation failed: %s" % reason)
+
 
 def translate_to_en(text):
-    """把玩家台词翻成英文。返回 (英文, 来源)。失败则原样返回并标 none。"""
+    """把玩家台词翻成英文。返回 (英文, 来源)。
+
+    ★ 失败时**抛 TranslationFailure**（fail-closed），不再返回中文原文。
+      返回 (None, "none") 这种「带毒的成功」是本案的原始 bug，已移除。
+      如果确实要复现历史实验条件，显式设 `LAYA_XLATE_FAIL_OPEN=1`。
+    """
     if not text:
         return "", "empty"
     if text in _XLATE_CACHE:
         return _XLATE_CACHE[text], "cache"
     key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
     if not key:
+        if XLATE_FAIL_CLOSED:
+            raise TranslationFailure("no_api_key", text)
         return text, "none"
     base = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
     payload = {
         "model": os.environ.get("LLM_MODEL", "deepseek-flash"),
         "messages": [
-            {"role": "system", "content": "Translate the user's game-dialogue line into English. "
-                                          "Keep the tone and intent exactly. Output only the translation, "
-                                          "no quotes, no explanation."},
+            # ★★ 2026-09-24 修：提示词必须**明确禁止解释**，且 max_tokens 要留出推理余量。
+            #   实测踩到：`灰鸦手上有块旧疤，是从左边脸颊一直划到下巴的。` 这句
+            #   原文本身自相矛盾（「手上」的疤却「从脸颊划到下巴」），模型于是
+            #   在 **reasoning_content** 里反复纠结这个矛盾，reasoning 吃掉 1896 token、
+            #   `finish_reason=length`、**content 为空串** → 表现为翻译失败。
+            #   而旧提示词只说 "Output only the translation"，没禁止「先想再答」，
+            #   600 token 的预算对「会引发纠结的句子」根本不够。
+            #   两个修法缺一不可：
+            #     ① 提示词显式要求「原文矛盾也照译，不要解释」→ 减少无谓推理；
+            #     ② max_tokens 600 → 1600 → 给推理留余量，而不是和输出抢 token。
+            #   注意这**不是**「调参凑测试过」：它修的是一个真实的、可复现的
+            #   「长句/怪句必失败」缺陷 —— 修复前 263 条里有 2 条**稳定**失败，
+            #   且失败与句子长度/矛盾程度相关，与内容好坏无关。
+            {"role": "system", "content": "You are a translation engine. Translate the user's "
+                                          "Chinese game-dialogue line into English. Output ONLY "
+                                          "the English translation, nothing else. Do not explain, "
+                                          "do not comment, do not add notes, even if the source "
+                                          "line seems contradictory or odd - just translate it literally."},
             {"role": "user", "content": text},
         ],
-        "temperature": 0.0, "max_tokens": 600, "stream": False, "effort": "low",
+        "temperature": 0.0, "max_tokens": 1600, "stream": False, "effort": "low",
     }
+    err = "empty_response"
     try:
         req = urllib.request.Request(
             base + "/chat/completions", data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}, method="POST")
         with urllib.request.urlopen(req, timeout=60) as r:
             j = json.loads(r.read().decode("utf-8"))
-        out = (j["choices"][0]["message"].get("content") or "").strip()
+        _ch = (j.get("choices") or [{}])[0]
+        _msg = _ch.get("message") or {}
+        out = (_msg.get("content") or "").strip()
         if out:
             if len(_XLATE_CACHE) > 300:
                 _XLATE_CACHE.clear()
             _XLATE_CACHE[text] = out
             return out, "llm"
-    except Exception:
-        pass
+        # ★★ 空 content 要**区分原因**，不能都记成 "empty_response"：
+        #   `finish_reason=length` 表示 token 预算被 reasoning 吃光（可修：调大 max_tokens
+        #   或收紧提示词）；`finish_reason=stop` 才是真的「模型什么都没说」。
+        #   不区分的话，一个**可复现的配置 bug** 会伪装成「偶发性空响应」，
+        #   于是被当成网络抖动放过去 —— 2026-09-24 就是这个坑，
+        #   2 条台词稳定失败了很多轮才被定位到 finish_reason。
+        _fr = _ch.get("finish_reason")
+        _rc_len = len(_msg.get("reasoning_content") or "")
+        err = ("length_budget_exhausted(r=%d)" % _rc_len) if _fr == "length" else \
+              ("empty_response(finish=%s,r=%d)" % (_fr, _rc_len))
+    except urllib.error.HTTPError as e:
+        # ★ 只记状态码，**不记** key/尾号/响应体（凭证不进日志、不进提交）
+        err = "http_%s" % getattr(e, "code", "?")
+    except Exception as e:
+        err = "exc_%s" % type(e).__name__
+    if XLATE_FAIL_CLOSED:
+        raise TranslationFailure(err, text)
     return text, "none"
 
 
@@ -1663,20 +1724,27 @@ def commit_turn(turn_id):
 
 
 # ============================================================================
-# ★★ Phase3-P3 第一阶段：Actor State 存储 + State Transition v1
+# ★★ Phase3-P3：Actor State 存储 + State Transition
+#    （第一阶段：闭环；第二阶段：中性死区 + 多关系维度）
 # ============================================================================
 # 为什么必须有这一段：P2 之前整条链路是**无状态**的 —— /decide 从 payload 里读
 # actor，算完给一份 state_proposal，然后**忘掉**。下一轮又是原来的 relationship.trust。
 # 于是「连续交互让关系变化」在架构上根本不可能发生，跟模型好坏无关。
-# 这一段只补一件事：让 trust_shift 的 proposal 真的能落到下一轮的输入里。
+# 这一段只补一件事：让 state_shift 的 proposal 真的能落到下一轮的输入里。
 #
-# 三个刻意的设计约束（都来自用户 P3 的明确要求，不是我的偏好）：
+# 固定链路（第二版，加了一步死区）：
+#     proposal → deadzone → per_turn clamp → range clamp → commit
+#
+# 四个刻意的设计约束：
 #   1) 范围**复用** state_shift.paths.*.range，不新建第二套格式。
 #      relationship.trust 就是 0~100，不另起一套 0~1。
 #   2) 单轮上限**不是**分数上限。range 0~100 的字段单轮最多走 ±12，
 #      所以「一句话就把关系打满/打到底」在结构上不可能 —— 这是体验的自然感来源。
 #   3) 只有 active 能写。auxiliary 依然只登记不写；ambiguous / awaiting_upstream 不 commit。
 #      P2 已经把「谁能写」交给能力档案裁决，P3 只是尊重那个裁决，不在这里重新定级。
+#   4) 中性死区只**部分**缓解「闲聊也在改关系」。这是实测结论不是设计选择：
+#      中性句与有意义句的 delta 在数值上高度重叠，任何阈值都无法真正分开它们。
+#      详见报告 §20.2。不要指望调大它能「修好」——调大会先吃掉真实关系变化。
 
 _ACTOR_STATE = {}       # (session_id, actor_id) -> {"relationship": {...}, "emotion": {...}, "goals": {...}}
 _STATE_TRACE = {}       # (session_id, actor_id) -> [ 每轮 commit 的审计记录 ]
@@ -1724,8 +1792,39 @@ def _transition_cfg():
     return t
 
 
+def _deadzone_cfg():
+    """中性死区配置。缺段 = 全部为 0（即不启用死区），不报错。"""
+    dz = _transition_cfg().get("deadzone") or {}
+    return {k: float(v) for k, v in dz.items() if not str(k).startswith("_") and isinstance(v, (int, float))}
+
+
+def deadzone_of(signal):
+    """该 signal 的死区阈值（绝对值）。找不到就取 default，再找不到就是 0。"""
+    dz = _deadzone_cfg()
+    v = dz.get(signal, dz.get("default", 0.0))
+    return max(0.0, float(v))
+
+
+def _apply_deadzone(delta, thr):
+    """|delta| < thr → 0；否则原样返回。
+
+    ★ 刻意只做「归零」，不做柔性衰减。
+      理由是可审计性：柔性衰减会引入一个「缩小了多少」的中间量，
+      而它无法用一句话说明白（见报告 §20.2 的取舍）。归零的话
+      after_deadzone 只可能是 proposal 或 0，调试时一眼就知道死区有没有生效。
+    """
+    if thr <= 0:
+        return float(delta), False
+    if abs(float(delta)) < thr:
+        return 0.0, True
+    return float(delta), False
+
+
 def state_transition(signal, proposal_delta, current_value, allowed=True):
-    """Phase3-P3 第一版 State Transition。
+    """Phase3-P3 State Transition（第二版：加入中性死区）。
+
+    链路固定为：
+        proposal → deadzone → per_turn clamp → range clamp → commit
 
     输入：
       signal          —— 如 "trust_shift"（key 必须存在于 state_shift.paths）
@@ -1734,8 +1833,8 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
       allowed         —— 前置准入（status==active / 不是 ambiguous / 不是 awaiting_upstream）
 
     返回一份**完整可审计**的裁决，字段固定为：
-        old / proposal / final_delta / new_value
-    外加 clamped_by / range / per_turn / skipped_reason，方便调试。
+        old / proposal / after_deadzone / final_delta / new_value
+    外加 clamped_by / range / per_turn / deadzone / skipped_reason，方便调试。
 
     ★ 顺序很重要：先按单轮上限截 proposal，再按合法区间截结果值。
       反过来做会得到一个「区间内合法、但本轮变化超过单轮上限」的 new_value，
@@ -1748,11 +1847,13 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
     rng = p.get("range")
     target = p.get("target")
     label = p.get("label") or signal
+    dz_thr = deadzone_of(signal)
     out = {
         "signal": signal, "target": target, "label": label,
         "old": current_value, "proposal": proposal_delta,
-        "final_delta": 0.0, "new_value": current_value,
+        "after_deadzone": None, "final_delta": 0.0, "new_value": current_value,
         "range": list(rng) if rng else None,
+        "deadzone": {"threshold": dz_thr, "applied": False},
         "committed": False, "skipped_reason": None, "clamped_by": [],
     }
     if not t or not t.get("enabled", True):
@@ -1784,12 +1885,17 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
         out["skipped_reason"] = "per_turn_min(%s) > per_turn_max(%s)，配置自相矛盾" % (lo_min, lo_max)
         return out
 
-    # ① 单轮上限
-    d = float(proposal_delta)
+    # ① 中性死区：先于任何 clamp，作用在最终 proposal delta 上
+    d, dz_hit = _apply_deadzone(proposal_delta, dz_thr)
+    out["after_deadzone"] = d
+    out["deadzone"]["applied"] = dz_hit
+    if dz_hit:
+        out["clamped_by"].append("deadzone:%s" % dz_thr)
+    # ② 单轮上限
     capped = min(max(d, float(lo_min)), float(lo_max))
     if abs(capped - d) > 1e-9:
         out["clamped_by"].append("per_turn:%s~%s" % (lo_min, lo_max))
-    # ② 合法区间（在**结果值**上截，不是在增量上）
+    # ③ 合法区间（在**结果值**上截，不是在增量上）
     new = float(current_value) + capped
     final_new = min(max(new, float(rng[0])), float(rng[1]))
     if abs(final_new - new) > 1e-9:
@@ -1800,6 +1906,7 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
     out["skipped_reason"] = None
     out["per_turn"] = {"min": lo_min, "max": lo_max}
     return out
+
 
 
 def apply_state_transition(session_id, actor_id, state_proposal, decision, actor=None):
@@ -1961,13 +2068,39 @@ def decide(payload):
     t0 = time.perf_counter()
 
     # ---- 语言桥：Laya 只吃英文。客户端若已带上 text_en 就复用，否则现翻。----
+    # ★★ fail-closed（2026-09-24，用户明确要求）：翻译失败**必须停在这一轮**。
+    #   四件事一件都不能沾：①不调用英文 checkpoint ②不生成 state proposal
+    #   ③不 commit ④结果标 invalid。理由见 translate_to_en 的注释 ——
+    #   「中文冒充英文继续算」是本项目最危险的静默失效，必须从结构上堵掉。
     player_input_en = payload.get("player_input_en")
     xlate_src = "client" if player_input_en else ("n/a" if LANG != "en" else None)
     xlate_ms = 0.0
     if player_input_en is None and LANG == "en":
         tx0 = time.perf_counter()
-        player_input_en, xlate_src = translate_to_en(player_input)
-        xlate_ms = (time.perf_counter() - tx0) * 1000
+        try:
+            player_input_en, xlate_src = translate_to_en(player_input)
+        except TranslationFailure as e:
+            xlate_ms = (time.perf_counter() - tx0) * 1000
+            # 环境自检：key 是否配置（**不记** key 本身、不记尾号）
+            _has_key = bool(os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY"))
+            return {
+                "ok": False,
+                "status": "invalid",
+                "invalid_reason": "translation_failed",
+                "translation": {
+                    "failed": True, "reason": e.reason, "source": "none",
+                    "has_api_key": _has_key, "ms": round(xlate_ms, 1),
+                    # 不回显原始台词译文（失败时它根本不存在）；只回显原文供调用方对账
+                    "text_chars": len(player_input or ""),
+                },
+                "note": ("玩家台词无法翻成英文（reason=%s）。本轮**已中止**："
+                         "未调用 Laya、未生成 state proposal、未 commit 任何状态。"
+                         "这是刻意的 fail-closed —— 用中文冒充英文喂英文校准的模型会"
+                         "得到「高置信 + 零准确」，且 API 里毫无迹象。请检查 API key / 网络后重试。"
+                         % e.reason),
+                "session_id": session_id, "actor_id": actor_id, "turn_id": turn_id,
+                "state_commits": [], "state_skipped": [],
+            }
 
     decision_history = build_decision_history(payload, history_for(session_id, actor_id))
 
@@ -2482,8 +2615,14 @@ class Handler(BaseHTTPRequestHandler):
             turn = out.get("turn") or {}
             intent_id = (dec.get("player_intent") or {}).get("id")
             # ★ 历史日志也用统一取值，否则用 message 调用的轮次会被记成 player=None。
+            # ★★ 注意 `out.get("engine")` 而不是 `out["engine"]`：
+            #    `decide()` 有**两条返回路径** —— 正常轮带 engine，
+            #    fail-closed 轮（翻译失败，status="invalid"）是**精简返回**、没有 engine 键。
+            #    用下标取值会让 bridge 在「玩家台词翻译失败」这一**已经异常**的场景上
+            #    再抛一次 KeyError，直接掐断 HTTP 连接（10061/RemoteDisconnected），
+            #    把一次可控的 invalid 升级成看起来像服务崩了。见 tests/p3p2_unit.py T10。
             _HISTORY.append({"t": time.time(), "player": payload_text(payload),
-                             "engine": out["engine"], "behavior": beh.get("id"),
+                             "engine": out.get("engine"), "behavior": beh.get("id"),
                              "source": beh.get("source"),
                              "turn_id": turn.get("turn_id"),
                              "bucket": turn.get("history_bucket")})
@@ -2530,7 +2669,7 @@ class Handler(BaseHTTPRequestHandler):
                 note = ("本轮无行为（歧义 / 未给行为）→ 按 P3 第一版规则：不 commit 状态、"
                         "不写历史。状态变化本身就是事实认定，歧义轮不抢跑。")
             _HISTORY.append({"t": time.time(), "player": payload_text(payload),
-                             "engine": out["engine"], "behavior": beh.get("id"),
+                             "engine": out.get("engine"), "behavior": beh.get("id"),
                              "source": beh.get("source"), "turn_id": turn.get("turn_id"),
                              "bucket": turn.get("history_bucket")})
             del _HISTORY[:-50]
@@ -2927,17 +3066,29 @@ def _load_fixture(name):
 
 
 def _cached_translate(text, cache):
-    """带磁盘缓存的翻译。48 条输入每条都要翻，不能每次重跑都重新调一遍 LLM。"""
+    """带磁盘缓存的翻译。48 条输入每条都要翻，不能每次重跑都重新调一遍 LLM。
+
+    ★ fail-closed（2026-09-24）：拿不到英文就**返回 None**，绝不回落中文原文。
+      本函数的调用方（signalmetrics / 实验脚本）应当把 None 当**剔除**处理，
+      并在 invalid 段里记明原因 —— 旧实现的 `en != text` 判据看起来在防这件事，
+      但 translate_to_en 当时是**原样返回 text**，所以判据恰好把中文挡在了缓存外、
+      却把 `en`（=中文）继续交给下游用了。判据对了一半，毒还在。
+      现在源头就抛/返回空，下游无从误用。
+    """
     if text in cache:
         return cache[text]
-    en, _src = translate_to_en(text)
-    if en and en != text:
-        cache[text] = en
-        try:
-            _XLATE_DISK.parent.mkdir(parents=True, exist_ok=True)
-            _XLATE_DISK.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
-        except Exception:
-            pass
+    try:
+        en, _src = translate_to_en(text)
+    except TranslationFailure:
+        return None
+    if not en or en == text:
+        return None
+    cache[text] = en
+    try:
+        _XLATE_DISK.parent.mkdir(parents=True, exist_ok=True)
+        _XLATE_DISK.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
     return en
 
 
@@ -3076,6 +3227,11 @@ def cmd_signaltest():
 
     for i, c in enumerate(cases, 1):
         text_en = _cached_translate(c["text"], cache) if LANG == "en" else c["text"]
+        if LANG == "en" and not text_en:
+            # ★ fail-closed：拿不到英文就**不跑这条**，而不是拿中文去跑。
+            #   静默用中文跑会让这条用例的「准确率」变成噪声，且主表看不出来。
+            print("  [%s] 跳过：翻译失败（fail-closed，不以中文冒充英文）" % c["id"])
+            continue
         doc = build_state_doc(CFG["actor"], c["text"], [], CFG.get("scene"), None,
                               player_input_en=text_en,
                               decision_history=[{"type": "start", "summary": "scene begins"}])
@@ -4483,10 +4639,13 @@ def cmd_signalmetrics():
     #     1) state 溢出：build_sequence 会做 `st[:room]`（保留左、丢右），而 compact
     #        state 的尾部正是 `message`（玩家这一句）和 `decision_history`。
     #        模型的回答**不是**「它对这个输入的看法」，而是「它对一个被砍过的输入的看法」。
-    #     2) 翻译缓存缺失：_cached_translate 在 translate_to_en 返回空串时**静默回落**
-    #        成中文原文，于是 message 字段变成中文 —— 而 english/typed-decisions 都是
-    #        英文校准的 ModernBERT。实测本机 translate_to_en 现在稳定返回空串（§16），
-    #        所以这一类**不是假设**，是正在发生的事。
+    #     2) 翻译失败/缺失：**2026-09-24 起改为 fail-closed** —— `_cached_translate`
+    #        拿不到英文就直接返回 None（旧行为是静默回落中文原文）。于是
+    #        `player_input_en=None` → message 字段退回中文 —— 而 english 与
+    #        typed-decisions 都是英文校准的 ModernBERT。这一类**不是假设**：
+    #        2026-09-24 撞到 key 失效时，表现为「首次成功、随后失败」，
+    #        随机且间歇，看起来像「模型今天不稳定」。
+    #        ⇒ 剔除 + 单独列为 invalid（与 §15.6「两组不齐」同一处理口径）。
     #   把坏输入留在主表里，得到的就不是「能力对比」，而是「谁被截得更少」的对比。
     #   所以：剔除 + 单独列为 invalid，与 §15.6 的「两组不齐」同一处理口径。
     xcache = cache if isinstance(cache, dict) else {}
@@ -4502,8 +4661,9 @@ def cmd_signalmetrics():
                        "最可能丢掉 message / decision_history"
                        % (b["tokens"] - b["room"], b["room"]))
         if LANG == "en" and text not in xcache:
-            why.append("翻译缓存缺失 → message 字段被填成**中文原文**，"
-                       "模型读不到这句话（translate_to_en 返回空串后静默回落）")
+            why.append("翻译缺失 → message 字段退回**中文原文**，"
+                       "英文校准的模型读不到这句话"
+                       "（fail-closed：_cached_translate 拿不到英文即返回 None，不再静默回填中文）")
         if why:
             invalid.append({"set": cset, "id": cid, "role": role,
                             "tokens": (b or {}).get("tokens"),

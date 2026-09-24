@@ -4,29 +4,29 @@
   "由 python laya_bridge.py capability 生成；等级读自 tests/runs/，status 由代码推导。",
   "运行时由 load_capability_profile() 按五个哈希核对后才敢用。"
  ],
- "generated_at": "2026-09-24 09:07:01",
+ "generated_at": "2026-09-24 14:22:59",
  "runs_dir": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs",
  "index": {
   "english": {
-   "profile_id": "a9679ca4670c97618c7b852df31ca865011bd76d0d4ff959c2ba58276fdaa082",
+   "profile_id": "98f1abf206aa8172407efe1b261316a24293b1d86cdc9a8a68e96af6f2c9e82c",
    "role_in_phase3": "capability_comparison",
-   "n_runs": 3,
+   "n_runs": 1,
    "counts": {
     "active": 1,
-    "auxiliary": 6,
-    "disabled": 7,
+    "auxiliary": 8,
+    "disabled": 5,
     "semantic_review": 1
    },
    "consistent": true
   },
   "typed-decisions": {
-   "profile_id": "015cb800f287cadb91ec9f483b04ad390607d30b1ad20c1b0a9f8c80b708460a",
+   "profile_id": "46a5bca11d1955739fad0829eb26b94b81af848e1b6643f5e5b42c1d0319146a",
    "role_in_phase3": "production_candidate",
-   "n_runs": 3,
+   "n_runs": 1,
    "counts": {
-    "active": 3,
+    "active": 1,
     "auxiliary": 9,
-    "disabled": 2,
+    "disabled": 4,
     "semantic_review": 1
    },
    "consistent": true
@@ -45,27 +45,21 @@
     "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。"
    ],
    "checkpoint": "english",
-   "profile_id": "a9679ca4670c97618c7b852df31ca865011bd76d0d4ff959c2ba58276fdaa082",
-   "generated_at": "2026-09-24 09:07:01",
+   "profile_id": "98f1abf206aa8172407efe1b261316a24293b1d86cdc9a8a68e96af6f2c9e82c",
+   "generated_at": "2026-09-24 14:22:59",
    "generator": "laya_bridge.py capability",
    "role_in_phase3": "capability_comparison",
    "runs": {
-    "n_runs": 3,
+    "n_runs": 1,
     "files": [
-     "english__20260924-085736.json",
-     "english__p3r2.json",
-     "english__p3r3.json"
+     "english__p3p2r1.json"
     ],
     "run_ids": [
-     "20260924-085736",
-     "p3r2",
-     "p3r3"
+     "p3p2r1"
     ],
     "era_declared": true,
     "era_ids": [
-     "20260924-085736",
-     "p3r2",
-     "p3r3"
+     "p3p2r1"
     ],
     "era_source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs\\eras.json",
     "era_note": "这批运行由 eras.json 显式声明为同一可比较纪元。"
@@ -77,11 +71,10 @@
       "contextual.json": "e34edc68989f601c9e55756d530fa7a4daa82d123ae3bbedcdfeebf174bd8a0e",
       "hidden_truth.json": "64933965adcebf56c717228e0eb5017f81446b5a9d99b607dd123a03d3a1fb8d",
       "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc",
-      "p3_experience.json": "15b42563ff0d57256ddb7c5a58a6aa3d6fcea92d5d19ea8ee54649b9df102a47",
       "trust_context.json": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6"
      },
-     "sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4",
-     "n_files": 5
+     "sha": "0ff1475506c414bcf1c18710b2e39c732abbc653f2ae064d9f9f3dc2ac252d3c",
+     "n_files": 4
     },
     "checkpoint": {
      "model": "english",
@@ -105,14 +98,14 @@
     },
     "config": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\narra_config.json",
-     "sha": "9c574eb3ce673313d105410da78b57c6bf1527bf72d54d1d3f787a791d30c11b"
+     "sha": "6cee69bbc86a74e5d18a595e1a2be8b1b124e91a3dfd9bf0ca3af37467080a72"
     },
     "translation_cache": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json",
-     "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+     "sha": "988da25f928c3aeef4158ff1b999a4fc1518ad8da1811f8b2fec375f3af9d344",
      "kind": "case_subset",
      "subset": {
-      "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+      "sha": "988da25f928c3aeef4158ff1b999a4fc1518ad8da1811f8b2fec375f3af9d344",
       "kind": "case_subset",
       "n_texts": 137,
       "n_present": 137,
@@ -120,25 +113,17 @@
       "missing_sample": [],
       "source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json"
      },
-     "file_sha_now": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
+     "file_sha_now": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
      "file_sha_per_run": [
       [
-       "english__20260924-085736.json",
-       "a437c2e6d5d5a721"
-      ],
-      [
-       "english__p3r2.json",
-       "a437c2e6d5d5a721"
-      ],
-      [
-       "english__p3r3.json",
-       "a437c2e6d5d5a721"
+       "english__p3p2r1.json",
+       "ac954c9494cde484"
       ]
      ]
     },
     "code": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\laya_bridge.py",
-     "sha": "2504ac82540058750c80d4bdec840818c2d01fa1f9fcf418355b0687d8d26193"
+     "sha": "869aac87cf9fd8c065ef14101aa2b86d9fcadd460cfe1cb7c75a6d19c14709d2"
     },
     "consistency": {
      "checks": {
@@ -147,20 +132,12 @@
       ],
       "cache_sha": [
        [
-        "english__20260924-085736.json",
-        "a437c2e6d5d5a721"
-       ],
-       [
-        "english__p3r2.json",
-        "a437c2e6d5d5a721"
-       ],
-       [
-        "english__p3r3.json",
-        "a437c2e6d5d5a721"
+        "english__p3p2r1.json",
+        "ac954c9494cde484"
        ]
       ],
       "cache_sha_unique": [
-       "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40"
+       "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7"
       ],
       "case_counts_now": {
        "observable": 70,
@@ -172,28 +149,16 @@
         "observable": 70,
         "contextual": 48,
         "hidden_truth": 20
-       },
-       {
-        "observable": 70,
-        "contextual": 48,
-        "hidden_truth": 20
-       },
-       {
-        "observable": 70,
-        "contextual": 48,
-        "hidden_truth": 20
        }
       ],
       "invalid_per_run": [
-       0,
-       0,
        0
       ]
      },
      "consistent": true,
      "problems": [],
      "checkpoint_id": "eef335dec0b6086162f513092eb0d7005ea1ac570b89252b377ec6c7ab625bce",
-     "dataset_sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4"
+     "dataset_sha": "0ff1475506c414bcf1c18710b2e39c732abbc653f2ae064d9f9f3dc2ac252d3c"
     }
    },
    "status_rule": [
@@ -205,8 +170,8 @@
    ],
    "counts": {
     "active": 1,
-    "auxiliary": 6,
-    "disabled": 7,
+    "auxiliary": 8,
+    "disabled": 5,
     "semantic_review": 1
    },
    "signals": {
@@ -227,35 +192,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
-     "discrimination_grade": "C",
+     "discrimination_grade": "B",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
-       "C"
+       "B"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 22
      },
      "metrics": {
       "auc_by_run": [
-       0.6352,
-       0.6352,
-       0.6352
+       0.666
       ],
-      "auc_median": 0.6352,
-      "ctx_signed_median": 0.042,
-      "mean_gap_median": 0.0423,
-      "best_threshold_median": 0.2739,
+      "auc_median": 0.666,
+      "ctx_signed_median": 0.0425,
+      "mean_gap_median": 0.0469,
+      "best_threshold_median": 0.2763,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -286,35 +243,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
      "discrimination_grade": "A",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
        "A"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 17
      },
      "metrics": {
       "auc_by_run": [
-       0.7719,
-       0.7719,
-       0.7719
+       0.7939
       ],
-      "auc_median": 0.7719,
-      "ctx_signed_median": 0.0394,
-      "mean_gap_median": 0.2004,
-      "best_threshold_median": 0.3612,
+      "auc_median": 0.7939,
+      "ctx_signed_median": 0.0338,
+      "mean_gap_median": 0.2075,
+      "best_threshold_median": 0.4711,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -345,35 +294,27 @@
      ],
      "grade": "D",
      "grade_by_run": [
-      "D",
-      "D",
       "D"
      ],
      "discrimination_grade": "D",
      "context_grade": "B",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
        "D"
       ],
       "context_by_run": [
-       "B",
-       "B",
        "B"
       ],
       "n_ctx_pairs": 12
      },
      "metrics": {
       "auc_by_run": [
-       0.5047,
-       0.5047,
-       0.5047
+       0.3696
       ],
-      "auc_median": 0.5047,
-      "ctx_signed_median": 0.2795,
-      "mean_gap_median": 0.0048,
-      "best_threshold_median": 0.4899,
+      "auc_median": 0.3696,
+      "ctx_signed_median": 0.2747,
+      "mean_gap_median": -0.088,
+      "best_threshold_median": 0.886,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -402,49 +343,41 @@
       "observable",
       "contextual"
      ],
-     "grade": "D",
+     "grade": "C",
      "grade_by_run": [
-      "D",
-      "D",
-      "D"
+      "C"
      ],
-     "discrimination_grade": "D",
+     "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
-       "D"
+       "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": 1
      },
      "metrics": {
       "auc_by_run": [
-       0.4143,
-       0.4143,
-       0.4143
+       0.5543
       ],
-      "auc_median": 0.4143,
-      "ctx_signed_median": 0.0639,
-      "mean_gap_median": -0.0414,
-      "best_threshold_median": 0.4941,
+      "auc_median": 0.5543,
+      "ctx_signed_median": -0.024,
+      "mean_gap_median": 0.0127,
+      "best_threshold_median": 0.4958,
       "best_threshold_is_statistical_only": true
      },
-     "status": "disabled",
+     "status": "auxiliary",
      "status_source": "derived",
      "status_reasons": [
-      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": true,
      "may_write_state": false,
-     "need_upper_constraint": false
+     "need_upper_constraint": true
     },
     "disclose": {
      "name": "disclose",
@@ -462,35 +395,27 @@
      ],
      "grade": "A",
      "grade_by_run": [
-      "A",
-      "A",
       "A"
      ],
      "discrimination_grade": "A",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
        "A"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.8889,
-       0.8889,
-       0.8889
+       0.8694
       ],
-      "auc_median": 0.8889,
+      "auc_median": 0.8694,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.1645,
-      "best_threshold_median": 0.4294,
+      "mean_gap_median": 0.1697,
+      "best_threshold_median": 0.4524,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -524,35 +449,27 @@
      ],
      "grade": "R",
      "grade_by_run": [
-      "R",
-      "R",
       "R"
      ],
-     "discrimination_grade": "C",
+     "discrimination_grade": "A",
      "context_grade": "R",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
-       "C"
+       "A"
       ],
       "context_by_run": [
-       "R",
-       "R",
        "R"
       ],
       "n_ctx_pairs": 10
      },
      "metrics": {
       "auc_by_run": [
-       0.6895,
-       0.6895,
-       0.6895
+       0.8105
       ],
-      "auc_median": 0.6895,
-      "ctx_signed_median": -0.4098,
-      "mean_gap_median": 0.0682,
-      "best_threshold_median": 2.2941,
+      "auc_median": 0.8105,
+      "ctx_signed_median": -0.452,
+      "mean_gap_median": 0.0916,
+      "best_threshold_median": 2.2264,
       "best_threshold_is_statistical_only": true
      },
      "status": "semantic_review",
@@ -586,35 +503,27 @@
      ],
      "grade": "B",
      "grade_by_run": [
-      "B",
-      "B",
       "B"
      ],
      "discrimination_grade": "A",
      "context_grade": "B",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
        "A"
       ],
       "context_by_run": [
-       "B",
-       "B",
        "B"
       ],
       "n_ctx_pairs": 16
      },
      "metrics": {
       "auc_by_run": [
-       0.778,
-       0.778,
-       0.778
+       0.7677
       ],
-      "auc_median": 0.778,
-      "ctx_signed_median": 0.0987,
-      "mean_gap_median": 0.1184,
-      "best_threshold_median": 0.3499,
+      "auc_median": 0.7677,
+      "ctx_signed_median": 0.0884,
+      "mean_gap_median": 0.1142,
+      "best_threshold_median": 0.3651,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -645,35 +554,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
      "discrimination_grade": "C",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 25
      },
      "metrics": {
       "auc_by_run": [
-       0.6144,
-       0.6144,
-       0.6144
+       0.5931
       ],
-      "auc_median": 0.6144,
-      "ctx_signed_median": -0.0038,
-      "mean_gap_median": 0.0223,
-      "best_threshold_median": 0.2722,
+      "auc_median": 0.5931,
+      "ctx_signed_median": 0.004,
+      "mean_gap_median": 0.0241,
+      "best_threshold_median": 0.2771,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -704,35 +605,27 @@
      ],
      "grade": "D",
      "grade_by_run": [
-      "D",
-      "D",
       "D"
      ],
      "discrimination_grade": "D",
      "context_grade": "B",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
        "D"
       ],
       "context_by_run": [
-       "B",
-       "B",
        "B"
       ],
       "n_ctx_pairs": 10
      },
      "metrics": {
       "auc_by_run": [
-       0.447,
-       0.447,
-       0.447
+       0.4697
       ],
-      "auc_median": 0.447,
-      "ctx_signed_median": 0.0515,
-      "mean_gap_median": -0.0045,
-      "best_threshold_median": 0.235,
+      "auc_median": 0.4697,
+      "ctx_signed_median": 0.0468,
+      "mean_gap_median": -0.0024,
+      "best_threshold_median": 0.2374,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -760,49 +653,41 @@
      "validated_on": [
       "observable"
      ],
-     "grade": "A",
+     "grade": "C",
      "grade_by_run": [
-      "A",
-      "A",
-      "A"
+      "C"
      ],
-     "discrimination_grade": "A",
+     "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
-       "A"
+       "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.8067,
-       0.8067,
-       0.8067
+       0.74
       ],
-      "auc_median": 0.8067,
+      "auc_median": 0.74,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.1445,
-      "best_threshold_median": 2.1417,
+      "mean_gap_median": 0.1404,
+      "best_threshold_median": 2.1425,
       "best_threshold_is_statistical_only": true
      },
-     "status": "active",
+     "status": "auxiliary",
      "status_source": "derived",
      "status_reasons": [
-      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
      ],
      "portability": "① 跨检查点稳定",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": false,
-     "may_write_state": true,
-     "need_upper_constraint": false
+     "may_write_state": false,
+     "need_upper_constraint": true
     },
     "respect_shift": {
      "name": "respect_shift",
@@ -820,35 +705,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
      "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.6692,
-       0.6692,
-       0.6692
+       0.6731
       ],
-      "auc_median": 0.6692,
+      "auc_median": 0.6731,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.1183,
-      "best_threshold_median": 2.0596,
+      "mean_gap_median": 0.1209,
+      "best_threshold_median": 2.0007,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -878,35 +755,27 @@
      ],
      "grade": "D",
      "grade_by_run": [
-      "D",
-      "D",
       "D"
      ],
      "discrimination_grade": "D",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
        "D"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.4067,
-       0.4067,
-       0.4067
+       0.3733
       ],
-      "auc_median": 0.4067,
+      "auc_median": 0.3733,
       "ctx_signed_median": null,
-      "mean_gap_median": -0.0183,
-      "best_threshold_median": 2.2356,
+      "mean_gap_median": -0.0492,
+      "best_threshold_median": 2.5884,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -934,49 +803,41 @@
      "validated_on": [
       "observable"
      ],
-     "grade": "C",
+     "grade": "A",
      "grade_by_run": [
-      "C",
-      "C",
-      "C"
+      "A"
      ],
-     "discrimination_grade": "C",
+     "discrimination_grade": "A",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
-       "C"
+       "A"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.7238,
-       0.7238,
-       0.7238
+       0.7286
       ],
-      "auc_median": 0.7238,
+      "auc_median": 0.7286,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.1704,
-      "best_threshold_median": 1.7524,
+      "mean_gap_median": 0.1605,
+      "best_threshold_median": 1.8506,
       "best_threshold_is_statistical_only": true
      },
-     "status": "auxiliary",
+     "status": "active",
      "status_source": "derived",
      "status_reasons": [
-      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": true,
-     "may_write_state": false,
-     "need_upper_constraint": true
+     "may_write_state": true,
+     "need_upper_constraint": false
     },
     "alert_shift": {
      "name": "alert_shift",
@@ -992,49 +853,41 @@
      "validated_on": [
       "observable"
      ],
-     "grade": "D",
+     "grade": "C",
      "grade_by_run": [
-      "D",
-      "D",
-      "D"
+      "C"
      ],
-     "discrimination_grade": "D",
+     "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
-       "D"
+       "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.5,
-       0.5,
-       0.5
+       0.5824
       ],
-      "auc_median": 0.5,
+      "auc_median": 0.5824,
       "ctx_signed_median": null,
-      "mean_gap_median": -0.0465,
-      "best_threshold_median": 2.0228,
+      "mean_gap_median": -0.0092,
+      "best_threshold_median": 1.9998,
       "best_threshold_is_statistical_only": true
      },
-     "status": "disabled",
+     "status": "auxiliary",
      "status_source": "derived",
      "status_reasons": [
-      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": true,
      "may_write_state": false,
-     "need_upper_constraint": false
+     "need_upper_constraint": true
     },
     "goal_shift": {
      "name": "goal_shift",
@@ -1052,35 +905,27 @@
      ],
      "grade": "D",
      "grade_by_run": [
-      "D",
-      "D",
       "D"
      ],
      "discrimination_grade": "D",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
        "D"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.45,
-       0.45,
-       0.45
+       0.4
       ],
-      "auc_median": 0.45,
+      "auc_median": 0.4,
       "ctx_signed_median": null,
-      "mean_gap_median": -0.0178,
-      "best_threshold_median": 1.8983,
+      "mean_gap_median": -0.0375,
+      "best_threshold_median": 1.8636,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -1108,27 +953,21 @@
     "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。"
    ],
    "checkpoint": "typed-decisions",
-   "profile_id": "015cb800f287cadb91ec9f483b04ad390607d30b1ad20c1b0a9f8c80b708460a",
-   "generated_at": "2026-09-24 09:07:01",
+   "profile_id": "46a5bca11d1955739fad0829eb26b94b81af848e1b6643f5e5b42c1d0319146a",
+   "generated_at": "2026-09-24 14:22:59",
    "generator": "laya_bridge.py capability",
    "role_in_phase3": "production_candidate",
    "runs": {
-    "n_runs": 3,
+    "n_runs": 1,
     "files": [
-     "typed-decisions__20260924-084938.json",
-     "typed-decisions__p3r2.json",
-     "typed-decisions__p3r3.json"
+     "typed-decisions__p3p2r1.json"
     ],
     "run_ids": [
-     "20260924-084938",
-     "p3r2",
-     "p3r3"
+     "p3p2r1"
     ],
     "era_declared": true,
     "era_ids": [
-     "20260924-084938",
-     "p3r2",
-     "p3r3"
+     "p3p2r1"
     ],
     "era_source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\tests\\runs\\eras.json",
     "era_note": "这批运行由 eras.json 显式声明为同一可比较纪元。"
@@ -1140,11 +979,10 @@
       "contextual.json": "e34edc68989f601c9e55756d530fa7a4daa82d123ae3bbedcdfeebf174bd8a0e",
       "hidden_truth.json": "64933965adcebf56c717228e0eb5017f81446b5a9d99b607dd123a03d3a1fb8d",
       "observable.json": "6181eb87de04baf93de8a4039ddf0b83a4d43725d58a32b5a79455a25daca1fc",
-      "p3_experience.json": "15b42563ff0d57256ddb7c5a58a6aa3d6fcea92d5d19ea8ee54649b9df102a47",
       "trust_context.json": "e5daf61928b45f8261796293983de50aab371f292e866672dcaee8999b926cb6"
      },
-     "sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4",
-     "n_files": 5
+     "sha": "0ff1475506c414bcf1c18710b2e39c732abbc653f2ae064d9f9f3dc2ac252d3c",
+     "n_files": 4
     },
     "checkpoint": {
      "model": "typed-decisions",
@@ -1168,14 +1006,14 @@
     },
     "config": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\narra_config.json",
-     "sha": "9c574eb3ce673313d105410da78b57c6bf1527bf72d54d1d3f787a791d30c11b"
+     "sha": "6cee69bbc86a74e5d18a595e1a2be8b1b124e91a3dfd9bf0ca3af37467080a72"
     },
     "translation_cache": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json",
-     "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+     "sha": "988da25f928c3aeef4158ff1b999a4fc1518ad8da1811f8b2fec375f3af9d344",
      "kind": "case_subset",
      "subset": {
-      "sha": "6e7eda398ee96de5a8bed1b64577f50df57511eff37e468adaa5558e14709ff7",
+      "sha": "988da25f928c3aeef4158ff1b999a4fc1518ad8da1811f8b2fec375f3af9d344",
       "kind": "case_subset",
       "n_texts": 137,
       "n_present": 137,
@@ -1183,25 +1021,17 @@
       "missing_sample": [],
       "source": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\_diag\\translation_cache.json"
      },
-     "file_sha_now": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
+     "file_sha_now": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
      "file_sha_per_run": [
       [
-       "typed-decisions__20260924-084938.json",
-       "a437c2e6d5d5a721"
-      ],
-      [
-       "typed-decisions__p3r2.json",
-       "a437c2e6d5d5a721"
-      ],
-      [
-       "typed-decisions__p3r3.json",
-       "a437c2e6d5d5a721"
+       "typed-decisions__p3p2r1.json",
+       "ac954c9494cde484"
       ]
      ]
     },
     "code": {
      "path": "C:\\Users\\11\\WorkBuddy\\2026-09-23-11-11-35\\laya-live\\laya_bridge.py",
-     "sha": "2504ac82540058750c80d4bdec840818c2d01fa1f9fcf418355b0687d8d26193"
+     "sha": "869aac87cf9fd8c065ef14101aa2b86d9fcadd460cfe1cb7c75a6d19c14709d2"
     },
     "consistency": {
      "checks": {
@@ -1210,20 +1040,12 @@
       ],
       "cache_sha": [
        [
-        "typed-decisions__20260924-084938.json",
-        "a437c2e6d5d5a721"
-       ],
-       [
-        "typed-decisions__p3r2.json",
-        "a437c2e6d5d5a721"
-       ],
-       [
-        "typed-decisions__p3r3.json",
-        "a437c2e6d5d5a721"
+        "typed-decisions__p3p2r1.json",
+        "ac954c9494cde484"
        ]
       ],
       "cache_sha_unique": [
-       "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40"
+       "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7"
       ],
       "case_counts_now": {
        "observable": 70,
@@ -1235,28 +1057,16 @@
         "observable": 70,
         "contextual": 48,
         "hidden_truth": 20
-       },
-       {
-        "observable": 70,
-        "contextual": 48,
-        "hidden_truth": 20
-       },
-       {
-        "observable": 70,
-        "contextual": 48,
-        "hidden_truth": 20
        }
       ],
       "invalid_per_run": [
-       0,
-       0,
        0
       ]
      },
      "consistent": true,
      "problems": [],
      "checkpoint_id": "ac57624ecc956cb7620f176aa8c53e22e822123ed5e44b221b76be33a18b4c83",
-     "dataset_sha": "19e9b5030ddf1b045634a48796f64a021680e8d77003e73ab8f66a53c65f68d4"
+     "dataset_sha": "0ff1475506c414bcf1c18710b2e39c732abbc653f2ae064d9f9f3dc2ac252d3c"
     }
    },
    "status_rule": [
@@ -1267,9 +1077,9 @@
     "★ portability 不参与降级：档案是按检查点生成的，换检查点必须重新生成。"
    ],
    "counts": {
-    "active": 3,
+    "active": 1,
     "auxiliary": 9,
-    "disabled": 2,
+    "disabled": 4,
     "semantic_review": 1
    },
    "signals": {
@@ -1290,35 +1100,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
-     "discrimination_grade": "B",
+     "discrimination_grade": "A",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "B",
-       "B",
-       "B"
+       "A"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 22
      },
      "metrics": {
       "auc_by_run": [
-       0.6649,
-       0.6649,
-       0.6649
+       0.7195
       ],
-      "auc_median": 0.6649,
-      "ctx_signed_median": 0.0253,
-      "mean_gap_median": 0.0377,
-      "best_threshold_median": 0.4619,
+      "auc_median": 0.7195,
+      "ctx_signed_median": 0.0262,
+      "mean_gap_median": 0.0406,
+      "best_threshold_median": 0.4052,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -1349,35 +1151,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
-     "discrimination_grade": "A",
+     "discrimination_grade": "B",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
-       "A"
+       "B"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 17
      },
      "metrics": {
       "auc_by_run": [
-       0.7061,
-       0.7061,
-       0.7061
+       0.6996
       ],
-      "auc_median": 0.7061,
-      "ctx_signed_median": 0.0061,
-      "mean_gap_median": 0.051,
-      "best_threshold_median": 0.3746,
+      "auc_median": 0.6996,
+      "ctx_signed_median": 0.0012,
+      "mean_gap_median": 0.0502,
+      "best_threshold_median": 0.4214,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -1406,49 +1200,41 @@
       "observable",
       "contextual"
      ],
-     "grade": "C",
+     "grade": "D",
      "grade_by_run": [
-      "C",
-      "C",
-      "C"
+      "D"
      ],
-     "discrimination_grade": "C",
+     "discrimination_grade": "D",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
-       "C"
+       "D"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 12
      },
      "metrics": {
       "auc_by_run": [
-       0.5714,
-       0.5714,
-       0.5714
+       0.5031
       ],
-      "auc_median": 0.5714,
-      "ctx_signed_median": -0.0026,
-      "mean_gap_median": 0.0107,
-      "best_threshold_median": 0.3565,
+      "auc_median": 0.5031,
+      "ctx_signed_median": -0.0072,
+      "mean_gap_median": -0.007,
+      "best_threshold_median": 0.2923,
       "best_threshold_is_statistical_only": true
      },
-     "status": "auxiliary",
+     "status": "disabled",
      "status_source": "derived",
      "status_reasons": [
-      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": true,
      "may_write_state": false,
-     "need_upper_constraint": true
+     "need_upper_constraint": false
     },
     "confront": {
      "name": "confront",
@@ -1465,43 +1251,35 @@
       "observable",
       "contextual"
      ],
-     "grade": "C",
+     "grade": "B",
      "grade_by_run": [
-      "C",
-      "C",
-      "C"
+      "B"
      ],
-     "discrimination_grade": "C",
+     "discrimination_grade": "B",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
-       "C"
+       "B"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": 1
      },
      "metrics": {
       "auc_by_run": [
-       0.6643,
-       0.6643,
-       0.6643
+       0.6829
       ],
-      "auc_median": 0.6643,
-      "ctx_signed_median": 0.0761,
-      "mean_gap_median": 0.0272,
-      "best_threshold_median": 0.4617,
+      "auc_median": 0.6829,
+      "ctx_signed_median": -0.01,
+      "mean_gap_median": 0.0355,
+      "best_threshold_median": 0.4999,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
      "status_source": "derived",
      "status_reasons": [
-      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+      "grade=B（CI 下界 >0.50 且 AUC ≥0.60）：可作强提示，但上层必须有规则约束 → 修正项"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
@@ -1525,35 +1303,27 @@
      ],
      "grade": "D",
      "grade_by_run": [
-      "D",
-      "D",
       "D"
      ],
      "discrimination_grade": "D",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "D",
-       "D",
        "D"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.4639,
-       0.4639,
-       0.4639
+       0.4806
       ],
-      "auc_median": 0.4639,
+      "auc_median": 0.4806,
       "ctx_signed_median": null,
-      "mean_gap_median": -0.0117,
-      "best_threshold_median": 0.3973,
+      "mean_gap_median": -0.0079,
+      "best_threshold_median": 0.459,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -1587,35 +1357,27 @@
      ],
      "grade": "R",
      "grade_by_run": [
-      "R",
-      "R",
       "R"
      ],
      "discrimination_grade": "A",
      "context_grade": "R",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
        "A"
       ],
       "context_by_run": [
-       "R",
-       "R",
        "R"
       ],
       "n_ctx_pairs": 10
      },
      "metrics": {
       "auc_by_run": [
-       0.8947,
-       0.8947,
-       0.8947
+       0.8421
       ],
-      "auc_median": 0.8947,
-      "ctx_signed_median": -0.1512,
-      "mean_gap_median": 0.2092,
-      "best_threshold_median": 2.809,
+      "auc_median": 0.8421,
+      "ctx_signed_median": -0.1559,
+      "mean_gap_median": 0.1806,
+      "best_threshold_median": 2.8118,
       "best_threshold_is_statistical_only": true
      },
      "status": "semantic_review",
@@ -1649,35 +1411,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
-     "discrimination_grade": "A",
+     "discrimination_grade": "B",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
-       "A"
+       "B"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 16
      },
      "metrics": {
       "auc_by_run": [
-       0.7162,
-       0.7162,
-       0.7162
+       0.6842
       ],
-      "auc_median": 0.7162,
-      "ctx_signed_median": 0.0196,
-      "mean_gap_median": 0.035,
-      "best_threshold_median": 0.3974,
+      "auc_median": 0.6842,
+      "ctx_signed_median": 0.015,
+      "mean_gap_median": 0.0324,
+      "best_threshold_median": 0.3621,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -1708,35 +1462,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
      "discrimination_grade": "C",
      "context_grade": "C",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "context_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "n_ctx_pairs": 25
      },
      "metrics": {
       "auc_by_run": [
-       0.6184,
-       0.6184,
-       0.6184
+       0.5972
       ],
-      "auc_median": 0.6184,
-      "ctx_signed_median": 0.013,
-      "mean_gap_median": 0.0128,
-      "best_threshold_median": 0.4615,
+      "auc_median": 0.5972,
+      "ctx_signed_median": 0.0121,
+      "mean_gap_median": 0.0087,
+      "best_threshold_median": 0.4647,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -1767,35 +1513,27 @@
      ],
      "grade": "D",
      "grade_by_run": [
-      "D",
-      "D",
       "D"
      ],
      "discrimination_grade": "C",
      "context_grade": "D",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "context_by_run": [
-       "D",
-       "D",
        "D"
       ],
       "n_ctx_pairs": 10
      },
      "metrics": {
       "auc_by_run": [
-       0.5758,
-       0.5758,
-       0.5758
+       0.553
       ],
-      "auc_median": 0.5758,
-      "ctx_signed_median": -0.0062,
-      "mean_gap_median": 0.0107,
-      "best_threshold_median": 0.5277,
+      "auc_median": 0.553,
+      "ctx_signed_median": -0.0031,
+      "mean_gap_median": 0.0089,
+      "best_threshold_median": 0.5331,
       "best_threshold_is_statistical_only": true
      },
      "status": "disabled",
@@ -1823,49 +1561,41 @@
      "validated_on": [
       "observable"
      ],
-     "grade": "A",
+     "grade": "C",
      "grade_by_run": [
-      "A",
-      "A",
-      "A"
+      "C"
      ],
-     "discrimination_grade": "A",
+     "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
-       "A"
+       "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.8267,
-       0.8267,
-       0.8267
+       0.73
       ],
-      "auc_median": 0.8267,
+      "auc_median": 0.73,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.162,
-      "best_threshold_median": 2.2343,
+      "mean_gap_median": 0.163,
+      "best_threshold_median": 2.0633,
       "best_threshold_is_statistical_only": true
      },
-     "status": "active",
+     "status": "auxiliary",
      "status_source": "derived",
      "status_reasons": [
-      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
      ],
      "portability": "① 跨检查点稳定",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": false,
-     "may_write_state": true,
-     "need_upper_constraint": false
+     "may_write_state": false,
+     "need_upper_constraint": true
     },
     "respect_shift": {
      "name": "respect_shift",
@@ -1883,35 +1613,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
      "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.6154,
-       0.6154,
-       0.6154
+       0.5846
       ],
-      "auc_median": 0.6154,
+      "auc_median": 0.5846,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.07,
-      "best_threshold_median": 2.2178,
+      "mean_gap_median": 0.0665,
+      "best_threshold_median": 2.0593,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -1941,35 +1663,27 @@
      ],
      "grade": "A",
      "grade_by_run": [
-      "A",
-      "A",
       "A"
      ],
      "discrimination_grade": "A",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
        "A"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.8467,
-       0.8467,
-       0.8467
+       0.7733
       ],
-      "auc_median": 0.8467,
+      "auc_median": 0.7733,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.1881,
-      "best_threshold_median": 2.6295,
+      "mean_gap_median": 0.1438,
+      "best_threshold_median": 2.6419,
       "best_threshold_is_statistical_only": true
      },
      "status": "active",
@@ -1997,49 +1711,41 @@
      "validated_on": [
       "observable"
      ],
-     "grade": "A",
+     "grade": "C",
      "grade_by_run": [
-      "A",
-      "A",
-      "A"
+      "C"
      ],
-     "discrimination_grade": "A",
+     "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "A",
-       "A",
-       "A"
+       "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.7905,
-       0.7905,
-       0.7905
+       0.7024
       ],
-      "auc_median": 0.7905,
+      "auc_median": 0.7024,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.1954,
-      "best_threshold_median": 2.1023,
+      "mean_gap_median": 0.1884,
+      "best_threshold_median": 2.0964,
       "best_threshold_is_statistical_only": true
      },
-     "status": "active",
+     "status": "auxiliary",
      "status_source": "derived",
      "status_reasons": [
-      "grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入"
+      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": true,
-     "may_write_state": true,
-     "need_upper_constraint": false
+     "may_write_state": false,
+     "need_upper_constraint": true
     },
     "alert_shift": {
      "name": "alert_shift",
@@ -2057,35 +1763,27 @@
      ],
      "grade": "C",
      "grade_by_run": [
-      "C",
-      "C",
       "C"
      ],
      "discrimination_grade": "C",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
        "C"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.6882,
-       0.6882,
-       0.6882
+       0.6706
       ],
-      "auc_median": 0.6882,
+      "auc_median": 0.6706,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.0808,
-      "best_threshold_median": 2.5264,
+      "mean_gap_median": 0.0817,
+      "best_threshold_median": 2.5424,
       "best_threshold_is_statistical_only": true
      },
      "status": "auxiliary",
@@ -2113,49 +1811,41 @@
      "validated_on": [
       "observable"
      ],
-     "grade": "C",
+     "grade": "D",
      "grade_by_run": [
-      "C",
-      "C",
-      "C"
+      "D"
      ],
-     "discrimination_grade": "C",
+     "discrimination_grade": "D",
      "context_grade": "N",
      "grade_detail": {
       "discrimination_by_run": [
-       "C",
-       "C",
-       "C"
+       "D"
       ],
       "context_by_run": [
-       "N",
-       "N",
        "N"
       ],
       "n_ctx_pairs": null
      },
      "metrics": {
       "auc_by_run": [
-       0.59,
-       0.59,
-       0.59
+       0.51
       ],
-      "auc_median": 0.59,
+      "auc_median": 0.51,
       "ctx_signed_median": null,
-      "mean_gap_median": 0.0881,
-      "best_threshold_median": 2.63,
+      "mean_gap_median": 0.0538,
+      "best_threshold_median": 2.8786,
       "best_threshold_is_statistical_only": true
      },
-     "status": "auxiliary",
+     "status": "disabled",
      "status_source": "derived",
      "status_reasons": [
-      "grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项"
+      "grade=D（AUC <0.55）：不可用，不要拿它写阈值"
      ],
      "portability": "② 检查点特有",
      "portability_source": "tests/ckpt_replication.json",
      "revalidate_on_switch": true,
      "may_write_state": false,
-     "need_upper_constraint": true
+     "need_upper_constraint": false
     }
    }
   }

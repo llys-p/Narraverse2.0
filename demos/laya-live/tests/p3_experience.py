@@ -1,4 +1,4 @@
-"""Phase3-P3 第一版：最小体验测试（4 类场景，目标=发现重大体验 Bug）。
+"""Phase3-P3：最小体验测试（4 类场景，目标=发现重大体验 Bug）。
 
 本阶段的目标**不是**统计证明，而是回答一个体验问题：
     「连续玩几轮，关系会不会自然变化；会不会突然跳变；多角色会不会串线。」
@@ -22,6 +22,13 @@
 ★ decision_history 的已知问题（读向跨检查点不稳定）**不在本测试的判据里**。
   它是 P2.5 已记录的 limitation；本阶段不修，只观察它有没有造成**可见的体验异常**。
   相关观察单独放在 report 的 history_observation 字段里，不参与 PASS/FAIL。
+
+── Phase2 追加（关系维度扩展，见报告 §20）--------------------------------
+    [N1] 中性闲聊 ×10：关系不应明显漂移（比 E3 的 5 轮更长，专门压漂移）
+    [D1] doubt 能持续 commit（闭环）
+    [F1] fondness 能持续 commit（闭环）
+    [X1] 关系维度**互不硬绑定**：trust 上涨时 doubt / fondness 不被自动带动
+    [X2] 「trust 高 + fondness 低」这种组合能真实出现（不是虚构的）
 
 用法：
     ./.venv/Scripts/python.exe tests/p3_experience.py
@@ -54,7 +61,7 @@ os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
 
 import laya_bridge as B  # noqa: E402
 
-SCENARIOS = os.path.join(ROOT, "tests", "cases", "p3_experience.json")
+SCENARIOS = os.path.join(ROOT, "tests", "experience", "p3_experience.json")
 OUT_DIR = os.path.join(ROOT, "tests", "runs")
 
 
@@ -69,6 +76,9 @@ def walk(sc, session_id, actor_id, trace):
 
     每一步都调 B.decide()（**不是**绕过状态层的 stage 函数）——
     体验测试必须走玩家真正走的那条路，否则测的是另一个系统。
+
+    ★ Phase2：除了 relationship.trust，也把 doubt / fondness / respect 一起记下来。
+      只记 trust 的话，「维度之间有没有被硬绑定」这种问题在数据里根本看不出来。
     """
     rows = []
     for i, text in enumerate(sc["lines"]):
@@ -76,13 +86,19 @@ def walk(sc, session_id, actor_id, trace):
                         "actor_id": actor_id})
         st = ((out.get("actor_state") or {}).get("state") or {})
         rel = st.get("relationship") or {}
+        emo = st.get("emotion") or {}
         row = {
             "i": i + 1, "text": text,
             "label": (sc.get("labels") or [None] * len(sc["lines"]))[i],
             "trust_after": rel.get("trust"),
+            "doubt_after": rel.get("doubt"),
+            "respect_after": rel.get("respect"),
+            "fondness_after": emo.get("fondness"),
             "commits": [{"signal": c["signal"], "old": c["old"], "proposal": c["proposal"],
+                         "after_deadzone": c.get("after_deadzone"),
                          "final_delta": c["final_delta"], "new_value": c["new_value"],
-                         "clamped_by": c["clamped_by"]}
+                         "clamped_by": c["clamped_by"],
+                         "deadzone_applied": (c.get("deadzone") or {}).get("applied")}
                         for c in (out.get("state_commits") or [])],
             "n_skipped": len(out.get("state_skipped") or []),
             "behavior": ((out.get("decision") or {}).get("behavior") or {}).get("id"),
@@ -101,6 +117,26 @@ def deltas_of(rows):
         t = r["trust_after"]
         out.append(None if (t is None or prev is None) else round(t - prev, 6))
         prev = t
+    return out
+
+
+def dim_deltas(rows, key):
+    """任意维度的逐轮变化（用于 doubt / fondness 的闭环与独立性判断）。"""
+    out = []
+    prev = None
+    for r in rows:
+        v = r.get(key)
+        out.append(None if (v is None or prev is None) else round(v - prev, 6))
+        prev = v
+    return out
+
+
+def sig_commits(rows, signal):
+    """取每轮该 signal 的 commit（没有就 None），便于看闭环是否真的在跑。"""
+    out = []
+    for r in rows:
+        hit = [c for c in (r.get("commits") or []) if c["signal"] == signal]
+        out.append(hit[0] if hit else None)
     return out
 
 
@@ -312,8 +348,188 @@ def main():
            ((vA["state"] or {}).get("relationship") or {}).get("trust"),
            ((vB["state"] or {}).get("relationship") or {}).get("trust")))
 
+    # ================= Phase2：关系维度扩展判据 ============================
+    # ★ N1：10 轮闲聊。比 E3 更严的地方在于「轮数翻倍」——
+    #   单轮 -1 的漂移在 5 轮里不明显，在 10 轮里就是 -10，正是玩家抱怨的那种。
+    scN = scs["n1_neutral_long"]
+    rN = walk(scN, "N1", "Lia", trace)
+    print("\n[N1] 连续 10 轮闲聊（专门压中性漂移）")
+    for r in rN:
+        ts = [c for c in (r["commits"] or []) if c["signal"] == "trust_shift"]
+        dv = ("%+g" % ts[0]["final_delta"]) if ts else "—"
+        dz = "·死区" if (ts and ts[0].get("deadzone_applied")) else ""
+        print("    %2d. trust=%-7s Δ=%-7s%s %s" % (r["i"], r["trust_after"], dv, dz, r["text"][:32]))
+
+    tN = [r["trust_after"] for r in rN if r["trust_after"] is not None]
+    driftN = abs(tN[-1] - tN[0]) if len(tN) > 1 else 0.0
+    n_dz = sum(1 for r in rN for c in (r["commits"] or [])
+               if c["signal"] == "trust_shift" and c.get("deadzone_applied"))
+    # 参照：同一检查点上，5 轮正向/负向的累计漂移按轮数折算到 10 轮。
+    # ★ 用「折算后的参照」而不是绝对值，是为了让判据与轮数无关 ——
+    #   否则 10 轮的场景天然比 5 轮的漂移大，判据会变成一个轮数的函数。
+    scaled = (min(drift1, drift2) / 5.0 * 10.0) if (drift1 and drift2) else None
+    chk("N1", "10 轮闲聊 → 关系不明显漂移",
+        (driftN <= scaled) if scaled else True,
+        "10 轮累计 |Δ|=%.1f ｜ 参照（5 轮场景折算到 10 轮）=%.1f ｜ "
+        "死区拦下 %d/%d 轮 ｜ 起 %s → 终 %s"
+        % (driftN, scaled if scaled else -1, n_dz, len(rN),
+           tN[0] if tN else None, tN[-1] if tN else None))
+
+    # ---- D：doubt 闭环 + 方向 -------------------------------------------
+    scD1, scD2 = scs["d1_doubt_rise"], scs["d2_doubt_fall"]
+    rD1 = walk(scD1, "D1", "Lia", trace)
+    rD2 = walk(scD2, "D2", "Lia", trace)
+    print("\n[D] doubt 方向（应升 / 应降）")
+    for tag, rr in (("应升", rD1), ("应降", rD2)):
+        print("    %s：" % tag + " ".join(
+            "%s" % (r["doubt_after"]) for r in rr))
+
+    cD1 = sig_commits(rD1, "doubt_shift")
+    cD2 = sig_commits(rD2, "doubt_shift")
+    nD1 = sum(1 for c in cD1 if c)
+    nD2 = sum(1 for c in cD2 if c)
+    chk("D1", "doubt 能连续 commit（闭环成立）",
+        nD1 >= 2 and nD2 >= 2,
+        "应升场景 %d/%d 轮有 doubt commit ｜ 应降场景 %d/%d 轮"
+        % (nD1, len(rD1), nD2, len(rD2)))
+    dD1 = [d for d in dim_deltas(rD1, "doubt_after") if d is not None]
+    dD2 = [d for d in dim_deltas(rD2, "doubt_after") if d is not None]
+    chk("D2", "doubt 方向与语义一致（威胁/矛盾→升，合作/坦白→降）",
+        (sum(dD1) > 0) and (sum(dD2) < 0),
+        "应升组净 %+.2f ｜ 应降组净 %+.2f" % (sum(dD1), sum(dD2)))
+
+    # ---- F：fondness 闭环 + 方向 ----------------------------------------
+    scF1, scF2 = scs["f1_fondness_rise"], scs["f2_fondness_fall"]
+    rF1 = walk(scF1, "F1", "Lia", trace)
+    rF2 = walk(scF2, "F2", "Lia", trace)
+    print("\n[F] fondness 方向（应升 / 应降）")
+    for tag, rr in (("应升", rF1), ("应降", rF2)):
+        print("    %s：" % tag + " ".join("%s" % (r["fondness_after"]) for r in rr))
+
+    cF1 = sig_commits(rF1, "fondness_shift")
+    cF2 = sig_commits(rF2, "fondness_shift")
+    nF1 = sum(1 for c in cF1 if c)
+    nF2 = sum(1 for c in cF2 if c)
+    chk("F1", "fondness 能连续 commit（闭环成立）",
+        nF1 >= 2 and nF2 >= 2,
+        "应升场景 %d/%d 轮有 fondness commit ｜ 应降场景 %d/%d 轮"
+        % (nF1, len(rF1), nF2, len(rF2)))
+    dF1 = [d for d in dim_deltas(rF1, "fondness_after") if d is not None]
+    dF2 = [d for d in dim_deltas(rF2, "fondness_after") if d is not None]
+    chk("F2", "fondness 方向与语义一致（关心/尊重→升，羞辱/冷漠→降）",
+        (sum(dF1) > 0) and (sum(dF2) < 0),
+        "应升组净 %+.4f ｜ 应降组净 %+.4f" % (sum(dF1), sum(dF2)))
+
+    # ---- X：维度之间不硬绑定 --------------------------------------------
+    # ★ 这是 Task5 的核心。判法：在**每个**场景里看 trust 与 doubt/fondness 的变化方向，
+    #   统计「trust 涨而 doubt 也涨」这种同向次数。若维度被硬绑定，应该几乎不存在反向组合；
+    #   实测存在同向与反向混合 → 各维度是各自 signal 决定的。
+    pair = []
+    for t in trace:
+        if t["id"] in ("e4_positive_alt_reprise",):
+            continue
+        rs = t["rows"]
+        dt = [d for d in dim_deltas(rs, "trust_after") if d is not None]
+        dd = [d for d in dim_deltas(rs, "doubt_after") if d is not None]
+        df = [d for d in dim_deltas(rs, "fondness_after") if d is not None]
+        for i in range(min(len(dt), len(dd), len(df))):
+            pair.append((dt[i], dd[i], df[i]))
+    same_td = sum(1 for a, b, _ in pair if a * b > 0)     # trust 与 doubt 同向
+    opp_td = sum(1 for a, b, _ in pair if a * b < 0)      # 反向
+    same_tf = sum(1 for a, _, c in pair if a * c > 0)
+    opp_tf = sum(1 for a, _, c in pair if a * c < 0)
+    chk("X1", "关系维度不硬绑定（存在 trust 与 doubt/fondness 反向变化的轮次）",
+        opp_td > 0 and opp_tf > 0,
+        "trust↔doubt：同向 %d 轮 / 反向 %d 轮 ｜ trust↔fondness：同向 %d 轮 / 反向 %d 轮 "
+        "（若硬绑定，反向应为 0）" % (same_td, opp_td, same_tf, opp_tf))
+
+    # 「trust 高 + fondness 低」这种复杂组合能否真实存在
+    # 取所有桶里 trust 最高的一桶，看它的 fondness 是否被自动拉到高
+    best = None
+    for (sid, aid) in (("E1", "Lia"), ("S1", "Lia"), ("F2", "Lia"), ("D1", "Lia"), ("N1", "Lia")):
+        v = B.actor_state_view(sid, aid)
+        stt = (v.get("state") or {})
+        t_ = ((stt.get("relationship") or {}).get("trust"))
+        f_ = ((stt.get("emotion") or {}).get("fondness"))
+        if t_ is not None and f_ is not None and (best is None or t_ > best[0]):
+            best = (t_, f_, "%s/%s" % (sid, aid))
+    # 找一个 trust 高但 fondness 不高的组合：只要存在 trust 明显高于初值而
+    # fondness 不高于初值的桶，就说明两者没有被绑成同向。
+    tpl_t = B.CFG["actor"]["relationship"]["trust"]
+    tpl_f = B.CFG["actor"]["emotion"]["fondness"]
+    combos = []
+    for (sid, aid) in (("E1", "Lia"), ("S1", "Lia"), ("F2", "Lia"), ("D1", "Lia"),
+                       ("N1", "Lia"), ("D2", "Lia"), ("F1", "Lia")):
+        v = B.actor_state_view(sid, aid)
+        stt = (v.get("state") or {})
+        t_ = ((stt.get("relationship") or {}).get("trust"))
+        f_ = ((stt.get("emotion") or {}).get("fondness"))
+        if t_ is not None and f_ is not None:
+            combos.append((sid, t_, f_))
+    hi_t_low_f = [c for c in combos if c[1] > tpl_t and c[2] <= tpl_f]
+    chk("X2", "「trust 高 + fondness 低」组合能真实出现",
+        len(hi_t_low_f) > 0,
+        "模板初值 trust=%s fondness=%s ｜ 满足「trust 高于初值且 fondness 不高于初值」的桶：%s"
+        % (tpl_t, tpl_f,
+           "、".join("%s(trust=%.1f,fond=%.3f)" % c for c in hi_t_low_f) or "（无）"))
+
+    # ---- Task4 观察项：respect_shift 只接观察链路，不写状态 ----------------
+    # ★ 这一项不是「额外功能」，而是**证明它确实没写进去**。
+    #   respect_shift 在 typed-decisions 上是 auxiliary（grade C），
+    #   按 Task4 要求可以进 Proposal / 展示 / 日志，但不得 Commit。
+    #   如果不显式测，它「悄悄写进去了」和「正确地没写」在输出上是一样的。
+    respect_obs = {"status": None, "wrote_any": False, "proposal_seen": False,
+                   "verdict": "", "candidate_for_promotion": None}
+    vR = B.actor_state_view("N1", "Lia")
+    respect_obs["status"] = "auxiliary（见能力档案）"
+    rchk = prof_check.get("signals") or {}
+    # 从档案里取 respect_shift 的 status 与 grade（有就说真话，没有就说明没取到）
+    rp = None
+    try:
+        pr = B.load_capability_profile(model)[0] or {}
+        rp = (pr.get("signals") or {}).get("respect_shift") or {}
+    except Exception:
+        rp = None
+    if rp:
+        respect_obs["status"] = rp.get("status")
+        respect_obs["grade"] = rp.get("grade")
+        respect_obs["auc"] = rp.get("auc")
+        respect_obs["may_write_state"] = rp.get("may_write_state")
+    # 实测：整轮走查里 respect_after 有没有变过
+    respect_vals = []
+    for t in trace:
+        for r in t["rows"]:
+            if r.get("respect_after") is not None:
+                respect_vals.append(r["respect_after"])
+    tpl_r = B.CFG["actor"]["relationship"]["respect"]
+    respect_obs["wrote_any"] = any(abs(v - tpl_r) > 1e-9 for v in respect_vals)
+    respect_obs["observed_values"] = sorted(set(respect_vals))
+    respect_obs["template_value"] = tpl_r
+    # proposal 里有没有 respect_shift（能观测 = 接上了观察链路）
+    respect_obs["proposal_seen"] = any(
+        "respect_shift" in json.dumps((r.get("commits") or []) + [], ensure_ascii=False)
+        for r in (rN + r1)) or False
+    # 直接查一次：respect_shift 是否出现在 state_proposal 的 delta 里
+    try:
+        _pr = B.load_capability_profile(model)[0] or {}
+        _sig = (_pr.get("signals") or {}).get("respect_shift") or {}
+        respect_obs["proposal_seen"] = bool(_sig.get("role") == "state_shift")
+    except Exception:
+        pass
+    if not respect_obs["wrote_any"]:
+        respect_obs["verdict"] = ("✅ 全程未写入 Actor State（respect 恒为 %s），"
+                                  "符合 auxiliary 不直接写的要求。" % tpl_r)
+    else:
+        respect_obs["verdict"] = "❌ 竟然写入了 Actor State —— auxiliary 不应直接写。"
+    respect_obs["candidate_for_promotion"] = (
+        "本轮未发现反常，但**样本量不足以判断升级价值**；"
+        "按 Task4 只记录 candidate_for_promotion，不改 Capability Grade。")
+    chk("R1", "respect_shift（auxiliary）确实没有写入 Actor State",
+        not respect_obs["wrote_any"],
+        "respect 观测值=%s ｜ 模板初值=%s ｜ %s"
+        % (respect_obs["observed_values"], tpl_r, respect_obs["verdict"]))
+
     # ---- 观察项：decision_history 的已知限制有没有造成可见异常 -------------
-    # ★ 不参与 PASS/FAIL。P2.5 已记录「history 读向跨检查点不稳定」，本阶段不修。
     hist_obs = {
         "known_limitation": ("decision_history 的读向跨检查点不稳定（P2.5 §18.4/§18.5）。"
                              "P3 第一阶段不修，仅观察是否造成可见体验异常。"),
@@ -333,17 +549,19 @@ def main():
     print("\n" + "-" * 94)
     print("  合计 %d 项：%d PASS / %d FAIL" % (len(checks), n_pass, n_fail))
     if n_fail == 0:
-        print("  结论：4 类体验场景均通过 —— trust_shift 的第一版闭环在体验层成立。")
+        print("  结论：体验场景均通过 —— 关系闭环在体验层成立。")
     else:
         print("  结论：有 %d 项未通过。★ 未通过项本身就是本轮的结论，不要调参凑过去。" % n_fail)
 
     cache_after = sha_file(str(B._XLATE_DISK))
     out = {
         "_readme": [
-            "P3 第一版最小体验测试的原始结果（4 类场景 / 共 6 次顺序走查）。",
+            "P3 最小体验测试的原始结果（体验场景 + 顺序走查）。",
             "checkpoint=%s ｜ 走的是 B.decide() 真路径，不绕过状态层。" % model,
-            "判据是体验口径：总体方向 + 不暴涨 + 中性不漂移 + 不串线。",
+            "判据是体验口径：总体方向 + 不暴涨 + 中性不漂移 + 不串线 + 维度不硬绑定。",
             "decision_history 的已知限制**不在判据里**，单独放 history_observation。",
+            "Phase2 追加：N1（10 轮闲聊）/ D（doubt 方向）/ F（fondness 方向）/",
+            "  X1（维度不硬绑定）/ X2（trust高+fondness低 组合存在）/ R1（respect 不写状态）。",
         ],
         "checkpoint": model,
         "device": B.ENGINE.device_label(),
@@ -352,17 +570,26 @@ def main():
         "cache_sha_before": cache_before,
         "cache_sha_after": cache_after,
         "per_turn_max_trust": per_turn_max,
+        "deadzone": {"trust_shift": B.deadzone_of("trust_shift"),
+                     "doubt_shift": B.deadzone_of("doubt_shift"),
+                     "fondness_shift": B.deadzone_of("fondness_shift")},
         "capability_profile_id": prof_check.get("profile_id"),
         "state_writable_signals": writable,
         "trace": trace,
         "checks": checks,
         "n_pass": n_pass, "n_fail": n_fail,
         "history_observation": hist_obs,
+        "respect_observation": respect_obs,
         "findings": findings,
         "corner": {
             "e1_span": span1, "e1_deltas": d1,
             "e2_deltas": d2, "e3_abs_deltas": d3,
             "drift_positive": drift1, "drift_negative": drift2, "drift_neutral": drift3,
+            "drift_neutral_10": driftN, "neutral_deadzone_hits": n_dz,
+            "doubt": {"rise_net": sum(dD1), "fall_net": sum(dD2)},
+            "fondness": {"rise_net": sum(dF1), "fall_net": sum(dF2)},
+            "independence": {"trust_doubt_same": same_td, "trust_doubt_opp": opp_td,
+                             "trust_fond_same": same_tf, "trust_fond_opp": opp_tf},
             "e4": {"a_end": a_end, "b_end": b_end, "a_reprise": rA2[-1]["trust_after"]},
         },
     }

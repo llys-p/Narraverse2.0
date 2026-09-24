@@ -945,13 +945,15 @@
         "default": 12,
         "trust_shift": 12,
         "respect_shift": 10,
-        "doubt_shift": 10
+        "doubt_shift": 10,
+        "fondness_shift": 0.05
       },
       "per_turn_min": {
         "default": -8,
         "trust_shift": -12,
         "respect_shift": -10,
-        "doubt_shift": -10
+        "doubt_shift": -10,
+        "fondness_shift": -0.05
       },
       "enabled": true,
       "write_status": [
@@ -961,6 +963,13 @@
         "behavior_is_null": "skip",
         "ambiguous": "skip",
         "awaiting_upstream": "skip"
+      },
+      "deadzone": {
+        "_note": "★ 中性死区（P3 Phase2 Task1）。作用在**最终 proposal delta** 上：|delta| < 阈值 → 归零。设计依据是实测分布，不是拍脑袋：trust_shift 的中性句 delta 与有意义句 delta **在数值上高度重叠**（english 中性累计 10.7，其中有意义句量级的中性句占了主要部分），所以这个死区**只能部分缓解、不能根治** —— 详见报告 §20.2 的四方案对比。取值刻意保守：0.7 是「每吃掉 1% 有意义变化能换来约 2% 中性削减」的拐点；1.0 削减更多但代价上升。不要为了让测试全绿把它调大 —— 调到 2.0 会吃掉近 6 成有意义变化。",
+        "default": 1.0,
+        "trust_shift": 1.0,
+        "doubt_shift": 1.0,
+        "fondness_shift": 0.002
       }
     }
   },

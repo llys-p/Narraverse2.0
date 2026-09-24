@@ -8,7 +8,7 @@
         "总体 accuracy 只在 observable_accuracy 里，且不与旧口径可比。",
         "validity.invalid 里的用例已从以上所有主结论中剔除。"
       ],
-      "run_id": "p3r3",
+      "run_id": "p3p2r1",
       "model": "typed-decisions",
       "device": "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)",
       "noise_floor": 0.05,
@@ -20,330 +20,330 @@
         "hostility": {
           "n_high": 23,
           "n_low": 41,
-          "mean_high": 0.4563,
-          "mean_low": 0.4187,
-          "mean_gap": 0.0377,
-          "median_gap": 0.0271,
-          "auc": 0.6649,
+          "mean_high": 0.4574,
+          "mean_low": 0.4167,
+          "mean_gap": 0.0406,
+          "median_gap": 0.0263,
+          "auc": 0.7195,
           "auc_ci": [
-            0.5143,
-            0.8012
+            0.5807,
+            0.8394
           ],
-          "best_threshold": 0.4619,
-          "threshold_balanced_acc": 0.6564,
-          "threshold_accuracy": 0.7188,
+          "best_threshold": 0.4052,
+          "threshold_balanced_acc": 0.6882,
+          "threshold_accuracy": 0.625,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "B",
-          "grade_reason": "AUC=0.665，CI 下界 0.514>0.50"
+          "grade": "A",
+          "grade_reason": "AUC=0.720，CI 下界 0.581>0.50"
         },
         "cooperation": {
           "n_high": 24,
           "n_low": 19,
-          "mean_high": 0.4551,
-          "mean_low": 0.4042,
-          "mean_gap": 0.051,
-          "median_gap": 0.0405,
-          "auc": 0.7061,
+          "mean_high": 0.4598,
+          "mean_low": 0.4096,
+          "mean_gap": 0.0502,
+          "median_gap": 0.0442,
+          "auc": 0.6996,
           "auc_ci": [
-            0.5356,
-            0.8565
+            0.5238,
+            0.8528
           ],
-          "best_threshold": 0.3746,
-          "threshold_balanced_acc": 0.6897,
-          "threshold_accuracy": 0.7209,
+          "best_threshold": 0.4214,
+          "threshold_balanced_acc": 0.6908,
+          "threshold_accuracy": 0.6977,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "A",
-          "grade_reason": "AUC=0.706，CI 下界 0.536>0.50"
+          "grade": "B",
+          "grade_reason": "AUC=0.700，CI 下界 0.524>0.50"
         },
         "withdraw": {
           "n_high": 23,
           "n_low": 14,
-          "mean_high": 0.3594,
-          "mean_low": 0.3487,
-          "mean_gap": 0.0107,
+          "mean_high": 0.3544,
+          "mean_low": 0.3614,
+          "mean_gap": -0.007,
           "median_gap": 0.0052,
-          "auc": 0.5714,
+          "auc": 0.5031,
           "auc_ci": [
-            0.372,
-            0.7788
+            0.295,
+            0.7251
           ],
-          "best_threshold": 0.3565,
-          "threshold_balanced_acc": 0.632,
-          "threshold_accuracy": 0.5946,
-          "kind": "prob",
-          "boot_n": 2000,
-          "boot_seed": 20260923,
-          "grade": "C",
-          "grade_reason": "AUC=0.571，但 CI (0.372, 0.7788) 不稳"
-        },
-        "confront": {
-          "n_high": 25,
-          "n_low": 14,
-          "mean_high": 0.5002,
-          "mean_low": 0.473,
-          "mean_gap": 0.0272,
-          "median_gap": 0.0372,
-          "auc": 0.6643,
-          "auc_ci": [
-            0.4763,
-            0.8483
-          ],
-          "best_threshold": 0.4617,
-          "threshold_balanced_acc": 0.7057,
-          "threshold_accuracy": 0.7436,
-          "kind": "prob",
-          "boot_n": 2000,
-          "boot_seed": 20260923,
-          "grade": "C",
-          "grade_reason": "AUC=0.664，但 CI (0.4763, 0.8483) 不稳"
-        },
-        "disclose": {
-          "n_high": 10,
-          "n_low": 18,
-          "mean_high": 0.4693,
-          "mean_low": 0.481,
-          "mean_gap": -0.0117,
-          "median_gap": 0.0004,
-          "auc": 0.4639,
-          "auc_ci": [
-            0.2437,
-            0.6917
-          ],
-          "best_threshold": 0.3973,
-          "threshold_balanced_acc": 0.5556,
-          "threshold_accuracy": 0.4286,
+          "best_threshold": 0.2923,
+          "threshold_balanced_acc": 0.6071,
+          "threshold_accuracy": 0.7027,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "D",
-          "grade_reason": "AUC=0.464 < 0.55（CI (0.2437, 0.6917)）"
+          "grade_reason": "AUC=0.503 < 0.55（CI (0.295, 0.7251)）"
+        },
+        "confront": {
+          "n_high": 25,
+          "n_low": 14,
+          "mean_high": 0.4994,
+          "mean_low": 0.4639,
+          "mean_gap": 0.0355,
+          "median_gap": 0.0288,
+          "auc": 0.6829,
+          "auc_ci": [
+            0.5062,
+            0.8422
+          ],
+          "best_threshold": 0.4999,
+          "threshold_balanced_acc": 0.6843,
+          "threshold_accuracy": 0.6154,
+          "kind": "prob",
+          "boot_n": 2000,
+          "boot_seed": 20260923,
+          "grade": "B",
+          "grade_reason": "AUC=0.683，CI 下界 0.506>0.50"
+        },
+        "disclose": {
+          "n_high": 10,
+          "n_low": 18,
+          "mean_high": 0.4718,
+          "mean_low": 0.4797,
+          "mean_gap": -0.0079,
+          "median_gap": 0.0001,
+          "auc": 0.4806,
+          "auc_ci": [
+            0.2564,
+            0.7111
+          ],
+          "best_threshold": 0.459,
+          "threshold_balanced_acc": 0.5667,
+          "threshold_accuracy": 0.5,
+          "kind": "prob",
+          "boot_n": 2000,
+          "boot_seed": 20260923,
+          "grade": "D",
+          "grade_reason": "AUC=0.481 < 0.55（CI (0.2564, 0.7111)）"
         },
         "investigate": {
           "n_high": 19,
           "n_low": 10,
-          "mean_high": 2.8885,
-          "mean_low": 2.6793,
-          "mean_gap": 0.2092,
-          "median_gap": 0.1469,
-          "auc": 0.8947,
+          "mean_high": 2.8782,
+          "mean_low": 2.6976,
+          "mean_gap": 0.1806,
+          "median_gap": 0.1593,
+          "auc": 0.8421,
           "auc_ci": [
-            0.7468,
-            0.9902
+            0.6717,
+            0.9643
           ],
-          "best_threshold": 2.809,
-          "threshold_balanced_acc": 0.8474,
-          "threshold_accuracy": 0.8621,
+          "best_threshold": 2.8118,
+          "threshold_balanced_acc": 0.7684,
+          "threshold_accuracy": 0.7586,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "A",
-          "grade_reason": "AUC=0.895，CI 下界 0.747>0.50"
+          "grade_reason": "AUC=0.842，CI 下界 0.672>0.50"
         },
         "trust": {
           "n_high": 19,
           "n_low": 23,
-          "mean_high": 0.3999,
-          "mean_low": 0.3649,
-          "mean_gap": 0.035,
-          "median_gap": 0.0191,
-          "auc": 0.7162,
+          "mean_high": 0.4007,
+          "mean_low": 0.3683,
+          "mean_gap": 0.0324,
+          "median_gap": 0.0141,
+          "auc": 0.6842,
           "auc_ci": [
-            0.5374,
-            0.865
+            0.5168,
+            0.8386
           ],
-          "best_threshold": 0.3974,
-          "threshold_balanced_acc": 0.6979,
-          "threshold_accuracy": 0.7143,
+          "best_threshold": 0.3621,
+          "threshold_balanced_acc": 0.6911,
+          "threshold_accuracy": 0.6667,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "A",
-          "grade_reason": "AUC=0.716，CI 下界 0.537>0.50"
+          "grade": "B",
+          "grade_reason": "AUC=0.684，CI 下界 0.517>0.50"
         },
         "doubt": {
           "n_high": 19,
           "n_low": 26,
-          "mean_high": 0.4499,
-          "mean_low": 0.4372,
-          "mean_gap": 0.0128,
-          "median_gap": 0.0327,
-          "auc": 0.6184,
+          "mean_high": 0.4467,
+          "mean_low": 0.438,
+          "mean_gap": 0.0087,
+          "median_gap": 0.0161,
+          "auc": 0.5972,
           "auc_ci": [
-            0.438,
-            0.7885
+            0.4167,
+            0.7747
           ],
-          "best_threshold": 0.4615,
-          "threshold_balanced_acc": 0.6741,
-          "threshold_accuracy": 0.6889,
+          "best_threshold": 0.4647,
+          "threshold_balanced_acc": 0.6144,
+          "threshold_accuracy": 0.6444,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "C",
-          "grade_reason": "AUC=0.618，但 CI (0.438, 0.7885) 不稳"
+          "grade_reason": "AUC=0.597，但 CI (0.4167, 0.7747) 不稳"
         },
         "danger": {
           "n_high": 18,
           "n_low": 22,
-          "mean_high": 0.5117,
-          "mean_low": 0.501,
-          "mean_gap": 0.0107,
-          "median_gap": -0.001,
-          "auc": 0.5758,
+          "mean_high": 0.5147,
+          "mean_low": 0.5059,
+          "mean_gap": 0.0089,
+          "median_gap": 0.0023,
+          "auc": 0.553,
           "auc_ci": [
-            0.381,
-            0.7621
+            0.3529,
+            0.7396
           ],
-          "best_threshold": 0.5277,
+          "best_threshold": 0.5331,
           "threshold_balanced_acc": 0.654,
           "threshold_accuracy": 0.675,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "C",
-          "grade_reason": "AUC=0.576，但 CI (0.381, 0.7621) 不稳"
+          "grade_reason": "AUC=0.553，但 CI (0.3529, 0.7396) 不稳"
         },
         "trust_shift": {
           "n_high": 15,
           "n_low": 10,
-          "mean_high": 2.2742,
-          "mean_low": 2.1122,
-          "mean_gap": 0.162,
-          "median_gap": 0.109,
-          "auc": 0.8267,
+          "mean_high": 2.2694,
+          "mean_low": 2.1065,
+          "mean_gap": 0.163,
+          "median_gap": 0.0367,
+          "auc": 0.73,
           "auc_ci": [
-            0.6389,
-            0.9706
+            0.4779,
+            0.9123
           ],
-          "best_threshold": 2.2343,
-          "threshold_balanced_acc": 0.7833,
+          "best_threshold": 2.0633,
+          "threshold_balanced_acc": 0.7,
           "threshold_accuracy": 0.76,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "A",
-          "grade_reason": "AUC=0.827，CI 下界 0.639>0.50"
+          "grade": "C",
+          "grade_reason": "AUC=0.730，但 CI (0.4779, 0.9123) 不稳"
         },
         "respect_shift": {
           "n_high": 13,
           "n_low": 10,
-          "mean_high": 2.2021,
-          "mean_low": 2.132,
-          "mean_gap": 0.07,
-          "median_gap": 0.0762,
-          "auc": 0.6154,
+          "mean_high": 2.1949,
+          "mean_low": 2.1284,
+          "mean_gap": 0.0665,
+          "median_gap": 0.0256,
+          "auc": 0.5846,
           "auc_ci": [
-            0.3571,
-            0.8571
+            0.3154,
+            0.8308
           ],
-          "best_threshold": 2.2178,
-          "threshold_balanced_acc": 0.6692,
-          "threshold_accuracy": 0.6522,
+          "best_threshold": 2.0593,
+          "threshold_balanced_acc": 0.6615,
+          "threshold_accuracy": 0.6957,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "C",
-          "grade_reason": "AUC=0.615，但 CI (0.3571, 0.8571) 不稳"
+          "grade_reason": "AUC=0.585，但 CI (0.3154, 0.8308) 不稳"
         },
         "doubt_shift": {
           "n_high": 10,
           "n_low": 15,
-          "mean_high": 2.7085,
-          "mean_low": 2.5204,
-          "mean_gap": 0.1881,
-          "median_gap": 0.1987,
-          "auc": 0.8467,
+          "mean_high": 2.6689,
+          "mean_low": 2.5251,
+          "mean_gap": 0.1438,
+          "median_gap": 0.0754,
+          "auc": 0.7733,
           "auc_ci": [
-            0.66,
-            0.987
+            0.5476,
+            0.9583
           ],
-          "best_threshold": 2.6295,
-          "threshold_balanced_acc": 0.8,
+          "best_threshold": 2.6419,
+          "threshold_balanced_acc": 0.7667,
           "threshold_accuracy": 0.8,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "A",
-          "grade_reason": "AUC=0.847，CI 下界 0.660>0.50"
+          "grade_reason": "AUC=0.773，CI 下界 0.548>0.50"
         },
         "fondness_shift": {
           "n_high": 21,
           "n_low": 10,
-          "mean_high": 2.1736,
-          "mean_low": 1.9781,
-          "mean_gap": 0.1954,
-          "median_gap": 0.1279,
-          "auc": 0.7905,
+          "mean_high": 2.1601,
+          "mean_low": 1.9717,
+          "mean_gap": 0.1884,
+          "median_gap": 0.0928,
+          "auc": 0.7024,
           "auc_ci": [
-            0.6,
-            0.9417
+            0.4667,
+            0.9045
           ],
-          "best_threshold": 2.1023,
-          "threshold_balanced_acc": 0.8071,
-          "threshold_accuracy": 0.7742,
+          "best_threshold": 2.0964,
+          "threshold_balanced_acc": 0.6833,
+          "threshold_accuracy": 0.6774,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "A",
-          "grade_reason": "AUC=0.790，CI 下界 0.600>0.50"
+          "grade": "C",
+          "grade_reason": "AUC=0.702，但 CI (0.4667, 0.9045) 不稳"
         },
         "alert_shift": {
           "n_high": 17,
           "n_low": 10,
-          "mean_high": 2.5746,
-          "mean_low": 2.4938,
-          "mean_gap": 0.0808,
-          "median_gap": 0.1345,
-          "auc": 0.6882,
+          "mean_high": 2.5777,
+          "mean_low": 2.496,
+          "mean_gap": 0.0817,
+          "median_gap": 0.1334,
+          "auc": 0.6706,
           "auc_ci": [
-            0.4659,
-            0.9013
+            0.4429,
+            0.8827
           ],
-          "best_threshold": 2.5264,
-          "threshold_balanced_acc": 0.7324,
+          "best_threshold": 2.5424,
+          "threshold_balanced_acc": 0.7529,
           "threshold_accuracy": 0.7407,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "C",
-          "grade_reason": "AUC=0.688，但 CI (0.4659, 0.9013) 不稳"
+          "grade_reason": "AUC=0.671，但 CI (0.4429, 0.8827) 不稳"
         },
         "goal_shift": {
           "n_high": 10,
           "n_low": 10,
-          "mean_high": 2.7185,
-          "mean_low": 2.6304,
-          "mean_gap": 0.0881,
-          "median_gap": 0.0223,
-          "auc": 0.59,
+          "mean_high": 2.7105,
+          "mean_low": 2.6567,
+          "mean_gap": 0.0538,
+          "median_gap": -0.0222,
+          "auc": 0.51,
           "auc_ci": [
-            0.3067,
-            0.8384
+            0.2198,
+            0.7778
           ],
-          "best_threshold": 2.63,
+          "best_threshold": 2.8786,
           "threshold_balanced_acc": 0.6,
           "threshold_accuracy": 0.6,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "C",
-          "grade_reason": "AUC=0.590，但 CI (0.3067, 0.8384) 不稳"
+          "grade": "D",
+          "grade_reason": "AUC=0.510 < 0.55（CI (0.2198, 0.7778)）"
         }
       },
       "contextual": {
         "hostility": {
           "n": 22,
-          "mean_signed": 0.0253,
-          "median_signed": 0.0248,
+          "mean_signed": 0.0262,
+          "median_signed": 0.0174,
           "sign_ok": 15,
           "sign_rate": 0.6818,
           "share_beyond": 0.5,
           "mean_ci": [
-            0.0067,
-            0.0429
+            0.0066,
+            0.0443
           ],
           "n_up": 11,
           "n_down": 11,
@@ -371,23 +371,23 @@
             },
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.0529,
+              "delta": -0.0838,
               "want": "down",
-              "signed": 0.0529,
+              "signed": 0.0838,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": -0.0782,
+              "delta": -0.0818,
               "want": "down",
-              "signed": 0.0782,
+              "signed": 0.0818,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.0636,
+              "delta": -0.0638,
               "want": "down",
-              "signed": 0.0636,
+              "signed": 0.0638,
               "beyond": true
             },
             {
@@ -399,9 +399,9 @@
             },
             {
               "id": "ctx_ledger_4",
-              "delta": -0.0613,
+              "delta": -0.0565,
               "want": "down",
-              "signed": 0.0613,
+              "signed": 0.0565,
               "beyond": true
             },
             {
@@ -441,9 +441,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": 0.0054,
+              "delta": 0.0189,
               "want": "up",
-              "signed": 0.0054,
+              "signed": 0.0189,
               "beyond": false
             },
             {
@@ -462,16 +462,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.0533,
+              "delta": -0.0518,
               "want": "down",
-              "signed": 0.0533,
+              "signed": 0.0518,
               "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.0402,
+              "delta": -0.0158,
               "want": "down",
-              "signed": 0.0402,
+              "signed": 0.0158,
               "beyond": false
             },
             {
@@ -497,9 +497,9 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.1056,
+              "delta": -0.1069,
               "want": "down",
-              "signed": 0.1056,
+              "signed": 0.1069,
               "beyond": true
             }
           ],
@@ -508,37 +508,37 @@
         },
         "cooperation": {
           "n": 17,
-          "mean_signed": 0.0061,
-          "median_signed": 0.0136,
+          "mean_signed": 0.0012,
+          "median_signed": 0.0133,
           "sign_ok": 10,
           "sign_rate": 0.5882,
           "share_beyond": 0.7647,
           "mean_ci": [
-            -0.0483,
-            0.0572
+            -0.0526,
+            0.0517
           ],
           "n_up": 11,
           "n_down": 6,
           "cases": [
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.0506,
+              "delta": -0.0631,
               "want": "up",
-              "signed": -0.0506,
+              "signed": -0.0631,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": 0.0904,
+              "delta": 0.0133,
               "want": "up",
-              "signed": 0.0904,
-              "beyond": true
+              "signed": 0.0133,
+              "beyond": false
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.1719,
+              "delta": -0.1726,
               "want": "up",
-              "signed": -0.1719,
+              "signed": -0.1726,
               "beyond": true
             },
             {
@@ -578,9 +578,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": -0.0136,
+              "delta": -0.0195,
               "want": "down",
-              "signed": 0.0136,
+              "signed": 0.0195,
               "beyond": false
             },
             {
@@ -599,16 +599,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.0495,
+              "delta": -0.0699,
               "want": "up",
-              "signed": -0.0495,
-              "beyond": false
+              "signed": -0.0699,
+              "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.1125,
+              "delta": -0.0951,
               "want": "up",
-              "signed": -0.1125,
+              "signed": -0.0951,
               "beyond": true
             },
             {
@@ -634,9 +634,9 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": 0.0629,
+              "delta": 0.0665,
               "want": "up",
-              "signed": 0.0629,
+              "signed": 0.0665,
               "beyond": true
             }
           ],
@@ -645,37 +645,37 @@
         },
         "withdraw": {
           "n": 12,
-          "mean_signed": -0.0026,
-          "median_signed": 0.0136,
-          "sign_ok": 7,
-          "sign_rate": 0.5833,
+          "mean_signed": -0.0072,
+          "median_signed": 0.0018,
+          "sign_ok": 6,
+          "sign_rate": 0.5,
           "share_beyond": 0.4167,
           "mean_ci": [
-            -0.0396,
-            0.0308
+            -0.046,
+            0.0296
           ],
           "n_up": 1,
           "n_down": 11,
           "cases": [
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.003,
+              "delta": -0.0244,
               "want": "down",
-              "signed": 0.003,
+              "signed": 0.0244,
               "beyond": false
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": 0.1213,
+              "delta": 0.09,
               "want": "down",
-              "signed": -0.1213,
+              "signed": -0.09,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.0243,
+              "delta": -0.0228,
               "want": "down",
-              "signed": 0.0243,
+              "signed": 0.0228,
               "beyond": false
             },
             {
@@ -687,9 +687,9 @@
             },
             {
               "id": "ctx_ledger_3",
-              "delta": 0.0288,
+              "delta": 0.0192,
               "want": "down",
-              "signed": -0.0288,
+              "signed": -0.0192,
               "beyond": false
             },
             {
@@ -701,16 +701,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.0434,
+              "delta": 0.0361,
               "want": "down",
-              "signed": 0.0434,
+              "signed": -0.0361,
               "beyond": false
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": 0.117,
+              "delta": 0.1601,
               "want": "down",
-              "signed": -0.117,
+              "signed": -0.1601,
               "beyond": true
             },
             {
@@ -736,32 +736,32 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.0523,
+              "delta": -0.0596,
               "want": "down",
-              "signed": 0.0523,
+              "signed": 0.0596,
               "beyond": true
             }
           ],
           "grade": "C",
-          "grade_reason": "42% 的增量越过噪声底（方向对率 58%）"
+          "grade_reason": "42% 的增量越过噪声底（方向对率 50%）"
         },
         "confront": {
           "n": 1,
-          "mean_signed": 0.0761,
-          "median_signed": 0.0761,
-          "sign_ok": 1,
-          "sign_rate": 1.0,
-          "share_beyond": 1.0,
+          "mean_signed": -0.01,
+          "median_signed": -0.01,
+          "sign_ok": 0,
+          "sign_rate": 0.0,
+          "share_beyond": 0.0,
           "mean_ci": null,
           "n_up": 1,
           "n_down": 0,
           "cases": [
             {
               "id": "ctx_brokenpromise_1",
-              "delta": 0.0761,
+              "delta": -0.01,
               "want": "up",
-              "signed": 0.0761,
-              "beyond": true
+              "signed": -0.01,
+              "beyond": false
             }
           ],
           "grade": "N",
@@ -769,14 +769,14 @@
         },
         "investigate": {
           "n": 10,
-          "mean_signed": -0.1512,
+          "mean_signed": -0.1559,
           "median_signed": -0.1421,
           "sign_ok": 1,
           "sign_rate": 0.1,
-          "share_beyond": 0.8,
+          "share_beyond": 0.9,
           "mean_ci": [
-            -0.2201,
-            -0.0793
+            -0.2212,
+            -0.0893
           ],
           "n_up": 10,
           "n_down": 0,
@@ -790,10 +790,10 @@
             },
             {
               "id": "ctx_topicshift_2",
-              "delta": -0.0222,
+              "delta": -0.1087,
               "want": "up",
-              "signed": -0.0222,
-              "beyond": false
+              "signed": -0.1087,
+              "beyond": true
             },
             {
               "id": "ctx_topicshift_3",
@@ -811,9 +811,9 @@
             },
             {
               "id": "ctx_topic_extra_1",
-              "delta": -0.1086,
+              "delta": -0.1688,
               "want": "up",
-              "signed": -0.1086,
+              "signed": -0.1688,
               "beyond": true
             },
             {
@@ -832,9 +832,9 @@
             },
             {
               "id": "ctx_topic_extra_4",
-              "delta": -0.1952,
+              "delta": -0.0952,
               "want": "up",
-              "signed": -0.1952,
+              "signed": -0.0952,
               "beyond": true
             },
             {
@@ -853,41 +853,41 @@
             }
           ],
           "grade": "R",
-          "grade_reason": "80% 的增量越过噪声底、均值 CI (-0.2201, -0.0793) 不含 0，但**方向对率只有 10%** —— 稳定反向，先去查用例与信号语义"
+          "grade_reason": "90% 的增量越过噪声底、均值 CI (-0.2212, -0.0893) 不含 0，但**方向对率只有 10%** —— 稳定反向，先去查用例与信号语义"
         },
         "trust": {
           "n": 16,
-          "mean_signed": 0.0196,
-          "median_signed": 0.0367,
-          "sign_ok": 9,
-          "sign_rate": 0.5625,
-          "share_beyond": 0.375,
+          "mean_signed": 0.015,
+          "median_signed": 0.0085,
+          "sign_ok": 10,
+          "sign_rate": 0.625,
+          "share_beyond": 0.4375,
           "mean_ci": [
-            -0.0096,
-            0.0481
+            -0.0156,
+            0.0436
           ],
           "n_up": 10,
           "n_down": 6,
           "cases": [
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.041,
+              "delta": -0.0152,
               "want": "up",
-              "signed": -0.041,
+              "signed": -0.0152,
               "beyond": false
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": 0.0498,
+              "delta": 0.0055,
               "want": "up",
-              "signed": 0.0498,
+              "signed": 0.0055,
               "beyond": false
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.0459,
+              "delta": -0.0388,
               "want": "up",
-              "signed": -0.0459,
+              "signed": -0.0388,
               "beyond": false
             },
             {
@@ -920,9 +920,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": 0.0044,
+              "delta": -0.008,
               "want": "down",
-              "signed": -0.0044,
+              "signed": 0.008,
               "beyond": false
             },
             {
@@ -941,17 +941,17 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": 0.0392,
+              "delta": 0.009,
               "want": "up",
-              "signed": 0.0392,
+              "signed": 0.009,
               "beyond": false
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.0422,
+              "delta": -0.0885,
               "want": "up",
-              "signed": -0.0422,
-              "beyond": false
+              "signed": -0.0885,
+              "beyond": true
             },
             {
               "id": "ctx_trust_extra_3",
@@ -976,34 +976,34 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": 0.0849,
+              "delta": 0.0867,
               "want": "up",
-              "signed": 0.0849,
+              "signed": 0.0867,
               "beyond": true
             }
           ],
           "grade": "C",
-          "grade_reason": "38% 的增量越过噪声底（方向对率 56%）"
+          "grade_reason": "44% 的增量越过噪声底（方向对率 62%）"
         },
         "doubt": {
           "n": 25,
-          "mean_signed": 0.013,
-          "median_signed": 0.0147,
+          "mean_signed": 0.0121,
+          "median_signed": 0.016,
           "sign_ok": 16,
           "sign_rate": 0.64,
-          "share_beyond": 0.44,
+          "share_beyond": 0.4,
           "mean_ci": [
-            -0.0188,
-            0.0452
+            -0.0182,
+            0.0415
           ],
           "n_up": 14,
           "n_down": 11,
           "cases": [
             {
               "id": "ctx_idflip_1",
-              "delta": 0.0255,
+              "delta": 0.0302,
               "want": "up",
-              "signed": 0.0255,
+              "signed": 0.0302,
               "beyond": false
             },
             {
@@ -1015,23 +1015,23 @@
             },
             {
               "id": "ctx_idflip_3",
-              "delta": 0.0098,
+              "delta": 0.016,
               "want": "up",
-              "signed": 0.0098,
+              "signed": 0.016,
               "beyond": false
             },
             {
               "id": "ctx_idflip_4",
-              "delta": 0.0147,
+              "delta": 0.0183,
               "want": "up",
-              "signed": 0.0147,
+              "signed": 0.0183,
               "beyond": false
             },
             {
               "id": "ctx_brokenpromise_2",
-              "delta": -0.1016,
+              "delta": -0.056,
               "want": "up",
-              "signed": -0.1016,
+              "signed": -0.056,
               "beyond": true
             },
             {
@@ -1043,23 +1043,23 @@
             },
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.0176,
+              "delta": -0.0332,
               "want": "down",
-              "signed": 0.0176,
+              "signed": 0.0332,
               "beyond": false
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": -0.1332,
+              "delta": -0.0865,
               "want": "down",
-              "signed": 0.1332,
+              "signed": 0.0865,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": 0.0277,
+              "delta": 0.0303,
               "want": "down",
-              "signed": -0.0277,
+              "signed": -0.0303,
               "beyond": false
             },
             {
@@ -1078,16 +1078,16 @@
             },
             {
               "id": "ctx_established_3",
-              "delta": -0.0252,
+              "delta": -0.0174,
               "want": "up",
-              "signed": -0.0252,
+              "signed": -0.0174,
               "beyond": false
             },
             {
               "id": "ctx_established_4",
-              "delta": -0.036,
+              "delta": -0.0491,
               "want": "down",
-              "signed": 0.036,
+              "signed": 0.0491,
               "beyond": false
             },
             {
@@ -1113,9 +1113,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": -0.0219,
+              "delta": -0.0088,
               "want": "up",
-              "signed": -0.0219,
+              "signed": -0.0088,
               "beyond": false
             },
             {
@@ -1134,16 +1134,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.0707,
+              "delta": -0.0241,
               "want": "down",
-              "signed": 0.0707,
-              "beyond": true
+              "signed": 0.0241,
+              "beyond": false
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.0384,
+              "delta": -0.0045,
               "want": "down",
-              "signed": 0.0384,
+              "signed": 0.0045,
               "beyond": false
             },
             {
@@ -1169,25 +1169,25 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.1228,
+              "delta": -0.1193,
               "want": "down",
-              "signed": 0.1228,
+              "signed": 0.1193,
               "beyond": true
             }
           ],
           "grade": "C",
-          "grade_reason": "44% 的增量越过噪声底（方向对率 64%）"
+          "grade_reason": "40% 的增量越过噪声底（方向对率 64%）"
         },
         "danger": {
           "n": 10,
-          "mean_signed": -0.0062,
-          "median_signed": -0.002,
-          "sign_ok": 5,
-          "sign_rate": 0.5,
-          "share_beyond": 0.1,
+          "mean_signed": -0.0031,
+          "median_signed": -0.0053,
+          "sign_ok": 4,
+          "sign_rate": 0.4,
+          "share_beyond": 0.2,
           "mean_ci": [
-            -0.0261,
-            0.0111
+            -0.0258,
+            0.0211
           ],
           "n_up": 10,
           "n_down": 0,
@@ -1201,10 +1201,10 @@
             },
             {
               "id": "ctx_established_2",
-              "delta": 0.0337,
+              "delta": 0.0739,
               "want": "up",
-              "signed": 0.0337,
-              "beyond": false
+              "signed": 0.0739,
+              "beyond": true
             },
             {
               "id": "ctx_topicshift_3",
@@ -1215,9 +1215,9 @@
             },
             {
               "id": "ctx_afterthreat_2",
-              "delta": 0.0011,
+              "delta": -0.0054,
               "want": "up",
-              "signed": 0.0011,
+              "signed": -0.0054,
               "beyond": false
             },
             {
@@ -1243,9 +1243,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": -0.0285,
+              "delta": -0.0317,
               "want": "up",
-              "signed": -0.0285,
+              "signed": -0.0317,
               "beyond": false
             },
             {
@@ -1264,113 +1264,113 @@
             }
           ],
           "grade": "D",
-          "grade_reason": "只有 10% 的增量越过噪声底（要求 ≥30%）"
+          "grade_reason": "只有 20% 的增量越过噪声底（要求 ≥30%）"
         }
       },
       "final_grades": {
         "hostility": {
-          "discrimination": "B",
-          "context": "C",
-          "final": "C",
-          "disc_reason": "AUC=0.665，CI 下界 0.514>0.50",
-          "ctx_reason": "50% 的增量越过噪声底（方向对率 68%）"
-        },
-        "cooperation": {
           "discrimination": "A",
           "context": "C",
           "final": "C",
-          "disc_reason": "AUC=0.706，CI 下界 0.536>0.50",
+          "disc_reason": "AUC=0.720，CI 下界 0.581>0.50",
+          "ctx_reason": "50% 的增量越过噪声底（方向对率 68%）"
+        },
+        "cooperation": {
+          "discrimination": "B",
+          "context": "C",
+          "final": "C",
+          "disc_reason": "AUC=0.700，CI 下界 0.524>0.50",
           "ctx_reason": "76% 的增量越过噪声底（方向对率 59%）"
         },
         "withdraw": {
-          "discrimination": "C",
+          "discrimination": "D",
           "context": "C",
-          "final": "C",
-          "disc_reason": "AUC=0.571，但 CI (0.372, 0.7788) 不稳",
-          "ctx_reason": "42% 的增量越过噪声底（方向对率 58%）"
+          "final": "D",
+          "disc_reason": "AUC=0.503 < 0.55（CI (0.295, 0.7251)）",
+          "ctx_reason": "42% 的增量越过噪声底（方向对率 50%）"
         },
         "confront": {
-          "discrimination": "C",
+          "discrimination": "B",
           "context": "N",
-          "final": "C",
-          "disc_reason": "AUC=0.664，但 CI (0.4763, 0.8483) 不稳",
+          "final": "B",
+          "disc_reason": "AUC=0.683，CI 下界 0.506>0.50",
           "ctx_reason": "可配对样本 1 < 10"
         },
         "disclose": {
           "discrimination": "D",
           "context": "N",
           "final": "D",
-          "disc_reason": "AUC=0.464 < 0.55（CI (0.2437, 0.6917)）",
+          "disc_reason": "AUC=0.481 < 0.55（CI (0.2564, 0.7111)）",
           "ctx_reason": ""
         },
         "investigate": {
           "discrimination": "A",
           "context": "R",
           "final": "R",
-          "disc_reason": "AUC=0.895，CI 下界 0.747>0.50",
-          "ctx_reason": "80% 的增量越过噪声底、均值 CI (-0.2201, -0.0793) 不含 0，但**方向对率只有 10%** —— 稳定反向，先去查用例与信号语义"
+          "disc_reason": "AUC=0.842，CI 下界 0.672>0.50",
+          "ctx_reason": "90% 的增量越过噪声底、均值 CI (-0.2212, -0.0893) 不含 0，但**方向对率只有 10%** —— 稳定反向，先去查用例与信号语义"
         },
         "trust": {
-          "discrimination": "A",
+          "discrimination": "B",
           "context": "C",
           "final": "C",
-          "disc_reason": "AUC=0.716，CI 下界 0.537>0.50",
-          "ctx_reason": "38% 的增量越过噪声底（方向对率 56%）"
+          "disc_reason": "AUC=0.684，CI 下界 0.517>0.50",
+          "ctx_reason": "44% 的增量越过噪声底（方向对率 62%）"
         },
         "doubt": {
           "discrimination": "C",
           "context": "C",
           "final": "C",
-          "disc_reason": "AUC=0.618，但 CI (0.438, 0.7885) 不稳",
-          "ctx_reason": "44% 的增量越过噪声底（方向对率 64%）"
+          "disc_reason": "AUC=0.597，但 CI (0.4167, 0.7747) 不稳",
+          "ctx_reason": "40% 的增量越过噪声底（方向对率 64%）"
         },
         "danger": {
           "discrimination": "C",
           "context": "D",
           "final": "D",
-          "disc_reason": "AUC=0.576，但 CI (0.381, 0.7621) 不稳",
-          "ctx_reason": "只有 10% 的增量越过噪声底（要求 ≥30%）"
+          "disc_reason": "AUC=0.553，但 CI (0.3529, 0.7396) 不稳",
+          "ctx_reason": "只有 20% 的增量越过噪声底（要求 ≥30%）"
         },
         "trust_shift": {
-          "discrimination": "A",
+          "discrimination": "C",
           "context": "N",
-          "final": "A",
-          "disc_reason": "AUC=0.827，CI 下界 0.639>0.50",
+          "final": "C",
+          "disc_reason": "AUC=0.730，但 CI (0.4779, 0.9123) 不稳",
           "ctx_reason": ""
         },
         "respect_shift": {
           "discrimination": "C",
           "context": "N",
           "final": "C",
-          "disc_reason": "AUC=0.615，但 CI (0.3571, 0.8571) 不稳",
+          "disc_reason": "AUC=0.585，但 CI (0.3154, 0.8308) 不稳",
           "ctx_reason": ""
         },
         "doubt_shift": {
           "discrimination": "A",
           "context": "N",
           "final": "A",
-          "disc_reason": "AUC=0.847，CI 下界 0.660>0.50",
+          "disc_reason": "AUC=0.773，CI 下界 0.548>0.50",
           "ctx_reason": ""
         },
         "fondness_shift": {
-          "discrimination": "A",
+          "discrimination": "C",
           "context": "N",
-          "final": "A",
-          "disc_reason": "AUC=0.790，CI 下界 0.600>0.50",
+          "final": "C",
+          "disc_reason": "AUC=0.702，但 CI (0.4667, 0.9045) 不稳",
           "ctx_reason": ""
         },
         "alert_shift": {
           "discrimination": "C",
           "context": "N",
           "final": "C",
-          "disc_reason": "AUC=0.688，但 CI (0.4659, 0.9013) 不稳",
+          "disc_reason": "AUC=0.671，但 CI (0.4429, 0.8827) 不稳",
           "ctx_reason": ""
         },
         "goal_shift": {
-          "discrimination": "C",
+          "discrimination": "D",
           "context": "N",
-          "final": "C",
-          "disc_reason": "AUC=0.590，但 CI (0.3067, 0.8384) 不稳",
+          "final": "D",
+          "disc_reason": "AUC=0.510 < 0.55（CI (0.2198, 0.7778)）",
           "ctx_reason": ""
         }
       },
@@ -1378,16 +1378,16 @@
         "hostility": {
           "n_high": 1,
           "n_low": 3,
-          "mean_high": 0.3794,
-          "mean_low": 0.3804,
-          "mean_gap": -0.001,
-          "median_gap": -0.0042,
+          "mean_high": 0.3896,
+          "mean_low": 0.4013,
+          "mean_gap": -0.0117,
+          "median_gap": -0.0009,
           "auc": 0.3333,
           "auc_ci": [
             0.0,
             1.0
           ],
-          "best_threshold": 0.3749,
+          "best_threshold": 0.38,
           "threshold_balanced_acc": 0.6667,
           "threshold_accuracy": 0.5,
           "kind": "prob",
@@ -1473,18 +1473,18 @@
         "trust_shift": {
           "n_high": 2,
           "n_low": 13,
-          "mean_high": 2.349,
-          "mean_low": 2.2065,
-          "mean_gap": 0.1425,
-          "median_gap": 0.1664,
-          "auc": 0.8462,
+          "mean_high": 2.2572,
+          "mean_low": 2.183,
+          "mean_gap": 0.0742,
+          "median_gap": 0.0508,
+          "auc": 0.6538,
           "auc_ci": [
-            0.58,
-            1.0
+            0.3636,
+            0.9167
           ],
-          "best_threshold": 2.2486,
-          "threshold_balanced_acc": 0.8846,
-          "threshold_accuracy": 0.8,
+          "best_threshold": 2.2432,
+          "threshold_balanced_acc": 0.8077,
+          "threshold_accuracy": 0.6667,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
@@ -1540,9 +1540,9 @@
         }
       },
       "observable_accuracy": {
-        "passed": 275,
+        "passed": 273,
         "total": 518,
-        "rate": 0.5309,
+        "rate": 0.527,
         "n_cases": 70,
         "comparable_with_previous_round": false,
         "why": "用例集已重建，与第二轮 48 条口径不可直接比较。"
@@ -1556,12 +1556,12 @@
         "max_len": 1024,
         "head_max_len": 256,
         "room": 767,
-        "cache_sha": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
+        "cache_sha": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
         "cache_changed_during_run": false,
         "n_items_measured": 186,
         "token_min": 222,
         "token_median": 236,
-        "token_max": 254,
+        "token_max": 256,
         "n_overflow": 0,
         "passed": {
           "observable": [
@@ -1597,7 +1597,7 @@
         "总体 accuracy 只在 observable_accuracy 里，且不与旧口径可比。",
         "validity.invalid 里的用例已从以上所有主结论中剔除。"
       ],
-      "run_id": "p3r3",
+      "run_id": "p3p2r1",
       "model": "english",
       "device": "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)",
       "noise_floor": 0.05,
@@ -1609,330 +1609,330 @@
         "hostility": {
           "n_high": 23,
           "n_low": 41,
-          "mean_high": 0.3389,
-          "mean_low": 0.2966,
-          "mean_gap": 0.0423,
-          "median_gap": 0.0127,
-          "auc": 0.6352,
+          "mean_high": 0.3392,
+          "mean_low": 0.2922,
+          "mean_gap": 0.0469,
+          "median_gap": 0.0135,
+          "auc": 0.666,
           "auc_ci": [
-            0.4945,
-            0.7647
+            0.5223,
+            0.7995
           ],
-          "best_threshold": 0.2739,
+          "best_threshold": 0.2763,
           "threshold_balanced_acc": 0.6691,
           "threshold_accuracy": 0.625,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "C",
-          "grade_reason": "AUC=0.635，但 CI (0.4945, 0.7647) 不稳"
+          "grade": "B",
+          "grade_reason": "AUC=0.666，CI 下界 0.522>0.50"
         },
         "cooperation": {
           "n_high": 24,
           "n_low": 19,
-          "mean_high": 0.619,
-          "mean_low": 0.4187,
-          "mean_gap": 0.2004,
-          "median_gap": 0.287,
-          "auc": 0.7719,
+          "mean_high": 0.6271,
+          "mean_low": 0.4196,
+          "mean_gap": 0.2075,
+          "median_gap": 0.2698,
+          "auc": 0.7939,
           "auc_ci": [
-            0.6065,
-            0.8983
+            0.6378,
+            0.9177
           ],
-          "best_threshold": 0.3612,
-          "threshold_balanced_acc": 0.7215,
-          "threshold_accuracy": 0.7442,
+          "best_threshold": 0.4711,
+          "threshold_balanced_acc": 0.7851,
+          "threshold_accuracy": 0.7907,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "A",
-          "grade_reason": "AUC=0.772，CI 下界 0.607>0.50"
+          "grade_reason": "AUC=0.794，CI 下界 0.638>0.50"
         },
         "withdraw": {
           "n_high": 23,
           "n_low": 14,
-          "mean_high": 0.5091,
-          "mean_low": 0.5043,
-          "mean_gap": 0.0048,
-          "median_gap": 0.0025,
-          "auc": 0.5047,
+          "mean_high": 0.4997,
+          "mean_low": 0.5877,
+          "mean_gap": -0.088,
+          "median_gap": -0.0646,
+          "auc": 0.3696,
           "auc_ci": [
-            0.3106,
-            0.7034
+            0.1879,
+            0.5737
           ],
-          "best_threshold": 0.4899,
-          "threshold_balanced_acc": 0.5761,
-          "threshold_accuracy": 0.5946,
+          "best_threshold": 0.886,
+          "threshold_balanced_acc": 0.486,
+          "threshold_accuracy": 0.3784,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "D",
-          "grade_reason": "AUC=0.505 < 0.55（CI (0.3106, 0.7034)）"
+          "grade_reason": "AUC=0.370 < 0.55（CI (0.1879, 0.5737)）"
         },
         "confront": {
           "n_high": 25,
           "n_low": 14,
-          "mean_high": 0.5756,
-          "mean_low": 0.617,
-          "mean_gap": -0.0414,
-          "median_gap": -0.057,
-          "auc": 0.4143,
+          "mean_high": 0.6071,
+          "mean_low": 0.5943,
+          "mean_gap": 0.0127,
+          "median_gap": 0.0338,
+          "auc": 0.5543,
           "auc_ci": [
-            0.2377,
-            0.6061
+            0.3526,
+            0.7446
           ],
-          "best_threshold": 0.4941,
-          "threshold_balanced_acc": 0.5071,
-          "threshold_accuracy": 0.5897,
+          "best_threshold": 0.4958,
+          "threshold_balanced_acc": 0.5829,
+          "threshold_accuracy": 0.6667,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "D",
-          "grade_reason": "AUC=0.414 < 0.55（CI (0.2377, 0.6061)）"
+          "grade": "C",
+          "grade_reason": "AUC=0.554，但 CI (0.3526, 0.7446) 不稳"
         },
         "disclose": {
           "n_high": 10,
           "n_low": 18,
-          "mean_high": 0.5239,
-          "mean_low": 0.3594,
-          "mean_gap": 0.1645,
-          "median_gap": 0.1287,
-          "auc": 0.8889,
+          "mean_high": 0.539,
+          "mean_low": 0.3693,
+          "mean_gap": 0.1697,
+          "median_gap": 0.1768,
+          "auc": 0.8694,
           "auc_ci": [
-            0.7396,
-            0.9889
+            0.7245,
+            0.9795
           ],
-          "best_threshold": 0.4294,
-          "threshold_balanced_acc": 0.8667,
-          "threshold_accuracy": 0.8571,
+          "best_threshold": 0.4524,
+          "threshold_balanced_acc": 0.7889,
+          "threshold_accuracy": 0.7857,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "A",
-          "grade_reason": "AUC=0.889，CI 下界 0.740>0.50"
+          "grade_reason": "AUC=0.869，CI 下界 0.725>0.50"
         },
         "investigate": {
           "n_high": 19,
           "n_low": 10,
-          "mean_high": 2.2811,
-          "mean_low": 2.213,
-          "mean_gap": 0.0682,
-          "median_gap": 0.0173,
-          "auc": 0.6895,
+          "mean_high": 2.2893,
+          "mean_low": 2.1976,
+          "mean_gap": 0.0916,
+          "median_gap": 0.0725,
+          "auc": 0.8105,
           "auc_ci": [
-            0.4667,
-            0.8766
+            0.6304,
+            0.9481
           ],
-          "best_threshold": 2.2941,
-          "threshold_balanced_acc": 0.6605,
-          "threshold_accuracy": 0.5862,
+          "best_threshold": 2.2264,
+          "threshold_balanced_acc": 0.7711,
+          "threshold_accuracy": 0.7931,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "C",
-          "grade_reason": "AUC=0.690，但 CI (0.4667, 0.8766) 不稳"
+          "grade": "A",
+          "grade_reason": "AUC=0.810，CI 下界 0.630>0.50"
         },
         "trust": {
           "n_high": 19,
           "n_low": 23,
-          "mean_high": 0.4098,
-          "mean_low": 0.2914,
-          "mean_gap": 0.1184,
-          "median_gap": 0.1186,
-          "auc": 0.778,
+          "mean_high": 0.4205,
+          "mean_low": 0.3062,
+          "mean_gap": 0.1142,
+          "median_gap": 0.1408,
+          "auc": 0.7677,
           "auc_ci": [
-            0.6233,
-            0.9085
+            0.6145,
+            0.9032
           ],
-          "best_threshold": 0.3499,
-          "threshold_balanced_acc": 0.7597,
-          "threshold_accuracy": 0.7619,
+          "best_threshold": 0.3651,
+          "threshold_balanced_acc": 0.7334,
+          "threshold_accuracy": 0.7381,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "A",
-          "grade_reason": "AUC=0.778，CI 下界 0.623>0.50"
+          "grade_reason": "AUC=0.768，CI 下界 0.615>0.50"
         },
         "doubt": {
           "n_high": 19,
           "n_low": 26,
-          "mean_high": 0.3018,
-          "mean_low": 0.2795,
-          "mean_gap": 0.0223,
-          "median_gap": 0.0297,
-          "auc": 0.6144,
+          "mean_high": 0.3106,
+          "mean_low": 0.2865,
+          "mean_gap": 0.0241,
+          "median_gap": 0.0322,
+          "auc": 0.5931,
           "auc_ci": [
-            0.4495,
-            0.7768
+            0.4224,
+            0.762
           ],
-          "best_threshold": 0.2722,
-          "threshold_balanced_acc": 0.6235,
-          "threshold_accuracy": 0.6222,
+          "best_threshold": 0.2771,
+          "threshold_balanced_acc": 0.6427,
+          "threshold_accuracy": 0.6444,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "C",
-          "grade_reason": "AUC=0.614，但 CI (0.4495, 0.7768) 不稳"
+          "grade_reason": "AUC=0.593，但 CI (0.4224, 0.762) 不稳"
         },
         "danger": {
           "n_high": 18,
           "n_low": 22,
-          "mean_high": 0.1907,
-          "mean_low": 0.1951,
-          "mean_gap": -0.0045,
-          "median_gap": -0.0185,
-          "auc": 0.447,
+          "mean_high": 0.2007,
+          "mean_low": 0.2031,
+          "mean_gap": -0.0024,
+          "median_gap": -0.0111,
+          "auc": 0.4697,
           "auc_ci": [
-            0.2552,
-            0.6375
+            0.2828,
+            0.6575
           ],
-          "best_threshold": 0.235,
-          "threshold_balanced_acc": 0.5934,
-          "threshold_accuracy": 0.625,
+          "best_threshold": 0.2374,
+          "threshold_balanced_acc": 0.5707,
+          "threshold_accuracy": 0.6,
           "kind": "prob",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "D",
-          "grade_reason": "AUC=0.447 < 0.55（CI (0.2552, 0.6375)）"
+          "grade_reason": "AUC=0.470 < 0.55（CI (0.2828, 0.6575)）"
         },
         "trust_shift": {
           "n_high": 15,
           "n_low": 10,
-          "mean_high": 2.2441,
-          "mean_low": 2.0996,
-          "mean_gap": 0.1445,
-          "median_gap": 0.1691,
-          "auc": 0.8067,
+          "mean_high": 2.2563,
+          "mean_low": 2.1158,
+          "mean_gap": 0.1404,
+          "median_gap": 0.1364,
+          "auc": 0.74,
           "auc_ci": [
-            0.5909,
-            0.9559
+            0.4931,
+            0.9338
           ],
-          "best_threshold": 2.1417,
+          "best_threshold": 2.1425,
           "threshold_balanced_acc": 0.7667,
           "threshold_accuracy": 0.8,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "A",
-          "grade_reason": "AUC=0.807，CI 下界 0.591>0.50"
+          "grade": "C",
+          "grade_reason": "AUC=0.740，但 CI (0.4931, 0.9338) 不稳"
         },
         "respect_shift": {
           "n_high": 13,
           "n_low": 10,
-          "mean_high": 2.0882,
-          "mean_low": 1.9699,
-          "mean_gap": 0.1183,
-          "median_gap": 0.0347,
-          "auc": 0.6692,
+          "mean_high": 2.0963,
+          "mean_low": 1.9754,
+          "mean_gap": 0.1209,
+          "median_gap": 0.0491,
+          "auc": 0.6731,
           "auc_ci": [
-            0.4048,
-            0.8939
+            0.4127,
+            0.8864
           ],
-          "best_threshold": 2.0596,
-          "threshold_balanced_acc": 0.6962,
+          "best_threshold": 2.0007,
+          "threshold_balanced_acc": 0.6731,
           "threshold_accuracy": 0.6957,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "C",
-          "grade_reason": "AUC=0.669，但 CI (0.4048, 0.8939) 不稳"
+          "grade_reason": "AUC=0.673，但 CI (0.4127, 0.8864) 不稳"
         },
         "doubt_shift": {
           "n_high": 10,
           "n_low": 15,
-          "mean_high": 2.3194,
-          "mean_low": 2.3377,
-          "mean_gap": -0.0183,
-          "median_gap": -0.031,
-          "auc": 0.4067,
+          "mean_high": 2.3029,
+          "mean_low": 2.3522,
+          "mean_gap": -0.0492,
+          "median_gap": -0.0636,
+          "auc": 0.3733,
           "auc_ci": [
-            0.1603,
-            0.6533
+            0.1474,
+            0.6104
           ],
-          "best_threshold": 2.2356,
+          "best_threshold": 2.5884,
           "threshold_balanced_acc": 0.55,
-          "threshold_accuracy": 0.48,
+          "threshold_accuracy": 0.64,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "D",
-          "grade_reason": "AUC=0.407 < 0.55（CI (0.1603, 0.6533)）"
+          "grade_reason": "AUC=0.373 < 0.55（CI (0.1474, 0.6104)）"
         },
         "fondness_shift": {
           "n_high": 21,
           "n_low": 10,
-          "mean_high": 1.9845,
-          "mean_low": 1.814,
-          "mean_gap": 0.1704,
-          "median_gap": 0.2519,
-          "auc": 0.7238,
+          "mean_high": 2.0134,
+          "mean_low": 1.8528,
+          "mean_gap": 0.1605,
+          "median_gap": 0.1781,
+          "auc": 0.7286,
           "auc_ci": [
-            0.5,
-            0.9333
+            0.5067,
+            0.9345
           ],
-          "best_threshold": 1.7524,
-          "threshold_balanced_acc": 0.7524,
-          "threshold_accuracy": 0.8065,
+          "best_threshold": 1.8506,
+          "threshold_balanced_acc": 0.7286,
+          "threshold_accuracy": 0.7742,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "C",
-          "grade_reason": "AUC=0.724，但 CI (0.5, 0.9333) 不稳"
+          "grade": "A",
+          "grade_reason": "AUC=0.729，CI 下界 0.507>0.50"
         },
         "alert_shift": {
           "n_high": 17,
           "n_low": 10,
-          "mean_high": 1.9923,
-          "mean_low": 2.0388,
-          "mean_gap": -0.0465,
-          "median_gap": 0.0366,
-          "auc": 0.5,
+          "mean_high": 2.0393,
+          "mean_low": 2.0485,
+          "mean_gap": -0.0092,
+          "median_gap": 0.1029,
+          "auc": 0.5824,
           "auc_ci": [
-            0.2632,
-            0.7357
+            0.3444,
+            0.8086
           ],
-          "best_threshold": 2.0228,
-          "threshold_balanced_acc": 0.6147,
-          "threshold_accuracy": 0.5926,
+          "best_threshold": 1.9998,
+          "threshold_balanced_acc": 0.6529,
+          "threshold_accuracy": 0.6667,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
-          "grade": "D",
-          "grade_reason": "AUC=0.500 < 0.55（CI (0.2632, 0.7357)）"
+          "grade": "C",
+          "grade_reason": "AUC=0.582，但 CI (0.3444, 0.8086) 不稳"
         },
         "goal_shift": {
           "n_high": 10,
           "n_low": 10,
-          "mean_high": 1.9369,
-          "mean_low": 1.9547,
-          "mean_gap": -0.0178,
-          "median_gap": -0.0478,
-          "auc": 0.45,
+          "mean_high": 1.9274,
+          "mean_low": 1.9649,
+          "mean_gap": -0.0375,
+          "median_gap": -0.0758,
+          "auc": 0.4,
           "auc_ci": [
-            0.1905,
-            0.7253
+            0.1515,
+            0.6813
           ],
-          "best_threshold": 1.8983,
+          "best_threshold": 1.8636,
           "threshold_balanced_acc": 0.6,
           "threshold_accuracy": 0.6,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
           "grade": "D",
-          "grade_reason": "AUC=0.450 < 0.55（CI (0.1905, 0.7253)）"
+          "grade_reason": "AUC=0.400 < 0.55（CI (0.1515, 0.6813)）"
         }
       },
       "contextual": {
         "hostility": {
           "n": 22,
-          "mean_signed": 0.042,
-          "median_signed": 0.0404,
+          "mean_signed": 0.0425,
+          "median_signed": 0.0387,
           "sign_ok": 16,
           "sign_rate": 0.7273,
-          "share_beyond": 0.3636,
+          "share_beyond": 0.4091,
           "mean_ci": [
-            0.0171,
-            0.0686
+            0.0176,
+            0.0689
           ],
           "n_up": 11,
           "n_down": 11,
@@ -1960,23 +1960,23 @@
             },
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.0409,
+              "delta": -0.0553,
               "want": "down",
-              "signed": 0.0409,
-              "beyond": false
+              "signed": 0.0553,
+              "beyond": true
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": -0.0399,
+              "delta": -0.1034,
               "want": "down",
-              "signed": 0.0399,
-              "beyond": false
+              "signed": 0.1034,
+              "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.1156,
+              "delta": -0.112,
               "want": "down",
-              "signed": 0.1156,
+              "signed": 0.112,
               "beyond": true
             },
             {
@@ -1988,9 +1988,9 @@
             },
             {
               "id": "ctx_ledger_4",
-              "delta": -0.068,
+              "delta": -0.0833,
               "want": "down",
-              "signed": 0.068,
+              "signed": 0.0833,
               "beyond": true
             },
             {
@@ -2030,9 +2030,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": 0.0255,
+              "delta": 0.0048,
               "want": "up",
-              "signed": 0.0255,
+              "signed": 0.0048,
               "beyond": false
             },
             {
@@ -2051,17 +2051,17 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.1108,
+              "delta": -0.0816,
               "want": "down",
-              "signed": 0.1108,
+              "signed": 0.0816,
               "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.0655,
+              "delta": -0.035,
               "want": "down",
-              "signed": 0.0655,
-              "beyond": true
+              "signed": 0.035,
+              "beyond": false
             },
             {
               "id": "ctx_trust_extra_3",
@@ -2086,48 +2086,48 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.1398,
+              "delta": -0.1413,
               "want": "down",
-              "signed": 0.1398,
+              "signed": 0.1413,
               "beyond": true
             }
           ],
           "grade": "C",
-          "grade_reason": "36% 的增量越过噪声底（方向对率 73%）"
+          "grade_reason": "41% 的增量越过噪声底（方向对率 73%）"
         },
         "cooperation": {
           "n": 17,
-          "mean_signed": 0.0394,
+          "mean_signed": 0.0338,
           "median_signed": 0.0417,
           "sign_ok": 10,
           "sign_rate": 0.5882,
           "share_beyond": 0.8824,
           "mean_ci": [
-            -0.0717,
-            0.1491
+            -0.0664,
+            0.1337
           ],
           "n_up": 11,
           "n_down": 6,
           "cases": [
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.3506,
+              "delta": -0.1559,
               "want": "up",
-              "signed": -0.3506,
+              "signed": -0.1559,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": 0.4157,
+              "delta": 0.1572,
               "want": "up",
-              "signed": 0.4157,
+              "signed": 0.1572,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": 0.0398,
+              "delta": 0.0394,
               "want": "up",
-              "signed": 0.0398,
+              "signed": 0.0394,
               "beyond": false
             },
             {
@@ -2167,9 +2167,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": -0.0751,
+              "delta": -0.0936,
               "want": "down",
-              "signed": 0.0751,
+              "signed": 0.0936,
               "beyond": true
             },
             {
@@ -2188,16 +2188,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.252,
+              "delta": -0.2019,
               "want": "up",
-              "signed": -0.252,
+              "signed": -0.2019,
               "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.3265,
+              "delta": -0.388,
               "want": "up",
-              "signed": -0.3265,
+              "signed": -0.388,
               "beyond": true
             },
             {
@@ -2223,9 +2223,9 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.1384,
+              "delta": -0.1765,
               "want": "up",
-              "signed": -0.1384,
+              "signed": -0.1765,
               "beyond": true
             }
           ],
@@ -2234,37 +2234,37 @@
         },
         "withdraw": {
           "n": 12,
-          "mean_signed": 0.2795,
-          "median_signed": 0.2927,
+          "mean_signed": 0.2747,
+          "median_signed": 0.2992,
           "sign_ok": 10,
           "sign_rate": 0.8333,
           "share_beyond": 1.0,
           "mean_ci": [
-            0.1227,
-            0.4245
+            0.1221,
+            0.4179
           ],
           "n_up": 1,
           "n_down": 11,
           "cases": [
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.5919,
+              "delta": -0.4968,
               "want": "down",
-              "signed": 0.5919,
+              "signed": 0.4968,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": 0.2006,
+              "delta": 0.1624,
               "want": "down",
-              "signed": -0.2006,
+              "signed": -0.1624,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.3014,
+              "delta": -0.3144,
               "want": "down",
-              "signed": 0.3014,
+              "signed": 0.3144,
               "beyond": true
             },
             {
@@ -2276,9 +2276,9 @@
             },
             {
               "id": "ctx_ledger_3",
-              "delta": -0.1454,
+              "delta": -0.11,
               "want": "down",
-              "signed": 0.1454,
+              "signed": 0.11,
               "beyond": true
             },
             {
@@ -2290,16 +2290,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.3375,
+              "delta": -0.4413,
               "want": "down",
-              "signed": 0.3375,
+              "signed": 0.4413,
               "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.2202,
+              "delta": -0.1419,
               "want": "down",
-              "signed": 0.2202,
+              "signed": 0.1419,
               "beyond": true
             },
             {
@@ -2325,32 +2325,32 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.3602,
+              "delta": -0.357,
               "want": "down",
-              "signed": 0.3602,
+              "signed": 0.357,
               "beyond": true
             }
           ],
           "grade": "B",
-          "grade_reason": "100% 的增量越过噪声底、均值 CI (0.1227, 0.4245) 不含 0、方向对率 83%"
+          "grade_reason": "100% 的增量越过噪声底、均值 CI (0.1221, 0.4179) 不含 0、方向对率 83%"
         },
         "confront": {
           "n": 1,
-          "mean_signed": 0.0639,
-          "median_signed": 0.0639,
-          "sign_ok": 1,
-          "sign_rate": 1.0,
-          "share_beyond": 1.0,
+          "mean_signed": -0.024,
+          "median_signed": -0.024,
+          "sign_ok": 0,
+          "sign_rate": 0.0,
+          "share_beyond": 0.0,
           "mean_ci": null,
           "n_up": 1,
           "n_down": 0,
           "cases": [
             {
               "id": "ctx_brokenpromise_1",
-              "delta": 0.0639,
+              "delta": -0.024,
               "want": "up",
-              "signed": 0.0639,
-              "beyond": true
+              "signed": -0.024,
+              "beyond": false
             }
           ],
           "grade": "N",
@@ -2358,14 +2358,14 @@
         },
         "investigate": {
           "n": 10,
-          "mean_signed": -0.4098,
-          "median_signed": -0.3437,
+          "mean_signed": -0.452,
+          "median_signed": -0.3711,
           "sign_ok": 0,
           "sign_rate": 0.0,
           "share_beyond": 1.0,
           "mean_ci": [
-            -0.547,
-            -0.2855
+            -0.5878,
+            -0.3173
           ],
           "n_up": 10,
           "n_down": 0,
@@ -2379,9 +2379,9 @@
             },
             {
               "id": "ctx_topicshift_2",
-              "delta": -0.2668,
+              "delta": -0.3174,
               "want": "up",
-              "signed": -0.2668,
+              "signed": -0.3174,
               "beyond": true
             },
             {
@@ -2400,9 +2400,9 @@
             },
             {
               "id": "ctx_topic_extra_1",
-              "delta": -0.543,
+              "delta": -0.5124,
               "want": "up",
-              "signed": -0.543,
+              "signed": -0.5124,
               "beyond": true
             },
             {
@@ -2421,9 +2421,9 @@
             },
             {
               "id": "ctx_topic_extra_4",
-              "delta": -0.3087,
+              "delta": -0.7107,
               "want": "up",
-              "signed": -0.3087,
+              "signed": -0.7107,
               "beyond": true
             },
             {
@@ -2442,41 +2442,41 @@
             }
           ],
           "grade": "R",
-          "grade_reason": "100% 的增量越过噪声底、均值 CI (-0.547, -0.2855) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
+          "grade_reason": "100% 的增量越过噪声底、均值 CI (-0.5878, -0.3173) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
         },
         "trust": {
           "n": 16,
-          "mean_signed": 0.0987,
-          "median_signed": 0.1193,
-          "sign_ok": 12,
-          "sign_rate": 0.75,
-          "share_beyond": 0.8125,
+          "mean_signed": 0.0884,
+          "median_signed": 0.1076,
+          "sign_ok": 13,
+          "sign_rate": 0.8125,
+          "share_beyond": 0.75,
           "mean_ci": [
-            0.0025,
-            0.1942
+            0.0207,
+            0.1544
           ],
           "n_up": 10,
           "n_down": 6,
           "cases": [
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.2389,
+              "delta": 0.0328,
               "want": "up",
-              "signed": -0.2389,
-              "beyond": true
+              "signed": 0.0328,
+              "beyond": false
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": 0.4879,
+              "delta": 0.2414,
               "want": "up",
-              "signed": 0.4879,
+              "signed": 0.2414,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": 0.1491,
+              "delta": 0.1027,
               "want": "up",
-              "signed": 0.1491,
+              "signed": 0.1027,
               "beyond": true
             },
             {
@@ -2509,9 +2509,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": -0.0577,
+              "delta": -0.0608,
               "want": "down",
-              "signed": 0.0577,
+              "signed": 0.0608,
               "beyond": true
             },
             {
@@ -2530,16 +2530,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": 0.2767,
+              "delta": 0.1324,
               "want": "up",
-              "signed": 0.2767,
+              "signed": 0.1324,
               "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.2391,
+              "delta": -0.2203,
               "want": "up",
-              "signed": -0.2391,
+              "signed": -0.2203,
               "beyond": true
             },
             {
@@ -2565,34 +2565,34 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": 0.3048,
+              "delta": 0.2829,
               "want": "up",
-              "signed": 0.3048,
+              "signed": 0.2829,
               "beyond": true
             }
           ],
           "grade": "B",
-          "grade_reason": "81% 的增量越过噪声底、均值 CI (0.0025, 0.1942) 不含 0、方向对率 75%"
+          "grade_reason": "75% 的增量越过噪声底、均值 CI (0.0207, 0.1544) 不含 0、方向对率 81%"
         },
         "doubt": {
           "n": 25,
-          "mean_signed": -0.0038,
+          "mean_signed": 0.004,
           "median_signed": -0.0053,
           "sign_ok": 12,
           "sign_rate": 0.48,
-          "share_beyond": 0.8,
+          "share_beyond": 0.84,
           "mean_ci": [
-            -0.0602,
-            0.0567
+            -0.0486,
+            0.06
           ],
           "n_up": 14,
           "n_down": 11,
           "cases": [
             {
               "id": "ctx_idflip_1",
-              "delta": 0.1424,
+              "delta": 0.1249,
               "want": "up",
-              "signed": 0.1424,
+              "signed": 0.1249,
               "beyond": true
             },
             {
@@ -2604,23 +2604,23 @@
             },
             {
               "id": "ctx_idflip_3",
-              "delta": -0.0361,
+              "delta": -0.0197,
               "want": "up",
-              "signed": -0.0361,
+              "signed": -0.0197,
               "beyond": false
             },
             {
               "id": "ctx_idflip_4",
-              "delta": -0.1844,
+              "delta": -0.1826,
               "want": "up",
-              "signed": -0.1844,
+              "signed": -0.1826,
               "beyond": true
             },
             {
               "id": "ctx_brokenpromise_2",
-              "delta": -0.1683,
+              "delta": -0.0894,
               "want": "up",
-              "signed": -0.1683,
+              "signed": -0.0894,
               "beyond": true
             },
             {
@@ -2632,23 +2632,23 @@
             },
             {
               "id": "ctx_trustcarry_1",
-              "delta": -0.032,
+              "delta": -0.0694,
               "want": "down",
-              "signed": 0.032,
-              "beyond": false
+              "signed": 0.0694,
+              "beyond": true
             },
             {
               "id": "ctx_trustcarry_2",
-              "delta": -0.0899,
+              "delta": -0.1302,
               "want": "down",
-              "signed": 0.0899,
+              "signed": 0.1302,
               "beyond": true
             },
             {
               "id": "ctx_trustcarry_3",
-              "delta": -0.0527,
+              "delta": -0.0606,
               "want": "down",
-              "signed": 0.0527,
+              "signed": 0.0606,
               "beyond": true
             },
             {
@@ -2667,16 +2667,16 @@
             },
             {
               "id": "ctx_established_3",
-              "delta": -0.1028,
+              "delta": -0.0892,
               "want": "up",
-              "signed": -0.1028,
+              "signed": -0.0892,
               "beyond": true
             },
             {
               "id": "ctx_established_4",
-              "delta": -0.089,
+              "delta": -0.1219,
               "want": "down",
-              "signed": 0.089,
+              "signed": 0.1219,
               "beyond": true
             },
             {
@@ -2702,9 +2702,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": -0.254,
+              "delta": -0.1783,
               "want": "up",
-              "signed": -0.254,
+              "signed": -0.1783,
               "beyond": true
             },
             {
@@ -2723,16 +2723,16 @@
             },
             {
               "id": "ctx_trust_extra_1",
-              "delta": -0.1255,
+              "delta": -0.1034,
               "want": "down",
-              "signed": 0.1255,
+              "signed": 0.1034,
               "beyond": true
             },
             {
               "id": "ctx_trust_extra_2",
-              "delta": -0.1702,
+              "delta": -0.1009,
               "want": "down",
-              "signed": 0.1702,
+              "signed": 0.1009,
               "beyond": true
             },
             {
@@ -2758,25 +2758,25 @@
             },
             {
               "id": "ctx_trust_extra_6",
-              "delta": -0.1887,
+              "delta": -0.1882,
               "want": "down",
-              "signed": 0.1887,
+              "signed": 0.1882,
               "beyond": true
             }
           ],
           "grade": "C",
-          "grade_reason": "80% 的增量越过噪声底（方向对率 48%）"
+          "grade_reason": "84% 的增量越过噪声底（方向对率 48%）"
         },
         "danger": {
           "n": 10,
-          "mean_signed": 0.0515,
-          "median_signed": 0.0584,
+          "mean_signed": 0.0468,
+          "median_signed": 0.0564,
           "sign_ok": 9,
           "sign_rate": 0.9,
           "share_beyond": 0.6,
           "mean_ci": [
-            0.0253,
-            0.0782
+            0.0223,
+            0.0714
           ],
           "n_up": 10,
           "n_down": 0,
@@ -2790,9 +2790,9 @@
             },
             {
               "id": "ctx_established_2",
-              "delta": 0.1308,
+              "delta": 0.1229,
               "want": "up",
-              "signed": 0.1308,
+              "signed": 0.1229,
               "beyond": true
             },
             {
@@ -2804,9 +2804,9 @@
             },
             {
               "id": "ctx_afterthreat_2",
-              "delta": 0.0045,
+              "delta": 0.0028,
               "want": "up",
-              "signed": 0.0045,
+              "signed": 0.0028,
               "beyond": false
             },
             {
@@ -2832,9 +2832,9 @@
             },
             {
               "id": "ctx_hostile_extra_4",
-              "delta": 0.0923,
+              "delta": 0.055,
               "want": "up",
-              "signed": 0.0923,
+              "signed": 0.055,
               "beyond": true
             },
             {
@@ -2853,113 +2853,113 @@
             }
           ],
           "grade": "B",
-          "grade_reason": "60% 的增量越过噪声底、均值 CI (0.0253, 0.0782) 不含 0、方向对率 90%"
+          "grade_reason": "60% 的增量越过噪声底、均值 CI (0.0223, 0.0714) 不含 0、方向对率 90%"
         }
       },
       "final_grades": {
         "hostility": {
-          "discrimination": "C",
+          "discrimination": "B",
           "context": "C",
           "final": "C",
-          "disc_reason": "AUC=0.635，但 CI (0.4945, 0.7647) 不稳",
-          "ctx_reason": "36% 的增量越过噪声底（方向对率 73%）"
+          "disc_reason": "AUC=0.666，CI 下界 0.522>0.50",
+          "ctx_reason": "41% 的增量越过噪声底（方向对率 73%）"
         },
         "cooperation": {
           "discrimination": "A",
           "context": "C",
           "final": "C",
-          "disc_reason": "AUC=0.772，CI 下界 0.607>0.50",
+          "disc_reason": "AUC=0.794，CI 下界 0.638>0.50",
           "ctx_reason": "88% 的增量越过噪声底（方向对率 59%）"
         },
         "withdraw": {
           "discrimination": "D",
           "context": "B",
           "final": "D",
-          "disc_reason": "AUC=0.505 < 0.55（CI (0.3106, 0.7034)）",
-          "ctx_reason": "100% 的增量越过噪声底、均值 CI (0.1227, 0.4245) 不含 0、方向对率 83%"
+          "disc_reason": "AUC=0.370 < 0.55（CI (0.1879, 0.5737)）",
+          "ctx_reason": "100% 的增量越过噪声底、均值 CI (0.1221, 0.4179) 不含 0、方向对率 83%"
         },
         "confront": {
-          "discrimination": "D",
+          "discrimination": "C",
           "context": "N",
-          "final": "D",
-          "disc_reason": "AUC=0.414 < 0.55（CI (0.2377, 0.6061)）",
+          "final": "C",
+          "disc_reason": "AUC=0.554，但 CI (0.3526, 0.7446) 不稳",
           "ctx_reason": "可配对样本 1 < 10"
         },
         "disclose": {
           "discrimination": "A",
           "context": "N",
           "final": "A",
-          "disc_reason": "AUC=0.889，CI 下界 0.740>0.50",
+          "disc_reason": "AUC=0.869，CI 下界 0.725>0.50",
           "ctx_reason": ""
         },
         "investigate": {
-          "discrimination": "C",
+          "discrimination": "A",
           "context": "R",
           "final": "R",
-          "disc_reason": "AUC=0.690，但 CI (0.4667, 0.8766) 不稳",
-          "ctx_reason": "100% 的增量越过噪声底、均值 CI (-0.547, -0.2855) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
+          "disc_reason": "AUC=0.810，CI 下界 0.630>0.50",
+          "ctx_reason": "100% 的增量越过噪声底、均值 CI (-0.5878, -0.3173) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
         },
         "trust": {
           "discrimination": "A",
           "context": "B",
           "final": "B",
-          "disc_reason": "AUC=0.778，CI 下界 0.623>0.50",
-          "ctx_reason": "81% 的增量越过噪声底、均值 CI (0.0025, 0.1942) 不含 0、方向对率 75%"
+          "disc_reason": "AUC=0.768，CI 下界 0.615>0.50",
+          "ctx_reason": "75% 的增量越过噪声底、均值 CI (0.0207, 0.1544) 不含 0、方向对率 81%"
         },
         "doubt": {
           "discrimination": "C",
           "context": "C",
           "final": "C",
-          "disc_reason": "AUC=0.614，但 CI (0.4495, 0.7768) 不稳",
-          "ctx_reason": "80% 的增量越过噪声底（方向对率 48%）"
+          "disc_reason": "AUC=0.593，但 CI (0.4224, 0.762) 不稳",
+          "ctx_reason": "84% 的增量越过噪声底（方向对率 48%）"
         },
         "danger": {
           "discrimination": "D",
           "context": "B",
           "final": "D",
-          "disc_reason": "AUC=0.447 < 0.55（CI (0.2552, 0.6375)）",
-          "ctx_reason": "60% 的增量越过噪声底、均值 CI (0.0253, 0.0782) 不含 0、方向对率 90%"
+          "disc_reason": "AUC=0.470 < 0.55（CI (0.2828, 0.6575)）",
+          "ctx_reason": "60% 的增量越过噪声底、均值 CI (0.0223, 0.0714) 不含 0、方向对率 90%"
         },
         "trust_shift": {
-          "discrimination": "A",
+          "discrimination": "C",
           "context": "N",
-          "final": "A",
-          "disc_reason": "AUC=0.807，CI 下界 0.591>0.50",
+          "final": "C",
+          "disc_reason": "AUC=0.740，但 CI (0.4931, 0.9338) 不稳",
           "ctx_reason": ""
         },
         "respect_shift": {
           "discrimination": "C",
           "context": "N",
           "final": "C",
-          "disc_reason": "AUC=0.669，但 CI (0.4048, 0.8939) 不稳",
+          "disc_reason": "AUC=0.673，但 CI (0.4127, 0.8864) 不稳",
           "ctx_reason": ""
         },
         "doubt_shift": {
           "discrimination": "D",
           "context": "N",
           "final": "D",
-          "disc_reason": "AUC=0.407 < 0.55（CI (0.1603, 0.6533)）",
+          "disc_reason": "AUC=0.373 < 0.55（CI (0.1474, 0.6104)）",
           "ctx_reason": ""
         },
         "fondness_shift": {
-          "discrimination": "C",
+          "discrimination": "A",
           "context": "N",
-          "final": "C",
-          "disc_reason": "AUC=0.724，但 CI (0.5, 0.9333) 不稳",
+          "final": "A",
+          "disc_reason": "AUC=0.729，CI 下界 0.507>0.50",
           "ctx_reason": ""
         },
         "alert_shift": {
-          "discrimination": "D",
+          "discrimination": "C",
           "context": "N",
-          "final": "D",
-          "disc_reason": "AUC=0.500 < 0.55（CI (0.2632, 0.7357)）",
+          "final": "C",
+          "disc_reason": "AUC=0.582，但 CI (0.3444, 0.8086) 不稳",
           "ctx_reason": ""
         },
         "goal_shift": {
           "discrimination": "D",
           "context": "N",
           "final": "D",
-          "disc_reason": "AUC=0.450 < 0.55（CI (0.1905, 0.7253)）",
+          "disc_reason": "AUC=0.400 < 0.55（CI (0.1515, 0.6813)）",
           "ctx_reason": ""
         }
       },
@@ -2967,16 +2967,16 @@
         "hostility": {
           "n_high": 1,
           "n_low": 3,
-          "mean_high": 0.2704,
-          "mean_low": 0.2529,
-          "mean_gap": 0.0175,
-          "median_gap": 0.0182,
+          "mean_high": 0.2755,
+          "mean_low": 0.2518,
+          "mean_gap": 0.0237,
+          "median_gap": 0.0211,
           "auc": 1.0,
           "auc_ci": [
             1.0,
             1.0
           ],
-          "best_threshold": 0.2691,
+          "best_threshold": 0.2689,
           "threshold_balanced_acc": 1.0,
           "threshold_accuracy": 1.0,
           "kind": "prob",
@@ -3062,18 +3062,18 @@
         "trust_shift": {
           "n_high": 2,
           "n_low": 13,
-          "mean_high": 2.2049,
-          "mean_low": 2.1668,
-          "mean_gap": 0.0381,
-          "median_gap": -0.0279,
-          "auc": 0.5,
+          "mean_high": 2.1504,
+          "mean_low": 2.1626,
+          "mean_gap": -0.0122,
+          "median_gap": -0.0235,
+          "auc": 0.3846,
           "auc_ci": [
             0.1429,
-            0.8571
+            0.6667
           ],
-          "best_threshold": 2.1382,
-          "threshold_balanced_acc": 0.6538,
-          "threshold_accuracy": 0.4,
+          "best_threshold": 2.133,
+          "threshold_balanced_acc": 0.6923,
+          "threshold_accuracy": 0.4667,
           "kind": "level",
           "boot_n": 2000,
           "boot_seed": 20260923,
@@ -3129,9 +3129,9 @@
         }
       },
       "observable_accuracy": {
-        "passed": 257,
+        "passed": 262,
         "total": 518,
-        "rate": 0.4961,
+        "rate": 0.5058,
         "n_cases": 70,
         "comparable_with_previous_round": false,
         "why": "用例集已重建，与第二轮 48 条口径不可直接比较。"
@@ -3145,12 +3145,12 @@
         "max_len": 512,
         "head_max_len": 192,
         "room": 319,
-        "cache_sha": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
+        "cache_sha": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
         "cache_changed_during_run": false,
         "n_items_measured": 186,
         "token_min": 222,
         "token_median": 236,
-        "token_max": 254,
+        "token_max": 256,
         "n_overflow": 0,
         "passed": {
           "observable": [
@@ -3197,330 +3197,330 @@
     "hostility": {
       "n_high": 23,
       "n_low": 41,
-      "mean_high": 0.3389,
-      "mean_low": 0.2966,
-      "mean_gap": 0.0423,
-      "median_gap": 0.0127,
-      "auc": 0.6352,
+      "mean_high": 0.3392,
+      "mean_low": 0.2922,
+      "mean_gap": 0.0469,
+      "median_gap": 0.0135,
+      "auc": 0.666,
       "auc_ci": [
-        0.4945,
-        0.7647
+        0.5223,
+        0.7995
       ],
-      "best_threshold": 0.2739,
+      "best_threshold": 0.2763,
       "threshold_balanced_acc": 0.6691,
       "threshold_accuracy": 0.625,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
-      "grade": "C",
-      "grade_reason": "AUC=0.635，但 CI (0.4945, 0.7647) 不稳"
+      "grade": "B",
+      "grade_reason": "AUC=0.666，CI 下界 0.522>0.50"
     },
     "cooperation": {
       "n_high": 24,
       "n_low": 19,
-      "mean_high": 0.619,
-      "mean_low": 0.4187,
-      "mean_gap": 0.2004,
-      "median_gap": 0.287,
-      "auc": 0.7719,
+      "mean_high": 0.6271,
+      "mean_low": 0.4196,
+      "mean_gap": 0.2075,
+      "median_gap": 0.2698,
+      "auc": 0.7939,
       "auc_ci": [
-        0.6065,
-        0.8983
+        0.6378,
+        0.9177
       ],
-      "best_threshold": 0.3612,
-      "threshold_balanced_acc": 0.7215,
-      "threshold_accuracy": 0.7442,
+      "best_threshold": 0.4711,
+      "threshold_balanced_acc": 0.7851,
+      "threshold_accuracy": 0.7907,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "A",
-      "grade_reason": "AUC=0.772，CI 下界 0.607>0.50"
+      "grade_reason": "AUC=0.794，CI 下界 0.638>0.50"
     },
     "withdraw": {
       "n_high": 23,
       "n_low": 14,
-      "mean_high": 0.5091,
-      "mean_low": 0.5043,
-      "mean_gap": 0.0048,
-      "median_gap": 0.0025,
-      "auc": 0.5047,
+      "mean_high": 0.4997,
+      "mean_low": 0.5877,
+      "mean_gap": -0.088,
+      "median_gap": -0.0646,
+      "auc": 0.3696,
       "auc_ci": [
-        0.3106,
-        0.7034
+        0.1879,
+        0.5737
       ],
-      "best_threshold": 0.4899,
-      "threshold_balanced_acc": 0.5761,
-      "threshold_accuracy": 0.5946,
+      "best_threshold": 0.886,
+      "threshold_balanced_acc": 0.486,
+      "threshold_accuracy": 0.3784,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "D",
-      "grade_reason": "AUC=0.505 < 0.55（CI (0.3106, 0.7034)）"
+      "grade_reason": "AUC=0.370 < 0.55（CI (0.1879, 0.5737)）"
     },
     "confront": {
       "n_high": 25,
       "n_low": 14,
-      "mean_high": 0.5756,
-      "mean_low": 0.617,
-      "mean_gap": -0.0414,
-      "median_gap": -0.057,
-      "auc": 0.4143,
+      "mean_high": 0.6071,
+      "mean_low": 0.5943,
+      "mean_gap": 0.0127,
+      "median_gap": 0.0338,
+      "auc": 0.5543,
       "auc_ci": [
-        0.2377,
-        0.6061
+        0.3526,
+        0.7446
       ],
-      "best_threshold": 0.4941,
-      "threshold_balanced_acc": 0.5071,
-      "threshold_accuracy": 0.5897,
+      "best_threshold": 0.4958,
+      "threshold_balanced_acc": 0.5829,
+      "threshold_accuracy": 0.6667,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
-      "grade": "D",
-      "grade_reason": "AUC=0.414 < 0.55（CI (0.2377, 0.6061)）"
+      "grade": "C",
+      "grade_reason": "AUC=0.554，但 CI (0.3526, 0.7446) 不稳"
     },
     "disclose": {
       "n_high": 10,
       "n_low": 18,
-      "mean_high": 0.5239,
-      "mean_low": 0.3594,
-      "mean_gap": 0.1645,
-      "median_gap": 0.1287,
-      "auc": 0.8889,
+      "mean_high": 0.539,
+      "mean_low": 0.3693,
+      "mean_gap": 0.1697,
+      "median_gap": 0.1768,
+      "auc": 0.8694,
       "auc_ci": [
-        0.7396,
-        0.9889
+        0.7245,
+        0.9795
       ],
-      "best_threshold": 0.4294,
-      "threshold_balanced_acc": 0.8667,
-      "threshold_accuracy": 0.8571,
+      "best_threshold": 0.4524,
+      "threshold_balanced_acc": 0.7889,
+      "threshold_accuracy": 0.7857,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "A",
-      "grade_reason": "AUC=0.889，CI 下界 0.740>0.50"
+      "grade_reason": "AUC=0.869，CI 下界 0.725>0.50"
     },
     "investigate": {
       "n_high": 19,
       "n_low": 10,
-      "mean_high": 2.2811,
-      "mean_low": 2.213,
-      "mean_gap": 0.0682,
-      "median_gap": 0.0173,
-      "auc": 0.6895,
+      "mean_high": 2.2893,
+      "mean_low": 2.1976,
+      "mean_gap": 0.0916,
+      "median_gap": 0.0725,
+      "auc": 0.8105,
       "auc_ci": [
-        0.4667,
-        0.8766
+        0.6304,
+        0.9481
       ],
-      "best_threshold": 2.2941,
-      "threshold_balanced_acc": 0.6605,
-      "threshold_accuracy": 0.5862,
+      "best_threshold": 2.2264,
+      "threshold_balanced_acc": 0.7711,
+      "threshold_accuracy": 0.7931,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
-      "grade": "C",
-      "grade_reason": "AUC=0.690，但 CI (0.4667, 0.8766) 不稳"
+      "grade": "A",
+      "grade_reason": "AUC=0.810，CI 下界 0.630>0.50"
     },
     "trust": {
       "n_high": 19,
       "n_low": 23,
-      "mean_high": 0.4098,
-      "mean_low": 0.2914,
-      "mean_gap": 0.1184,
-      "median_gap": 0.1186,
-      "auc": 0.778,
+      "mean_high": 0.4205,
+      "mean_low": 0.3062,
+      "mean_gap": 0.1142,
+      "median_gap": 0.1408,
+      "auc": 0.7677,
       "auc_ci": [
-        0.6233,
-        0.9085
+        0.6145,
+        0.9032
       ],
-      "best_threshold": 0.3499,
-      "threshold_balanced_acc": 0.7597,
-      "threshold_accuracy": 0.7619,
+      "best_threshold": 0.3651,
+      "threshold_balanced_acc": 0.7334,
+      "threshold_accuracy": 0.7381,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "A",
-      "grade_reason": "AUC=0.778，CI 下界 0.623>0.50"
+      "grade_reason": "AUC=0.768，CI 下界 0.615>0.50"
     },
     "doubt": {
       "n_high": 19,
       "n_low": 26,
-      "mean_high": 0.3018,
-      "mean_low": 0.2795,
-      "mean_gap": 0.0223,
-      "median_gap": 0.0297,
-      "auc": 0.6144,
+      "mean_high": 0.3106,
+      "mean_low": 0.2865,
+      "mean_gap": 0.0241,
+      "median_gap": 0.0322,
+      "auc": 0.5931,
       "auc_ci": [
-        0.4495,
-        0.7768
+        0.4224,
+        0.762
       ],
-      "best_threshold": 0.2722,
-      "threshold_balanced_acc": 0.6235,
-      "threshold_accuracy": 0.6222,
+      "best_threshold": 0.2771,
+      "threshold_balanced_acc": 0.6427,
+      "threshold_accuracy": 0.6444,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "C",
-      "grade_reason": "AUC=0.614，但 CI (0.4495, 0.7768) 不稳"
+      "grade_reason": "AUC=0.593，但 CI (0.4224, 0.762) 不稳"
     },
     "danger": {
       "n_high": 18,
       "n_low": 22,
-      "mean_high": 0.1907,
-      "mean_low": 0.1951,
-      "mean_gap": -0.0045,
-      "median_gap": -0.0185,
-      "auc": 0.447,
+      "mean_high": 0.2007,
+      "mean_low": 0.2031,
+      "mean_gap": -0.0024,
+      "median_gap": -0.0111,
+      "auc": 0.4697,
       "auc_ci": [
-        0.2552,
-        0.6375
+        0.2828,
+        0.6575
       ],
-      "best_threshold": 0.235,
-      "threshold_balanced_acc": 0.5934,
-      "threshold_accuracy": 0.625,
+      "best_threshold": 0.2374,
+      "threshold_balanced_acc": 0.5707,
+      "threshold_accuracy": 0.6,
       "kind": "prob",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "D",
-      "grade_reason": "AUC=0.447 < 0.55（CI (0.2552, 0.6375)）"
+      "grade_reason": "AUC=0.470 < 0.55（CI (0.2828, 0.6575)）"
     },
     "trust_shift": {
       "n_high": 15,
       "n_low": 10,
-      "mean_high": 2.2441,
-      "mean_low": 2.0996,
-      "mean_gap": 0.1445,
-      "median_gap": 0.1691,
-      "auc": 0.8067,
+      "mean_high": 2.2563,
+      "mean_low": 2.1158,
+      "mean_gap": 0.1404,
+      "median_gap": 0.1364,
+      "auc": 0.74,
       "auc_ci": [
-        0.5909,
-        0.9559
+        0.4931,
+        0.9338
       ],
-      "best_threshold": 2.1417,
+      "best_threshold": 2.1425,
       "threshold_balanced_acc": 0.7667,
       "threshold_accuracy": 0.8,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
-      "grade": "A",
-      "grade_reason": "AUC=0.807，CI 下界 0.591>0.50"
+      "grade": "C",
+      "grade_reason": "AUC=0.740，但 CI (0.4931, 0.9338) 不稳"
     },
     "respect_shift": {
       "n_high": 13,
       "n_low": 10,
-      "mean_high": 2.0882,
-      "mean_low": 1.9699,
-      "mean_gap": 0.1183,
-      "median_gap": 0.0347,
-      "auc": 0.6692,
+      "mean_high": 2.0963,
+      "mean_low": 1.9754,
+      "mean_gap": 0.1209,
+      "median_gap": 0.0491,
+      "auc": 0.6731,
       "auc_ci": [
-        0.4048,
-        0.8939
+        0.4127,
+        0.8864
       ],
-      "best_threshold": 2.0596,
-      "threshold_balanced_acc": 0.6962,
+      "best_threshold": 2.0007,
+      "threshold_balanced_acc": 0.6731,
       "threshold_accuracy": 0.6957,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "C",
-      "grade_reason": "AUC=0.669，但 CI (0.4048, 0.8939) 不稳"
+      "grade_reason": "AUC=0.673，但 CI (0.4127, 0.8864) 不稳"
     },
     "doubt_shift": {
       "n_high": 10,
       "n_low": 15,
-      "mean_high": 2.3194,
-      "mean_low": 2.3377,
-      "mean_gap": -0.0183,
-      "median_gap": -0.031,
-      "auc": 0.4067,
+      "mean_high": 2.3029,
+      "mean_low": 2.3522,
+      "mean_gap": -0.0492,
+      "median_gap": -0.0636,
+      "auc": 0.3733,
       "auc_ci": [
-        0.1603,
-        0.6533
+        0.1474,
+        0.6104
       ],
-      "best_threshold": 2.2356,
+      "best_threshold": 2.5884,
       "threshold_balanced_acc": 0.55,
-      "threshold_accuracy": 0.48,
+      "threshold_accuracy": 0.64,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "D",
-      "grade_reason": "AUC=0.407 < 0.55（CI (0.1603, 0.6533)）"
+      "grade_reason": "AUC=0.373 < 0.55（CI (0.1474, 0.6104)）"
     },
     "fondness_shift": {
       "n_high": 21,
       "n_low": 10,
-      "mean_high": 1.9845,
-      "mean_low": 1.814,
-      "mean_gap": 0.1704,
-      "median_gap": 0.2519,
-      "auc": 0.7238,
+      "mean_high": 2.0134,
+      "mean_low": 1.8528,
+      "mean_gap": 0.1605,
+      "median_gap": 0.1781,
+      "auc": 0.7286,
       "auc_ci": [
-        0.5,
-        0.9333
+        0.5067,
+        0.9345
       ],
-      "best_threshold": 1.7524,
-      "threshold_balanced_acc": 0.7524,
-      "threshold_accuracy": 0.8065,
+      "best_threshold": 1.8506,
+      "threshold_balanced_acc": 0.7286,
+      "threshold_accuracy": 0.7742,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
-      "grade": "C",
-      "grade_reason": "AUC=0.724，但 CI (0.5, 0.9333) 不稳"
+      "grade": "A",
+      "grade_reason": "AUC=0.729，CI 下界 0.507>0.50"
     },
     "alert_shift": {
       "n_high": 17,
       "n_low": 10,
-      "mean_high": 1.9923,
-      "mean_low": 2.0388,
-      "mean_gap": -0.0465,
-      "median_gap": 0.0366,
-      "auc": 0.5,
+      "mean_high": 2.0393,
+      "mean_low": 2.0485,
+      "mean_gap": -0.0092,
+      "median_gap": 0.1029,
+      "auc": 0.5824,
       "auc_ci": [
-        0.2632,
-        0.7357
+        0.3444,
+        0.8086
       ],
-      "best_threshold": 2.0228,
-      "threshold_balanced_acc": 0.6147,
-      "threshold_accuracy": 0.5926,
+      "best_threshold": 1.9998,
+      "threshold_balanced_acc": 0.6529,
+      "threshold_accuracy": 0.6667,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
-      "grade": "D",
-      "grade_reason": "AUC=0.500 < 0.55（CI (0.2632, 0.7357)）"
+      "grade": "C",
+      "grade_reason": "AUC=0.582，但 CI (0.3444, 0.8086) 不稳"
     },
     "goal_shift": {
       "n_high": 10,
       "n_low": 10,
-      "mean_high": 1.9369,
-      "mean_low": 1.9547,
-      "mean_gap": -0.0178,
-      "median_gap": -0.0478,
-      "auc": 0.45,
+      "mean_high": 1.9274,
+      "mean_low": 1.9649,
+      "mean_gap": -0.0375,
+      "median_gap": -0.0758,
+      "auc": 0.4,
       "auc_ci": [
-        0.1905,
-        0.7253
+        0.1515,
+        0.6813
       ],
-      "best_threshold": 1.8983,
+      "best_threshold": 1.8636,
       "threshold_balanced_acc": 0.6,
       "threshold_accuracy": 0.6,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
       "grade": "D",
-      "grade_reason": "AUC=0.450 < 0.55（CI (0.1905, 0.7253)）"
+      "grade_reason": "AUC=0.400 < 0.55（CI (0.1515, 0.6813)）"
     }
   },
   "contextual": {
     "hostility": {
       "n": 22,
-      "mean_signed": 0.042,
-      "median_signed": 0.0404,
+      "mean_signed": 0.0425,
+      "median_signed": 0.0387,
       "sign_ok": 16,
       "sign_rate": 0.7273,
-      "share_beyond": 0.3636,
+      "share_beyond": 0.4091,
       "mean_ci": [
-        0.0171,
-        0.0686
+        0.0176,
+        0.0689
       ],
       "n_up": 11,
       "n_down": 11,
@@ -3548,23 +3548,23 @@
         },
         {
           "id": "ctx_trustcarry_1",
-          "delta": -0.0409,
+          "delta": -0.0553,
           "want": "down",
-          "signed": 0.0409,
-          "beyond": false
+          "signed": 0.0553,
+          "beyond": true
         },
         {
           "id": "ctx_trustcarry_2",
-          "delta": -0.0399,
+          "delta": -0.1034,
           "want": "down",
-          "signed": 0.0399,
-          "beyond": false
+          "signed": 0.1034,
+          "beyond": true
         },
         {
           "id": "ctx_trustcarry_3",
-          "delta": -0.1156,
+          "delta": -0.112,
           "want": "down",
-          "signed": 0.1156,
+          "signed": 0.112,
           "beyond": true
         },
         {
@@ -3576,9 +3576,9 @@
         },
         {
           "id": "ctx_ledger_4",
-          "delta": -0.068,
+          "delta": -0.0833,
           "want": "down",
-          "signed": 0.068,
+          "signed": 0.0833,
           "beyond": true
         },
         {
@@ -3618,9 +3618,9 @@
         },
         {
           "id": "ctx_hostile_extra_4",
-          "delta": 0.0255,
+          "delta": 0.0048,
           "want": "up",
-          "signed": 0.0255,
+          "signed": 0.0048,
           "beyond": false
         },
         {
@@ -3639,17 +3639,17 @@
         },
         {
           "id": "ctx_trust_extra_1",
-          "delta": -0.1108,
+          "delta": -0.0816,
           "want": "down",
-          "signed": 0.1108,
+          "signed": 0.0816,
           "beyond": true
         },
         {
           "id": "ctx_trust_extra_2",
-          "delta": -0.0655,
+          "delta": -0.035,
           "want": "down",
-          "signed": 0.0655,
-          "beyond": true
+          "signed": 0.035,
+          "beyond": false
         },
         {
           "id": "ctx_trust_extra_3",
@@ -3674,48 +3674,48 @@
         },
         {
           "id": "ctx_trust_extra_6",
-          "delta": -0.1398,
+          "delta": -0.1413,
           "want": "down",
-          "signed": 0.1398,
+          "signed": 0.1413,
           "beyond": true
         }
       ],
       "grade": "C",
-      "grade_reason": "36% 的增量越过噪声底（方向对率 73%）"
+      "grade_reason": "41% 的增量越过噪声底（方向对率 73%）"
     },
     "cooperation": {
       "n": 17,
-      "mean_signed": 0.0394,
+      "mean_signed": 0.0338,
       "median_signed": 0.0417,
       "sign_ok": 10,
       "sign_rate": 0.5882,
       "share_beyond": 0.8824,
       "mean_ci": [
-        -0.0717,
-        0.1491
+        -0.0664,
+        0.1337
       ],
       "n_up": 11,
       "n_down": 6,
       "cases": [
         {
           "id": "ctx_trustcarry_1",
-          "delta": -0.3506,
+          "delta": -0.1559,
           "want": "up",
-          "signed": -0.3506,
+          "signed": -0.1559,
           "beyond": true
         },
         {
           "id": "ctx_trustcarry_2",
-          "delta": 0.4157,
+          "delta": 0.1572,
           "want": "up",
-          "signed": 0.4157,
+          "signed": 0.1572,
           "beyond": true
         },
         {
           "id": "ctx_trustcarry_3",
-          "delta": 0.0398,
+          "delta": 0.0394,
           "want": "up",
-          "signed": 0.0398,
+          "signed": 0.0394,
           "beyond": false
         },
         {
@@ -3755,9 +3755,9 @@
         },
         {
           "id": "ctx_hostile_extra_4",
-          "delta": -0.0751,
+          "delta": -0.0936,
           "want": "down",
-          "signed": 0.0751,
+          "signed": 0.0936,
           "beyond": true
         },
         {
@@ -3776,16 +3776,16 @@
         },
         {
           "id": "ctx_trust_extra_1",
-          "delta": -0.252,
+          "delta": -0.2019,
           "want": "up",
-          "signed": -0.252,
+          "signed": -0.2019,
           "beyond": true
         },
         {
           "id": "ctx_trust_extra_2",
-          "delta": -0.3265,
+          "delta": -0.388,
           "want": "up",
-          "signed": -0.3265,
+          "signed": -0.388,
           "beyond": true
         },
         {
@@ -3811,9 +3811,9 @@
         },
         {
           "id": "ctx_trust_extra_6",
-          "delta": -0.1384,
+          "delta": -0.1765,
           "want": "up",
-          "signed": -0.1384,
+          "signed": -0.1765,
           "beyond": true
         }
       ],
@@ -3822,37 +3822,37 @@
     },
     "withdraw": {
       "n": 12,
-      "mean_signed": 0.2795,
-      "median_signed": 0.2927,
+      "mean_signed": 0.2747,
+      "median_signed": 0.2992,
       "sign_ok": 10,
       "sign_rate": 0.8333,
       "share_beyond": 1.0,
       "mean_ci": [
-        0.1227,
-        0.4245
+        0.1221,
+        0.4179
       ],
       "n_up": 1,
       "n_down": 11,
       "cases": [
         {
           "id": "ctx_trustcarry_1",
-          "delta": -0.5919,
+          "delta": -0.4968,
           "want": "down",
-          "signed": 0.5919,
+          "signed": 0.4968,
           "beyond": true
         },
         {
           "id": "ctx_trustcarry_2",
-          "delta": 0.2006,
+          "delta": 0.1624,
           "want": "down",
-          "signed": -0.2006,
+          "signed": -0.1624,
           "beyond": true
         },
         {
           "id": "ctx_trustcarry_3",
-          "delta": -0.3014,
+          "delta": -0.3144,
           "want": "down",
-          "signed": 0.3014,
+          "signed": 0.3144,
           "beyond": true
         },
         {
@@ -3864,9 +3864,9 @@
         },
         {
           "id": "ctx_ledger_3",
-          "delta": -0.1454,
+          "delta": -0.11,
           "want": "down",
-          "signed": 0.1454,
+          "signed": 0.11,
           "beyond": true
         },
         {
@@ -3878,16 +3878,16 @@
         },
         {
           "id": "ctx_trust_extra_1",
-          "delta": -0.3375,
+          "delta": -0.4413,
           "want": "down",
-          "signed": 0.3375,
+          "signed": 0.4413,
           "beyond": true
         },
         {
           "id": "ctx_trust_extra_2",
-          "delta": -0.2202,
+          "delta": -0.1419,
           "want": "down",
-          "signed": 0.2202,
+          "signed": 0.1419,
           "beyond": true
         },
         {
@@ -3913,32 +3913,32 @@
         },
         {
           "id": "ctx_trust_extra_6",
-          "delta": -0.3602,
+          "delta": -0.357,
           "want": "down",
-          "signed": 0.3602,
+          "signed": 0.357,
           "beyond": true
         }
       ],
       "grade": "B",
-      "grade_reason": "100% 的增量越过噪声底、均值 CI (0.1227, 0.4245) 不含 0、方向对率 83%"
+      "grade_reason": "100% 的增量越过噪声底、均值 CI (0.1221, 0.4179) 不含 0、方向对率 83%"
     },
     "confront": {
       "n": 1,
-      "mean_signed": 0.0639,
-      "median_signed": 0.0639,
-      "sign_ok": 1,
-      "sign_rate": 1.0,
-      "share_beyond": 1.0,
+      "mean_signed": -0.024,
+      "median_signed": -0.024,
+      "sign_ok": 0,
+      "sign_rate": 0.0,
+      "share_beyond": 0.0,
       "mean_ci": null,
       "n_up": 1,
       "n_down": 0,
       "cases": [
         {
           "id": "ctx_brokenpromise_1",
-          "delta": 0.0639,
+          "delta": -0.024,
           "want": "up",
-          "signed": 0.0639,
-          "beyond": true
+          "signed": -0.024,
+          "beyond": false
         }
       ],
       "grade": "N",
@@ -3946,14 +3946,14 @@
     },
     "investigate": {
       "n": 10,
-      "mean_signed": -0.4098,
-      "median_signed": -0.3437,
+      "mean_signed": -0.452,
+      "median_signed": -0.3711,
       "sign_ok": 0,
       "sign_rate": 0.0,
       "share_beyond": 1.0,
       "mean_ci": [
-        -0.547,
-        -0.2855
+        -0.5878,
+        -0.3173
       ],
       "n_up": 10,
       "n_down": 0,
@@ -3967,9 +3967,9 @@
         },
         {
           "id": "ctx_topicshift_2",
-          "delta": -0.2668,
+          "delta": -0.3174,
           "want": "up",
-          "signed": -0.2668,
+          "signed": -0.3174,
           "beyond": true
         },
         {
@@ -3988,9 +3988,9 @@
         },
         {
           "id": "ctx_topic_extra_1",
-          "delta": -0.543,
+          "delta": -0.5124,
           "want": "up",
-          "signed": -0.543,
+          "signed": -0.5124,
           "beyond": true
         },
         {
@@ -4009,9 +4009,9 @@
         },
         {
           "id": "ctx_topic_extra_4",
-          "delta": -0.3087,
+          "delta": -0.7107,
           "want": "up",
-          "signed": -0.3087,
+          "signed": -0.7107,
           "beyond": true
         },
         {
@@ -4030,41 +4030,41 @@
         }
       ],
       "grade": "R",
-      "grade_reason": "100% 的增量越过噪声底、均值 CI (-0.547, -0.2855) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
+      "grade_reason": "100% 的增量越过噪声底、均值 CI (-0.5878, -0.3173) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
     },
     "trust": {
       "n": 16,
-      "mean_signed": 0.0987,
-      "median_signed": 0.1193,
-      "sign_ok": 12,
-      "sign_rate": 0.75,
-      "share_beyond": 0.8125,
+      "mean_signed": 0.0884,
+      "median_signed": 0.1076,
+      "sign_ok": 13,
+      "sign_rate": 0.8125,
+      "share_beyond": 0.75,
       "mean_ci": [
-        0.0025,
-        0.1942
+        0.0207,
+        0.1544
       ],
       "n_up": 10,
       "n_down": 6,
       "cases": [
         {
           "id": "ctx_trustcarry_1",
-          "delta": -0.2389,
+          "delta": 0.0328,
           "want": "up",
-          "signed": -0.2389,
-          "beyond": true
+          "signed": 0.0328,
+          "beyond": false
         },
         {
           "id": "ctx_trustcarry_2",
-          "delta": 0.4879,
+          "delta": 0.2414,
           "want": "up",
-          "signed": 0.4879,
+          "signed": 0.2414,
           "beyond": true
         },
         {
           "id": "ctx_trustcarry_3",
-          "delta": 0.1491,
+          "delta": 0.1027,
           "want": "up",
-          "signed": 0.1491,
+          "signed": 0.1027,
           "beyond": true
         },
         {
@@ -4097,9 +4097,9 @@
         },
         {
           "id": "ctx_hostile_extra_4",
-          "delta": -0.0577,
+          "delta": -0.0608,
           "want": "down",
-          "signed": 0.0577,
+          "signed": 0.0608,
           "beyond": true
         },
         {
@@ -4118,16 +4118,16 @@
         },
         {
           "id": "ctx_trust_extra_1",
-          "delta": 0.2767,
+          "delta": 0.1324,
           "want": "up",
-          "signed": 0.2767,
+          "signed": 0.1324,
           "beyond": true
         },
         {
           "id": "ctx_trust_extra_2",
-          "delta": -0.2391,
+          "delta": -0.2203,
           "want": "up",
-          "signed": -0.2391,
+          "signed": -0.2203,
           "beyond": true
         },
         {
@@ -4153,34 +4153,34 @@
         },
         {
           "id": "ctx_trust_extra_6",
-          "delta": 0.3048,
+          "delta": 0.2829,
           "want": "up",
-          "signed": 0.3048,
+          "signed": 0.2829,
           "beyond": true
         }
       ],
       "grade": "B",
-      "grade_reason": "81% 的增量越过噪声底、均值 CI (0.0025, 0.1942) 不含 0、方向对率 75%"
+      "grade_reason": "75% 的增量越过噪声底、均值 CI (0.0207, 0.1544) 不含 0、方向对率 81%"
     },
     "doubt": {
       "n": 25,
-      "mean_signed": -0.0038,
+      "mean_signed": 0.004,
       "median_signed": -0.0053,
       "sign_ok": 12,
       "sign_rate": 0.48,
-      "share_beyond": 0.8,
+      "share_beyond": 0.84,
       "mean_ci": [
-        -0.0602,
-        0.0567
+        -0.0486,
+        0.06
       ],
       "n_up": 14,
       "n_down": 11,
       "cases": [
         {
           "id": "ctx_idflip_1",
-          "delta": 0.1424,
+          "delta": 0.1249,
           "want": "up",
-          "signed": 0.1424,
+          "signed": 0.1249,
           "beyond": true
         },
         {
@@ -4192,23 +4192,23 @@
         },
         {
           "id": "ctx_idflip_3",
-          "delta": -0.0361,
+          "delta": -0.0197,
           "want": "up",
-          "signed": -0.0361,
+          "signed": -0.0197,
           "beyond": false
         },
         {
           "id": "ctx_idflip_4",
-          "delta": -0.1844,
+          "delta": -0.1826,
           "want": "up",
-          "signed": -0.1844,
+          "signed": -0.1826,
           "beyond": true
         },
         {
           "id": "ctx_brokenpromise_2",
-          "delta": -0.1683,
+          "delta": -0.0894,
           "want": "up",
-          "signed": -0.1683,
+          "signed": -0.0894,
           "beyond": true
         },
         {
@@ -4220,23 +4220,23 @@
         },
         {
           "id": "ctx_trustcarry_1",
-          "delta": -0.032,
+          "delta": -0.0694,
           "want": "down",
-          "signed": 0.032,
-          "beyond": false
+          "signed": 0.0694,
+          "beyond": true
         },
         {
           "id": "ctx_trustcarry_2",
-          "delta": -0.0899,
+          "delta": -0.1302,
           "want": "down",
-          "signed": 0.0899,
+          "signed": 0.1302,
           "beyond": true
         },
         {
           "id": "ctx_trustcarry_3",
-          "delta": -0.0527,
+          "delta": -0.0606,
           "want": "down",
-          "signed": 0.0527,
+          "signed": 0.0606,
           "beyond": true
         },
         {
@@ -4255,16 +4255,16 @@
         },
         {
           "id": "ctx_established_3",
-          "delta": -0.1028,
+          "delta": -0.0892,
           "want": "up",
-          "signed": -0.1028,
+          "signed": -0.0892,
           "beyond": true
         },
         {
           "id": "ctx_established_4",
-          "delta": -0.089,
+          "delta": -0.1219,
           "want": "down",
-          "signed": 0.089,
+          "signed": 0.1219,
           "beyond": true
         },
         {
@@ -4290,9 +4290,9 @@
         },
         {
           "id": "ctx_hostile_extra_4",
-          "delta": -0.254,
+          "delta": -0.1783,
           "want": "up",
-          "signed": -0.254,
+          "signed": -0.1783,
           "beyond": true
         },
         {
@@ -4311,16 +4311,16 @@
         },
         {
           "id": "ctx_trust_extra_1",
-          "delta": -0.1255,
+          "delta": -0.1034,
           "want": "down",
-          "signed": 0.1255,
+          "signed": 0.1034,
           "beyond": true
         },
         {
           "id": "ctx_trust_extra_2",
-          "delta": -0.1702,
+          "delta": -0.1009,
           "want": "down",
-          "signed": 0.1702,
+          "signed": 0.1009,
           "beyond": true
         },
         {
@@ -4346,25 +4346,25 @@
         },
         {
           "id": "ctx_trust_extra_6",
-          "delta": -0.1887,
+          "delta": -0.1882,
           "want": "down",
-          "signed": 0.1887,
+          "signed": 0.1882,
           "beyond": true
         }
       ],
       "grade": "C",
-      "grade_reason": "80% 的增量越过噪声底（方向对率 48%）"
+      "grade_reason": "84% 的增量越过噪声底（方向对率 48%）"
     },
     "danger": {
       "n": 10,
-      "mean_signed": 0.0515,
-      "median_signed": 0.0584,
+      "mean_signed": 0.0468,
+      "median_signed": 0.0564,
       "sign_ok": 9,
       "sign_rate": 0.9,
       "share_beyond": 0.6,
       "mean_ci": [
-        0.0253,
-        0.0782
+        0.0223,
+        0.0714
       ],
       "n_up": 10,
       "n_down": 0,
@@ -4378,9 +4378,9 @@
         },
         {
           "id": "ctx_established_2",
-          "delta": 0.1308,
+          "delta": 0.1229,
           "want": "up",
-          "signed": 0.1308,
+          "signed": 0.1229,
           "beyond": true
         },
         {
@@ -4392,9 +4392,9 @@
         },
         {
           "id": "ctx_afterthreat_2",
-          "delta": 0.0045,
+          "delta": 0.0028,
           "want": "up",
-          "signed": 0.0045,
+          "signed": 0.0028,
           "beyond": false
         },
         {
@@ -4420,9 +4420,9 @@
         },
         {
           "id": "ctx_hostile_extra_4",
-          "delta": 0.0923,
+          "delta": 0.055,
           "want": "up",
-          "signed": 0.0923,
+          "signed": 0.055,
           "beyond": true
         },
         {
@@ -4441,120 +4441,120 @@
         }
       ],
       "grade": "B",
-      "grade_reason": "60% 的增量越过噪声底、均值 CI (0.0253, 0.0782) 不含 0、方向对率 90%"
+      "grade_reason": "60% 的增量越过噪声底、均值 CI (0.0223, 0.0714) 不含 0、方向对率 90%"
     }
   },
   "final_grades": {
     "hostility": {
-      "discrimination": "C",
+      "discrimination": "B",
       "context": "C",
       "final": "C",
-      "disc_reason": "AUC=0.635，但 CI (0.4945, 0.7647) 不稳",
-      "ctx_reason": "36% 的增量越过噪声底（方向对率 73%）"
+      "disc_reason": "AUC=0.666，CI 下界 0.522>0.50",
+      "ctx_reason": "41% 的增量越过噪声底（方向对率 73%）"
     },
     "cooperation": {
       "discrimination": "A",
       "context": "C",
       "final": "C",
-      "disc_reason": "AUC=0.772，CI 下界 0.607>0.50",
+      "disc_reason": "AUC=0.794，CI 下界 0.638>0.50",
       "ctx_reason": "88% 的增量越过噪声底（方向对率 59%）"
     },
     "withdraw": {
       "discrimination": "D",
       "context": "B",
       "final": "D",
-      "disc_reason": "AUC=0.505 < 0.55（CI (0.3106, 0.7034)）",
-      "ctx_reason": "100% 的增量越过噪声底、均值 CI (0.1227, 0.4245) 不含 0、方向对率 83%"
+      "disc_reason": "AUC=0.370 < 0.55（CI (0.1879, 0.5737)）",
+      "ctx_reason": "100% 的增量越过噪声底、均值 CI (0.1221, 0.4179) 不含 0、方向对率 83%"
     },
     "confront": {
-      "discrimination": "D",
+      "discrimination": "C",
       "context": "N",
-      "final": "D",
-      "disc_reason": "AUC=0.414 < 0.55（CI (0.2377, 0.6061)）",
+      "final": "C",
+      "disc_reason": "AUC=0.554，但 CI (0.3526, 0.7446) 不稳",
       "ctx_reason": "可配对样本 1 < 10"
     },
     "disclose": {
       "discrimination": "A",
       "context": "N",
       "final": "A",
-      "disc_reason": "AUC=0.889，CI 下界 0.740>0.50",
+      "disc_reason": "AUC=0.869，CI 下界 0.725>0.50",
       "ctx_reason": ""
     },
     "investigate": {
-      "discrimination": "C",
+      "discrimination": "A",
       "context": "R",
       "final": "R",
-      "disc_reason": "AUC=0.690，但 CI (0.4667, 0.8766) 不稳",
-      "ctx_reason": "100% 的增量越过噪声底、均值 CI (-0.547, -0.2855) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
+      "disc_reason": "AUC=0.810，CI 下界 0.630>0.50",
+      "ctx_reason": "100% 的增量越过噪声底、均值 CI (-0.5878, -0.3173) 不含 0，但**方向对率只有 0%** —— 稳定反向，先去查用例与信号语义"
     },
     "trust": {
       "discrimination": "A",
       "context": "B",
       "final": "B",
-      "disc_reason": "AUC=0.778，CI 下界 0.623>0.50",
-      "ctx_reason": "81% 的增量越过噪声底、均值 CI (0.0025, 0.1942) 不含 0、方向对率 75%"
+      "disc_reason": "AUC=0.768，CI 下界 0.615>0.50",
+      "ctx_reason": "75% 的增量越过噪声底、均值 CI (0.0207, 0.1544) 不含 0、方向对率 81%"
     },
     "doubt": {
       "discrimination": "C",
       "context": "C",
       "final": "C",
-      "disc_reason": "AUC=0.614，但 CI (0.4495, 0.7768) 不稳",
-      "ctx_reason": "80% 的增量越过噪声底（方向对率 48%）"
+      "disc_reason": "AUC=0.593，但 CI (0.4224, 0.762) 不稳",
+      "ctx_reason": "84% 的增量越过噪声底（方向对率 48%）"
     },
     "danger": {
       "discrimination": "D",
       "context": "B",
       "final": "D",
-      "disc_reason": "AUC=0.447 < 0.55（CI (0.2552, 0.6375)）",
-      "ctx_reason": "60% 的增量越过噪声底、均值 CI (0.0253, 0.0782) 不含 0、方向对率 90%"
+      "disc_reason": "AUC=0.470 < 0.55（CI (0.2828, 0.6575)）",
+      "ctx_reason": "60% 的增量越过噪声底、均值 CI (0.0223, 0.0714) 不含 0、方向对率 90%"
     },
     "trust_shift": {
-      "discrimination": "A",
+      "discrimination": "C",
       "context": "N",
-      "final": "A",
-      "disc_reason": "AUC=0.807，CI 下界 0.591>0.50",
+      "final": "C",
+      "disc_reason": "AUC=0.740，但 CI (0.4931, 0.9338) 不稳",
       "ctx_reason": ""
     },
     "respect_shift": {
       "discrimination": "C",
       "context": "N",
       "final": "C",
-      "disc_reason": "AUC=0.669，但 CI (0.4048, 0.8939) 不稳",
+      "disc_reason": "AUC=0.673，但 CI (0.4127, 0.8864) 不稳",
       "ctx_reason": ""
     },
     "doubt_shift": {
       "discrimination": "D",
       "context": "N",
       "final": "D",
-      "disc_reason": "AUC=0.407 < 0.55（CI (0.1603, 0.6533)）",
+      "disc_reason": "AUC=0.373 < 0.55（CI (0.1474, 0.6104)）",
       "ctx_reason": ""
     },
     "fondness_shift": {
-      "discrimination": "C",
+      "discrimination": "A",
       "context": "N",
-      "final": "C",
-      "disc_reason": "AUC=0.724，但 CI (0.5, 0.9333) 不稳",
+      "final": "A",
+      "disc_reason": "AUC=0.729，CI 下界 0.507>0.50",
       "ctx_reason": ""
     },
     "alert_shift": {
-      "discrimination": "D",
+      "discrimination": "C",
       "context": "N",
-      "final": "D",
-      "disc_reason": "AUC=0.500 < 0.55（CI (0.2632, 0.7357)）",
+      "final": "C",
+      "disc_reason": "AUC=0.582，但 CI (0.3444, 0.8086) 不稳",
       "ctx_reason": ""
     },
     "goal_shift": {
       "discrimination": "D",
       "context": "N",
       "final": "D",
-      "disc_reason": "AUC=0.450 < 0.55（CI (0.1905, 0.7253)）",
+      "disc_reason": "AUC=0.400 < 0.55（CI (0.1515, 0.6813)）",
       "ctx_reason": ""
     }
   },
   "observable_accuracy": {
-    "passed": 257,
+    "passed": 262,
     "total": 518,
-    "rate": 0.4961,
+    "rate": 0.5058,
     "n_cases": 70,
     "comparable_with_previous_round": false,
     "why": "用例集已重建，与第二轮 48 条口径不可直接比较。"
@@ -4568,16 +4568,16 @@
     "hostility": {
       "n_high": 1,
       "n_low": 3,
-      "mean_high": 0.2704,
-      "mean_low": 0.2529,
-      "mean_gap": 0.0175,
-      "median_gap": 0.0182,
+      "mean_high": 0.2755,
+      "mean_low": 0.2518,
+      "mean_gap": 0.0237,
+      "median_gap": 0.0211,
       "auc": 1.0,
       "auc_ci": [
         1.0,
         1.0
       ],
-      "best_threshold": 0.2691,
+      "best_threshold": 0.2689,
       "threshold_balanced_acc": 1.0,
       "threshold_accuracy": 1.0,
       "kind": "prob",
@@ -4663,18 +4663,18 @@
     "trust_shift": {
       "n_high": 2,
       "n_low": 13,
-      "mean_high": 2.2049,
-      "mean_low": 2.1668,
-      "mean_gap": 0.0381,
-      "median_gap": -0.0279,
-      "auc": 0.5,
+      "mean_high": 2.1504,
+      "mean_low": 2.1626,
+      "mean_gap": -0.0122,
+      "median_gap": -0.0235,
+      "auc": 0.3846,
       "auc_ci": [
         0.1429,
-        0.8571
+        0.6667
       ],
-      "best_threshold": 2.1382,
-      "threshold_balanced_acc": 0.6538,
-      "threshold_accuracy": 0.4,
+      "best_threshold": 2.133,
+      "threshold_balanced_acc": 0.6923,
+      "threshold_accuracy": 0.4667,
       "kind": "level",
       "boot_n": 2000,
       "boot_seed": 20260923,
@@ -4733,7 +4733,7 @@
     "observable": 518,
     "hidden_truth": 38
   },
-  "run_id": "p3r3",
+  "run_id": "p3p2r1",
   "validity": {
     "_readme": [
       "req.5：任何输入被截断 / 未被有效呈现的用例，必须从能力对比中剔除，并单独列出。",
@@ -4743,12 +4743,12 @@
     "max_len": 512,
     "head_max_len": 192,
     "room": 319,
-    "cache_sha": "a437c2e6d5d5a721967cd44e3a3be9c9214e54a0c20aa0b94b06e911e3aaed40",
+    "cache_sha": "ac954c9494cde48427b80091daab20f1b5c74ddb1c7c5c9aa46940a20652abc7",
     "cache_changed_during_run": false,
     "n_items_measured": 186,
     "token_min": 222,
     "token_median": 236,
-    "token_max": 254,
+    "token_max": 256,
     "n_overflow": 0,
     "passed": {
       "observable": [

@@ -43,7 +43,7 @@ os.environ.setdefault("no_proxy", "127.0.0.1,localhost")
 
 import laya_bridge as B  # noqa: E402
 
-CASES = os.path.join(ROOT, "tests", "cases", "p3_experience.json")
+CASES = os.path.join(ROOT, "tests", "experience", "p3_experience.json")
 OUT = os.path.join(ROOT, "tests", "runs")
 REPEATS = 3
 
