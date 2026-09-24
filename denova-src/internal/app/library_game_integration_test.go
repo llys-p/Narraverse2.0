@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -41,22 +42,35 @@ type gameLibraryModelRequest struct {
 	ToolNames []string
 }
 
+type gameLibraryToolCall struct {
+	ID       string `json:"id"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
 type gameLibraryModelMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string                `json:"role"`
+	Content    string                `json:"content"`
+	ToolCallID string                `json:"tool_call_id"`
+	ToolCalls  []gameLibraryToolCall `json:"tool_calls"`
 }
 
 type gameLibraryFakeModelServer struct {
 	mu       sync.Mutex
 	calls    int
 	requests []gameLibraryModelRequest
+	// readItemID 非空时启用库读取脚本：首轮强制调用 read_library_item，
+	// 工具结果回填后再叙述 → submit（D1 修复轮的持久化链验证）。
+	readItemID string
 }
 
 func (s *gameLibraryFakeModelServer) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	var payload struct {
-		Messages   []gameLibraryModelMessage `json:"messages"`
-		Tools      []struct {
+		Messages []gameLibraryModelMessage `json:"messages"`
+		Tools    []struct {
 			Function struct {
 				Name string `json:"name"`
 			} `json:"function"`
@@ -77,7 +91,8 @@ func (s *gameLibraryFakeModelServer) handle(w http.ResponseWriter, r *http.Reque
 
 	// 回合协议脚本：定稿阶段请求 tool_choice=none → 返回定稿叙述；带协议重试反馈
 	// （completion guard 注入）或 tool 结果的请求 → submit_interactive_turn 工具
-	// 调用；首轮 → 纯叙述（触发协议恢复重试）。
+	// 调用；首轮 → 纯叙述（触发协议恢复重试）。readItemID 非空时走库读取脚本：
+	// 首轮强制 read_library_item，工具结果回填后叙述，再按协议反馈 submit。
 	toolChoiceNone := false
 	if tc, ok := payload.ToolChoice.(string); ok && tc == "none" {
 		toolChoiceNone = true
@@ -107,20 +122,60 @@ func (s *gameLibraryFakeModelServer) handle(w http.ResponseWriter, r *http.Reque
 			flusher.Flush()
 		}
 	}
-	switch {
-	case toolChoiceNone:
-		emit(map[string]any{"role": "assistant", "content": "石门缓缓开启。"}, nil, false)
-		emit(map[string]any{}, "stop", true)
-	case shouldSubmit:
+	emitSubmit := func() {
 		args := `{"state_changes":[{"op":"replace","actor_id":"story","field_id":"当前事件","value":"主角在门后听到锁链拖地的声音。"},{"op":"replace","actor_id":"story","field_id":"当前详细地点","value":"石门之内"}],"choices":["进入房间","观察门后","检查锁链","询问同伴","退后戒备"]}`
 		emit(map[string]any{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{
 			"index": 0, "id": "call-submit", "type": "function",
 			"function": map[string]any{"name": "submit_interactive_turn", "arguments": args},
 		}}}, nil, false)
 		emit(map[string]any{}, "tool_calls", true)
-	default:
+	}
+	emitNarrative := func() {
 		emit(map[string]any{"role": "assistant", "content": "门后传来锁链拖地的声音。"}, nil, false)
 		emit(map[string]any{}, "stop", true)
+	}
+	switch {
+	case toolChoiceNone:
+		emit(map[string]any{"role": "assistant", "content": "石门缓缓开启。"}, nil, false)
+		emit(map[string]any{}, "stop", true)
+	case s.readItemID != "":
+		callNames := map[string]string{}
+		hasFeedback, hasNarrative, readResultSeen, submitSeen := false, false, false, false
+		for _, m := range payload.Messages {
+			if strings.Contains(m.Content, "[Interactive turn protocol feedback") {
+				hasFeedback = true
+			}
+			if m.Role == "assistant" && strings.TrimSpace(m.Content) != "" {
+				hasNarrative = true
+			}
+			for _, tc := range m.ToolCalls {
+				callNames[tc.ID] = tc.Function.Name
+			}
+			if m.Role == "tool" {
+				switch callNames[m.ToolCallID] {
+				case "read_library_item":
+					readResultSeen = true
+				case "submit_interactive_turn":
+					submitSeen = true
+				}
+			}
+		}
+		switch {
+		case submitSeen || (hasFeedback && hasNarrative):
+			emitSubmit()
+		case readResultSeen:
+			emitNarrative()
+		default:
+			emit(map[string]any{"role": "assistant", "content": "", "tool_calls": []any{map[string]any{
+				"index": 0, "id": "call-read-library", "type": "function",
+				"function": map[string]any{"name": "read_library_item", "arguments": `{"itemId":"` + s.readItemID + `"}`},
+			}}}, nil, false)
+			emit(map[string]any{}, "tool_calls", true)
+		}
+	case shouldSubmit:
+		emitSubmit()
+	default:
+		emitNarrative()
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
 }
@@ -167,6 +222,22 @@ func firstEventOfType(events []agent.Event, eventType string) (agent.Event, bool
 	return agent.Event{}, false
 }
 
+// D1 修复轮：每个虚构条目嵌入非空、唯一的 ASCII 标记串——落盘扫描按标记直扫
+// （不再依赖连续汉字 n-gram），标记出现在库源文件之外即为泄漏。
+const (
+	gameFixtureMarkerResident = "LIBFIX-MARK-RES-01"
+	gameFixtureMarkerAuto     = "LIBFIX-MARK-AUTO-01"
+	gameFixtureMarkerManual1  = "LIBFIX-MARK-MAN-01"
+	gameFixtureMarkerManual2  = "LIBFIX-MARK-MAN-02"
+)
+
+var gameFixtureMarkers = []string{
+	gameFixtureMarkerResident,
+	gameFixtureMarkerAuto,
+	gameFixtureMarkerManual1,
+	gameFixtureMarkerManual2,
+}
+
 // interactiveGameIntegrationFixture 构造带真实库文件与假模型端点的最小互动 App。
 func interactiveGameIntegrationFixture(t *testing.T) (*App, *InteractiveAppService, *gameLibraryFakeModelServer, library.Library, string, *interactive.Store, interactive.StorySummary, string) {
 	t.Helper()
@@ -199,10 +270,10 @@ func interactiveGameIntegrationFixture(t *testing.T) (*App, *InteractiveAppServi
 		t.Fatal(err)
 	}
 	for _, item := range []library.ItemInput{
-		{ID: "item-resident", Name: "常驻一", Type: "character", Origin: "original", LoadMode: "resident", Content: strPtrItem("常驻正文")},
-		{ID: "item-auto-1", Name: "自动一", Type: "character", Origin: "original", LoadMode: "auto", Content: strPtrItem("自动正文")},
-		{ID: "item-manual-1", Name: "手动一", Type: "character", Origin: "original", LoadMode: "manual", Content: strPtrItem("手动正文")},
-		{ID: "item-manual-2", Name: "手动二", Type: "character", Origin: "original", LoadMode: "manual", Content: strPtrItem("未授权正文")},
+		{ID: "item-resident", Name: "常驻一", Type: "character", Origin: "original", LoadMode: "resident", Content: strPtrItem(gameFixtureMarkerResident + " 常驻正文")},
+		{ID: "item-auto-1", Name: "自动一", Type: "character", Origin: "original", LoadMode: "auto", Content: strPtrItem(gameFixtureMarkerAuto + " 自动正文")},
+		{ID: "item-manual-1", Name: "手动一", Type: "character", Origin: "original", LoadMode: "manual", Content: strPtrItem(gameFixtureMarkerManual1 + " 手动正文")},
+		{ID: "item-manual-2", Name: "手动二", Type: "character", Origin: "original", LoadMode: "manual", Content: strPtrItem(gameFixtureMarkerManual2 + " 未授权正文")},
 	} {
 		if _, _, err := a.CreateWorkLibraryItem(ctx, l.ID, item); err != nil {
 			t.Fatal(err)
@@ -225,10 +296,10 @@ func interactiveGameIntegrationFixture(t *testing.T) (*App, *InteractiveAppServi
 	})
 
 	story, err := a.interactive.CreateStory(interactive.CreateStoryRequest{
-		Title:            "库背景集成",
-		Origin:           "主角醒来发现世界已末日",
-		StoryTellerID:    "classic",
-		ReplyTargetChars: 800,
+		Title:             "库背景集成",
+		Origin:            "主角醒来发现世界已末日",
+		StoryTellerID:     "classic",
+		ReplyTargetChars:  800,
 		DirectorRunPolicy: &interactive.StoryDirectorRunPolicy{Mode: interactive.DirectorRunModeManual},
 	})
 	if err != nil {
@@ -444,4 +515,289 @@ func TestStartInteractiveTaskLibraryTurnRegenerateAndMissIntegration(t *testing.
 	if task3.Status() != TaskError {
 		t.Fatalf("miss task must end in error state, got %s", task3.Status())
 	}
+}
+
+// ── D1 修复轮（2026-09-25）：read_library_item 真实触发后的全通道落盘扫描 ──
+
+// findGameRunLedgers 返回隔离数据目录下全部 run ledger JSONL（<workspace>/.denova/runs/*.jsonl）。
+func findGameRunLedgers(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) == ".jsonl" && filepath.Base(filepath.Dir(path)) == "runs" {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk run ledgers: %v", err)
+	}
+	return out
+}
+
+// findGameStoryFiles 返回隔离数据目录下全部故事存档 JSONL（story-*.jsonl，含备份副本）。
+func findGameStoryFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		base := filepath.Base(path)
+		if filepath.Ext(base) == ".jsonl" && strings.HasPrefix(base, "story-") {
+			out = append(out, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk story archives: %v", err)
+	}
+	return out
+}
+
+// scanGameFixtureMarkers 对隔离数据目录逐文件做标记串直扫（非 n-gram），
+// 返回 文件绝对路径 → 命中标记列表。
+func scanGameFixtureMarkers(t *testing.T, root string, markers []string) map[string][]string {
+	t.Helper()
+	hits := map[string][]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("scan read %s: %v", path, readErr)
+		}
+		for _, marker := range markers {
+			if strings.Contains(string(raw), marker) {
+				hits[path] = append(hits[path], marker)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk data dir: %v", err)
+	}
+	return hits
+}
+
+// assertGamePersistenceChannelsMetadataOnly 断言全部落盘通道中标记只允许出现在库源文件：
+// 模型输入只允许存在于内存捕获（server.requests），任何落盘副本（run ledger、故事
+// display 存档、Session、服务日志、备份等）出现标记即失败。同时自检标记非空唯一、
+// 目标文件真实生成，避免扫描假绿。
+func assertGamePersistenceChannelsMetadataOnly(t *testing.T, phase, root, libraryPath string, markers []string) []string {
+	t.Helper()
+	// 自检：标记必须非空且唯一（空标记会让扫描假绿）。
+	if len(markers) == 0 {
+		t.Fatalf("%s: fixture markers must not be empty", phase)
+	}
+	seen := map[string]bool{}
+	for _, marker := range markers {
+		if strings.TrimSpace(marker) == "" {
+			t.Fatalf("%s: fixture marker must be non-empty ASCII text", phase)
+		}
+		if seen[marker] {
+			t.Fatalf("%s: fixture marker %q duplicated", phase, marker)
+		}
+		seen[marker] = true
+	}
+	// 必备落盘目标必须真实生成，否则扫描无效。
+	ledgers := findGameRunLedgers(t, root)
+	if len(ledgers) == 0 {
+		t.Fatalf("%s: run ledger files were not generated, scan would be vacuous", phase)
+	}
+	storyFiles := findGameStoryFiles(t, root)
+	if len(storyFiles) == 0 {
+		t.Fatalf("%s: story archive files were not generated, scan would be vacuous", phase)
+	}
+	// 库源文件必须命中全部标记：证明扫描器能看见标记、源文件未被清空或改写。
+	// 模型输入属"允许的内存捕获"，不经此扫描（由调用方直接断言 server.requests）。
+	hits := scanGameFixtureMarkers(t, root, markers)
+	if sourceHits := hits[libraryPath]; len(sourceHits) != len(markers) {
+		t.Fatalf("%s: library source file must keep all markers, got %v", phase, sourceHits)
+	}
+	for file, fileHits := range hits {
+		if file != libraryPath {
+			t.Fatalf("%s: marker leaked into persisted channel %s (%v)", phase, file, fileHits)
+		}
+	}
+	// 故事 display 存档必须真实捕获过库读取事件（否则 story 侧扫描无意义）。
+	noticeArchived := false
+	for _, storyFile := range storyFiles {
+		raw, err := os.ReadFile(storyFile)
+		if err != nil {
+			t.Fatalf("%s: read story archive %s: %v", phase, storyFile, err)
+		}
+		if strings.Contains(string(raw), "library-item-read") {
+			noticeArchived = true
+		}
+	}
+	if !noticeArchived {
+		t.Fatalf("%s: story display archive never captured the sanitized read notice, scan would be vacuous", phase)
+	}
+	return ledgers
+}
+
+// ledgerRecordText 从 run ledger 字段值取文本：原始字符串，或 ledger 对正文类字段
+// 摘要后的 {bytes,chars,hash,preview} 形态。
+func ledgerRecordText(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case map[string]any:
+		preview, _ := typed["preview"].(string)
+		return preview
+	default:
+		return ""
+	}
+}
+
+// assertReadToolLedgerEventMetadataOnly 在 run ledger 中定位 read_library_item 的
+// tool_result 落盘事件（带 library_read 元数据的那条），断言其 content 是固定提示、
+// 不含任何正文标记，且 library_read 只携带字节数与条目元数据。
+func assertReadToolLedgerEventMetadataOnly(t *testing.T, phase string, ledgers []string) {
+	t.Helper()
+	found := false
+	for _, ledger := range ledgers {
+		raw, err := os.ReadFile(ledger)
+		if err != nil {
+			t.Fatalf("%s: read ledger %s: %v", phase, ledger, err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if !strings.Contains(line, `"read_library_item"`) {
+				continue
+			}
+			var record struct {
+				Data struct {
+					EventData map[string]any `json:"event_data"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(line), &record); err != nil {
+				continue
+			}
+			eventData := record.Data.EventData
+			name, _ := eventData["name"].(string)
+			if name != "read_library_item" {
+				continue
+			}
+			meta, _ := eventData["library_read"].(map[string]any)
+			if meta == nil {
+				continue // tool_call / tool_execution 等其它事件形态，另行覆盖
+			}
+			found = true
+			content := ledgerRecordText(eventData["content"])
+			if !strings.Contains(content, "library-item-read") {
+				t.Fatalf("%s: ledger tool_result content must be the sanitized notice: %q", phase, content)
+			}
+			for _, marker := range gameFixtureMarkers {
+				if strings.Contains(content, marker) {
+					t.Fatalf("%s: ledger tool_result notice leaked body: %q", phase, content)
+				}
+			}
+			if bytes, ok := meta["bytes"].(float64); !ok || bytes <= 0 {
+				t.Fatalf("%s: ledger meta must carry measured bytes: %#v", phase, meta)
+			}
+			if itemID, _ := meta["itemId"].(string); itemID != "item-auto-1" {
+				t.Fatalf("%s: ledger meta must carry the item id (tolerant parse of the runtime result): %#v", phase, meta)
+			}
+			t.Logf("%s: ledger read event content=%q meta=%v", phase, content, meta)
+		}
+	}
+	if !found {
+		t.Fatalf("%s: read_library_item tool_result event not found in run ledgers", phase)
+	}
+}
+
+// TestLibraryGameReadToolKeepsBodyOutOfPersistedChannels 用确定性假模型强制触发一次
+// 库按需读取，验证 B3c 验收 D1 的修复在真实持久化链上成立：模型侧收到完整正文；
+// run ledger、turn display_events（story jsonl）与 Session 落盘无正文标记；库文件与
+// revision 不变；regenerate 复用原绑定且新 run 的落盘同样干净。
+func TestLibraryGameReadToolKeepsBodyOutOfPersistedChannels(t *testing.T) {
+	ctx := context.Background()
+	a, svc, server, l, revision, _, story, libraryPath := interactiveGameIntegrationFixture(t)
+	root := filepath.Dir(filepath.Dir(libraryPath)) // <root>/libraries/library-<id>.json → <root>
+	worldContexts := a.worldContext()
+	server.readItemID = "item-auto-1"
+	const message = "我照着地图走向雾巷"
+
+	task := svc.startInteractiveTask(ctx, story.ID, "main", message, nil, "", "", InteractiveTaskInput{
+		Library: InteractiveLibraryControl{LibraryID: l.ID, ExpectedRevision: revision, ManualItemIDs: []string{"item-manual-1"}},
+	})
+	if task == nil {
+		t.Fatal("library read turn task must start")
+	}
+	events := drainInteractiveTaskEvents(t, task, 60*time.Second)
+	assertNoErrorEvents(t, "read turn", events)
+	if ev, ok := firstEventOfType(events, "library_context_state"); !ok {
+		t.Fatalf("read turn must emit the library state event (%v)", eventTypes(events))
+	} else if data, ok := ev.Data.(map[string]any); !ok || data["state"] != "active" {
+		t.Fatalf("library state event must be active: %#v", ev.Data)
+	}
+	turnID := persistedTurnID(t, "read turn", events)
+
+	// 模型侧：工具确实被请求执行，且工具结果（含完整正文）进入了下一次模型输入。
+	calls, requests := server.snapshotRequests()
+	readRequested, bodyDelivered := false, false
+	for _, req := range requests {
+		for _, m := range req.Messages {
+			for _, tc := range m.ToolCalls {
+				if tc.Function.Name == "read_library_item" {
+					readRequested = true
+				}
+			}
+			if m.Role == "tool" && strings.Contains(m.Content, gameFixtureMarkerAuto) {
+				bodyDelivered = true
+				if !strings.Contains(m.Content, "自动正文") {
+					t.Fatalf("tool result delivered to the model must keep the full body: %q", m.Content)
+				}
+			}
+		}
+	}
+	if !readRequested {
+		t.Fatalf("fake model script must force a read_library_item call (calls=%d)", calls)
+	}
+	if !bodyDelivered {
+		t.Fatalf("model must receive the item body through the tool loop (calls=%d)", calls)
+	}
+	t.Logf("read turn: model calls=%d (tool forced), body delivered to model, turn=%s", calls, turnID)
+
+	// 绑定索引与库只读性：库文件由 fixture 的 Cleanup 逐字节复核，此处锁定 revision。
+	if _, ok := worldContexts.interactiveRuns.findByPersistedTurn(story.ID, "main", turnID); !ok {
+		t.Fatal("read turn must be indexed to its InteractiveRun")
+	}
+	if _, revisionAfter, err := a.GetWorkLibrary(ctx, l.ID); err != nil || revisionAfter != revision {
+		t.Fatalf("library revision must not change: err=%v before=%s after=%s", err, revision, revisionAfter)
+	}
+
+	// 全通道落盘扫描 + run ledger 事件形态。
+	ledgers := assertGamePersistenceChannelsMetadataOnly(t, "read turn", root, libraryPath, gameFixtureMarkers)
+	assertReadToolLedgerEventMetadataOnly(t, "read turn", ledgers)
+
+	// regenerate：空 InteractiveTaskInput 服务端复用原绑定，新 run 的落盘同样干净。
+	task2 := svc.startInteractiveTask(ctx, story.ID, "main", message, nil, turnID, "", InteractiveTaskInput{})
+	if task2 == nil {
+		t.Fatal("regenerate task must start")
+	}
+	events2 := drainInteractiveTaskEvents(t, task2, 60*time.Second)
+	assertNoErrorEvents(t, "regenerate", events2)
+	if ev, ok := firstEventOfType(events2, "library_context_state"); !ok {
+		t.Fatalf("regenerate must re-emit the library state event (%v)", eventTypes(events2))
+	} else if data, ok := ev.Data.(map[string]any); !ok || data["state"] != "active" {
+		t.Fatalf("regenerate state event must be active: %#v", ev.Data)
+	}
+	turn2ID := persistedTurnID(t, "regenerate", events2)
+	runID, _ := worldContexts.interactiveRuns.findByPersistedTurn(story.ID, "main", turnID)
+	runID2, ok := worldContexts.interactiveRuns.findByPersistedTurn(story.ID, "main", turn2ID)
+	if !ok || runID2 != runID {
+		t.Fatalf("regenerate must reuse the original InteractiveRun: got %q want %q", runID2, runID)
+	}
+	record2, _ := worldContexts.interactiveRuns.snapshot(runID2)
+	if record2.library == nil || record2.library.expectedRevision != revision || record2.library.libraryID != l.ID {
+		t.Fatalf("regenerate must keep the original library binding: %#v", record2.library)
+	}
+	ledgers2 := assertGamePersistenceChannelsMetadataOnly(t, "regenerate", root, libraryPath, gameFixtureMarkers)
+	assertReadToolLedgerEventMetadataOnly(t, "regenerate", ledgers2)
 }

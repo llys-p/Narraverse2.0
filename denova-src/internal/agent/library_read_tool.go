@@ -24,6 +24,19 @@ import (
 //     不把失败伪装成成功或空内容。
 const libraryReadItemToolName = "read_library_item"
 
+// 脱敏事件的固定文案：fail-closed 输出不允许包含工具结果的任何原文片段。
+const (
+	libraryReadEmptyNotice      = "[library-item-read] empty result"
+	libraryReadUnparsableNotice = "[library-item-read] unparsable result"
+	// libraryReadUnparsableCode 是脱敏层在解析失败且无白名单错误码时回传的固定码
+	// （固定字面量，不来自工具结果内容）。
+	libraryReadUnparsableCode = "unparsable"
+)
+
+// libraryReadStableErrorCodes 是运行期显式失败码白名单（见 newLibraryReadTools 注释）；
+// 事件脱敏只允许回传码本身，不允许码后的消息文本。
+var libraryReadStableErrorCodes = []string{"unavailable", "stale", "denied", "budget_exceeded", "released"}
+
 // newLibraryReadTools 构造 library 模式的按需读取工具集（当前仅单条读取）。
 func newLibraryReadTools(run *libraryruntime.Run) ([]tool.BaseTool, error) {
 	if run == nil {
@@ -65,19 +78,26 @@ type libraryItemViewMeta struct {
 	SourceRevision string `json:"sourceRevision"`
 }
 
-// libraryReadToolEventData 把库读取工具结果转成可下发/可落盘的脱敏形态：
-//   - 成功：notice 为固定占位标记（不含正文），meta 只携带条目元数据；
-//   - 失败：错误文本是服务端稳定错误码 + 消息（不含正文），按上限截断防止模型超长输入放大。
+// libraryReadToolEventData 把库读取工具结果转成可下发/可落盘的脱敏形态（§8.5 唯一脱敏点）：
+//   - 成功：notice 只携带条目名（为空回退条目 ID），meta 只携带白名单元数据；
+//   - 失败：fail-closed——只输出固定提示、字节数与白名单稳定错误码。
 //
-// 该函数是 tool_result 事件的唯一脱敏点：SSE、display、run ledger 共用其输出，
-// 模型仍通过 runner 内部工具循环拿到完整结果，不受影响。
+// 任何解析失败形态（包装前缀、尾随附加数据、截断/畸形/非对象 JSON、超长输入）都不得
+// 回显原始内容、截断前缀或错误码后的消息文本；SSE、display 存档与 run ledger 共用其
+// 输出，模型仍通过 runner 内部工具循环拿到完整结果，不受影响。
 func libraryReadToolEventData(content string) (notice string, meta map[string]any) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
-		return "[library-item-read] empty result", map[string]any{"bytes": 0}
+		return libraryReadEmptyNotice, map[string]any{"bytes": 0}
 	}
+	// 宽松解码：真实链路里工具消息可能带平台侧尾随数据（B3c 验收 D1），只取首个
+	// JSON 值并按白名单字段提取元数据；解码成功但无条目 ID 的输入不视为成功。
 	var view libraryItemViewMeta
-	if err := json.Unmarshal([]byte(trimmed), &view); err == nil && strings.TrimSpace(view.ItemID) != "" {
+	if err := json.NewDecoder(strings.NewReader(trimmed)).Decode(&view); err == nil && strings.TrimSpace(view.ItemID) != "" {
+		name := strings.TrimSpace(view.Name)
+		if name == "" {
+			name = strings.TrimSpace(view.ItemID)
+		}
 		meta = map[string]any{
 			"itemId":         view.ItemID,
 			"name":           view.Name,
@@ -86,26 +106,19 @@ func libraryReadToolEventData(content string) (notice string, meta map[string]an
 			"sourceRevision": view.SourceRevision,
 			"bytes":          len(content),
 		}
-		return "[library-item-read] " + view.Name, meta
+		return "[library-item-read] " + name, meta
 	}
-	// 失败路径：错误文本本身是“稳定错误码: 消息”，只保留有界前缀，防止把超长输入回显进事件。
-	// 框架层（InferTool/LocalFunc）可能给错误文本加包装前缀，因此先按已知运行期错误码扫描。
-	if len(trimmed) > 200 {
-		trimmed = trimmed[:200]
-	}
-	for _, code := range []string{"unavailable", "stale", "denied", "budget_exceeded", "released"} {
-		if idx := strings.Index(trimmed, code+": "); idx >= 0 {
-			msg := trimmed[idx+len(code)+2:]
-			if len(msg) > 160 {
-				msg = msg[:160]
-			}
-			return "[library-item-read] " + msg, map[string]any{"errorCode": code, "bytes": len(content)}
+	// 运行期失败：按白名单扫描稳定错误码（框架包装前缀下仍稳定），只回传码本身；
+	// 命中多个时取位置最靠前的一个，保证同一输入输出确定。
+	code := ""
+	codeIndex := -1
+	for _, candidate := range libraryReadStableErrorCodes {
+		if idx := strings.Index(trimmed, candidate+": "); idx >= 0 && (codeIndex < 0 || idx < codeIndex) {
+			code, codeIndex = candidate, idx
 		}
 	}
-	code, msg, found := strings.Cut(trimmed, ": ")
-	if !found {
-		return "[library-item-read] " + trimmed, map[string]any{"bytes": len(content)}
+	if code != "" {
+		return "[library-item-read] " + code, map[string]any{"errorCode": code, "bytes": len(content)}
 	}
-	meta = map[string]any{"errorCode": strings.TrimSpace(code), "bytes": len(content)}
-	return "[library-item-read] " + strings.TrimSpace(msg), meta
+	return libraryReadUnparsableNotice, map[string]any{"errorCode": libraryReadUnparsableCode, "bytes": len(content)}
 }

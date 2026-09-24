@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -143,25 +144,169 @@ func TestLibraryReadToolEventDataRedactsBody(t *testing.T) {
 	if strings.Contains(notice, "AUTO-BODY") {
 		t.Fatalf("failure notice must not carry body: %q", notice)
 	}
-	// 框架包装前缀下（eino LocalFunc）errorCode 仍稳定，notice 只保留码后消息。
+	// 框架包装前缀下（eino LocalFunc）errorCode 仍稳定；D1 修复轮起 notice 只回传码本身，
+	// 不再携带码后消息文本（fail-closed 矩阵见 TestLibraryReadToolEventDataFailsClosedOnUnparsableContent）。
 	wrapped := "[LocalFunc] failed to invoke tool, toolName=read_library_item, err=denied: item is not readable on demand under this grant: manual-2"
 	notice, meta = libraryReadToolEventData(wrapped)
 	if meta["errorCode"] != "denied" {
 		t.Fatalf("wrapped failure must still yield stable errorCode: %#v", meta)
 	}
-	if !strings.Contains(notice, "item is not readable on demand") || strings.Contains(notice, "LocalFunc") {
-		t.Fatalf("wrapped failure notice must carry only the stable-code message: %q", notice)
+	if notice != "[library-item-read] denied" {
+		t.Fatalf("failure notice must carry only the stable code, no message text: %q", notice)
 	}
 
-	// 超长错误输入被有界截断（防模型超长输入回显进事件）。
+	// 超长错误输入同样 fail-closed：固定码、字节数照记、提示有界。
 	long := "denied: " + strings.Repeat("x", 400)
-	_, meta = libraryReadToolEventData(long)
+	notice, meta = libraryReadToolEventData(long)
 	if b, ok := meta["bytes"].(int); !ok || b != len(long) {
 		t.Fatalf("bytes still measured: %#v", meta)
 	}
-	notice, _ = libraryReadToolEventData(long)
-	if len(notice) > 250 {
-		t.Fatalf("notice must be bounded: %d", len(notice))
+	if meta["errorCode"] != "denied" || notice != "[library-item-read] denied" {
+		t.Fatalf("overlong failure must fail closed: %q %#v", notice, meta)
+	}
+}
+
+// D1 修复轮（2026-09-25）：脱敏点是 SSE / display 存档 / run ledger 三通道共用的唯一
+// 出口，任何解析失败形态都必须 fail-closed——只输出固定提示、字节数与白名单错误码，
+// 不得回显原始内容、截断前缀或错误码后的消息文本。
+const libraryReadTestBodyMarker = "LEAKBODY-MARK-X9" // ASCII 标记：出现在事件数据里即泄漏
+
+// assertLibraryReadEventCarriesNoBody 按 chat.go 的装配形态（content=notice、
+// library_read=meta）序列化事件数据，断言三个持久化通道实际拿到的载荷里既无正文
+// 标记、也无白名单之外的元数据键。
+func assertLibraryReadEventCarriesNoBody(t *testing.T, label string, notice string, meta map[string]any) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{"content": notice, "library_read": meta})
+	if err != nil {
+		t.Fatalf("%s: event data must serialize: %v", label, err)
+	}
+	if strings.Contains(string(payload), libraryReadTestBodyMarker) {
+		t.Fatalf("%s: event data leaked body marker into SSE/display/ledger payload: %s", label, payload)
+	}
+	allowed := map[string]bool{
+		"itemId": true, "name": true, "type": true, "loadMode": true,
+		"sourceRevision": true, "bytes": true, "errorCode": true,
+	}
+	for key := range meta {
+		if !allowed[key] {
+			t.Fatalf("%s: meta must only carry whitelisted keys, got %q (%#v)", label, key, meta)
+		}
+	}
+}
+
+func TestLibraryReadToolEventDataFailsClosedOnUnparsableContent(t *testing.T) {
+	secret := libraryReadTestBodyMarker + " 机密正文"
+	validView := `{"itemId":"auto-1","name":"自动一","type":"character","loadMode":"auto","sourceRevision":"rev-123","content":"` + secret + `"}`
+
+	cases := []struct {
+		name            string
+		content         string
+		wantCode        string // 期望的稳定错误码；空串=成功路径
+		wantItemID      string
+		wantExactNotice string // 固定文案精确断言（fail-closed 输出必须完全确定）
+	}{
+		{
+			name:       "valid view with platform trailing data keeps metadata",
+			content:    validView + "\ntool=read_library_item duration_ms=12",
+			wantItemID: "auto-1",
+		},
+		{
+			name:       "valid view with empty name falls back to itemId",
+			content:    `{"itemId":"auto-9","name":"","content":"` + secret + `"}`,
+			wantItemID: "auto-9",
+		},
+		{
+			name:            "prefix wrapper fails closed",
+			content:         "[LocalFunc] failed to invoke tool, result follows: " + validView,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "truncated json with colon-space separators fails closed",
+			content:         `{"itemId": "auto-1", "content": "` + secret + `"`,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "json array fails closed",
+			content:         `["` + secret + `"]`,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "json string fails closed",
+			content:         `"` + secret + `"`,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "json number fails closed",
+			content:         `12345`,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "object without itemId fails closed",
+			content:         `{"name":"自动一","content":"` + secret + `"}`,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "stable error text keeps only the code",
+			content:         "denied: item is not readable on demand under this grant: " + secret,
+			wantCode:        "denied",
+			wantExactNotice: "[library-item-read] denied",
+		},
+		{
+			name:            "wrapped stable error keeps only the code",
+			content:         "[LocalFunc] failed to invoke tool, toolName=read_library_item, err=stale: " + secret,
+			wantCode:        "stale",
+			wantExactNotice: "[library-item-read] stale",
+		},
+		{
+			name:            "arbitrary colon-space text fails closed",
+			content:         "something went wrong: " + secret,
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+		{
+			name:            "overlong unparsable fails closed",
+			content:         strings.Repeat("x", 4000) + " " + secret + " " + strings.Repeat("y", 4000),
+			wantCode:        "unparsable",
+			wantExactNotice: "[library-item-read] unparsable result",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			notice, meta := libraryReadToolEventData(tc.content)
+			assertLibraryReadEventCarriesNoBody(t, tc.name, notice, meta)
+			if bytes, ok := meta["bytes"].(int); !ok || bytes != len(tc.content) {
+				t.Fatalf("bytes must measure the raw tool content: %#v", meta)
+			}
+			if tc.wantCode != "" {
+				if meta["errorCode"] != tc.wantCode {
+					t.Fatalf("want stable errorCode %q, got %#v (notice=%q)", tc.wantCode, meta, notice)
+				}
+				if tc.wantExactNotice != "" && notice != tc.wantExactNotice {
+					t.Fatalf("fail-closed notice must be the fixed copy: got %q want %q", notice, tc.wantExactNotice)
+				}
+				if len(meta) != 2 {
+					t.Fatalf("failure meta must carry exactly errorCode+bytes: %#v", meta)
+				}
+				return
+			}
+			if meta["itemId"] != tc.wantItemID {
+				t.Fatalf("metadata must be recovered from the view: %#v", meta)
+			}
+			if strings.Contains(notice, "unparsable") {
+				t.Fatalf("parsable view must not be reported unparsable: %q", notice)
+			}
+		})
+	}
+
+	// 空内容：固定提示 + 零字节。
+	if notice, meta := libraryReadToolEventData("   "); notice != "[library-item-read] empty result" || meta["bytes"] != 0 {
+		t.Fatalf("empty tool result must keep the fixed empty notice: %q %#v", notice, meta)
 	}
 }
 
