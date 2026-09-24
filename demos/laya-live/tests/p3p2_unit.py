@@ -9,6 +9,9 @@
   T6  fondness 用自己的 range（[0,1]）与自己的 per_turn（±0.05）
   T7  歧义轮整轮不 commit
   T8  单轮上限与 range clamp 仍然生效
+  T11 分析核纯读：不创建、不修改 Actor State
+  T12 显式 commit_state 才允许写 Actor State
+  T13 /turn 的 commit_state=false 在真实路由上不写状态或历史
 """
 import sys
 
@@ -152,11 +155,18 @@ print('T9 翻译失败必须 fail-closed（不以中文冒充英文）')
 #   ①明确返回 translation failure ②不调用英文 checkpoint ③不生成 proposal ④不 commit
 #   ⑤测试结果标 invalid。这里把四条都钉住。
 import os as _os
+from unittest.mock import patch as _patch
+from urllib.error import HTTPError as _HTTPError
 
 chk('默认是 fail-closed', B.XLATE_FAIL_CLOSED is True,
     'LAYA_XLATE_FAIL_CLOSED=%s（LAYA_XLATE_FAIL_OPEN 未设即可）' % B.XLATE_FAIL_CLOSED)
 
-# 用一个必然失败的 key 触发（只覆盖内存，不改 .env）
+# 拦截外部 HTTP，稳定模拟 401；不访问翻译服务、不读写真实翻译缓存。
+_http_mock = _patch.object(B.urllib.request, 'urlopen',
+                          side_effect=_HTTPError('https://unit.invalid', 401, 'unit', {}, None))
+_cache_mock = _patch.object(B, '_XLATE_CACHE', {})
+_http_mock.start()
+_cache_mock.start()
 _saved_key = _os.environ.get('DEEPSEEK_API_KEY')
 _saved_alt = _os.environ.get('LLM_API_KEY')
 try:
@@ -175,7 +185,7 @@ try:
         _raised is not None and 'sk-' not in str(_raised.reason),
         'reason=%r（不得出现 key / 尾号）' % (getattr(_raised, 'reason', None)))
 
-    _r = B._cached_translate('另一句必然失败的台词。', {})
+    _r = B._cached_translate('另一句必然失败的台词。', B._XLATE_CACHE)
     chk('_cached_translate 返回 None（不回填中文）', _r is None, 'got=%r' % (_r,))
 
     # decide()：四件事都不能发生
@@ -202,6 +212,8 @@ finally:
         del _os.environ['DEEPSEEK_API_KEY']
     if _saved_alt is not None:
         _os.environ['LLM_API_KEY'] = _saved_alt
+    _http_mock.stop()
+    _cache_mock.stop()
 
 # ---------------------------------------------------------------------------
 # T10：fail-closed 的精简返回**不得**把路由层打崩。
@@ -226,14 +238,22 @@ chk('历史日志用 .get 而非下标取 engine',
     'out.get 出现 %d 次（应为 2：/decide 与 /turn 各一）' % _src.count('"engine": out.get("engine")'))
 
 _sv = _os.environ.get('DEEPSEEK_API_KEY')
+_sv_alt = _os.environ.get('LLM_API_KEY')
 try:
     _os.environ['DEEPSEEK_API_KEY'] = 'sk-invalid-unit-test'
     _os.environ.pop('LLM_API_KEY', None)
-    _fc = B.decide({'player_input': '这是一句必然翻译失败的台词。',
-                    'session_id': 'T10', 'actor_id': 'Lia'}) or {}
+    with _patch.object(B, '_XLATE_CACHE', {}), _patch.object(
+            B.urllib.request, 'urlopen',
+            side_effect=_HTTPError('https://unit.invalid', 401, 'unit', {}, None)):
+        _fc = B.decide({'player_input': '这是一句必然翻译失败的台词。',
+                        'session_id': 'T10', 'actor_id': 'Lia'}) or {}
 finally:
     if _sv is not None:
         _os.environ['DEEPSEEK_API_KEY'] = _sv
+    else:
+        _os.environ.pop('DEEPSEEK_API_KEY', None)
+    if _sv_alt is not None:
+        _os.environ['LLM_API_KEY'] = _sv_alt
 chk('fail-closed 返回不含 engine（=下标取值必崩的前提）',
     'engine' not in _fc and _fc.get('status') == 'invalid',
     'status=%s has_engine=%s' % (_fc.get('status'), 'engine' in _fc))
@@ -242,6 +262,142 @@ chk('fail-closed 返回不含 decision / turn（两处共享代码都会中招�
     'keys=%s' % ','.join(sorted(_fc.keys()))[:90])
 
 print()
+print('T11/T12 分析与状态提交必须彻底分层')
+chk('存在纯分析核 analyze_core', hasattr(B, 'analyze_core'))
+chk('存在纯校验层 validate_state_delta', hasattr(B, 'validate_state_delta'))
+chk('存在唯一写入层 commit_state', hasattr(B, 'commit_state'))
+
+# 不依赖模型能力与当前档案是否恰好产出 active delta：即使分析结果为空，
+# 读取一个从未出现过的桶也不能把它初始化进 _ACTOR_STATE。
+B.reset_actor_state('T11', 'Lia')
+_pure_out = B.decide({'player_input': 'You lied to me.',
+                      'player_input_en': 'You lied to me.',
+                      'session_id': 'T11', 'actor_id': 'Lia'}) or {}
+_pure_view = B.actor_state_view('T11', 'Lia')
+chk('decide/analyze 不创建 Actor State 桶', _pure_view.get('exists') is False,
+    'exists=%s state_commits=%r' % (_pure_view.get('exists'), _pure_out.get('state_commits')))
+chk('decide/analyze 不返回伪装成已提交的 state_commits',
+    not (_pure_out.get('state_commits')),
+    'state_commits=%r' % (_pure_out.get('state_commits'),))
+
+_proposal = {'delta': [
+    {'source_signal': 'doubt_shift', 'target': 'relationship.doubt', 'delta': 4.0,
+     'status': 'active', 'grade': 'A', 'role': 'state_shift'},
+]}
+_decision = {'behavior_is_null': False, 'awaiting_upstream': False, 'turn_id': 'T12#1'}
+if hasattr(B, 'validate_state_delta') and hasattr(B, 'commit_state'):
+    B.reset_actor_state('T12', 'Lia')
+    _validated, _skipped, _preview = B.validate_state_delta(
+        'T12', 'Lia', _proposal, _decision, actor=B.CFG.get('actor'))
+    _after_validate = B.actor_state_view('T12', 'Lia')
+    chk('校验预演明确标记未提交', bool(_validated) and
+        all(r.get('validated') and not r['committed'] for r in _validated))
+    chk('validate_state_delta 不创建 Actor State 桶', _after_validate.get('exists') is False,
+        'exists=%s validated=%d' % (_after_validate.get('exists'), len(_validated)))
+    _commits, _skipped2, _committed_view = B.commit_state(
+        'T12', 'Lia', _proposal, _decision, actor=B.CFG.get('actor'))
+    _doubt = (((_committed_view or {}).get('state') or {}).get('relationship') or {}).get('doubt')
+    chk('commit_state 是显式写入点', bool(_commits) and _doubt == 34.0,
+        'commits=%d doubt=%r' % (len(_commits), _doubt))
+else:
+    chk('validate 后仍为纯读', False, '待实现 validate_state_delta / commit_state')
+    chk('commit_state 是显式写入点', False, '待实现 commit_state')
+
+print()
+print('T13 /turn 显式提交门（本机临时端口，不跑模型）')
+import json as _json
+import threading as _threading
+import urllib.request as _urlrequest
+
+B.reset_actor_state('T13', 'Lia')
+B.reset_history('T13', 'Lia')
+_real_decide = B.decide
+_seq = [0]
+
+
+def _fake_decide(_payload):
+    _seq[0] += 1
+    _tid = 'T13/Lia#%d' % _seq[0]
+    return {
+        'engine': 'unit',
+        'turn': {'turn_id': _tid, 'session_id': 'T13', 'actor_id': 'Lia',
+                 'history_bucket': 'T13/Lia'},
+        'decision': {'behavior': {'id': 'unit_behavior'}, 'source': 'unit',
+                     'player_intent': {'id': 'unit_intent'}},
+        'state_proposal': _proposal,
+        'state_validation': {'decision': dict(_decision, turn_id=_tid)},
+        'state_commits': [], 'state_skipped': [],
+        'actor_state': B.actor_state_analysis_view('T13', 'Lia', B.CFG.get('actor')),
+    }
+
+
+_srv = B.ThreadingHTTPServer(('127.0.0.1', 0), B.Handler)
+_thr = _threading.Thread(target=_srv.serve_forever, daemon=True)
+_thr.start()
+_opener = _urlrequest.build_opener(_urlrequest.ProxyHandler({}))
+
+
+def _post_turn(commit_flag):
+    _body = _json.dumps({'player_input': 'unit', 'session_id': 'T13',
+                         'actor_id': 'Lia', 'commit_state': commit_flag}).encode('utf-8')
+    _req = _urlrequest.Request('http://127.0.0.1:%d/turn' % _srv.server_address[1],
+                               data=_body, headers={'Content-Type': 'application/json'})
+    with _opener.open(_req, timeout=5) as _resp:
+        return _json.loads(_resp.read().decode('utf-8'))
+
+
+try:
+    B.decide = _fake_decide
+    _not_committed = _post_turn(False)
+    _after_false = B.actor_state_view('T13', 'Lia')
+    chk('/turn commit_state=false 不创建 Actor State', _after_false.get('exists') is False,
+        'exists=%s gate=%r' % (_after_false.get('exists'), _not_committed.get('state_gate')))
+    chk('/turn commit_state=false 不写历史', not B.history_for('T13', 'Lia'),
+        'history=%r' % B.history_for('T13', 'Lia'))
+
+    _committed = _post_turn(True)
+    _after_true = B.actor_state_view('T13', 'Lia')
+    _doubt_true = (((_after_true.get('state') or {}).get('relationship') or {}).get('doubt'))
+    chk('/turn commit_state=true 才写状态', _doubt_true == 34.0,
+        'doubt=%r commits=%r' % (_doubt_true, _committed.get('state_commits')))
+    chk('/turn commit_state=true 同时写历史', bool(B.history_for('T13', 'Lia')),
+        'history=%r' % B.history_for('T13', 'Lia'))
+    chk('提交响应元数据与实际写入一致',
+        _committed.get('state_transition_meta', {}).get('n_committed') == 1 and
+        _committed['state_transition_meta']['authority'] == 'commit_state' and
+        not _committed['state_transition_meta']['is_proposal'])
+finally:
+    B.decide = _real_decide
+    _srv.shutdown()
+    _srv.server_close()
+    _thr.join(timeout=5)
+    B.reset_actor_state('T13', 'Lia')
+    B.reset_history('T13', 'Lia')
+
+print()
+print('T14 自定义角色预览、快照隔离和顺序重复提交')
+_custom = copy.deepcopy(B.CFG['actor'])
+_custom.setdefault('relationship', {})['doubt'] = 12
+_custom_out = B.analyze_core({'player_input_en': 'Hello.', 'player_input': 'Hello.',
+                            'actor': _custom, 'session_id': 'T14', 'actor_id': 'Custom'})
+chk('自定义角色预览采用实际模板',
+    _custom_out['actor_state']['state']['relationship']['doubt'] == 12 and
+    _custom_out['state_validation']['preview']['state']['relationship']['doubt'] == 12)
+chk('自定义角色分析不创建状态', not B.actor_state_view('T14', 'Custom')['exists'])
+B.propose_turn('T14#1', 'T14', 'Custom', 'unit', None, 'unit',
+               _proposal, _decision, _custom, record_history=False)
+_ok, _, _result = B.commit_turn('T14#1')
+chk('显式历史模式仍能提交状态且不重复写历史',
+    _ok and _result['actor_state']['state']['relationship']['doubt'] == 16 and
+    not B.history_for('T14', 'Custom'))
+_before = copy.deepcopy((B._ACTOR_STATE, B._STATE_TRACE, B._HISTORY_BUCKETS))
+_repeat, _, _ = B.commit_turn('T14#1')
+_view = B.actor_state_snapshot('T14', 'Custom')
+_view['relationship']['doubt'] = 99
+chk('顺序重复提交拒绝且外部快照修改不污染状态',
+    not _repeat and _before == (B._ACTOR_STATE, B._STATE_TRACE, B._HISTORY_BUCKETS))
+B.reset_actor_state('T14', 'Custom')
+
 print('=' * 92)
 print('合计 %d 项：%d PASS / %d FAIL' % (N[0], N[0] - len(FAIL), len(FAIL)))
 if FAIL:

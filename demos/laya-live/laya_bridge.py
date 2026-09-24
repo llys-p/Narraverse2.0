@@ -69,6 +69,7 @@ Laya 是「非自回归类型化决策引擎」：单次前向传播、约 33ms�
     .incomplete 哨兵、.locks/*.lock 和 tempfile 目录，正好撞上本机的删除配额守卫。
 """
 import json
+import copy as _copy
 import os
 import re
 import sys
@@ -1693,12 +1694,16 @@ def next_turn_id(session_id, actor_id):
     return "%s/%s#%d" % (k[0], k[1], _TURN_SEQ[k])
 
 
-def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source):
-    """登记一个待确认的决策。**不写历史**。"""
+def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source,
+                 state_proposal=None, state_decision=None, actor=None, record_history=True):
+    """登记一个待确认的决策和状态 Proposal。**不写历史、不写 Actor State**。"""
     _PENDING[turn_id] = {
         "session": str(session_id or "default"), "actor": str(actor_id or "default"),
         "behavior": behavior_id, "intent": intent_id, "source": source,
-        "entries": decision_history_entries(intent_id, behavior_id),
+        "entries": decision_history_entries(intent_id, behavior_id) if record_history else [],
+        "state_proposal": _copy.deepcopy(state_proposal or {}),
+        "state_decision": _copy.deepcopy(state_decision or {}),
+        "actor_template": _copy.deepcopy(actor) if actor else None,
     }
     # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
     if len(_PENDING) > 200:
@@ -1708,19 +1713,28 @@ def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source):
 
 
 def commit_turn(turn_id):
-    """把某轮决策标记为 committed 并写入对应桶。返回 (ok, note)。"""
+    """显式提交某轮的状态 Proposal 与历史。返回 (ok, note, state_result)。"""
     p = _PENDING.get(turn_id)
     if p is None:
-        return False, "未知 turn_id（未被 propose 过，或已被提交/淘汰）"
+        return False, "未知 turn_id（未被 propose 过，或已被提交/淘汰）", {}
     if not p.get("behavior"):
         # ambiguous 轮次没有行为 —— 没有可确认的事实，不许进历史
-        return False, "该轮没有行为（ambiguous / behavior=null），不是已确认事实，拒绝写入历史"
+        return False, "该轮没有行为（ambiguous / behavior=null），不是已确认事实，拒绝写入历史", {}
+
+    commits, skipped, state_view = commit_state(
+        p["session"], p["actor"], p.get("state_proposal") or {},
+        p.get("state_decision") or {"turn_id": turn_id},
+        actor=p.get("actor_template") or CFG.get("actor"))
     k = bucket_key(p["session"], p["actor"])
-    bucket = _HISTORY_BUCKETS.setdefault(k, [])
-    bucket.extend(p["entries"])
-    del bucket[:-_HISTORY_MAX]
+    bucket = _HISTORY_BUCKETS.get(k, [])
+    if p["entries"]:
+        bucket = _HISTORY_BUCKETS.setdefault(k, [])
+        bucket.extend(p["entries"])
+        del bucket[:-_HISTORY_MAX]
     _PENDING.pop(turn_id, None)
-    return True, "已提交，该桶现有 %d 条" % len(bucket)
+    return True, "已提交状态 Proposal 与历史，该桶现有 %d 条" % len(bucket), {
+        "state_commits": commits, "state_skipped": skipped, "actor_state": state_view,
+    }
 
 
 # ============================================================================
@@ -1753,7 +1767,6 @@ _STATE_TRACE_MAX = 30
 
 def _blank_actor_state(actor):
     """从 actor 模板抽出「会被状态层改写」的那几组字段。深拷贝，绝不共享引用。"""
-    import copy as _copy
     a = actor or CFG.get("actor") or {}
     return {
         "name": a.get("name"), "name_en": a.get("name_en"),
@@ -1779,12 +1792,26 @@ def actor_state_for(session_id, actor_id, actor=None, create=True):
     return st
 
 
+def actor_state_snapshot(session_id, actor_id, actor=None):
+    """返回 Actor State 的深拷贝；桶不存在时只构造默认值，不写入全局状态。"""
+    st = _ACTOR_STATE.get(bucket_key(session_id, actor_id))
+    return _copy.deepcopy(st if st is not None else _blank_actor_state(actor))
+
+
 def actor_state_view(session_id, actor_id):
     """给前端/测试看的只读快照（含本轮之后的取值）。"""
     k = bucket_key(session_id, actor_id)
     st = _ACTOR_STATE.get(k)
     return {"bucket": "%s/%s" % k, "exists": st is not None,
-            "state": st, "trace": list(_STATE_TRACE.get(k, []))}
+            "state": _copy.deepcopy(st), "trace": _copy.deepcopy(_STATE_TRACE.get(k, []))}
+
+
+def actor_state_analysis_view(session_id, actor_id, actor=None):
+    """纯分析使用的当前状态视图；不会因为读取而创建 Actor State 桶。"""
+    k = bucket_key(session_id, actor_id)
+    return {"bucket": "%s/%s" % k, "exists": k in _ACTOR_STATE,
+            "state": actor_state_snapshot(session_id, actor_id, actor),
+            "trace": _copy.deepcopy(_STATE_TRACE.get(k, []))}
 
 
 def _transition_cfg():
@@ -1909,23 +1936,11 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
 
 
 
-def apply_state_transition(session_id, actor_id, state_proposal, decision, actor=None):
-    """把一份 state_proposal 过一遍 State Transition，并**写回** Actor State。
-
-    返回 (commits, skipped, view)。commits 里每一项都带 old/proposal/final_delta/new_value。
-
-    ★ 只在「这一轮真的产生了可采纳事实」时才写：
-      · decision.awaiting_upstream == True（判为歧义 / 没给行为）→ 整轮不写。
-        理由：状态变化本身就是一种「事实认定」，而歧义轮的事实认定权已交上游。
-        先写状态、再等上游否决，会造成「被否决的轮次却留下了关系变化」——
-        这正是 P2 修掉的那类假交接，不能从状态层再开一个口子。
-      · 单个 signal 还要过 status==active（由 state_proposal 的过滤保证）与本配置的 write_status。
-    """
+def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=None):
+    """纯校验 state proposal；返回可提交项、跳过项和提交后的预览，不写全局状态。"""
     t = _transition_cfg()
-    st = actor_state_for(session_id, actor_id, actor)
-    k = bucket_key(session_id, actor_id)
-    commit_when = t.get("commit_when") or {}
-    commits, skipped = [], []
+    st = actor_state_snapshot(session_id, actor_id, actor)
+    validated, skipped = [], []
 
     upstream = None
     if decision:
@@ -1944,7 +1959,7 @@ def apply_state_transition(session_id, actor_id, state_proposal, decision, actor
                 "skipped_reason": ("本轮 %s（歧义 / 未给行为）→ 不 commit 状态。"
                                    "事实认定权在上游，状态层不抢跑。" % upstream),
             })
-        return commits, skipped, actor_state_view(session_id, actor_id)
+        return validated, skipped, {"state": st, "would_change": False}
 
     for d in (state_proposal or {}).get("delta") or []:
         sig = d.get("source_signal")
@@ -1963,9 +1978,26 @@ def apply_state_transition(session_id, actor_id, state_proposal, decision, actor
                  attribute=d.get("attribute"), checkpoint=d.get("checkpoint"))
         if r["committed"]:
             _set_path(st, d.get("target"), r["new_value"])
-            commits.append(r)
+            r.update(validated=True, committed=False)
+            validated.append(r)
         else:
             skipped.append(dict(r, proposal=d.get("delta")))
+    return validated, skipped, {"state": st, "would_change": bool(validated)}
+
+
+def commit_state(session_id, actor_id, state_proposal, decision, actor=None):
+    """校验并提交一份 state proposal；运行时 delta 的唯一写入入口（初始化/重置另计）。"""
+    commits, skipped, _preview = validate_state_delta(
+        session_id, actor_id, state_proposal, decision, actor=actor)
+    if not commits:
+        return commits, skipped, actor_state_view(session_id, actor_id)
+
+    st = actor_state_for(session_id, actor_id, actor)
+    k = bucket_key(session_id, actor_id)
+    for r in commits:
+        _set_path(st, r.get("target"), r.get("new_value"))
+        r["committed"] = True
+
     if commits:
         tr = _STATE_TRACE.setdefault(k, [])
         tr.append({"t": time.time(),
@@ -1973,6 +2005,11 @@ def apply_state_transition(session_id, actor_id, state_proposal, decision, actor
                    "n": len(commits), "commits": commits})
         del tr[:-_STATE_TRACE_MAX]
     return commits, skipped, actor_state_view(session_id, actor_id)
+
+
+def apply_state_transition(session_id, actor_id, state_proposal, decision, actor=None):
+    """兼容旧调用名；实际写入统一委托给 commit_state。"""
+    return commit_state(session_id, actor_id, state_proposal, decision, actor=actor)
 
 
 def reset_actor_state(session_id=None, actor_id=None):
@@ -2011,24 +2048,24 @@ def reset_history(session_id=None, actor_id=None):
     return hit
 
 
-def decide(payload):
+def analyze_core(payload, turn_id=None):
+    """运行 Laya 判断并生成 Proposal；只读 Actor State，不提交任何状态变化。"""
     actor = payload.get("actor") or CFG["actor"]
     history = payload.get("history") or []
     # ★ 历史分桶键（Phase3-Task2）：不传就退到 "default"，但会**报出来**，
     #   不让调用方以为自己在用隔离的历史。
     session_id = payload.get("session_id") or "default"
     actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
-    turn_id = next_turn_id(session_id, actor_id)
+    turn_id = turn_id or "%s/%s#analysis" % (session_id, actor_id)
     # ★★ Phase3-P3：Actor State 就是**按同一个桶**取的当前人物状态。
     #   传了 actor 就说明调用方要显式指定这一轮的模板 —— 此时状态以传入的 actor 为准
     #   （多 NPC 演示就是这么用的：同一 session 下给不同 actor 对象）。
     #   没传 actor 就说明调用方想走**连续剧情**：从桶里取上一轮 commit 之后的状态。
     #   这两条路径必须写清楚，否则「为什么我的状态没变化」会变成一个谜。
     if payload.get("actor"):
-        _st = actor_state_for(session_id, actor_id, actor, create=False) \
-            or actor_state_for(session_id, actor_id, actor)
+        _st = actor_state_snapshot(session_id, actor_id, actor)
     else:
-        _st = actor_state_for(session_id, actor_id, CFG.get("actor"))
+        _st = actor_state_snapshot(session_id, actor_id, CFG.get("actor"))
     state_source = "payload.actor" if payload.get("actor") else "bucket"
     # ★ 把桶里的状态合进这一轮要喂给 Laya 的 actor：relationship / emotion / goals 用状态，
     #   其余（identity / personality / situation）仍来自模板。
@@ -2256,18 +2293,17 @@ def decide(payload):
     conf = answers.get("npc_behavior", {}).get("confidence")
     prob = answers.get("npc_behavior", {}).get("_probabilities")
 
-    # ★★ Phase3-P3：State Transition + Commit —— 本桥**唯一**真正写状态的动作。
-    #   放在这里（而不是 build_state_proposal 之后、final_id 之前）是有原因的：
-    #   它要读 `bh`（最终行为）来判断「这一轮是否成立」。歧义轮的事实认定权已交上游，
-    #   状态层不能先写再等否决 —— 那会造成「被否决的轮次却留下了关系变化」，
-    #   正是 P2 修掉的那类假交接。
-    #   注意「行为」和「状态」是两件事：本轮不给行为 ≠ 关系不会变，
-    #   但两者都要求「事实成立」，所以共用同一个门。
-    state_commits, state_skipped, state_view = apply_state_transition(
+    # ★★ 新版地基：分析与提交彻底分开。这里可以预演 State Transition，
+    #   但绝不创建或修改 Actor State；只有 commit_state() 允许真正写入。
+    state_decision = {
+        "behavior_is_null": bh is None, "awaiting_upstream": bh is None,
+        "source": policy.get("source"), "turn_id": turn_id,
+    }
+    state_validated, state_skipped, state_preview = validate_state_delta(
         session_id, actor_id, state_proposal,
-        {"behavior_is_null": bh is None, "awaiting_upstream": bh is None,
-         "source": policy.get("source"), "turn_id": turn_id},
-        actor=CFG.get("actor"))
+        state_decision,
+        actor=actor)
+    state_view = actor_state_analysis_view(session_id, actor_id, actor=actor)
 
     # ★ behavior=null 的原因（Phase3-Task1）：必须能用一句话说清「为什么没给行为」。
     #   上游拿到一个裸 null 只能猜；而且歧义是**正常裁决**，不是故障，两者要分开。
@@ -2321,19 +2357,23 @@ def decide(payload):
         "state_proposal": state_proposal,
         "behavior_tendency": behavior_tendency,
         "situation_assessment": situation_assessment,
-        # ★★ Phase3-P3：这一层才是**真的写了状态**。上面 state_proposal 只是建议。
-        #   commits 里每项固定带 old / proposal / final_delta / new_value，可直接调前端显示。
-        "state_commits": state_commits,
+        # ★★ 纯分析契约：state_commits 永远为空；validated 只是提交预演。
+        "state_commits": [],
         "state_skipped": state_skipped,
         "actor_state": {"source": state_source, **(state_view or {})},
+        "state_validation": {
+            "validated_delta": state_validated,
+            "preview": state_preview,
+            "decision": state_decision,
+        },
         "state_transition_meta": {
-            "is_proposal": False,
-            "authority": "bridge",
-            "n_committed": len(state_commits),
+            "is_proposal": True,
+            "authority": "none",
+            "n_committed": 0,
+            "n_validated": len(state_validated),
             "n_skipped": len(state_skipped),
-            "note": ("state_commits 是**已写入** Actor State 的变化（经 State Transition："
-                     "单轮上限 → 合法区间；只有 active 能写）。"
-                     "state_proposal 仍是建议，两者不要混用。"
+            "note": ("本轮只分析与校验，没有写 Actor State。"
+                     "validated_delta 是提交预演；真正写入只能走 commit_state()。"
                      "本轮状态取自 %s。" % state_source),
         },
         "checkpoint_profile": state_proposal["profile"],
@@ -2419,6 +2459,14 @@ def decide(payload):
         },
         "question_count": len(all_questions),
     }
+
+
+def decide(payload):
+    """兼容现有 /decide 入口：分配 turn_id 后调用纯分析核，不写 Actor State。"""
+    actor = payload.get("actor") or CFG["actor"]
+    session_id = payload.get("session_id") or "default"
+    actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
+    return analyze_core(payload, turn_id=next_turn_id(session_id, actor_id))
 
 
 def world_decide(payload):
@@ -2630,9 +2678,13 @@ class Handler(BaseHTTPRequestHandler):
             # ★ 三轮门控（Phase3-Task2/Task3）：/decide 只 **propose**，绝不直接写历史。
             #   旧实现在这里 extend _DECISION_HISTORY —— 于是「判了歧义、上游根本没采纳」
             #   的轮次也会污染下一轮 state，而且完全静默。现在只有 /commit 才进桶。
-            if not payload.get("decision_history"):
+            if turn.get("turn_id"):
                 propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
-                             beh.get("id"), intent_id, dec.get("source"))
+                             beh.get("id"), intent_id, dec.get("source"),
+                             state_proposal=out.get("state_proposal"),
+                             state_decision=(out.get("state_validation") or {}).get("decision"),
+                             actor=payload.get("actor") or CFG.get("actor"),
+                             record_history=not bool(payload.get("decision_history")))
             out = dict(out, history_gate={
                 "stage": "proposed",
                 "committed": False,
@@ -2644,8 +2696,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(out)
 
         if path == "/turn":
-            # ★★ Phase3-P3：一步走完闭环 —— /decide（含 State Transition + Commit）
-            #   → 立刻 commit 历史。语义是「这一轮玩家输入**确定发生了**」。
+            # ★★ 新版地基：一步走完闭环，但仍严格执行 Analyze → Commit。
+            #   decide() 只分析；本分支在 commit_state=true 时显式提交状态与历史。
             #   与 /decide + /commit 两步走的关系：
             #     /turn   = 单人连续剧情 / 体验测试。默认认定本轮成立。
             #     /decide+/commit = 上游（Story / Director）可能否决的正式链路。
@@ -2660,11 +2712,15 @@ class Handler(BaseHTTPRequestHandler):
             beh = dec.get("behavior") or {}
             do_commit = payload.get("commit_state", True)
             ok, note = (False, "commit_state=false → 本轮不写状态、不写历史")
+            state_result = {}
             if do_commit and beh.get("id"):
                 propose_turn(turn.get("turn_id"), turn.get("session_id"),
                              turn.get("actor_id"), beh.get("id"),
-                             (dec.get("player_intent") or {}).get("id"), dec.get("source"))
-                ok, note = commit_turn(turn.get("turn_id"))
+                             (dec.get("player_intent") or {}).get("id"), dec.get("source"),
+                             state_proposal=out.get("state_proposal"),
+                             state_decision=(out.get("state_validation") or {}).get("decision"),
+                             actor=payload.get("actor") or CFG.get("actor"))
+                ok, note, state_result = commit_turn(turn.get("turn_id"))
             elif do_commit:
                 note = ("本轮无行为（歧义 / 未给行为）→ 按 P3 第一版规则：不 commit 状态、"
                         "不写历史。状态变化本身就是事实认定，歧义轮不抢跑。")
@@ -2673,10 +2729,21 @@ class Handler(BaseHTTPRequestHandler):
                              "source": beh.get("source"), "turn_id": turn.get("turn_id"),
                              "bucket": turn.get("history_bucket")})
             del _HISTORY[:-50]
+            committed_view = state_result.get("actor_state")
+            if committed_view is not None:
+                out = dict(out, actor_state={"source": "committed", **committed_view},
+                           state_commits=state_result.get("state_commits") or [],
+                           state_skipped=state_result.get("state_skipped") or [],
+                           state_transition_meta={
+                               "is_proposal": False, "authority": "commit_state",
+                               "n_committed": len(state_result.get("state_commits") or []),
+                               "n_skipped": len(state_result.get("state_skipped") or []),
+                               "note": "本轮已执行显式提交；实际变化见 state_commits。",
+                           })
             return self._json(dict(out, state_gate={
                 "stage": "committed" if ok else "not_committed",
                 "history_committed": bool(ok),
-                "state_commits": out.get("state_commits") or [],
+                "state_commits": state_result.get("state_commits") or [],
                 "note": note,
             }))
 
@@ -2687,9 +2754,13 @@ class Handler(BaseHTTPRequestHandler):
             if not tid:
                 return self._json({"error": "缺少 turn_id",
                                    "hint": "turn_id 来自 /decide 响应里的 turn.turn_id"}, 400)
-            ok, note = commit_turn(tid)
+            ok, note, state_result = commit_turn(tid)
             return self._json({"ok": ok, "turn_id": tid, "note": note,
-                               "stage": "committed" if ok else "rejected"}, 200 if ok else 409)
+                               "stage": "committed" if ok else "rejected",
+                               "state_commits": state_result.get("state_commits") or [],
+                               "state_skipped": state_result.get("state_skipped") or [],
+                               "actor_state": state_result.get("actor_state")},
+                              200 if ok else 409)
 
         if path == "/reset":
             # ★ 按桶清（Phase3-Task2）：传 session_id（+可选 actor_id）只清那一个桶，

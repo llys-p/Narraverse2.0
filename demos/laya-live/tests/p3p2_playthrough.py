@@ -76,6 +76,15 @@ def run(book, model):
         session = "S2" if step.get("kind") == "另一局" else "S1"
         out = B.decide({"player_input": step["text"], "session_id": session,
                         "actor_id": cast})
+        turn = out.get("turn") or {}
+        if turn.get("turn_id"):
+            commits, skipped, state_view = B.commit_state(
+                turn.get("session_id"), turn.get("actor_id"), out.get("state_proposal") or {},
+                (out.get("state_validation") or {}).get("decision") or {},
+                actor=B.CFG.get("actor"))
+            out = dict(out, state_commits=commits, state_skipped=skipped)
+            if state_view.get("exists"):
+                out["actor_state"] = {"source": "committed", **state_view}
         st = ((out.get("actor_state") or {}).get("state") or {})
         rel = st.get("relationship") or {}
         emo = st.get("emotion") or {}
@@ -360,7 +369,7 @@ def main():
     out = {
         "_readme": [
             "P3 Phase2 Task7 连续游玩模拟的原始结果（%d 轮 / 3 NPC / 2 session）。" % len(trace),
-            "checkpoint=%s ｜ 走 B.decide() 真路径 ｜ 不传 decision_history。" % model,
+            "checkpoint=%s ｜ 走 B.decide() 纯分析 + B.commit_state() 显式提交 ｜ 不传 decision_history。" % model,
             "本文件是**长跑观察**，不是统计证明；判据在 p3_experience.py。",
             "八个观察项对应用户 Task7 的六条体验重点 + 两条异常检查。",
         ],

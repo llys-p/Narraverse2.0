@@ -1,5 +1,7 @@
 # Laya 实时对话 Demo
 
+> **2026-09-24 新方向：**参见 [Laya 定位书：Narraverse 轻量判断引擎](Laya定位书.md)。后续 Demo 收缩为有限结构化判断、状态提交与云端叙事反馈；保留情绪和可选反应倾向体验。分析/校验/提交的底层职责已拆开，`/analyze` 与安全的 `/commit_state` 尚未施工。下文为旧 Demo 实现及实验记录，其中 Policy Resolver 的行为裁决职责不再作为新 Demo 的目标。
+
 用 **Laya 决策引擎**（非自回归 System-1）产出 **决策信号**，由 **Policy Resolver** 裁定 NPC 行为，
 再由 **LLM** 把决定写成台词。
 

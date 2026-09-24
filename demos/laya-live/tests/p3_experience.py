@@ -74,8 +74,8 @@ def sha_file(p):
 def walk(sc, session_id, actor_id, trace):
     """顺序走完一个场景，返回每轮记录。
 
-    每一步都调 B.decide()（**不是**绕过状态层的 stage 函数）——
-    体验测试必须走玩家真正走的那条路，否则测的是另一个系统。
+    每一步都先调纯分析 B.decide()，再显式调 B.commit_state()——
+    与新版 Analyze → Commit 职责分层一致，不再依赖 decide 的隐式副作用。
 
     ★ Phase2：除了 relationship.trust，也把 doubt / fondness / respect 一起记下来。
       只记 trust 的话，「维度之间有没有被硬绑定」这种问题在数据里根本看不出来。
@@ -84,6 +84,15 @@ def walk(sc, session_id, actor_id, trace):
     for i, text in enumerate(sc["lines"]):
         out = B.decide({"player_input": text, "session_id": session_id,
                         "actor_id": actor_id})
+        turn = out.get("turn") or {}
+        if turn.get("turn_id"):
+            commits, skipped, state_view = B.commit_state(
+                turn.get("session_id"), turn.get("actor_id"), out.get("state_proposal") or {},
+                (out.get("state_validation") or {}).get("decision") or {},
+                actor=B.CFG.get("actor"))
+            out = dict(out, state_commits=commits, state_skipped=skipped)
+            if state_view.get("exists"):
+                out["actor_state"] = {"source": "committed", **state_view}
         st = ((out.get("actor_state") or {}).get("state") or {})
         rel = st.get("relationship") or {}
         emo = st.get("emotion") or {}
@@ -557,7 +566,7 @@ def main():
     out = {
         "_readme": [
             "P3 最小体验测试的原始结果（体验场景 + 顺序走查）。",
-            "checkpoint=%s ｜ 走的是 B.decide() 真路径，不绕过状态层。" % model,
+            "checkpoint=%s ｜ 走 B.decide() 纯分析 + B.commit_state() 显式提交。" % model,
             "判据是体验口径：总体方向 + 不暴涨 + 中性不漂移 + 不串线 + 维度不硬绑定。",
             "decision_history 的已知限制**不在判据里**，单独放 history_observation。",
             "Phase2 追加：N1（10 轮闲聊）/ D（doubt 方向）/ F（fondness 方向）/",
