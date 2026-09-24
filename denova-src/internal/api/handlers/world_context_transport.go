@@ -52,6 +52,10 @@ type RuntimeWorldContext struct {
 	// BackgroundSource 是裁定后的背景来源：legacy | library | none（§8.1）。
 	// 显式声明或结构推断，始终非空出站。
 	BackgroundSource string
+	// BackgroundSourceExplicit 区分“客户端显式声明 background_source”与“缺省时的
+	// 结构推断”（B2a 修正轮）：只有显式 none 才在 app 层关闭旧 Lore 注入并兑现
+	// “无作品背景”；未声明请求即使被推断为 none 也保持旧写作路径逐字节兼容。
+	BackgroundSourceExplicit bool
 	// LibraryRef 为 nil 表示请求未携带 library_context（library 模式必非 nil）。
 	LibraryRef *LibraryContextRef
 }
@@ -225,7 +229,33 @@ func DecodeWorldContextTransport(body []byte, policy WorldContextEndpointPolicy)
 		return RuntimeWorldContext{}, resolveErr
 	}
 	out.BackgroundSource = source
+	out.BackgroundSourceExplicit = explicitSource != ""
+	// B2a 修正轮（缺口①）：lore_references 是旧 Lore 注入通道；library / 显式 none
+	// 模式与其同现即 background_source_conflict——卸下旧 Lore 工具不等于关闭旧 Lore
+	// 注入。未声明/legacy 请求保持原行为（旧请求兼容）。
+	if source == BackgroundSourceLibrary || (out.BackgroundSourceExplicit && source == BackgroundSourceNone) {
+		if loreReferencesPresent(top["lore_references"]) {
+			return RuntimeWorldContext{}, transportBackgroundSourceConflict(
+				"lore_references",
+				"library/显式 none 背景模式不能携带 lore_references（旧资料库引用通道已关闭）",
+			)
+		}
+	}
 	return out, nil
+}
+
+// loreReferencesPresent 检查顶层 lore_references 是否为非空字符串数组。
+// 形状错误（非数组/非字符串元素）不在此报错，交由既有 ChatRequest 解码按原行为拒绝。
+func loreReferencesPresent(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return false
+	}
+	var refs []string
+	if err := json.Unmarshal(trimmed, &refs); err != nil {
+		return false
+	}
+	return len(refs) > 0
 }
 
 // resolveBackgroundSource 裁定最终背景来源并执行冲突/一致性拒绝（§8.1）。

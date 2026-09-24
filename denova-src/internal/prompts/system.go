@@ -33,11 +33,20 @@ type SystemInstructionInput struct {
 	// ChapterGroupMin / Max 是章节组建议规模。
 	ChapterGroupMin int
 	ChapterGroupMax int
-	// LibraryBackground 表示本轮写作任务绑定了作品设定库背景（B2a，L3 计划 §8.6 通道 3）：
-	// 系统提示中的旧资料库工具指引整段替换为 read_library_item 指引，
-	// 避免模型被指引调用本轮未挂载的旧 lore 工具。
-	LibraryBackground bool
+	// BackgroundMode 表示本轮写作任务的背景来源模式（B2a 修正轮）：
+	//   - BackgroundModeDefault（缺省/legacy）：保留旧 lore 工具指引，与基线逐字节一致（旧请求兼容）；
+	//   - BackgroundModeLibrary：旧 lore 工具指引整段替换为 read_library_item 指引（§8.6 通道 3）；
+	//   - BackgroundModeNone：显式无作品背景，指引改为“以大纲/进度/既有章节为准”。
+	BackgroundMode string
 }
+
+// 背景模式常量（B2a 修正轮）。值与传输层 background_source 的 library|none 一致；
+// 缺省（legacy/未声明）为空串。
+const (
+	BackgroundModeDefault = ""
+	BackgroundModeLibrary  = "library"
+	BackgroundModeNone    = "none"
+)
 
 // BuildSystemInstruction 拼装 Denova Agent 的稳定系统指令：
 // 创作者指令（最高优先级）+ 导演规则 + 基础规则。作品状态由运行时追加到本轮用户消息末尾。
@@ -91,46 +100,79 @@ func BuildIDEWritingFlowInstruction(in SystemInstructionInput) string {
 	dataDir := workspacepath.Dir(ws)
 	body := fmt.Sprintf(systemInstructionBody,
 		ws, ws, ws, ws, ws, ws, ws, dataDir, ws, ws, dataDir, dataDir)
-	if in.LibraryBackground {
-		body = applyLibraryBackgroundGuidance(body)
-	}
+	body = applyBackgroundGuidance(body, in.BackgroundMode)
 	sb.WriteString(body)
 	return sb.String()
 }
 
-// loreToLibraryGuidancePairs 是 library 背景模式下系统提示的
-// “旧资料库工具指引 → read_library_item 指引”成对替换表（L3 计划 §8.6 通道 3）。
-// 左侧文本必须与 systemInstructionBody 中对应片段逐字节一致；替换在 Sprintf
-// 之后进行，因此所有片段都不含 %s 占位符（含占位符的行只替换其不含占位符的前缀）。
-// body 文案演进导致替换失配时，system_test.go 的守护测试会失败。
-var loreToLibraryGuidancePairs = []string{
-	// 文件工具说明：三个 lore 工具整段替换为库按需读取工具。
-	"- list_lore_items：空筛选返回最多 64 KiB 的资料名称目录；按 keywords、match、types 筛选时，detail=index 返回简介，detail=full 可在同一次调用中返回完整正文，避免固定的“先列出再读取”链路\n- read_lore_items：按资料库条目 ID 或唯一名称批量读取完整正文；上下文名称目录已经给出唯一名称时可直接读取，无需先调用 list_lore_items\n- write_lore_items：批量创建或更新资料库条目；只用于角色身份、人设、长期关系、能力体系、世界规则、地点、势力和物品等稳定设定变化。每章后的当前位置、伤势、心理、目标、持有物等当前状态应写入 setting/character-states.md，不要默认写入资料库。只有作者明确要求删除时才传 delete_ids。写入时每个条目都要给出完整字段、brief_description 简介和正文，避免丢失已有设定。",
-	"- read_library_item：按条目 ID 从本轮绑定的作品设定库背景中读取单条设定。已装载条目正文与可按需读取的条目目录都在背景消息中给出；需要未装载的设定时按目录逐条调用 read_library_item，不要臆造目录之外的条目。本轮没有旧资料库读写工具；设定库为只读背景，不要尝试用文件工具读取或改写设定库存储。",
-	// 状态文件职责边界 4：写入通道改为作者侧维护。
-	"创作 Agent 更新资料库时使用 write_lore_items，",
-	"本轮设定库为只读背景，长期设定由作者通过作品设定库界面维护，",
-	// 状态文件职责边界 5：渐进式加载改为库背景语义。
-	"5. 资料库采用渐进式加载：常驻资料正文和最多 64 KiB 的按需资料名称目录已在当前作品状态中提供；已知唯一名称时直接 read_lore_items，语义筛选时用 list_lore_items，需正文时优先 detail=full 一次完成",
-	"5. 本轮采用作品设定库背景：已装载条目正文与按需条目目录已在背景消息中提供；需要更多设定时用 read_library_item 按目录逐条读取，读取失败时按返回的错误码处理，不要臆造未读取的设定",
-	// 初始化新书第 6 步：不再批量写入资料库。
-	"提取角色、世界观、地点、势力、规则和物品等长期设定，使用 write_lore_items 批量整理到资料库；不要再生成 setting/characters.md 或 setting/world-building.md",
-	"提取角色、世界观、地点、势力、规则和物品等长期设定时，以本轮设定库背景为准，需要未装载设定时用 read_library_item 按目录逐条读取；不要再生成 setting/characters.md 或 setting/world-building.md，也不要把设定库正文写回任何文件",
-	// 续写章节第 1 步：读取指引替换。
-	"并结合常驻资料正文和按需资料名称目录确认长期设定与角色当前状态；已知相关资料唯一名称时直接调用 read_lore_items，需按语义缩小时用 list_lore_items 的筛选和 detail=full",
-	"并结合设定库背景中已装载的设定与按需条目目录确认长期设定与角色当前状态；需要未装载设定时用 read_library_item 按目录逐条读取",
-	// 续写章节第 6 步：同步资料库改为提示作者。
-	"只有角色身份、人设、长期关系、能力体系、世界规则、地点、势力或物品设定发生稳定变化时，才使用 write_lore_items 同步资料库；不要为每章状态抖动更新资料库",
-	"只有角色身份、人设、长期关系、能力体系、世界规则、地点、势力或物品设定发生稳定变化时，才在回复中向作者说明需要在作品设定库界面确认并更新对应条目；不要为每章状态抖动更新设定库",
-	// 重写/修改第 4 步：同步资料库改为提示作者。
-	"只有长期设定发生明确变化时才使用 write_lore_items 更新资料库",
-	"只有长期设定发生明确变化时才在回复中向作者说明需要在作品设定库界面更新对应条目",
+// backgroundGuidanceRow 是系统提示中旧 lore 工具指引按背景模式的成对替换行
+// （B2a 修正轮：legacy → library / none 三列）。legacy 列必须与 systemInstructionBody
+// 中对应片段逐字节一致；替换在 Sprintf 之后进行，因此所有片段都不含 %s 占位符
+// （含占位符的行只替换其不含占位符的前缀）。body 文案演进导致替换失配时，
+// system_test.go 的守护测试会失败。
+type backgroundGuidanceRow struct {
+	legacy  string
+	library string
+	none    string
 }
 
-// applyLibraryBackgroundGuidance 把 body 中的旧 lore 工具指引替换为库读取指引。
-func applyLibraryBackgroundGuidance(body string) string {
-	for i := 0; i+1 < len(loreToLibraryGuidancePairs); i += 2 {
-		body = strings.ReplaceAll(body, loreToLibraryGuidancePairs[i], loreToLibraryGuidancePairs[i+1])
+var loreBackgroundGuidanceRows = []backgroundGuidanceRow{
+	// 文件工具说明：三个 lore 工具整段替换为库按需读取工具 / 无背景指引。
+	{
+		legacy: "- list_lore_items：空筛选返回最多 64 KiB 的资料名称目录；按 keywords、match、types 筛选时，detail=index 返回简介，detail=full 可在同一次调用中返回完整正文，避免固定的“先列出再读取”链路\n- read_lore_items：按资料库条目 ID 或唯一名称批量读取完整正文；上下文名称目录已经给出唯一名称时可直接读取，无需先调用 list_lore_items\n- write_lore_items：批量创建或更新资料库条目；只用于角色身份、人设、长期关系、能力体系、世界规则、地点、势力和物品等稳定设定变化。每章后的当前位置、伤势、心理、目标、持有物等当前状态应写入 setting/character-states.md，不要默认写入资料库。只有作者明确要求删除时才传 delete_ids。写入时每个条目都要给出完整字段、brief_description 简介和正文，避免丢失已有设定。",
+		library: "- read_library_item：按条目 ID 从本轮绑定的作品设定库背景中读取单条设定。已装载条目正文与可按需读取的条目目录都在背景消息中给出；需要未装载的设定时按目录逐条调用 read_library_item，不要臆造目录之外的条目。本轮没有旧资料库读写工具；设定库为只读背景，不要尝试用文件工具读取或改写设定库存储。",
+		none:    "- 本轮写作未启用任何作品背景：没有资料库读写工具，也没有作品设定库背景。不要读取或臆造任何资料库/设定库条目；长期设定以当前大纲、进度和既有章节为准，需要沉淀新设定时先在回复中向作者说明，由作者决定是否整理。",
+	},
+	// 状态文件职责边界 4：写入通道改为作者侧维护。
+	{
+		legacy:  "创作 Agent 更新资料库时使用 write_lore_items，",
+		library: "本轮设定库为只读背景，长期设定由作者通过作品设定库界面维护，",
+		none:    "本轮没有资料库读写通道，长期设定由作者自行维护，",
+	},
+	// 状态文件职责边界 5：渐进式加载改为库背景 / 无背景语义。
+	{
+		legacy:  "5. 资料库采用渐进式加载：常驻资料正文和最多 64 KiB 的按需资料名称目录已在当前作品状态中提供；已知唯一名称时直接 read_lore_items，语义筛选时用 list_lore_items，需正文时优先 detail=full 一次完成",
+		library: "5. 本轮采用作品设定库背景：已装载条目正文与按需条目目录已在背景消息中提供；需要更多设定时用 read_library_item 按目录逐条读取，读取失败时按返回的错误码处理，不要臆造未读取的设定",
+		none:    "5. 本轮无任何资料库/设定库背景：不要读取或臆造资料库条目；长期设定以当前大纲、进度和既有章节为准，需要新设定时在回复中向作者说明",
+	},
+	// 初始化新书第 6 步：不再批量写入资料库。
+	{
+		legacy:  "提取角色、世界观、地点、势力、规则和物品等长期设定，使用 write_lore_items 批量整理到资料库；不要再生成 setting/characters.md 或 setting/world-building.md",
+		library: "提取角色、世界观、地点、势力、规则和物品等长期设定时，以本轮设定库背景为准，需要未装载设定时用 read_library_item 按目录逐条读取；不要再生成 setting/characters.md 或 setting/world-building.md，也不要把设定库正文写回任何文件",
+		none:    "提取角色、世界观、地点、势力、规则和物品等长期设定时，只写入大纲或正文文件；不要生成 setting/characters.md 或 setting/world-building.md，也不要臆造任何资料库条目",
+	},
+	// 续写章节第 1 步：读取指引替换。
+	{
+		legacy:  "并结合常驻资料正文和按需资料名称目录确认长期设定与角色当前状态；已知相关资料唯一名称时直接调用 read_lore_items，需按语义缩小时用 list_lore_items 的筛选和 detail=full",
+		library: "并结合设定库背景中已装载的设定与按需条目目录确认长期设定与角色当前状态；需要未装载设定时用 read_library_item 按目录逐条读取",
+		none:    "并结合当前大纲、进度和既有章节确认长期设定与角色当前状态；不要读取或臆造任何资料库条目",
+	},
+	// 续写章节第 6 步：同步资料库改为提示作者。
+	{
+		legacy:  "只有角色身份、人设、长期关系、能力体系、世界规则、地点、势力或物品设定发生稳定变化时，才使用 write_lore_items 同步资料库；不要为每章状态抖动更新资料库",
+		library: "只有角色身份、人设、长期关系、能力体系、世界规则、地点、势力或物品设定发生稳定变化时，才在回复中向作者说明需要在作品设定库界面确认并更新对应条目；不要为每章状态抖动更新设定库",
+		none:    "只有角色身份、人设、长期关系、能力体系、世界规则、地点、势力或物品设定发生稳定变化时，才在回复中向作者说明建议沉淀的设定；不要为每章状态抖动更新任何设定",
+	},
+	// 重写/修改第 4 步：同步资料库改为提示作者。
+	{
+		legacy:  "只有长期设定发生明确变化时才使用 write_lore_items 更新资料库",
+		library: "只有长期设定发生明确变化时才在回复中向作者说明需要在作品设定库界面更新对应条目",
+		none:    "只有长期设定发生明确变化时才在回复中向作者说明建议沉淀的设定",
+	},
+}
+
+// applyBackgroundGuidance 按背景模式替换 body 中的旧 lore 工具指引（B2a 修正轮）。
+// 缺省（legacy/未声明）不替换：旧请求行为逐字节兼容。
+func applyBackgroundGuidance(body, mode string) string {
+	switch mode {
+	case BackgroundModeLibrary:
+		for _, row := range loreBackgroundGuidanceRows {
+			body = strings.ReplaceAll(body, row.legacy, row.library)
+		}
+	case BackgroundModeNone:
+		for _, row := range loreBackgroundGuidanceRows {
+			body = strings.ReplaceAll(body, row.legacy, row.none)
+		}
 	}
 	return body
 }

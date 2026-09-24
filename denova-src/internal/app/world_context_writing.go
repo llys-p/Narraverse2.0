@@ -11,6 +11,7 @@ import (
 
 	"denova/config"
 	"denova/internal/agent"
+	"denova/internal/book"
 	"denova/internal/libraryruntime"
 	"denova/internal/worldcontext"
 )
@@ -47,12 +48,50 @@ type WritingTaskInput struct {
 	Request agent.ChatRequest
 	World   WritingWorldControl
 	Library WritingLibraryControl
+	// BackgroundSource 是传输层裁定后的背景来源：legacy | library | none（§8.1）。
+	BackgroundSource string
+	// BackgroundSourceExplicit 区分“客户端显式声明 background_source”与“缺省时的
+	// 结构推断”（B2a 修正轮）：只有显式 none 才关闭旧 Lore 注入并兑现“无作品背景”；
+	// 未声明请求即使被推断为 none 也保持旧写作路径逐字节兼容。
+	BackgroundSourceExplicit bool
 }
 
 // writingTaskScopeKey 由服务端 Task ID 派生写作 runContext 的 scopeKey；
 // 禁止读取客户端自造的 scope/scopeKey。
 func writingTaskScopeKey(taskID string) string {
 	return "task:" + taskID
+}
+
+// writingBackgroundPlan 是一次写作运行的背景模式裁定与单源系统提示组成（B2a 修正轮）。
+// Composition 必须同时充当两个角色且来自同一对象：Instruction() 送入 runner 构建
+// （模型实际系统提示），整个 composition 作为 RunOptions.SystemPromptLog（计费量测
+// 与提示审计）——两份文本逐字节一致。
+type writingBackgroundPlan struct {
+	// Mode ∈ {agent.BackgroundModeLegacy, BackgroundModeLibrary, BackgroundModeNone}。
+	Mode string
+	// NoLegacyLore 表示旧 Lore 注入三通道（系统提示 lore 片段、稳定上下文 lore 片段、
+	// lore 工具与指引）必须全关；legacy 模式恒为 false（旧请求兼容）。
+	NoLegacyLore  bool
+	Composition   agent.SystemPromptCompositionLog
+}
+
+// planWritingBackground 裁定背景模式并构建单源系统提示组成（B2a 修正轮）。
+//   - 携带 library 控制字段：library 模式，旧 Lore 三通道全关；
+//   - 显式声明 background_source=none：none 模式，同上且不挂任何背景读取工具；
+//   - 其余（未声明/显式 legacy，含结构推断为 none 的未声明请求）：legacy 模式，
+//     与基线逐字节一致（旧请求兼容——推断的 none 不等于显式 none）。
+func planWritingBackground(cfg *config.Config, state *book.State, teller agent.IDEStoryTeller, in WritingTaskInput) writingBackgroundPlan {
+	mode := agent.BackgroundModeLegacy
+	if in.Library.Present() {
+		mode = agent.BackgroundModeLibrary
+	} else if in.BackgroundSourceExplicit && in.BackgroundSource == agent.BackgroundModeNone {
+		mode = agent.BackgroundModeNone
+	}
+	return writingBackgroundPlan{
+		Mode:         mode,
+		NoLegacyLore: mode != agent.BackgroundModeLegacy,
+		Composition:  agent.BuildBackgroundInstructionComposition(cfg, state, teller, mode),
+	}
 }
 
 // writingSessionKey 派生写作 analysis handle 归属的会话键（§6.4.1），
@@ -320,6 +359,20 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 	// 1) 先分配 pending Task（仅 ID + 可取消上下文，不起 goroutine）。
 	task := newPendingTask()
 
+	// 1a) B2a 修正轮：单源裁定背景模式与系统提示组成（缺口②的唯一入口）。
+	// plan.Composition 同时充当 runner 构建输入（Instruction()，模型实际系统提示）
+	// 与 RunOptions.SystemPromptLog（计费量测/提示审计），保证二者逐字节一致。
+	plan := planWritingBackground(&runtime.cfg, runtime.state, runtime.ideTeller, in)
+	if plan.NoLegacyLore && len(in.Request.LoreReferences) > 0 {
+		// 传输层已对 library/显式 none + lore_references 返回 400 background_source_conflict；
+		// 此处为直连调用方的防御性拒绝（不静默丢弃，旧背景通道必须显式关闭）。
+		task.discard()
+		return nil, &libraryruntime.Error{
+			Code:    libraryruntime.ErrInvalidRequest,
+			Message: "library/显式 none 背景模式不能携带 lore_references（旧资料库引用通道已关闭）",
+		}
+	}
+
 	// 1b) B2a bind-before-start：library 背景在 runner 构建/模型 goroutine 启动前完成
 	// 绑定与初始装配；绑定期失败阻断启动，绝不静默降级。与 World 控制字段互斥。
 	var libRun *writingLibraryRun
@@ -338,12 +391,16 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 		}
 	}
 
-	// 2) runner：library 模式不挂载旧 lore 工具（§8.6 通道 2），改挂载持有本次绑定
-	// Run 的库按需读取工具；其余路径与基线逐字节一致。
+	// 2) runner：按 plan.Mode 构建（缺口①）。library 模式不挂载旧 lore 工具（§8.6 通道 2），
+	// 改挂载持有本次绑定 Run 的库按需读取工具；显式 none 模式无任何背景读取工具；
+	// 其余路径与基线逐字节一致（旧请求兼容）。
 	var runner *adk.Runner
-	if libRun != nil {
-		runner, err = buildAgentRunnerWithLibrary(ctx, &runtime.cfg, runtime.state, runtime.ideTeller, libRun.run)
-	} else {
+	switch plan.Mode {
+	case agent.BackgroundModeLibrary:
+		runner, err = buildAgentRunnerWithLibrary(ctx, &runtime.cfg, runtime.state, runtime.ideTeller, plan.Composition.Instruction(), libRun.run)
+	case agent.BackgroundModeNone:
+		runner, err = buildAgentRunnerWithNoBackground(ctx, &runtime.cfg, plan.Composition.Instruction())
+	default:
 		runner, err = buildAgentRunner(ctx, &runtime.cfg, runtime.state, runtime.ideTeller)
 	}
 	if err != nil {
@@ -402,7 +459,14 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 			log.Printf("[agent-task] library context bound id=%s library_id=%s revision=%s manual=%d", task.ID(), st.LibraryID, st.Revision, st.ManualCount)
 		}
 		log.Printf("[agent-task] run begin id=%s message_len=%d references=%d lore_references=%d style_scenes=%d style_rules=%d selections=%d plan_mode=%v teller_id=%s writing_skill=%s", task.ID(), len(req.Message), len(req.References), len(req.LoreReferences), len(req.StyleScenes), len(req.StyleRules), len(req.Selections), req.PlanMode, req.TellerID, req.WritingSkill)
-		runtimeContexts := agent.IDEWorkspaceRuntimeContextsForRequest(runtime.state, req)
+		// B2a 修正轮（通道 ②）：library/显式 none 模式稳定上下文排除旧 lore 片段，
+		// 不与库背景/无背景叠加；legacy（缺省/显式 legacy）保持原取法（旧请求兼容）。
+		var runtimeContexts agent.IDEWorkspaceRuntimeContexts
+		if plan.NoLegacyLore {
+			runtimeContexts = agent.IDEWorkspaceRuntimeContextsForRequestExcludingLore(runtime.state, req)
+		} else {
+			runtimeContexts = agent.IDEWorkspaceRuntimeContextsForRequest(runtime.state, req)
+		}
 		conversation := agent.NewSessionConversationForAgentWithRuntimeContexts(
 			runtime.sess,
 			&runtime.cfg,
@@ -441,7 +505,9 @@ func (s *ChatAppService) StartWritingTaskWithError(ctx context.Context, in Writi
 			Mode:               "ide",
 			IdleTimeout:        agentIdleTimeout(runtime.cfg),
 			ToolResultMaxBytes: agentToolResultMaxBytes(runtime.cfg),
-			SystemPromptLog:    agent.BuildInstructionComposition(&runtime.cfg, runtime.state, runtime.ideTeller),
+			// B2a 修正轮（缺口②）：计费/审计使用实际送模的系统提示——与 runner 构建
+			// 消费同一个 plan.Composition（单源），不再传默认 composition。
+			SystemPromptLog:    plan.Composition,
 			OnMutationsVerified: a.verifiedWorkspaceMutationCallback(
 				"ide_agent_post_run",
 				runtime.versionService,

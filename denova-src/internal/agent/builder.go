@@ -44,20 +44,44 @@ func Build(ctx context.Context, cfg *config.Config, state *book.State, teller ID
 
 // BuildWithLibraryBackground 构建 library 背景模式的写作 Agent（B2a）。
 // 与 Build 的差异（§8.6 通道 2/3）：不挂载旧 lore 读取工具（防止新旧两套设定叠加），
-// 改挂载持有本次绑定 Run 的 read_library_item 按需读取工具；系统提示中的旧 lore
-// 工具指引同步替换为 read_library_item 指引。其余工具集逐字节一致。
+// 改挂载持有本次绑定 Run 的 read_library_item 按需读取工具。其余工具集逐字节一致。
+// instruction 必须是调用方以单源 composition 构建的系统提示（B2a 修正轮缺口②：
+// 与 RunOptions.SystemPromptLog 同一来源，保证计费/审计文本 == 模型实际系统提示）；
+// 空串时退回自建 library 提示（防御性兜底，不改变行为语义）。
 // libRun 必须是本次写作任务在 bind-before-start 阶段绑定的运行；nil 时退回 Build。
-func BuildWithLibraryBackground(ctx context.Context, cfg *config.Config, state *book.State, teller IDEStoryTeller, libRun *libraryruntime.Run) (adk.Agent, error) {
+func BuildWithLibraryBackground(ctx context.Context, cfg *config.Config, state *book.State, teller IDEStoryTeller, instruction string, libRun *libraryruntime.Run) (adk.Agent, error) {
 	if libRun == nil {
 		return Build(ctx, cfg, state, teller)
+	}
+	if strings.TrimSpace(instruction) == "" {
+		instruction = BuildLibraryBackgroundInstruction(cfg, state, teller)
 	}
 	return buildDeepAgent(ctx, cfg, deepAgentSpec{
 		Kind:              config.AgentKindIDE,
 		Name:              "DenovaAgent",
 		Description:       "AI 小说创作助手",
-		Instruction:       BuildLibraryBackgroundInstruction(cfg, state, teller),
+		Instruction:       instruction,
 		EnableSkills:      true,
 		ExtraToolsFactory: ideToolsFactoryWithLibrary(cfg, libRun),
+	})
+}
+
+// BuildWithNoBackground 构建“显式无作品背景”（background_source=none）的写作 Agent
+// （B2a 修正轮）：不挂载旧 lore 工具，也不挂载库读取工具；系统提示中的旧 lore
+// 工具指引整段替换为无背景指引。instruction 必须由调用方以单源 composition 提供
+// （与 RunOptions.SystemPromptLog 同一来源）；空串即显式报错——none 模式没有可
+// 回退的自建提示路径。
+func BuildWithNoBackground(ctx context.Context, cfg *config.Config, instruction string) (adk.Agent, error) {
+	if strings.TrimSpace(instruction) == "" {
+		return nil, fmt.Errorf("显式 none 背景模式必须提供单源系统提示")
+	}
+	return buildDeepAgent(ctx, cfg, deepAgentSpec{
+		Kind:              config.AgentKindIDE,
+		Name:              "DenovaAgent",
+		Description:       "AI 小说创作助手",
+		Instruction:       instruction,
+		EnableSkills:      true,
+		ExtraToolsFactory: ideToolsFactoryNoBackground(cfg),
 	})
 }
 
@@ -551,6 +575,17 @@ func ideToolsFactoryWithLibrary(cfg *config.Config, libRun *libraryruntime.Run) 
 		tools := append([]tool.BaseTool{}, libraryTools...)
 		tools = append(tools, imageTools...)
 		return tools, nil
+	}
+}
+
+// ideToolsFactoryNoBackground 是显式 none 背景模式的 IDE 工具工厂（B2a 修正轮）：
+// 不挂载旧 lore 工具，也不挂载库读取工具；仅保留插图工具。
+func ideToolsFactoryNoBackground(cfg *config.Config) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		if cfg == nil {
+			return nil, nil
+		}
+		return newIllustrationTools(cfg)
 	}
 }
 

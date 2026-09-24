@@ -74,33 +74,52 @@ func TestIDEWritingFlowKeepsChapterStatusIndependentFromStateSync(t *testing.T) 
 	}
 }
 
-// TestBuildIDEWritingFlowInstructionLibraryBackgroundReplacesLoreGuidance 守护
-// §8.6 通道 3：library 背景模式下旧 lore 工具指引整段替换为 read_library_item 指引；
-// 同时守护替换表左侧与 systemInstructionBody 逐字节同步（默认模式必须包含每个旧片段）。
-func TestBuildIDEWritingFlowInstructionLibraryBackgroundReplacesLoreGuidance(t *testing.T) {
+// TestBuildIDEWritingFlowInstructionBackgroundModesReplaceLoreGuidance 守护
+// §8.6 通道 3 与 B2a 修正轮：library / 显式 none 背景模式下旧 lore 工具指引整段替换；
+// 同时守护替换表 legacy 列与 systemInstructionBody 逐字节同步（默认模式必须包含每个旧片段）。
+func TestBuildIDEWritingFlowInstructionBackgroundModesReplaceLoreGuidance(t *testing.T) {
 	in := SystemInstructionInput{Workspace: "/tmp/book"}
 	defaultFlow := BuildIDEWritingFlowInstruction(in)
-	for i := 0; i+1 < len(loreToLibraryGuidancePairs); i += 2 {
-		if !strings.Contains(defaultFlow, loreToLibraryGuidancePairs[i]) {
-			t.Fatalf("replacement pair %d is out of sync with systemInstructionBody; missing:\n%s", i/2, loreToLibraryGuidancePairs[i])
+	for i, row := range loreBackgroundGuidanceRows {
+		if !strings.Contains(defaultFlow, row.legacy) {
+			t.Fatalf("guidance row %d legacy column is out of sync with systemInstructionBody; missing:\n%s", i, row.legacy)
 		}
 	}
 
-	libraryFlow := BuildIDEWritingFlowInstruction(SystemInstructionInput{Workspace: "/tmp/book", LibraryBackground: true})
+	// library 模式：旧 lore 工具名全部消失，read_library_item 指引逐行出现。
+	libraryFlow := BuildIDEWritingFlowInstruction(SystemInstructionInput{Workspace: "/tmp/book", BackgroundMode: BackgroundModeLibrary})
 	for _, banned := range []string{"read_lore_items", "list_lore_items", "write_lore_items"} {
 		if strings.Contains(libraryFlow, banned) {
 			t.Fatalf("library background flow must not reference legacy lore tool %q:\n%s", banned, libraryFlow)
 		}
 	}
-	for i := 0; i+1 < len(loreToLibraryGuidancePairs); i += 2 {
-		if !strings.Contains(libraryFlow, loreToLibraryGuidancePairs[i+1]) {
-			t.Fatalf("library background flow must contain replacement guidance %d:\n%s", i/2, loreToLibraryGuidancePairs[i+1])
+	for i, row := range loreBackgroundGuidanceRows {
+		if !strings.Contains(libraryFlow, row.library) {
+			t.Fatalf("library background flow must contain replacement guidance %d:\n%s", i, row.library)
 		}
 	}
 	if strings.Contains(libraryFlow, "%!(EXTRA") {
 		t.Fatalf("library background flow has fmt artifacts:\n%s", libraryFlow)
 	}
-	// 非 lore 差异之外，两种模式共享同一 body（工作流、目录结构等逐字节一致）。
+
+	// 显式 none 模式（B2a 修正轮）：无旧 lore 工具名，也无库读取工具指引；
+	// 语义改为“以大纲/进度/既有章节为准”。
+	noneFlow := BuildIDEWritingFlowInstruction(SystemInstructionInput{Workspace: "/tmp/book", BackgroundMode: BackgroundModeNone})
+	for _, banned := range []string{"read_lore_items", "list_lore_items", "write_lore_items", "read_library_item"} {
+		if strings.Contains(noneFlow, banned) {
+			t.Fatalf("explicit-none flow must not reference background tool %q:\n%s", banned, noneFlow)
+		}
+	}
+	for i, row := range loreBackgroundGuidanceRows {
+		if !strings.Contains(noneFlow, row.none) {
+			t.Fatalf("explicit-none flow must contain no-background guidance %d:\n%s", i, row.none)
+		}
+	}
+	if strings.Contains(noneFlow, "%!(EXTRA") {
+		t.Fatalf("explicit-none flow has fmt artifacts:\n%s", noneFlow)
+	}
+
+	// 非 lore 差异之外，三种模式共享同一 body（工作流、目录结构等逐字节一致）。
 	if strings.Contains(defaultFlow, "read_library_item") {
 		t.Fatal("default flow must not reference read_library_item (tool only mounted in library mode)")
 	}

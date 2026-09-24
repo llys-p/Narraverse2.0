@@ -220,3 +220,128 @@ func TestWritingLibraryContextStateEventSanitized(t *testing.T) {
 		t.Fatalf("revision label must be bounded to 64: %d", len(got))
 	}
 }
+
+// 5) B2a 修正轮：背景模式裁定与单源 composition（缺口②）。legacy 与默认逐字节一致；
+// 显式 none / library 关闭旧 Lore；结构推断 none ≠ 显式 none（旧请求兼容）。
+func TestPlanWritingBackgroundModesAndLegacyCompat(t *testing.T) {
+	chat, _, _, _ := writingLibraryFixture(t)
+	a := chat.app
+	a.bookState = book.NewState(a.workspace)
+	cfg := a.cfg
+	state := a.bookState
+	teller := agent.IDEStoryTeller{}
+
+	// 未声明（结构推断为 none）：必须保持 legacy 行为（推断的 none 不等于显式 none）。
+	bare := planWritingBackground(cfg, state, teller, WritingTaskInput{BackgroundSource: "none", BackgroundSourceExplicit: false})
+	if bare.Mode != agent.BackgroundModeLegacy || bare.NoLegacyLore {
+		t.Fatalf("未声明请求（即使结构推断为 none）必须保持 legacy 行为: %+v", bare)
+	}
+	if bare.Composition.Instruction() != agent.BuildInstructionComposition(cfg, state, teller).Instruction() {
+		t.Fatal("legacy composition 必须与默认 BuildInstructionComposition 逐字节一致（旧请求兼容）")
+	}
+
+	// 显式 legacy：同上（旧请求兼容）。
+	explicitLegacy := planWritingBackground(cfg, state, teller, WritingTaskInput{BackgroundSource: "legacy", BackgroundSourceExplicit: true})
+	if explicitLegacy.Mode != agent.BackgroundModeLegacy || explicitLegacy.NoLegacyLore {
+		t.Fatalf("显式 legacy 必须保持旧行为: %+v", explicitLegacy)
+	}
+
+	// 显式 none：none 模式，无任何背景读取工具指引。
+	explicitNone := planWritingBackground(cfg, state, teller, WritingTaskInput{BackgroundSource: "none", BackgroundSourceExplicit: true})
+	if explicitNone.Mode != agent.BackgroundModeNone || !explicitNone.NoLegacyLore {
+		t.Fatalf("显式 none 必须裁定 none 模式: %+v", explicitNone)
+	}
+	for _, banned := range []string{"read_lore_items", "list_lore_items", "write_lore_items", "read_library_item"} {
+		if strings.Contains(explicitNone.Composition.Instruction(), banned) {
+			t.Fatalf("显式 none 提示不得引用背景工具 %q", banned)
+		}
+	}
+
+	// library：库模式提示；SystemPromptLog 不得回落默认 composition（缺口②回归守护）。
+	libraryPlan := planWritingBackground(cfg, state, teller, WritingTaskInput{
+		Library:               WritingLibraryControl{LibraryID: "lib-1", ExpectedRevision: "rev-1"},
+		BackgroundSource:      "library",
+		BackgroundSourceExplicit: true,
+	})
+	if libraryPlan.Mode != agent.BackgroundModeLibrary || !libraryPlan.NoLegacyLore {
+		t.Fatalf("库控制字段必须裁定 library 模式: %+v", libraryPlan)
+	}
+	if libraryPlan.Composition.Instruction() == agent.BuildInstructionComposition(cfg, state, teller).Instruction() {
+		t.Fatal("library 模式 SystemPromptLog 必须是库模式提示本身（缺口②回归守护）")
+	}
+	if !strings.Contains(libraryPlan.Composition.Instruction(), "read_library_item") {
+		t.Fatal("library 模式提示必须指引 read_library_item")
+	}
+}
+
+// 6) B2a 修正轮（缺口①）：lore_references 防御性拒绝——传输层已 400
+// background_source_conflict，直连调用同样拒绝（不静默丢弃）；拒绝发生在绑定/启动之前。
+func TestStartWritingTaskRejectsLoreReferencesInNewBackgroundModes(t *testing.T) {
+	chat, l, revision, _ := writingLibraryFixture(t)
+	a := chat.app
+	store, err := session.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess, err := store.GetOrCreate("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.session = sess
+	a.bookState = book.NewState(a.workspace)
+
+	// library + lore_references → 拒绝（发生在库绑定之前，无副作用）。
+	if task, err := chat.StartWritingTaskWithError(context.Background(), WritingTaskInput{
+		Request:  agent.ChatRequest{Message: "继续写", LoreReferences: []string{"hero"}},
+		Library: WritingLibraryControl{LibraryID: l.ID, ExpectedRevision: revision},
+	}); task != nil || libraryruntime.CodeOf(err) != libraryruntime.ErrInvalidRequest {
+		t.Fatalf("library + lore_references must be rejected: task=%v err=%v", task, err)
+	}
+
+	// 显式 none + lore_references → 拒绝。
+	if task, err := chat.StartWritingTaskWithError(context.Background(), WritingTaskInput{
+		Request:                  agent.ChatRequest{Message: "继续写", LoreReferences: []string{"hero"}},
+		BackgroundSource:         "none",
+		BackgroundSourceExplicit: true,
+	}); task != nil || libraryruntime.CodeOf(err) != libraryruntime.ErrInvalidRequest {
+		t.Fatalf("explicit none + lore_references must be rejected: task=%v err=%v", task, err)
+	}
+	if a.activeTask != nil {
+		t.Fatalf("rejected starts must not leave an active task: %v", a.activeTask)
+	}
+}
+
+// 7) 修正轮 runner 构建路径冒烟：单源 composition 的 Instruction() 可直接驱动
+// none / library runner 构建（缺口②的接线端到端可执行）。
+func TestBuildWritingRunnersConsumeSingleSourceInstruction(t *testing.T) {
+	chat, l, revision, _ := writingLibraryFixture(t)
+	a := chat.app
+	a.bookState = book.NewState(a.workspace)
+	cfg := a.cfg
+	state := a.bookState
+	teller := agent.IDEStoryTeller{}
+
+	// 显式 none：单源提示构建 runner；空提示显式报错。
+	nonePlan := planWritingBackground(cfg, state, teller, WritingTaskInput{BackgroundSource: "none", BackgroundSourceExplicit: true})
+	runner, err := buildAgentRunnerWithNoBackground(context.Background(), cfg, nonePlan.Composition.Instruction())
+	if err != nil || runner == nil {
+		t.Fatalf("explicit none runner build failed: err=%v runner=%v", err, runner)
+	}
+	if _, err := buildAgentRunnerWithNoBackground(context.Background(), cfg, ""); err == nil {
+		t.Fatal("empty instruction must fail explicit-none runner build")
+	}
+
+	// library：真实绑定 Run + 单源提示构建 runner。
+	run, err := chat.resolveWritingLibraryRun(context.Background(), "task-r2-instruction", WritingLibraryControl{LibraryID: l.ID, ExpectedRevision: revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseWritingLibraryRun(run, false)
+	libraryPlan := planWritingBackground(cfg, state, teller, WritingTaskInput{
+		Library: WritingLibraryControl{LibraryID: l.ID, ExpectedRevision: revision},
+	})
+	runner, err = buildAgentRunnerWithLibrary(context.Background(), cfg, state, teller, libraryPlan.Composition.Instruction(), run.run)
+	if err != nil || runner == nil {
+		t.Fatalf("library runner build failed: err=%v runner=%v", err, runner)
+	}
+}

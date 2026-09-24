@@ -79,6 +79,10 @@ func (h *Handlers) HandleChat(ctx context.Context, c *app.RequestContext) {
 			ManualItemIDs:    runtimeWC.LibraryRef.ManualItemIDs,
 		}
 	}
+	// B2a 修正轮：转发裁定后的背景来源与显式标记——app 层据此区分“显式 none”
+	// 与“未声明”（只有显式 none 关闭旧 Lore 注入，未声明保持旧写作路径兼容）。
+	in.BackgroundSource = runtimeWC.BackgroundSource
+	in.BackgroundSourceExplicit = runtimeWC.BackgroundSourceExplicit
 	task, err := h.app.StartWritingTaskWithError(ctx, in)
 	if err != nil {
 		h.writeChatPreparationError(c, err)

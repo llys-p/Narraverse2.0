@@ -198,3 +198,70 @@ func TestLibraryContextTransportContextAnalysisPolicy(t *testing.T) {
 		domainErrOf(t, err, worldcontext.ErrInvalidRequest, "library_context")
 	}
 }
+
+// 7) B2a 修正轮：显式声明标记（BackgroundSourceExplicit）必须区分“客户端显式声明”
+// 与“缺省结构推断”——app 层只有显式 none 才关闭旧 Lore 注入。
+func TestLibraryContextTransportBackgroundSourceExplicitFlag(t *testing.T) {
+	cases := []struct {
+		name       string
+		body       string
+		wantSource string
+		wantFlag   bool
+	}{
+		{"显式 none", `{"message":"m","background_source":"none"}`, BackgroundSourceNone, true},
+		{"未声明裸请求（推断 none）", `{"message":"m"}`, BackgroundSourceNone, false},
+		{"显式 legacy", `{"message":"m","background_source":"legacy","world_context":{"worldId":"w","expectedWorldRevision":"r","selection":{}}}`, BackgroundSourceLegacy, true},
+		{"world 载体（推断 legacy）", `{"message":"m","world_context":{"worldId":"w","expectedWorldRevision":"r","selection":{}}}`, BackgroundSourceLegacy, false},
+		{"显式 library", `{"message":"m","background_source":"library","library_context":{"libraryId":"lib-1","expectedRevision":"rev-1"}}`, BackgroundSourceLibrary, true},
+		{"library 载体（推断 library）", string(libraryCtxBody("")), BackgroundSourceLibrary, false},
+	}
+	for _, tc := range cases {
+		_, rt, err := decodeChatRequestBody([]byte(tc.body), PolicyChat)
+		if err != nil {
+			t.Fatalf("%s: 解码失败: %v", tc.name, err)
+		}
+		if rt.BackgroundSource != tc.wantSource {
+			t.Fatalf("%s: source=%q want %q", tc.name, rt.BackgroundSource, tc.wantSource)
+		}
+		if rt.BackgroundSourceExplicit != tc.wantFlag {
+			t.Fatalf("%s: explicit=%v want %v", tc.name, rt.BackgroundSourceExplicit, tc.wantFlag)
+		}
+	}
+}
+
+// 8) B2a 修正轮（缺口①）：lore_references 是旧 Lore 注入通道，library / 显式 none
+// 模式与其同现即 background_source_conflict；未声明/legacy 请求保持原行为（旧请求兼容）。
+func TestLibraryContextTransportLoreReferencesConflict(t *testing.T) {
+	// 显式 library + lore_references → 冲突。
+	if _, _, err := decodeChatRequestBody(libraryCtxBody(`"background_source":"library","lore_references":["hero"]`), PolicyChat); err == nil {
+		t.Fatal("显式 library + lore_references 必须冲突")
+	} else {
+		domainErrOf(t, err, BackgroundSourceConflictCode, "lore_references")
+	}
+	// 推断 library（未声明来源）+ lore_references → 冲突（新背景模式不叠加旧 Lore）。
+	if _, _, err := decodeChatRequestBody(libraryCtxBody(`"lore_references":["hero"]`), PolicyChat); err == nil {
+		t.Fatal("推断 library + lore_references 必须冲突")
+	} else {
+		domainErrOf(t, err, BackgroundSourceConflictCode, "lore_references")
+	}
+	// 显式 none + lore_references → 冲突。
+	if _, _, err := decodeChatRequestBody([]byte(`{"message":"m","background_source":"none","lore_references":["hero"]}`), PolicyChat); err == nil {
+		t.Fatal("显式 none + lore_references 必须冲突")
+	} else {
+		domainErrOf(t, err, BackgroundSourceConflictCode, "lore_references")
+	}
+	// 未声明裸请求 + lore_references → 通过（旧请求兼容：推断 none ≠ 显式 none）。
+	if _, rt, err := decodeChatRequestBody([]byte(`{"message":"m","lore_references":["hero"]}`), PolicyChat); err != nil {
+		t.Fatalf("未声明请求携带 lore_references 必须保持兼容: %v", err)
+	} else if rt.BackgroundSourceExplicit {
+		t.Fatal("未声明请求 explicit 必须为 false")
+	}
+	// 显式 legacy + lore_references → 通过。
+	if _, _, err := decodeChatRequestBody([]byte(`{"message":"m","background_source":"legacy","world_context":{"worldId":"w","expectedWorldRevision":"r","selection":{}},"lore_references":["hero"]}`), PolicyChat); err != nil {
+		t.Fatalf("显式 legacy + lore_references 必须保持兼容: %v", err)
+	}
+	// 空数组等价未携带：显式 none 不因空 lore_references 被拒。
+	if _, _, err := decodeChatRequestBody([]byte(`{"message":"m","background_source":"none","lore_references":[]}`), PolicyChat); err != nil {
+		t.Fatalf("空 lore_references 不构成冲突: %v", err)
+	}
+}
