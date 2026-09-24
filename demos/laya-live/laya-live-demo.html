@@ -778,9 +778,13 @@ async function send(text){
       actor, world_state: worldState, player_input: text, history: history.slice(-8)
     }));
     if(out.error){ throw new Error(out.error); }
+    if(out.ok === false || out.status === 'invalid'){
+      throw new Error(out.invalid_reason || '本轮分析失败，未提交状态。');
+    }
 
     // 1) 应用状态建议（proposed_deltas 是新字段名，deltas 仅作旧后端兼容）
-    const rows = applyDeltas(out.proposed_deltas || out.deltas || []);
+    const rows = (out.decision || {}).awaiting_upstream
+      ? [] : applyDeltas(out.proposed_deltas || out.deltas || []);
     showChips(rows);
     renderActor();
     flashValues(rows);
@@ -797,17 +801,14 @@ async function send(text){
     $('stRoute').textContent = out.routing ? (out.routing.model||'—') : '—';
 
     // 3) 台词
-    // ★★ Phase3-Task1：behavior=null 时**不生成台词**，也不写 NPC 历史。
-    //    旧实现在这里 `const b = out.decision.behavior || {id:null}` 之后就不再管，
-    //    而桥内早已用 choice argmax 悄悄补了一个行为 —— 于是「其实没人拍板」
-    //    在界面上和「正常决策」长得一模一样。现在必须显式可见。
+    // 歧义轮交给云端生成回应；保留 behavior=null，不提交状态或决策历史。
     const b = (out.decision.behavior) || {id:null};
     const awaiting = !!(out.decision && out.decision.awaiting_upstream);
     if(awaiting){
       dropPending();
       const cb = out.decision.choice_baseline || {};
-      pushMsg('sys', 'Laya 不确定 · 交由上游模型裁决',
-        esc(out.decision.behavior_null_reason || '本轮判为歧义，桥不代选行为，也不生成台词。'),
+      pushMsg('sys', useLLM ? 'Laya 不确定 · 云端接续中' : 'Laya 不确定 · 请开启 LLM 生成',
+        esc(out.decision.behavior_null_reason || '本轮判为歧义，由云端根据原始对话回应；状态不提交。'),
         `<div class="deco">
            <span>behavior = <b>null</b></span>
            <span>fallback = ${esc(String(out.decision.fallback || '—'))}</span>
@@ -816,24 +817,28 @@ async function send(text){
            <span>${out.question_count} 题 / ${out.latency_ms.toFixed(1)}ms</span>
            <span>turn ${esc(String((out.turn||{}).turn_id || '—'))}</span>
          </div>`);
-      // 只记玩家一句：这一轮没有 NPC 行为，不能凭空写一条 NPC 历史。
-      history.push({role:'player', text, text_en: out.player_input_en || text});
-      return;
+      if(!useLLM){
+        history.push({role:'player', text, text_en: out.player_input_en || text});
+        return;
+      }
+      pushPending();
     }
     let line = null;
-    if(b.id){
+    if(b.id || awaiting){
       const nr = await api('/narrate', envelope({
-        actor, behavior:{id:b.id}, player_input:text, history:history.slice(-8),
+        actor, behavior:awaiting ? null : {id:b.id}, mode:awaiting ? 'upstream' : 'behavior',
+        player_input:text, history:history.slice(-8),
         state_line: out.state_line, use_llm: useLLM,
         turn_id: (out.turn||{}).turn_id
       }), 70000);
+      if(nr.error) throw new Error(nr.error);
       line = nr;
       // ★ 提交门（Phase3-Task3）：上游（这里就是 Story Agent）真的按这个行为写出台词了，
       //   才算这轮决策「被采纳」→ 才允许写进决策历史。
       //   没被采纳就**不提交**：没采纳的决策不该影响下一轮 state。
       //   注意这是 Demo 的简化语义 —— 正式链路里 /commit 的调用方应是 Director，
       //   而不是「写了台词」这个前端事件。
-      if(nr && !nr.error){
+      if(!awaiting && nr && !nr.error && nr.commit_allowed !== false){
         try{
           const c = await api('/commit', {turn_id: (out.turn||{}).turn_id});
           out.history_gate = {stage: c.ok ? 'committed' : 'rejected', committed: !!c.ok, note: c.note};
@@ -853,13 +858,13 @@ async function send(text){
                style="color:var(--warn)">重试成功</span>` : '';
     const llmMeta = (line && line.source==='llm')
       ? `<span>${esc(line.model||'')} ${line.latency_ms?line.latency_ms+'ms':''}</span>${llmInfo}${cleanTag}` : '';
-    pushMsg('npc', actor.name + ' · ' + (b.name||'—'),
+    pushMsg('npc', actor.name + ' · ' + (awaiting ? '云端接续' : (b.name||'—')),
       esc(line && line.line ? line.line : '（她没有回答。）'),
       `<div class="deco">
-         <span>${engLabel} 选中 <b>${b.name||'—'}</b> ${
+         <span>${awaiting ? '云端自主回应 · 状态未提交' : `${engLabel} 选中 <b>${b.name||'—'}</b> ${
            b.gated_by
              ? `门限 p=${b.gated_by.p.toFixed(3)}（choice 首选 ${b.gated_by.choice_said}）`
-             : `p=${b.confidence==null?'—':b.confidence.toFixed(3)}`}</span>
+             : `p=${b.confidence==null?'—':b.confidence.toFixed(3)}`}`}</span>
          <span>${out.question_count} 题 / ${out.latency_ms.toFixed(1)}ms</span>
          <span class="src-${line&&line.source==='llm'?'llm':'pool'}">${srcLabel}</span>
          ${llmMeta}

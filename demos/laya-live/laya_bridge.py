@@ -1114,11 +1114,20 @@ def extract_line(text):
 
 
 def _build_narrate_prompt(actor, behavior, player_input, history, state_line, strict=False):
+    behavior_note = (
+        "本轮她决定做出的行为是「%s」（%s）。\n表现要求：%s"
+        % (behavior["name"], behavior["desc"], behavior.get("instr", ""))
+        if behavior else
+        "Laya 本轮判断不明确，没有选定行为。请由你根据人物设定、对话历史和玩家原话，"
+        "选择合适的回应方式并自然续写。不要把不确定判断当成事实，不强行透露秘密或推进重大剧情。"
+        "你只生成角色回应，不修改或宣称已提交任何属性数值。\n人物与场景补充："
+        + json.dumps({k: actor.get(k) for k in ("personality", "traits", "situation", "goals")},
+                     ensure_ascii=False)
+    )
     sys_p = (
         "你在为一款文字冒险游戏写 NPC 的回应。\n"
         "角色：%s，%s。\n"
-        "本轮她决定做出的行为是「%s」（%s）。\n"
-        "表现要求：%s\n"
+        "%s\n"
         "当前关系与情绪：%s\n"
         "规则：\n"
         "1) 台词用「」包裹，配少量动作或环境描写，2~4 句，不要分段列点。\n"
@@ -1128,8 +1137,7 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
         "格式（必须遵守）：把最终回应原文放进 <line> 与 </line> 之间。\n"
         "这两个标签之外**一个字符都不要写** —— 不要复述上面的规则、不要写你的思路或提纲、"
         "不要解释你为什么这么写。直接开始写她的言行。"
-    ) % (actor.get("name", "NPC"), actor.get("identity", ""), behavior["name"], behavior["desc"],
-         behavior.get("instr", ""), state_line)
+    ) % (actor.get("name", "NPC"), actor.get("identity", ""), behavior_note, state_line)
     convo = "\n".join(
         "%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"), h.get("text", ""))
         for h in (history or [])[-8:]
@@ -2790,6 +2798,30 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/narrate":
             actor = payload.get("actor") or CFG["actor"]
             bid = (payload.get("behavior") or {}).get("id")
+            if payload.get("mode") == "upstream":
+                # 只续写服务端确实判为歧义的轮次；生成文本不等于接受状态 Proposal。
+                pending = _PENDING.get(payload.get("turn_id"))
+                sid = str(payload.get("session_id") or "default")
+                aid = str(payload.get("actor_id") or actor.get("name") or "default")
+                if (not pending or pending["session"] != sid or pending["actor"] != aid
+                        or pending.get("behavior")
+                        or not pending.get("state_decision", {}).get("awaiting_upstream")):
+                    return self._json({"error": "没有匹配的待接续歧义轮次，请重新分析。"}, 409)
+                if not payload.get("use_llm", True):
+                    return self._json({"error": "请开启 LLM 生成以接续本轮对话。"}, 400)
+                actor = _copy.deepcopy(pending.get("actor_template") or CFG["actor"])
+                snapshot = actor_state_snapshot(sid, aid, actor)
+                for group in ("relationship", "emotion", "goals"):
+                    if group in snapshot:
+                        actor[group] = snapshot[group]
+                r = llm_narrate(actor, None, payload_text(payload), payload.get("history") or [],
+                                state_line(actor), bool(payload.get("include_reasoning")))
+                if not r or r.get("error") or not r.get("line"):
+                    return self._json({"error": "云端接续失败，请稍后重试；本轮未提交状态。",
+                                       "state_commits": [], "commit_allowed": False}, 502)
+                return self._json(dict(r, ok=True, mode="upstream", behavior=None,
+                                       turn_id=payload.get("turn_id"), commit_allowed=False,
+                                       state_commits=[], history_committed=False))
             pre = None
             if not bid:
                 # ★ 没带 behavior 就自己先跑一次 decide（"实时输入"的主要用法）。

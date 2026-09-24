@@ -2,6 +2,8 @@
 
 > **2026-09-24 新方向：**参见 [Laya 定位书：Narraverse 轻量判断引擎](Laya定位书.md)。后续 Demo 收缩为有限结构化判断、状态提交与云端叙事反馈；保留情绪和可选反应倾向体验。分析/校验/提交的底层职责已拆开，`/analyze` 与安全的 `/commit_state` 尚未施工。下文为旧 Demo 实现及实验记录，其中 Policy Resolver 的行为裁决职责不再作为新 Demo 的目标。
 
+> **2026-09-24 交互补齐：**开启 LLM 时，页面遇到 `awaiting_upstream` 会调用现有 `/narrate` 的 `mode=upstream`，由 DeepSeek 根据原始对话与人物状态继续回应。服务端核对 Pending 的 turn/session/actor 和歧义标记，返回 `behavior=null`、`commit_allowed=false`；页面标注“云端接续”，不应用状态建议、不调用 `/commit`。实际生成的文字可进入页面对话上下文，不作为已提交状态或决策历史。LLM 关闭或失败时明确提示，不伪装成接续成功。能力档案 mismatch 仍待单独处理。
+
 用 **Laya 决策引擎**（非自回归 System-1）产出 **决策信号**，由 **Policy Resolver** 裁定 NPC 行为，
 再由 **LLM** 把决定写成台词。
 
