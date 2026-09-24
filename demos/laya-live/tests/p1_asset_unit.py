@@ -208,6 +208,72 @@ with tempfile.TemporaryDirectory(prefix='p1_d3_') as _td:
             'err=%s' % xs['source_error'])
 
 # ===========================================================================
+print("\nD3b 基准用例 fail-closed（缺译文/坏基线 → None，不查运行缓存、不调在线）")
+# ===========================================================================
+_act = json.loads((_REAL_TS / 'assets' / 'translation_cache.json').read_text(encoding='utf-8'))
+with tempfile.TemporaryDirectory(prefix='p1_d3b_') as _td:
+    root = Path(_td)
+    _copy_cases(root, 'crlf')
+    t_idx = _first_case_text()
+    # 基准缺条：冻结基线 = 真实内容 minus 一条基准译文
+    broke = {k: v for k, v in _act.items() if k != t_idx}
+    with tempfile.NamedTemporaryFile('w', suffix='.json', encoding='utf-8', delete=False) as _f:
+        _f_path = Path(_f.name)
+        _f_path.write_text(json.dumps(broke, ensure_ascii=False), encoding='utf-8')
+    try:
+        with mock.patch.object(B, 'TESTS_DIR', root), \
+             mock.patch.object(B, '_XLATE_FROZEN', _f_path), \
+             mock.patch.object(B, 'translate_to_en',
+                               side_effect=AssertionError('D3b: 基准缺译文不应调在线翻译')):
+            _reset_frozen_memo()
+            r = B._cached_translate(t_idx, {t_idx: 'RUNTIME_DRIFT'})
+            chk('D3b 基准缺冻结译文：返回 None（不查运行缓存、不调在线）',
+                r is None, 'got=%r' % r)
+    finally:
+        _f_path.unlink(missing_ok=True)
+    # 坏基线（不可读）对基准用例同样 fail-closed
+    with tempfile.NamedTemporaryFile('w', suffix='.json', encoding='utf-8', delete=False) as _f2:
+        _f2_path = Path(_f2.name)
+        _f2_path.write_text('not a json {{', encoding='utf-8')
+    try:
+        with mock.patch.object(B, 'TESTS_DIR', root), \
+             mock.patch.object(B, '_XLATE_FROZEN', _f2_path), \
+             mock.patch.object(B, 'translate_to_en',
+                               side_effect=AssertionError('D3b: 坏基线不应调在线翻译')):
+            _reset_frozen_memo()
+            r = B._cached_translate(t_idx, {t_idx: 'RUNTIME_DRIFT'})
+            chk('D3b 坏基线对基准用例 fail-closed（None，不调在线）',
+                r is None, 'got=%r' % r)
+    finally:
+        _f2_path.unlink(missing_ok=True)
+
+# ===========================================================================
+print("\nD3c 未知玩家输入保留原路径（冻结→运行缓存→在线；基准判定不误伤）")
+# ===========================================================================
+with tempfile.TemporaryDirectory(prefix='p1_d3c_') as _td:
+    root = Path(_td)
+    _copy_cases(root, 'crlf')
+    new_input = '一句从未见过的玩家输入，不属于任何基准用例。'
+    # 在**真实**基准集合下找一个冻结里有、但非基准的文本
+    _real_base = frozenset(B._case_texts())
+    nonbase_hit = next(k for k in _act if k not in _real_base)
+    with mock.patch.object(B, 'TESTS_DIR', root), \
+         mock.patch.object(B, '_XLATE_FROZEN', _REAL_TS / 'assets' / 'translation_cache.json'), \
+         mock.patch.object(B, '_XLATE_DISK', root / '_diag' / 'translation_cache.json'):
+        # 非基准但冻结命中 → 冻结优先（不被运行缓存漂移覆盖）
+        r1 = B._cached_translate(nonbase_hit, {nonbase_hit: 'DRIFT'})
+        chk('D3c 非基准文本冻结命中 → 返回冻结值', r1 == _act[nonbase_hit], 'r=%r' % str(r1)[:24])
+        # 非基准、冻结无、运行缓存有 → 返回运行缓存，不调在线
+        with mock.patch.object(B, 'translate_to_en',
+                               side_effect=AssertionError('D3c: 运行缓存命中不应调在线')):
+            r2 = B._cached_translate(new_input, {new_input: 'RUN_CACHE'})
+            chk('D3c 非基准文本运行缓存命中 → 不调在线', r2 == 'RUN_CACHE', 'r=%r' % str(r2)[:24])
+        # 非基准、冻结无、运行缓存无 → 才调在线（仅此路径允许联网）
+        with mock.patch.object(B, 'translate_to_en', return_value=('EN_ONLINE', 'llm')):
+            r3 = B._cached_translate(new_input, {})
+            chk('D3c 非基准文本无缓存才调在线', r3 == 'EN_ONLINE', 'r=%r' % str(r3)[:24])
+
+# ===========================================================================
 print("\nM1 模型目录（配置同时作用于查找与校验；未知/缺失检查点 fail-closed）")
 # ===========================================================================
 with tempfile.TemporaryDirectory(prefix='p1_m1_') as _td:
@@ -262,6 +328,41 @@ if _real_models.is_dir():
         'id=%s…' % cid[:12])
 else:
     print('  · 跳过：本机无外部模型目录（%s）' % _real_models)
+
+# ===========================================================================
+print("\nM1b 检查点目录布局一致性（laya-<名>/ 与裸 <名>/ 共用解析）")
+# ===========================================================================
+
+
+def _mk_ckpt(base, name):
+    d = base / name
+    d.mkdir(parents=True)
+    (d / 'model.safetensors').write_text('fake', encoding='utf-8')
+    (d / 'rl_agent_config.json').write_text('{"k": 1}', encoding='utf-8')
+    (d / 'config.json').write_text('{"tok": 7}', encoding='utf-8')
+    return d
+
+
+with tempfile.TemporaryDirectory(prefix='p1_m1b_') as _td:
+    root = Path(_td)
+    bare = _mk_ckpt(root, 'typed-decisions')          # 裸目录布局
+    with mock.patch.object(B, 'MODELS_DIR', root):
+        _found = B.find_local_models()
+        _fp = B._checkpoint_fingerprint('typed-decisions')
+    chk('M1b 裸目录布局：加载器与指纹都识别',
+        _found.get('typed-decisions') == str(bare) and _fp['exists'],
+        'dir=%s exists=%s' % (_fp['dir'], _fp['exists']))
+    # laya- 前缀布局：同一内容、不同目录名 → checkpoint id 必须一致
+    root2 = Path(_td) / 'laya_layout'
+    _mk_ckpt(root2, 'laya-typed-decisions')
+    with mock.patch.object(B, 'MODELS_DIR', root2):
+        _fp2 = B._checkpoint_fingerprint('typed-decisions')
+    chk('M1b 两种布局同一内容 → checkpoint id 一致', _fp2['id'] == _fp['id'],
+        'id=%s…' % _fp2['id'][:12])
+    # 两种布局都缺失 → exists=False（不误报有效）
+    with mock.patch.object(B, 'MODELS_DIR', Path(_td) / 'empty'):
+        _fp3 = B._checkpoint_fingerprint('typed-decisions')
+    chk('M1b 无任何布局 → exists=False', _fp3['exists'] is False, 'dir=%s' % _fp3['dir'])
 
 # ===========================================================================
 print("\nP1 门禁（active 集合一致；C/auxiliary 不进 writable delta；无档案零 delta）")

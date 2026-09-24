@@ -173,13 +173,24 @@ MODEL_NAMES = ("typed-decisions", "english", "multilingual")
 DEFAULT_MODEL_NAME = os.environ.get("LAYA_MODEL", "typed-decisions")
 
 
+def _checkpoint_candidates(model):
+    """一个检查点的两种目录布局：`laya-<名>/` 或裸 `<名>/`。
+
+    ★ 加载（find_local_models）与校验（_checkpoint_fingerprint）**必须共用**这份
+      候选列表 —— 之前两者各写一份（加载器接受裸目录、指纹只查 laya- 前缀），
+      造成「能加载但指纹报 exists=False」的永久失效组合（P1 审查 P2 项）。
+      候选顺序即为优先级：laya-<名>/ 优先，与既有资产布局保持一致。
+    """
+    return (Path(MODELS_DIR) / ("laya-" + model), Path(MODELS_DIR) / model)
+
+
 def find_local_models():
     """扫 _models/ 下已下好的检查点，返回 {router 名: 本地路径}。"""
     out = {}
     if not MODELS_DIR.is_dir():
         return out
     for n in MODEL_NAMES:
-        for cand in (MODELS_DIR / ("laya-" + n), MODELS_DIR / n):
+        for cand in _checkpoint_candidates(n):
             if (cand / "model.safetensors").exists() and (cand / "rl_agent_config.json").exists():
                 out[n] = str(cand)
                 break
@@ -3229,6 +3240,30 @@ def _load_fixture(name):
         return None
 
 
+_BASE_TEXTS_MEMO = {"mtime": None, "texts": None}
+
+
+def _baseline_texts():
+    """基准用例文本集合（frozenset，带 mtime 缓存）。
+
+    供 `_cached_translate` 判定「text 是否属于基准用例」：基准用例的英文只能由
+    冻结基线供给（fail-closed），未知玩家输入才允许走运行缓存/在线。
+    缓存键是三个用例文件（cases/*.json）的 mtime 元组 —— 补文件、删文件、
+    行尾重写等任何在磁盘上的变化都会让 mtime 变化从而重建；日常调用零重复读盘。
+    """
+    names = ("observable.json", "contextual.json", "hidden_truth.json")
+    try:
+        mt = tuple((TESTS_DIR / "cases" / n).stat().st_mtime for n in names)
+    except OSError:
+        mt = None
+    m = _BASE_TEXTS_MEMO
+    if m.get("mtime") == mt and m.get("texts") is not None:
+        return m["texts"]
+    texts = frozenset(_case_texts())
+    m.update({"mtime": mt, "texts": texts})
+    return texts
+
+
 def _cached_translate(text, cache):
     """带磁盘缓存的翻译。48 条输入每条都要翻，不能每次重跑都重新调一遍 LLM。
 
@@ -3239,13 +3274,21 @@ def _cached_translate(text, cache):
       却把 `en`（=中文）继续交给下游用了。判据对了一半，毒还在。
       现在源头就抛/返回空，下游无从误用。
 
-    ★ P1（2026-09-24）查找顺序：**冻结基线 → 传入的运行缓存 → 在线**。
-      基准用例的英文以冻结基线为准（与档案校验同源），命中即返回 ——
-      不联网、不写盘，也不会被运行缓存里可能的漂移译文覆盖（基线是权威）。
-      只有基线没有的新输入才走在线翻译，且**只写运行缓存**（_XLATE_DISK），
-      基线文件永远不会被写（纪律见 tests/assets/README.md）。
+    ★ P1 审查 P1（2026-09-25）查找语义再收紧：**基准用例与未知玩家输入分两条路径**。
+      当前实现「冻结没命中就继续查运行缓存/在线」会让基准用例在基线无效或缺条时
+      回退到运行缓存甚至在线翻译 —— 这正是「校验读 A、翻译读 B」的变体（审查反例
+      实测拿到了运行缓存的 RUNTIME_DRIFT 和一次在线调用）。现在：
+        · 若 text 在基准用例集合（_case_texts）里 → 唯一可信来源是**冻结基线**：
+          基线不可读、或基线上缺这条 → 直接返回 None（fail-closed），
+          不查运行缓存、不调在线翻译；
+        · 仅对**未知玩家输入**才保留 冻结 → 运行缓存 → 在线 的原路径，
+          且在线译文只写运行缓存，永不写回基线。
     """
     frozen = _load_frozen_xlate()
+    if text in _baseline_texts():
+        if frozen is None or text not in frozen:
+            return None
+        return frozen[text]
     if frozen is not None and text in frozen:
         return frozen[text]
     if text in cache:
@@ -3778,8 +3821,18 @@ def _checkpoint_fingerprint(model):
     ★ 刻意**不**哈希权重内容：权重上 GB，读一遍纯属浪费，而且换不了任何结论。
       改为「配置/分词器配置的内容哈希 + 顶层文件清单（名 + 大小）」——
       换 checkpoint、换权重、换 max_len 都能看出来，开销毫秒级。
+
+    ★ P1 审查 P2：目录解析**必须**与 find_local_models 共用 `_checkpoint_candidates`
+      （laya-<名>/ 与裸 <名>/ 两种布局都认），否则出现「加载器认得出、指纹却
+      报 exists=False」的布局，能力档案在该布局下永远不 fresh。
+      有效判定与加载器一致：model.safetensors 与 rl_agent_config.json 都在。
     """
-    d = MODELS_DIR / ("laya-" + model)
+    d = next((c for c in _checkpoint_candidates(model)
+              if (c / "model.safetensors").exists() and (c / "rl_agent_config.json").exists()),
+             None)
+    if d is None:
+        # 两种布局都无效：用默认候选（laya-<名>）做诊断路径，exists=False
+        d = Path(_checkpoint_candidates(model)[0])
     cfg_files = {}
     for rel in ("rl_agent_config.json", "config.json", "model_config.json",
                 "tokenizer/tokenizer_config.json", "tokenizer/special_tokens_map.json"):
