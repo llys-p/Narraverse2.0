@@ -160,9 +160,13 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
 
   // A pending handoff belongs to its story/branch. Preserve it on the first
   // mount after World Console navigation, then invalidate it on a real switch.
+  // A transient stageKey change with an empty storyId (e.g. the workspace store
+  // reset right after mode mount clears currentStoryId before the stories index
+  // restores it) is NOT a user switch: skipping the invalidation keeps the
+  // pending World/Library handoffs written just before the mode switch.
   useEffect(() => {
     const previous = previousStageKeyRef.current
-    if (previous !== null && previous !== stageKey) {
+    if (previous !== null && previous !== stageKey && storyId) {
       pendingWorldCtxRef.current = null
       pendingWorldAnalysisHandleRef.current = null
       setWorldContextStatus(null)

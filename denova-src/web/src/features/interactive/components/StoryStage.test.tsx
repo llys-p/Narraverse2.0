@@ -244,6 +244,34 @@ describe('Phase 3.2-B3b Library handoff', () => {
     expect(payload).not.toHaveProperty('runContextId')
   })
 
+  it('keeps the pending launch through the transient empty-story reset after mode mount (real 带入游戏 flow)', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    // 真实链路：对话框先写交接并设 store，切模式后 InteractiveLayout 挂载会
+    // resetWorkspaceState 把 currentStoryId 短暂清空（stageKey 变化），再由
+    // stories 索引异步恢复。瞬态 reset 不是用户切故事，不得清掉交接。
+    const launch = gameLibraryLaunchFixture()
+    const tree = (harnessStoryId?: string) => (
+      <GameLibraryContextLaunchProvider>
+        <GameLibraryLaunchSeeder launch={launch} />
+        <StoryStageHarness storyId={harnessStoryId} />
+      </GameLibraryContextLaunchProvider>
+    )
+    const view = render(tree())
+    view.rerender(tree(''))
+    view.rerender(tree())
+
+    await user.type(getStageInput(), '踏入梁山')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    expect(sendInteractiveMessageMock.mock.calls[0][0]).toMatchObject({
+      background_source: 'library',
+      library_context: { libraryId: 'library-abc', expectedRevision: 'rev-7', manualItemIds: ['item-m1'] },
+    })
+  })
+
   it('shows the local bound status before the server confirms, then the active status from library_context_state', async () => {
     const user = userEvent.setup()
     const stream = controllableInteractiveStream()
@@ -1977,7 +2005,7 @@ function ReplyEditHarness() {
   )
 }
 
-function StoryStageHarness({ onDone, branchId = 'main' }: { onDone?: (options?: { silent?: boolean }) => Promise<Snapshot | void>; branchId?: string } = {}) {
+function StoryStageHarness({ onDone, branchId = 'main', storyId = 'story-1' }: { onDone?: (options?: { silent?: boolean }) => Promise<Snapshot | void>; branchId?: string; storyId?: string } = {}) {
   const [snapshot, setSnapshot] = useState<Snapshot>({ story_id: 'story-1', branch_id: branchId, turns: [], state: {} })
   const nextSnapshot: Snapshot = {
     story_id: 'story-1',
@@ -2000,7 +2028,7 @@ function StoryStageHarness({ onDone, branchId = 'main' }: { onDone?: (options?: 
         stories={[story()]}
         story={story()}
         tellers={[]}
-        storyId="story-1"
+        storyId={storyId}
         branchId={branchId}
         snapshot={snapshot}
 		onDone={onDone || (() => {
