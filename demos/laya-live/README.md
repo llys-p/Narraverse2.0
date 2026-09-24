@@ -1,10 +1,10 @@
 # Laya 实时对话 Demo
 
-> **后续分工与交接**：[P0–P3 体验恢复计划](tasks/plan.md) · [阶段清单](tasks/todo.md) · [交给其他 AI 的 P1 提示词](tasks/P1-执行提示词.md)。P0 负责根因和运行策略证据；P1 尚未实施，先复用已有代码，P1 零模型/云端调用，后续设备按有限实测选择并确认真实设备，禁止静默回落。
+> **后续分工与交接**：[P0–P3 体验恢复计划](tasks/plan.md) · [阶段清单](tasks/todo.md) · [P2-A 协议定稿](tasks/P2-A-Analyze-Commit协议.md)。P1 修复基线 `17be8d5` 已通过用户提供的独立验收；P2-A 已定稿，新接口尚未实现。下一步 P2-B1，先复用已有代码、无模型验证；[P1 提示词](tasks/P1-执行提示词.md)留作历史。
 
 > **2026-09-24 新方向：**参见 [Laya 定位书：Narraverse 轻量判断引擎](Laya定位书.md)。后续 Demo 收缩为有限结构化判断、状态提交与云端叙事反馈；保留情绪和可选反应倾向体验。分析/校验/提交的底层职责已拆开，`/analyze` 与安全的 `/commit_state` 尚未施工。下文为旧 Demo 实现及实验记录，其中 Policy Resolver 的行为裁决职责不再作为新 Demo 的目标。
 
-> **2026-09-24 交互补齐：**开启 LLM 时，页面遇到 `awaiting_upstream` 会调用现有 `/narrate` 的 `mode=upstream`，由 DeepSeek 根据原始对话与人物状态继续回应。服务端核对 Pending 的 turn/session/actor 和歧义标记，返回 `behavior=null`、`commit_allowed=false`；页面标注“云端接续”，不应用状态建议、不调用 `/commit`。实际生成的文字可进入页面对话上下文，不作为已提交状态或决策历史。LLM 关闭或失败时明确提示，不伪装成接续成功。能力档案 mismatch 仍待单独处理。
+> **2026-09-24 交互补齐：**开启 LLM 时，页面遇到 `awaiting_upstream` 会调用现有 `/narrate` 的 `mode=upstream`，由 DeepSeek 根据原始对话与人物状态继续回应。服务端核对 Pending 的 turn/session/actor 和歧义标记，返回 `behavior=null`、`commit_allowed=false`；页面标注“云端接续”，不应用状态建议、不调用 `/commit`。实际生成的文字可进入页面对话上下文，不作为已提交状态或决策历史。LLM 关闭或失败时明确提示，不伪装成接续成功。资产来源与行尾 mismatch 已由 P1 修复；运行中的旧进程不因此自动更新，真实新版本闭环仍待后续验证。
 
 用 **Laya 决策引擎**（非自回归 System-1）产出 **决策信号**，由 **Policy Resolver** 裁定 NPC 行为，
 再由 **LLM** 把决定写成台词。
