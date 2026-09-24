@@ -122,7 +122,17 @@
 
 ### B3b · 游戏入口与状态（AI3；依赖 B3a 契约）
 
-- [ ] 游戏入口仅在选择故事/分支成功后消费交接；切故事/分支清旧交接，服务端状态真实可见；补定向时序和失败测试。**完成记录：待填。**
+- [x] 游戏入口仅在选择故事/分支成功后消费交接；切故事/分支清旧交接，服务端状态真实可见；补定向时序和失败测试。**完成记录（2026-09-24，AI3，分支 library-b2a 本地提交未推送）：**
+
+  **实现（前端，后端 B3a 契约冻结未动）：**
+  - 交接载体（新 `features/library-context-runtime/GameLibraryContextLaunchProvider.tsx`，镜像 GameWorldContextLaunchProvider）：一次性 `GameLibraryContextLaunch{libraryId,expectedRevision,manualItemIds,storyId,branchId,libraryName,revisionLabel,selectedCount,launchedAt}`，pendingRef+useState 双写、take/peek/clear；仅内存，不落 localStorage/Zustand。`main.tsx` 装配于 GameWorldContextLaunchProvider 内层。
+  - 入口链（`LibraryContextPreview` → `LibraryEditorPanel` → `LibraryWorkspacePage` → `LibraryWorkspaceRoute` → `ModeRouter`）：预览页新增「带入游戏」按钮（`disabled={dirty||!revision}`，无 hasWritingBook 条件；autoItemIds 不进入授权负载）→ 新 `LibraryGameLaunchDialog` 显式选目标故事/分支：复用既有 `getInteractiveStories`/`getInteractiveBranches`（直接数组，主分支缺失时注入）/`selectInteractiveStory`→`switchInteractiveBranch`→interactive-store 同步，**确认成功才写交接并 onLaunchGame 切 `interactive` 模式**；取消/加载失败/切换失败均不写交接、显示可见错误（role=alert），不静默降级。
+  - 消费与请求（`StoryStage.tsx`）：普通新回合 send 前消费匹配 storyId+branchId 的库交接（regenerate 跳过）；请求带顶层 `background_source:'library'`+`library_context{libraryId,expectedRevision,manualItemIds}`（`features/interactive/api.ts` 扩展），不发 world_context/analysis_handle（互斥），不发送 consumer/scopeKey/runContextId（服务端派生）；**普通新回合每回合重发 library_context**（服务端每回合重绑库 Run，B3a `planInteractiveBackground` 仅看请求），regenerate 不发库字段由服务端按原 InteractiveRun 复用（§8.2）。World/Library 双向互斥后带入者获胜（同时 pending 按 launchedAt 裁决；library 胜清 world refs+clearGameLaunch，world 胜清库选择，world peek 语义保留）。
+  - 状态与失败（`StoryStage.tsx`）：游戏 SSE 事件名 `library_context_state`（不照搬写作流 data-* 事件），经写作侧复用的 `normalizeLibraryContextState` 解析；状态条 `data-testid=story-stage-library-context-status`——本地 bound=「已选择、尚未生效」+清除按钮（清选择+未消费交接），服务端 active 才显示「本回合已使用」/显式 none 显示未使用；error 事件 code=stale 时附加指引「此次重新生成没有执行。请重新选择背景后发起新回合；刷新页面不会恢复已丢失的服务端运行记录」，错误均可见不自动重试。切故事/分支（stageKey 变化）清选中背景+状态+不匹配的 pending 交接，迟到请求不能覆盖新页面状态。库不进 context-analysis（analyzeCurrentContext 不带库字段、不消费库交接）。
+  - i18n：zh-CN/en-US `workLibrary.ts` +12 键（launchGame* 对话框全套）、`storyStage.ts` +7 键（libraryContext.bound/active/none/unnamed/clear/staleGuidance）。
+  - 测试（新增/扩展共 21 用例全过）：`StoryStage.test.tsx` 新 describe「Phase 3.2-B3b Library handoff」11 例——首回合消费交接+请求字段完整且无禁止字段（world_context/analysis_handle/storyId/branchId/consumer/scopeKey/runContextId）；bound→active 状态展示+清除按钮；显式 none；error stale 指引（不含"刷新可恢复"）；World/Library 互斥双向（后带入者获胜）；持久化回合 regenerate 不发库字段（走服务端复用路径 `regenerate_from_turn_id`）；状态条清除后停止发送；切分支清选择/切回不复活；reconnect 走 streamActiveInteractiveChat 不消费交接、后续普通新回合仍按库模式；上下文分析不带库字段。`LibraryGameLaunchDialog.test.tsx` 5 例——取消不写交接；确认写绑定交接（键白名单 9 键）+服务端选中/切分支/store 同步+进入游戏；切换失败可见错误+交接为空+store 不动；无故事提示+确认禁用；主分支注入缺省。`LibraryContextPreview.test.tsx` +3 例——dirty 禁用；取消不写交接不调服务端；确认交接负载键白名单+onLaunchGame。
+  - 回归：受影响 7 测试文件 82 用例全过（含 StoryStage 全量 52、写作交接 useAgentChat.library-context、库工作区路由/面板/删除）；LibraryView/use-work-library/library-draft 44 例全过；`tsc --noEmit` 0 错误；`i18n.test` 5 例全过（zh/en 键对齐）；前端 `npm run build` 成功；`git diff --check` 干净。
+  - 未验证边界（留给 B3c）：①真实模型游戏闭环（实际发送 library_context 的服务端取材、read_library_item 运行时行为）；②regenerate 服务端复用在真实页面的实际复现；③浏览器人工点验（隔离页面+虚构资料）与 reconnection 实网行为；④显式 none 的前端入口同 B2b 未做。
 
 ### B3c · 游戏正式闭环（AI1；依赖 B3a、B3b）
 

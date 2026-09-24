@@ -760,6 +760,7 @@ export function ModeRouter(props: ModeRouterProps) {
               workspace={workspace}
               onClose={() => onSetMode(booksReturnMode)}
               onLaunchWriting={() => onSetMode('ide')}
+              onLaunchGame={() => onSetMode('interactive')}
             />
           </Suspense>
         </MainRouteLayer>

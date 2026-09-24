@@ -18,9 +18,11 @@ interface LibraryWorkspacePageProps {
   hasWritingBook?: boolean
   /** 用户显式发起带入写作：写入一次性交接并切回写作模式。 */
   onLaunchWriting?: () => void
+  /** B3b：用户显式发起带入游戏：选择目标故事/分支成功后写入一次性交接并切到游戏模式。 */
+  onLaunchGame?: () => void
 }
 
-export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = false, onLaunchWriting }: LibraryWorkspacePageProps) {
+export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = false, onLaunchWriting, onLaunchGame }: LibraryWorkspacePageProps) {
   const { t } = useTranslation()
   const [openId, setOpenId] = useState<string | null>(null)
   const [listToken, setListToken] = useState(0)
@@ -49,6 +51,7 @@ export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = 
           vocabulary={vocabulary}
           hasWritingBook={hasWritingBook}
           onLaunchWriting={onLaunchWriting}
+          onLaunchGame={onLaunchGame}
           onDirtyChange={(value) => {
             setDirty(value)
             onDirtyChange?.(value)

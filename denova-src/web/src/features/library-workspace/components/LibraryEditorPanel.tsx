@@ -45,13 +45,15 @@ interface LibraryEditorPanelProps {
   hasWritingBook?: boolean
   /** 用户在预览面板显式发起带入写作（写入一次性交接并切回写作模式）。 */
   onLaunchWriting?: () => void
+  /** B3b：用户在预览面板显式发起带入游戏（选择目标故事/分支成功后切到游戏模式）。 */
+  onLaunchGame?: () => void
 }
 
 const inputClass = 'h-8 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-2.5 text-sm outline-none focus:border-[var(--nova-ring)]'
 const areaClass = 'min-h-24 w-full rounded-[var(--radius-md)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] p-2.5 text-sm leading-6 outline-none focus:border-[var(--nova-ring)]'
 const labelClass = 'text-[11px] font-medium text-muted-foreground'
 
-export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange, hasWritingBook = false, onLaunchWriting }: LibraryEditorPanelProps) {
+export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange, hasWritingBook = false, onLaunchWriting, onLaunchGame }: LibraryEditorPanelProps) {
   const { t } = useTranslation()
   const [tab, setTab] = useState<EditorTab>('overview')
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -279,7 +281,7 @@ export function LibraryEditorPanel({ editor, vocabulary, onBack, onDirtyChange, 
           <InlineErrorNotice message={editor.error ?? t('workLibrary.loadError')} />
         </div>
       ) : tab === 'preview' && library ? (
-        <LibraryContextPreview key={library.id} library={library} revision={editor.revision} dirty={hasDraft} hasWritingBook={hasWritingBook} onLaunchWriting={onLaunchWriting} />
+        <LibraryContextPreview key={library.id} library={library} revision={editor.revision} dirty={hasDraft} hasWritingBook={hasWritingBook} onLaunchWriting={onLaunchWriting} onLaunchGame={onLaunchGame} />
       ) : tab === 'overview' ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <p className="mb-2 text-[11px] leading-5 text-muted-foreground">{t('workLibrary.overview.hint')}</p>

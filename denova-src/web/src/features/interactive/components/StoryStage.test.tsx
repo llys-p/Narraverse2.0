@@ -7,6 +7,7 @@ import { StoryStage } from './StoryStage'
 import { mergeInteractiveTurnPersistedSnapshot, useInteractiveStore } from '../stores/interactive-store'
 import type { InteractiveTurnPersistedEvent, Snapshot, StorySummary, TurnEvent } from '../types'
 import { GameWorldContextLaunchProvider, useGameWorldContextLaunch, type GameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
+import { GameLibraryContextLaunchProvider, useGameLibraryContextLaunch, type GameLibraryContextLaunch } from '@/features/library-context-runtime/GameLibraryContextLaunchProvider'
 
 const { analyzeInteractiveContextMock, generateInteractiveImageMock, getActiveInteractiveChatMock, runInteractiveDirectorMock, sendInteractiveMessageMock, streamActiveInteractiveChatMock, updateInteractiveTurnNarrativeMock, useSkillCommandsMock } = vi.hoisted(() => ({
   analyzeInteractiveContextMock: vi.fn(),
@@ -83,6 +84,27 @@ function gameLaunchFixture(): GameWorldContextLaunch {
     revisionLabel: 'sha256:world-rev',
     selectedCount: 2,
     launchedAt: Date.now(),
+  }
+}
+
+function GameLibraryLaunchSeeder({ launch }: { launch: GameLibraryContextLaunch }) {
+  const { launchGameLibrary } = useGameLibraryContextLaunch()
+  useEffect(() => { launchGameLibrary(launch) }, [launch, launchGameLibrary])
+  return null
+}
+
+function gameLibraryLaunchFixture(overrides: Partial<GameLibraryContextLaunch> = {}): GameLibraryContextLaunch {
+  return {
+    libraryId: 'library-abc',
+    expectedRevision: 'rev-7',
+    manualItemIds: ['item-m1'],
+    storyId: 'story-1',
+    branchId: 'main',
+    libraryName: '水泊设定库',
+    revisionLabel: 'rev-7',
+    selectedCount: 1,
+    launchedAt: Date.now(),
+    ...overrides,
   }
 }
 
@@ -184,6 +206,373 @@ describe('Phase 3.2-B3 World handoff', () => {
       world_context: expect.objectContaining({ worldId: launch.worldId }),
       analysis_handle: 'analysis-handle-123456789012345678901234',
     })
+  })
+})
+
+describe('Phase 3.2-B3b Library handoff', () => {
+  it('consumes the Library launch on the first game message and sends the frozen library transport fields', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    render(
+      <GameWorldContextLaunchProvider>
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>
+      </GameWorldContextLaunchProvider>,
+    )
+
+    await user.type(getStageInput(), '踏入梁山')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    const payload = sendInteractiveMessageMock.mock.calls[0][0]
+    expect(payload).toMatchObject({
+      background_source: 'library',
+      library_context: { libraryId: 'library-abc', expectedRevision: 'rev-7', manualItemIds: ['item-m1'] },
+    })
+    // 库模式与 World 背景/分析句柄互斥，不得同发。
+    expect(payload).not.toHaveProperty('world_context')
+    expect(payload).not.toHaveProperty('analysis_handle')
+    // transport 只携带 Ref 三字段，故事/分支绑定留在本地状态。
+    expect(payload.library_context).not.toHaveProperty('storyId')
+    expect(payload.library_context).not.toHaveProperty('branchId')
+    // consumer/scopeKey/runContextId 由服务端派生，客户端不得自造。
+    expect(payload).not.toHaveProperty('consumer')
+    expect(payload).not.toHaveProperty('scopeKey')
+    expect(payload).not.toHaveProperty('runContextId')
+  })
+
+  it('shows the local bound status before the server confirms, then the active status from library_context_state', async () => {
+    const user = userEvent.setup()
+    const stream = controllableInteractiveStream()
+    sendInteractiveMessageMock.mockResolvedValue(stream.readable)
+    try {
+      render(
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>,
+      )
+      expect(screen.queryByTestId('story-stage-library-context-status')).toBeNull()
+
+      await user.type(getStageInput(), '查看水泊')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+      // 本地 bound：已选择、尚未生效（服务端确认前不得声称“本回合已使用”）。
+      expect(await screen.findByTestId('story-stage-library-context-status')).toHaveTextContent('已选择设定库背景：水泊设定库')
+      expect(screen.getByTestId('story-stage-library-context-clear')).toBeInTheDocument()
+
+      act(() => {
+        stream.enqueue({ event: 'library_context_state', data: JSON.stringify({ state: 'active', libraryName: '水泊设定库', revisionLabel: 'rev-7', selectedCount: 1 }) })
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId('story-stage-library-context-status')).toHaveTextContent('本回合已使用设定库背景：水泊设定库（1 个手动条目，只读）')
+      })
+    } finally {
+      stream.close()
+    }
+  })
+
+  it('renders the server-driven none status without claiming library usage', async () => {
+    const user = userEvent.setup()
+    const stream = controllableInteractiveStream()
+    sendInteractiveMessageMock.mockResolvedValue(stream.readable)
+    try {
+      render(
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>,
+      )
+      await user.type(getStageInput(), '查看水泊')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+      expect(await screen.findByTestId('story-stage-library-context-status')).toBeInTheDocument()
+
+      act(() => {
+        stream.enqueue({ event: 'library_context_state', data: JSON.stringify({ state: 'none' }) })
+      })
+      await waitFor(() => {
+        expect(screen.getByTestId('story-stage-library-context-status')).toHaveTextContent('本回合未使用设定库背景')
+      })
+    } finally {
+      stream.close()
+    }
+  })
+
+  it('appends explicit stale guidance to the visible error and never claims a refresh recovers the run', async () => {
+    const user = userEvent.setup()
+    const stream = controllableInteractiveStream()
+    sendInteractiveMessageMock.mockResolvedValue(stream.readable)
+    try {
+      render(
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>,
+      )
+      await user.type(getStageInput(), '查看水泊')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+
+      act(() => {
+        stream.enqueue({ event: 'error', data: JSON.stringify({ code: 'stale', message: '原回合的运行背景已不可用，无法按原背景重新生成，请刷新后重试' }) })
+      })
+      const errorText = await screen.findByText(/原回合的运行背景已不可用/)
+      expect(errorText).toHaveTextContent('此次重新生成没有执行')
+      expect(errorText).toHaveTextContent('刷新页面不会恢复已丢失的服务端运行记录')
+    } finally {
+      stream.close()
+    }
+  })
+
+  it('keeps Library and World launches mutually exclusive and the later launch wins (library case)', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    render(
+      <GameWorldContextLaunchProvider>
+        <GameLibraryContextLaunchProvider>
+          <GameLaunchSeeder launch={{ ...gameLaunchFixture(), launchedAt: 1000 }} />
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture({ launchedAt: 2000 })} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>
+      </GameWorldContextLaunchProvider>,
+    )
+
+    await user.type(getStageInput(), '踏入梁山')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    const payload = sendInteractiveMessageMock.mock.calls[0][0]
+    expect(payload).toMatchObject({ background_source: 'library', library_context: { libraryId: 'library-abc' } })
+    expect(payload).not.toHaveProperty('world_context')
+    expect(payload).not.toHaveProperty('analysis_handle')
+  })
+
+  it('keeps Library and World launches mutually exclusive and the later launch wins (world case)', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    render(
+      <GameWorldContextLaunchProvider>
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture({ launchedAt: 1000 })} />
+          <GameLaunchSeeder launch={{ ...gameLaunchFixture(), launchedAt: 2000 }} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>
+      </GameWorldContextLaunchProvider>,
+    )
+
+    await user.type(getStageInput(), '踏入梁山')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    const payload = sendInteractiveMessageMock.mock.calls[0][0]
+    expect(payload).toMatchObject({ world_context: { worldId: 'world-water-margin' } })
+    expect(payload).not.toHaveProperty('background_source')
+    expect(payload).not.toHaveProperty('library_context')
+    // 后带入的 World 获胜后，旧库选择与状态条一并清除。
+    expect(screen.queryByTestId('story-stage-library-context-status')).toBeNull()
+  })
+
+  it('does not send the current library selection again when regenerating a persisted turn', async () => {
+    const user = userEvent.setup()
+    const firstStream = controllableInteractiveStream()
+    const retryStream = controllableInteractiveStream()
+    sendInteractiveMessageMock
+      .mockResolvedValueOnce(firstStream.readable)
+      .mockResolvedValueOnce(retryStream.readable)
+
+    try {
+      render(
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+          <PersistedTurnHarness onDone={vi.fn().mockResolvedValue(undefined)} />
+        </GameLibraryContextLaunchProvider>,
+      )
+      await user.type(getStageInput(), '推开石门')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+      expect(sendInteractiveMessageMock.mock.calls[0][0]).toHaveProperty('background_source', 'library')
+
+      // 第 1 回合正常落盘（persisted turn），随后对该持久化回合发起重新生成。
+      act(() => {
+        firstStream.enqueue({ event: 'interactive_turn_persisted', data: JSON.stringify(persistedTurnEvent()) })
+        firstStream.enqueue({ event: 'done', data: '{}' })
+        firstStream.close()
+      })
+      await waitFor(() => expect(screen.getByText('门外有灯。')).toBeInTheDocument())
+
+      await user.click(await screen.findByRole('button', { name: '重新生成这一轮' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(2))
+      // regenerate 由服务端按原 InteractiveRun 恢复背景：不发库字段，也不用当前
+      // 页面选中的新库覆盖原回合背景。
+      const retryPayload = sendInteractiveMessageMock.mock.calls[1][0]
+      expect(retryPayload).toMatchObject({ message: '推门', regenerate_from_turn_id: 'turn-1' })
+      expect(retryPayload).not.toHaveProperty('background_source')
+      expect(retryPayload).not.toHaveProperty('library_context')
+    } finally {
+      firstStream.close()
+      retryStream.close()
+    }
+  })
+
+  it('clears the library selection via the status bar and stops sending library fields', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    render(
+      <GameLibraryContextLaunchProvider>
+        <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+        <StoryStageHarness />
+      </GameLibraryContextLaunchProvider>,
+    )
+
+    await user.type(getStageInput(), '查看水泊')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('story-stage-library-context-status')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('story-stage-library-context-clear'))
+    expect(screen.queryByTestId('story-stage-library-context-status')).toBeNull()
+
+    await user.type(getStageInput(), '再看一眼')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(2))
+    expect(sendInteractiveMessageMock.mock.calls[1][0]).not.toHaveProperty('background_source')
+    expect(sendInteractiveMessageMock.mock.calls[1][0]).not.toHaveProperty('library_context')
+  })
+
+  it('clears the library selection and stale pending launch when the story/branch stage switches', async () => {
+    const user = userEvent.setup()
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+    // 同一 launch 对象跨 rerender 复用，避免 seeder effect 在切换后重新写入交接。
+    const launch = gameLibraryLaunchFixture()
+    const view = render(
+      <GameLibraryContextLaunchProvider>
+        <GameLibraryLaunchSeeder launch={launch} />
+        <StoryStageHarness />
+      </GameLibraryContextLaunchProvider>,
+    )
+
+    await user.type(getStageInput(), '查看水泊')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('story-stage-library-context-status')).toBeInTheDocument()
+
+    // 切分支：清掉选中背景，迟到请求不能覆盖新页面状态。
+    view.rerender(
+      <GameLibraryContextLaunchProvider>
+        <GameLibraryLaunchSeeder launch={launch} />
+        <StoryStageHarness branchId="branch-2" />
+      </GameLibraryContextLaunchProvider>,
+    )
+    expect(screen.queryByTestId('story-stage-library-context-status')).toBeNull()
+
+    // 切回原分支：选择不会复活，下一次发送也不带库字段。
+    view.rerender(
+      <GameLibraryContextLaunchProvider>
+        <GameLibraryLaunchSeeder launch={launch} />
+        <StoryStageHarness />
+      </GameLibraryContextLaunchProvider>,
+    )
+    await user.type(getStageInput(), '回到主线')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(2))
+    expect(sendInteractiveMessageMock.mock.calls[1][0]).not.toHaveProperty('background_source')
+    expect(sendInteractiveMessageMock.mock.calls[1][0]).not.toHaveProperty('library_context')
+  })
+
+  it('reconnects to the active run without consuming the pending library launch or resubmitting', async () => {
+    const stream = controllableInteractiveStream()
+    getActiveInteractiveChatMock.mockResolvedValue({
+      active: true,
+      status: 'running',
+      task_id: 'task-1',
+      story_id: 'story-1',
+      branch_id: 'main',
+      message: '推开石门',
+    })
+    streamActiveInteractiveChatMock.mockResolvedValue(stream.readable)
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([
+      { event: 'done', data: '{}' },
+    ]))
+
+    try {
+      render(
+        <GameLibraryContextLaunchProvider>
+          <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+          <StoryStageHarness />
+        </GameLibraryContextLaunchProvider>,
+      )
+
+      await waitFor(() => {
+        expect(streamActiveInteractiveChatMock).toHaveBeenCalledWith(expect.objectContaining({
+          storyId: 'story-1',
+          branchId: 'main',
+          taskId: 'task-1',
+        }))
+      })
+      expect(sendInteractiveMessageMock).not.toHaveBeenCalled()
+
+      // reconnect 复用既有任务流：不重新发起生成、不消费库交接。
+      act(() => {
+        stream.enqueue({ event: 'interactive_turn_persisted', data: JSON.stringify(persistedTurnEvent()) })
+        stream.enqueue({ event: 'done', data: '{}' })
+        stream.close()
+      })
+      await waitFor(() => expect(streamActiveInteractiveChatMock).toHaveBeenCalled())
+      expect(sendInteractiveMessageMock).not.toHaveBeenCalled()
+
+      // 交接仍在：reconnect 之后的普通新回合按库模式发送。
+      const user = userEvent.setup()
+      await user.type(getStageInput(), '继续前进')
+      await user.click(screen.getByRole('button', { name: '发送' }))
+      await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+      expect(sendInteractiveMessageMock.mock.calls[0][0]).toMatchObject({
+        background_source: 'library',
+        library_context: { libraryId: 'library-abc' },
+      })
+    } finally {
+      stream.close()
+    }
+  })
+
+  it('never sends library fields to context-analysis', async () => {
+    const user = userEvent.setup()
+    analyzeInteractiveContextMock.mockResolvedValue({
+      agent_kind: 'interactive_story', mode: 'interactive', system_prompt: '',
+      system_prompt_parts: [], context_parts: [], context_messages: [], message_count: 0,
+      world_context: { state: 'none' },
+      analysis_handle: 'analysis-handle-123456789012345678901234',
+    })
+    sendInteractiveMessageMock.mockResolvedValue(interactiveStream([{ event: 'done', data: '{}' }]))
+    render(
+      <GameLibraryContextLaunchProvider>
+        <GameLibraryLaunchSeeder launch={gameLibraryLaunchFixture()} />
+        <StoryStageHarness />
+      </GameLibraryContextLaunchProvider>,
+    )
+
+    await user.click(screen.getByRole('button', { name: '输入动作' }))
+    await user.click(await screen.findByRole('menuitem', { name: '上下文分析' }))
+    await waitFor(() => expect(analyzeInteractiveContextMock).toHaveBeenCalledTimes(1))
+    const analysisPayload = analyzeInteractiveContextMock.mock.calls[0][0]
+    expect(analysisPayload).not.toHaveProperty('library_context')
+    expect(analysisPayload).not.toHaveProperty('background_source')
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    // 分析不消费库交接：之后的普通新回合仍按库模式发送。
+    await user.type(getStageInput(), '继续前进')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(sendInteractiveMessageMock).toHaveBeenCalledTimes(1))
+    expect(sendInteractiveMessageMock.mock.calls[0][0]).toHaveProperty('background_source', 'library')
   })
 })
 
@@ -1588,16 +1977,16 @@ function ReplyEditHarness() {
   )
 }
 
-function StoryStageHarness({ onDone }: { onDone?: (options?: { silent?: boolean }) => Promise<Snapshot | void> } = {}) {
-  const [snapshot, setSnapshot] = useState<Snapshot>({ story_id: 'story-1', branch_id: 'main', turns: [], state: {} })
+function StoryStageHarness({ onDone, branchId = 'main' }: { onDone?: (options?: { silent?: boolean }) => Promise<Snapshot | void>; branchId?: string } = {}) {
+  const [snapshot, setSnapshot] = useState<Snapshot>({ story_id: 'story-1', branch_id: branchId, turns: [], state: {} })
   const nextSnapshot: Snapshot = {
     story_id: 'story-1',
-    branch_id: 'main',
+    branch_id: branchId,
     state: {},
     turns: [{
       id: 'turn-1',
       parent_id: null,
-      branch_id: 'main',
+      branch_id: branchId,
       ts: '2026-06-28T00:00:00Z',
       user: '继续前进',
       narrative: '故事继续。',
@@ -1612,7 +2001,7 @@ function StoryStageHarness({ onDone }: { onDone?: (options?: { silent?: boolean 
         story={story()}
         tellers={[]}
         storyId="story-1"
-        branchId="main"
+        branchId={branchId}
         snapshot={snapshot}
 		onDone={onDone || (() => {
           setSnapshot(nextSnapshot)

@@ -16,6 +16,7 @@ import { WorldContextLaunchProvider } from '@/features/world-context-runtime/Wor
 import { LibraryContextLaunchProvider } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
 import { LibraryContextRunProvider } from '@/features/library-context-runtime/LibraryContextRunProvider'
 import { GameWorldContextLaunchProvider } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
+import { GameLibraryContextLaunchProvider } from '@/features/library-context-runtime/GameLibraryContextLaunchProvider'
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 import { WorldContextHostProvider } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { IframeWorldContextLaunchProvider } from '@/features/world-context-runtime/IframeWorldContextLaunchProvider'
@@ -57,7 +58,9 @@ if (!isRedirectingToCanonicalOrigin) {
                       <LibraryContextLaunchProvider>
                         <LibraryContextRunProvider>
                           <GameWorldContextLaunchProvider>
-                            <App />
+                            <GameLibraryContextLaunchProvider>
+                              <App />
+                            </GameLibraryContextLaunchProvider>
                           </GameWorldContextLaunchProvider>
                         </LibraryContextRunProvider>
                       </LibraryContextLaunchProvider>

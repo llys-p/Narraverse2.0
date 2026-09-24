@@ -24,9 +24,11 @@ import { agentSubAgentSessionKey, agentViewToRenderMessage, type AgentMessageVie
 import { fetchSettings } from '@/features/settings/api'
 import { useSkillCommands } from '@/hooks/useSkillCommands'
 import { abortInteractiveChat, analyzeInteractiveContext, compactInteractiveContext, generateInteractiveImage, removeInteractiveContextCompaction, runInteractiveDirector, sendInteractiveMessage, streamActiveInteractiveChat, switchInteractiveTurnVersion, updateInteractiveTurnNarrative } from '../api'
-import type { InteractiveWorldContextRef } from '../api'
+import type { InteractiveLibraryContextRef, InteractiveWorldContextRef } from '../api'
 import { useGameWorldContextLaunch } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
 import { normalizeWorldContextStatus, type WorldContextRunStatus } from '@/features/world-context-runtime/world-context-wire'
+import { useGameLibraryContextLaunch } from '@/features/library-context-runtime/GameLibraryContextLaunchProvider'
+import { normalizeLibraryContextState, type LibraryContextRunStatus } from '@/features/library-context-runtime/library-context-wire'
 import type { ActiveInteractiveChat } from '../api'
 import { createInteractiveNarrativeFilter, sanitizeStoredNarrative } from '../stream-parser'
 import { emptyStoryStageRun, useInteractiveStore } from '../stores/interactive-store'
@@ -100,11 +102,26 @@ type InteractiveStreamOutcome = {
   persistedSnapshot?: Snapshot
 }
 
+/**
+ * B3b：已消费的游戏库交接（本地“已选择、尚未生效”状态）。
+ * ref 逐回合随普通新回合下发（服务端每回合重绑）；summary 仅用于状态条展示。
+ * 只保留在组件内存，切故事/切分支或用户清除后即失效。
+ */
+interface BoundGameLibraryContext {
+  ref: InteractiveLibraryContextRef
+  summary: { libraryName: string; revisionLabel: string; selectedCount: number }
+}
+
 export function StoryStage({ workspace, styleSceneSuggestions = [], stories = [], story, tellers = [], storyDirectors = [], imagePresets = [], storyId, branchId, snapshot, snapshotLoading = false, loreEmpty = false, bookOpeningPresets = [], narraverseImported = false, directorPanelVisible = true, stateDisplayPreference = DEFAULT_STORY_STATE_DISPLAY, onStorySelect = noop, onStoryCreate = noop, onStorySetupUpdate = noop, onStoryDelete = noop, onDirectorChange = noop, onReplyTargetCharsChange, onImageSettingsChange, onRequestLoreInit, onOpenDirectorConfig, onToggleDirectorPanel, onOpenDirectorState, onStateDisplayPreferenceChange = noopStateDisplayPreferenceChange, onTurnPersisted = noopTurnPersisted, onDone }: StoryStageProps) {
   const { t } = useTranslation()
   const gameWorldLaunch = useGameWorldContextLaunch()
+  const gameLibraryLaunch = useGameLibraryContextLaunch()
   const pendingWorldCtxRef = useRef<InteractiveWorldContextRef | null>(null)
   const pendingWorldAnalysisHandleRef = useRef<string | null>(null)
+  // B3b：库选择的 ref 镜像，保证 send 的同步读取不被 React 状态更新时序影响。
+  const librarySelectionRef = useRef<BoundGameLibraryContext | null>(null)
+  const [librarySelection, setLibrarySelection] = useState<BoundGameLibraryContext | null>(null)
+  const [libraryContextStatus, setLibraryContextStatus] = useState<LibraryContextRunStatus | null>(null)
   const previousStageKeyRef = useRef<string | null>(null)
   const isMobile = useIsMobile()
   const keyboardInset = useKeyboardInset()
@@ -149,13 +166,30 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
       pendingWorldCtxRef.current = null
       pendingWorldAnalysisHandleRef.current = null
       setWorldContextStatus(null)
+      // B3b：切故事/切分支清掉旧库交接与选中背景，迟到请求不能覆盖新页面状态。
+      librarySelectionRef.current = null
+      setLibrarySelection(null)
+      setLibraryContextStatus(null)
       const pending = gameWorldLaunch.peekGameLaunch()
       if (pending && (pending.storyId !== storyId || pending.branchId !== branchId)) {
         gameWorldLaunch.clearGameLaunch()
       }
+      const pendingLibrary = gameLibraryLaunch.peekGameLibraryLaunch()
+      if (pendingLibrary && (pendingLibrary.storyId !== storyId || pendingLibrary.branchId !== branchId)) {
+        gameLibraryLaunch.clearGameLibraryLaunch()
+      }
     }
     previousStageKeyRef.current = stageKey
-  }, [branchId, gameWorldLaunch, stageKey, storyId])
+  }, [branchId, gameLibraryLaunch, gameWorldLaunch, stageKey, storyId])
+
+  // B3b：用户清除库背景（状态条按钮）；同时清掉尚未消费的交接，避免下一次发送
+  // 又把刚清除的选择带回来。不影响服务端已完成回合的运行记录。
+  const clearLibrarySelection = useCallback(() => {
+    librarySelectionRef.current = null
+    setLibrarySelection(null)
+    setLibraryContextStatus(null)
+    gameLibraryLaunch.clearGameLibraryLaunch()
+  }, [gameLibraryLaunch])
   const [replyEditTarget, setReplyEditTarget] = useState<{
     turnId: string
     branchId: string
@@ -646,11 +680,48 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
     registerStoryRunAbortController(stageKey, abortController)
     try {
       // B3: consume pending game launch once (first turn after World Console handoff).
-      if (pendingWorldCtxRef.current === null) {
-        const pending = gameWorldLaunch.peekGameLaunch()
-        if (pending && pending.storyId === storyId && pending.branchId === branchId) {
+      // B3b：交接消费只发生在普通新回合；regenerate 由服务端按原 InteractiveRun 恢复
+      // 背景（§8.2），不得用当前页面选中的新库覆盖原回合背景，也不消费新交接。
+      const regenerating = Boolean(nextRewindTurnId)
+      if (!regenerating) {
+        const pendingLibrary = gameLibraryLaunch.peekGameLibraryLaunch()
+        const pendingWorld = gameWorldLaunch.peekGameLaunch()
+        const libraryMatches = Boolean(pendingLibrary && pendingLibrary.storyId === storyId && pendingLibrary.branchId === branchId)
+        const worldMatches = Boolean(pendingWorld && pendingWorld.storyId === storyId && pendingWorld.branchId === branchId)
+        // World/Library 双向互斥，后带入者获胜；两个 pending 同时存在时按 launchedAt。
+        if (libraryMatches && (!worldMatches || pendingLibrary!.launchedAt >= pendingWorld!.launchedAt)) {
+          const launch = gameLibraryLaunch.takeGameLibraryLaunch()
+          if (launch) {
+            // library 获胜：不能与 world_context/analysis_handle 同发（服务端 400）。
+            pendingWorldCtxRef.current = null
+            pendingWorldAnalysisHandleRef.current = null
+            gameWorldLaunch.clearGameLaunch()
+            // transport 载体只取 Ref 三字段；storyId/branchId/摘要留在本地状态。
+            librarySelectionRef.current = {
+              ref: {
+                libraryId: launch.libraryId,
+                expectedRevision: launch.expectedRevision,
+                manualItemIds: [...launch.manualItemIds],
+              },
+              summary: {
+                libraryName: launch.libraryName,
+                revisionLabel: launch.revisionLabel,
+                selectedCount: launch.selectedCount,
+              },
+            }
+            setLibrarySelection(librarySelectionRef.current)
+          }
+        } else if (worldMatches && pendingWorldCtxRef.current === null) {
+          // 既有 World 一次性消费路径；若已有库选择在位，后带入的 World 获胜，
+          // 先清掉旧库选择再消费 World 交接。
           const launch = gameWorldLaunch.takeGameLaunch()
           if (launch) {
+            if (librarySelectionRef.current) {
+              gameLibraryLaunch.clearGameLibraryLaunch()
+              librarySelectionRef.current = null
+              setLibrarySelection(null)
+              setLibraryContextStatus(null)
+            }
             // Keep story/branch binding in the in-memory handoff only. The
             // transport DTO accepts the World ref fields exclusively.
             pendingWorldCtxRef.current = {
@@ -661,8 +732,12 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
           }
         }
       }
-      const worldContextForTurn = pendingWorldCtxRef.current ?? undefined
-      const analysisHandleForTurn = pendingWorldAnalysisHandleRef.current ?? undefined
+      // 普通新回合且库选择在位 → library 模式（服务端每回合重绑一次库 Run）；
+      // library 模式绝不与 world_context/analysis_handle 同发（服务端互斥 400）。
+      // regenerate 不发库字段，由服务端复用原 InteractiveRun 绑定。
+      const libraryContextForTurn = !regenerating && librarySelectionRef.current ? librarySelectionRef.current.ref : null
+      const worldContextForTurn = libraryContextForTurn ? undefined : (pendingWorldCtxRef.current ?? undefined)
+      const analysisHandleForTurn = libraryContextForTurn ? undefined : (pendingWorldAnalysisHandleRef.current ?? undefined)
       const stream = await sendInteractiveMessage({
         mode: 'story',
         story_id: storyId,
@@ -670,6 +745,7 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
         message,
         style_scenes: mergedStyleScenes,
         regenerate_from_turn_id: nextRewindTurnId || undefined,
+        ...(libraryContextForTurn ? { background_source: 'library' as const, library_context: libraryContextForTurn } : {}),
         ...(worldContextForTurn ? { world_context: worldContextForTurn } : {}),
         ...(analysisHandleForTurn ? { analysis_handle: analysisHandleForTurn } : {}),
         signal: abortController.signal,
@@ -814,15 +890,26 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
           finishLiveMessages()
           setStageActivityContent('')
           streamFailed = true
+          // B3b：错误必须可见。stale（特别是原 InteractiveRun 丢失）时附加前端指引：
+          // 明确本次重生成没有执行，刷新不能恢复已丢失的服务端运行记录。
+          const staleNote = data.code === 'stale' ? `\n${t('storyStage.libraryContext.staleGuidance')}` : ''
           setStageLiveMessages((prev) => [
             ...prev,
-            { role: 'error', content: data.message || data.error || t('storyStage.activity.unknownError') },
+            { role: 'error', content: (data.message || data.error || t('storyStage.activity.unknownError')) + staleNote },
           ])
           break
         }
         case 'world_context_state': {
           const status = normalizeWorldContextStatus(JSON.parse(value.data))
           if (status) setWorldContextStatus(status)
+          break
+        }
+        // B3b：游戏 SSE 契约的事件名是 `library_context_state`（B3a 服务端在首个模型
+        // 内容前下发；与写作流的 data-* 事件名不同，不照搬）。只有服务端 active 才
+        // 表示“本回合已使用”；本地 bound 是“已选择、尚未生效”。
+        case 'library_context_state': {
+          const status = normalizeLibraryContextState(JSON.parse(value.data))
+          if (status) setLibraryContextStatus(status)
           break
         }
         case 'done': {
@@ -1290,6 +1377,36 @@ export function StoryStage({ workspace, styleSceneSuggestions = [], stories = []
               : worldContextStatus.state === 'none'
                 ? t('storyStage.worldContext.none')
                 : t('storyStage.worldContext.active', { name: worldContextStatus.worldName || t('chat.worldContext.unnamed') })}
+          </div>
+        ) : null}
+
+        {/* B3b：设定库背景状态条。bound 是本地“已选择、尚未生效”；active/none 来自
+            服务端 library_context_state 事件（只有 active 才是“本回合已使用”）。 */}
+        {librarySelection || libraryContextStatus ? (
+          <div
+            data-testid="story-stage-library-context-status"
+            className="flex items-center gap-2 border-b border-[var(--nova-border)] bg-[var(--nova-surface)] px-4 py-1.5 text-[11px] text-[var(--nova-text-muted)]"
+          >
+            <span className="min-w-0 flex-1 truncate">
+              {libraryContextStatus?.state === 'active'
+                ? t('storyStage.libraryContext.active', {
+                    name: libraryContextStatus.libraryName || librarySelection?.summary.libraryName || t('storyStage.libraryContext.unnamed'),
+                    count: libraryContextStatus.selectedCount ?? librarySelection?.summary.selectedCount ?? 0,
+                  })
+                : libraryContextStatus?.state === 'none'
+                  ? t('storyStage.libraryContext.none')
+                  : t('storyStage.libraryContext.bound', { name: librarySelection?.summary.libraryName || t('storyStage.libraryContext.unnamed') })}
+            </span>
+            {librarySelection ? (
+              <button
+                type="button"
+                data-testid="story-stage-library-context-clear"
+                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--nova-text-faint)] transition-colors hover:bg-[var(--nova-hover)] hover:text-[var(--nova-text)]"
+                onClick={clearLibrarySelection}
+              >
+                {t('storyStage.libraryContext.clear')}
+              </button>
+            ) : null}
           </div>
         ) : null}
 

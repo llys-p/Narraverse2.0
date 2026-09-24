@@ -359,7 +359,16 @@ export interface InteractiveWorldContextRef {
   selection: WorldContextSelection
 }
 
-export async function sendInteractiveMessage(input: { mode: 'story' | 'setting'; story_id: string; branch?: string; message: string; style_scenes?: string[]; regenerate_from_turn_id?: string; world_context?: InteractiveWorldContextRef; analysis_handle?: string; signal?: AbortSignal }): Promise<ReadableStream<InteractiveSSEEvent>> {
+/** B3b：与后端冻结 wire 对齐的 library_context 载体（camelCase，与 L2 preview DTO 一致）。 */
+export interface InteractiveLibraryContextRef {
+  libraryId: string
+  expectedRevision: string
+  manualItemIds: string[]
+}
+
+// B3b：background_source 与 library_context 同层下发（L3 计划 §8.1）；与 world_context /
+// analysis_handle 由服务端互斥（400），前端在 library 模式下不发送后两者。
+export async function sendInteractiveMessage(input: { mode: 'story' | 'setting'; story_id: string; branch?: string; message: string; style_scenes?: string[]; regenerate_from_turn_id?: string; background_source?: 'legacy' | 'library' | 'none'; library_context?: InteractiveLibraryContextRef; world_context?: InteractiveWorldContextRef; analysis_handle?: string; signal?: AbortSignal }): Promise<ReadableStream<InteractiveSSEEvent>> {
   const res = await fetchAPI('/api/interactive/chat', {
     method: 'POST',
     headers: jsonHeaders,

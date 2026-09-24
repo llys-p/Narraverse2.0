@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import type { WorkLibrary } from '@/lib/api-client'
 import { useLibraryContextLaunch } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
 import { previewWorkLibrary, type LibraryPreview } from '../library-context-api'
+import { LibraryGameLaunchDialog } from './LibraryGameLaunchDialog'
 
 interface Props {
   library: WorkLibrary
@@ -13,10 +14,12 @@ interface Props {
   hasWritingBook?: boolean
   /** 用户显式发起带入写作：写入一次性交接并返回写作模式（由上层完成模式切换）。 */
   onLaunchWriting?: () => void
+  /** 用户显式发起带入游戏：选择目标故事/分支成功后写入一次性交接并切到游戏模式。 */
+  onLaunchGame?: () => void
 }
 
 /** Session-only read preview. Opening the tab never issues a request. */
-export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting }: Props) {
+export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting, onLaunchGame }: Props) {
   const { t } = useTranslation()
   const { launchWritingLibrary } = useLibraryContextLaunch()
   const [manual, setManual] = useState<string[]>([])
@@ -76,6 +79,18 @@ export function LibraryContextPreview({ library, revision, dirty, hasWritingBook
     })
     onLaunchWriting?.()
   }
+  // B3b：带入游戏先显式选择目标故事/分支；确认成功才写一次性交接并切模式，
+  // 取消或失败不写交接（游戏侧当前背景保持不变）。与带入写作共用“已保存库 Ref，
+  // autoItemIds 不进入授权”的边界。
+  const [gameLaunchOpen, setGameLaunchOpen] = useState(false)
+  const gameLaunchPayload = {
+    libraryId: library.id,
+    expectedRevision: revision,
+    manualItemIds: manualIDs,
+    libraryName: library.name,
+    revisionLabel: revision,
+    selectedCount: manualIDs.length,
+  }
   return (
     <section className="min-h-0 flex-1 overflow-y-auto p-3" aria-label={t('workLibrary.tab.preview')}>
       <p className="mb-3 text-sm text-muted-foreground">{t('workLibrary.preview.hint')}</p>
@@ -109,12 +124,28 @@ export function LibraryContextPreview({ library, revision, dirty, hasWritingBook
         >
           {t('workLibrary.preview.launchWriting')}
         </Button>
+        {/* B3b：带入游戏。目标故事/分支在对话框内显式选择（§三.1 复用既有流程）。 */}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision}
+          onClick={() => setGameLaunchOpen(true)}
+        >
+          {t('workLibrary.preview.launchGame')}
+        </Button>
         <Button type="button" variant="ghost" onClick={() => { setAuto([]); setManual([]); setOffset(0) }}>{t('workLibrary.preview.clear')}</Button>
         {dirty ? <span role="status">{t('workLibrary.preview.saveFirst')}</span> : null}
         {stale ? <span role="status">{t('workLibrary.preview.stale')}</span> : null}
         {!hasWritingBook ? <span role="status">{t('workLibrary.preview.launchNeedBook')}</span> : null}
       </div>
       {error ? <p role="alert" className="mb-3 text-sm">{error}</p> : null}
+      {gameLaunchOpen ? (
+        <LibraryGameLaunchDialog
+          launch={gameLaunchPayload}
+          onClose={() => setGameLaunchOpen(false)}
+          onLaunchGame={onLaunchGame}
+        />
+      ) : null}
       {data ? <div className="space-y-4" aria-busy={loading}>
         <p className="break-all text-xs text-muted-foreground">{data.name} · {data.revision}</p>
         <p className="text-xs">{t('workLibrary.preview.budget', data.budget)}</p>

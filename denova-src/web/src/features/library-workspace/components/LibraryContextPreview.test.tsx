@@ -9,9 +9,27 @@ import {
   useLibraryContextLaunch,
   type WritingLibraryContextLaunch,
 } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import {
+  GameLibraryContextLaunchProvider,
+  useGameLibraryContextLaunch,
+  type GameLibraryContextLaunch,
+} from '@/features/library-context-runtime/GameLibraryContextLaunchProvider'
 import { previewWorkLibrary } from '../library-context-api'
 
+const { getInteractiveStoriesMock, getInteractiveBranchesMock, selectInteractiveStoryMock, switchInteractiveBranchMock } = vi.hoisted(() => ({
+  getInteractiveStoriesMock: vi.fn(),
+  getInteractiveBranchesMock: vi.fn(),
+  selectInteractiveStoryMock: vi.fn(),
+  switchInteractiveBranchMock: vi.fn(),
+}))
+
 vi.mock('../library-context-api', () => ({ previewWorkLibrary: vi.fn() }))
+vi.mock('@/features/interactive/api', () => ({
+  getInteractiveStories: getInteractiveStoriesMock,
+  getInteractiveBranches: getInteractiveBranchesMock,
+  selectInteractiveStory: selectInteractiveStoryMock,
+  switchInteractiveBranch: switchInteractiveBranchMock,
+}))
 const library: WorkLibrary = { id: 'abcdefghijklmnop', name: '测试库', purpose: 'any', schemaVersion: 1,
   items: [
     { id: 'a', name: '按需项', type: 'character', enabled: true, loadMode: 'auto', origin: 'original', importance: 'major', createdAt: '', updatedAt: '' },
@@ -117,5 +135,81 @@ describe('library launch to writing (B2b)', () => {
     })
     expect(Object.keys(captured[0])).toEqual(['libraryId', 'expectedRevision', 'manualItemIds', 'libraryName', 'revisionLabel', 'selectedCount'])
     expect(onLaunchWriting).toHaveBeenCalledOnce()
+  })
+})
+
+describe('library launch to game (B3b)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    getInteractiveStoriesMock.mockResolvedValue({ stories: [{ id: 'story-1', title: '水泊故事' }] })
+    getInteractiveBranchesMock.mockResolvedValue([{ id: 'main', head: '', created_at: '', current: true }])
+    selectInteractiveStoryMock.mockResolvedValue(undefined)
+    switchInteractiveBranchMock.mockResolvedValue(undefined)
+  })
+
+  function renderGamePreview(props: Partial<Parameters<typeof LibraryContextPreview>[0]> = {}) {
+    const captured: GameLibraryContextLaunch[] = []
+    function PendingCapture() {
+      const { pendingGameLibrary } = useGameLibraryContextLaunch()
+      useEffect(() => {
+        if (pendingGameLibrary) captured.push(pendingGameLibrary)
+      }, [pendingGameLibrary])
+      return null
+    }
+    const view = render(
+      <LibraryContextLaunchProvider>
+        <GameLibraryContextLaunchProvider>
+          <PendingCapture />
+          <LibraryContextPreview library={library} revision="one" dirty={false} {...props} />
+        </GameLibraryContextLaunchProvider>
+      </LibraryContextLaunchProvider>,
+    )
+    return { captured, view }
+  }
+
+  it('disables the launch button for unsaved drafts', () => {
+    renderGamePreview({ dirty: true })
+    expect(screen.getByRole('button', { name: '带入游戏' })).toBeDisabled()
+  })
+
+  it('opens the target dialog, writes nothing on cancel, and keeps the game side untouched', async () => {
+    const user = userEvent.setup()
+    const { captured } = renderGamePreview({})
+    await user.click(screen.getByRole('button', { name: '带入游戏' }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(captured).toHaveLength(0)
+    expect(selectInteractiveStoryMock).not.toHaveBeenCalled()
+  })
+
+  it('hands off the saved library ref with explicit story/branch after confirm and enters game mode', async () => {
+    const user = userEvent.setup()
+    const onLaunchGame = vi.fn()
+    const { captured } = renderGamePreview({ onLaunchGame })
+    await user.click(screen.getByRole('button', { name: '带入游戏' }))
+    await user.selectOptions(await screen.findByLabelText('目标故事'), 'story-1')
+    const branchSelect = await screen.findByLabelText('目标分支')
+    await waitFor(() => expect(branchSelect).not.toBeDisabled())
+    await user.selectOptions(branchSelect, 'main')
+    // 对话框确认按钮与预览「带入游戏」按钮同名，取对话框内（文档顺序最后）的那个。
+    await user.click(screen.getAllByRole('button', { name: '带入游戏' }).at(-1)!)
+
+    await waitFor(() => expect(captured).toHaveLength(1))
+    // 负载与带入写作同源：已保存库 Ref 三字段 + 摘要；确认时补目标绑定。
+    expect(captured[0]).toEqual({
+      libraryId: 'abcdefghijklmnop',
+      expectedRevision: 'one',
+      manualItemIds: [],
+      libraryName: '测试库',
+      revisionLabel: 'one',
+      selectedCount: 0,
+      storyId: 'story-1',
+      branchId: 'main',
+      launchedAt: expect.any(Number),
+    })
+    expect(Object.keys(captured[0])).toEqual(['libraryId', 'expectedRevision', 'manualItemIds', 'libraryName', 'revisionLabel', 'selectedCount', 'storyId', 'branchId', 'launchedAt'])
+    expect(onLaunchGame).toHaveBeenCalledOnce()
+    expect(selectInteractiveStoryMock).toHaveBeenCalledWith('story-1')
   })
 })
