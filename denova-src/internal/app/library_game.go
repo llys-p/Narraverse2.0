@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -195,18 +196,30 @@ func releaseInteractiveLibraryRun(run *interactiveLibraryRun, aborted bool) {
 	run.run.Complete()
 }
 
+// errInteractiveRunBackgroundUnavailable 是 regenerate 复用阶段的阻断性错误（§8.2）：
+// 原 InteractiveRun 索引未命中（进程重启/索引过期，prepareInteractiveTaskRun 兜底
+// 新建 bare run）或运行索引本身不可用时，原运行的背景模式与库绑定不可考。禁止猜测
+// 背景：既不能按 legacy 重生成（原本带库的回合会静默换回旧 Lore），也不能启动模型。
+// 经 interactiveLibraryContextErrorEvent 映射为稳定 stale 码与固定脱敏文案。
+var errInteractiveRunBackgroundUnavailable = errors.New("interactive regenerate: original run background unavailable")
+
 // interactiveLibraryContextErrorEvent 把阻断性库背景错误转换成稳定、脱敏的 SSE
 // error 事件（B3a）：code 取 libraryruntime 稳定码（绑定期失败）或请求冲突码；
 // message 是固定文案，绝不携带本机路径、库正文或内部运行身份。绑定期失败已阻断
 // 启动，不存在 degraded/静默 bare。
 func interactiveLibraryContextErrorEvent(err error) agent.Event {
 	code := string(libraryruntime.CodeOf(err))
+	message := "作品设定库背景无法加载，请修正当前选择后重试"
+	if errors.Is(err, errInteractiveRunBackgroundUnavailable) {
+		code = string(libraryruntime.ErrStale)
+		message = "原回合的运行背景已不可用，无法按原背景重新生成，请刷新后重试"
+	}
 	if code == "" {
 		code = string(libraryruntime.ErrLibraryUnavailable)
 	}
 	return agent.Event{Type: "error", Data: map[string]string{
 		"code":    code,
-		"message": "作品设定库背景无法加载，请修正当前选择后重试",
+		"message": message,
 	}}
 }
 

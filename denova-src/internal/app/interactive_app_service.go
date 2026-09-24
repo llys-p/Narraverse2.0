@@ -947,6 +947,19 @@ func (s *InteractiveAppService) startInteractiveTask(ctx context.Context, storyI
 			log.Printf("[interactive-agent-task] interactive run unavailable for bare task_id=%s err=%v", task.ID(), runErr)
 		}
 	}
+	// B3a 审查修正：regenerate 必须复用原运行的背景（§8.2 不看请求）。索引未命中
+	// （进程重启/索引过期 → prepareInteractiveTaskRun 兜底新建 bare run）或运行索引
+	// 本身不可用时，原运行的背景模式与库绑定不可考——禁止猜测：既不能按 legacy
+	// 重生成（原本带库的回合会静默换回旧 Lore），也不能启动模型。显式阻断并回滚
+	// 刚新建的 bare run，回合以脱敏 error 事件结束。
+	if strings.TrimSpace(rewindTurnID) != "" && (runErr != nil || runBinding.created) {
+		if runErr == nil && runBinding.created {
+			worldContexts.rollbackInteractiveTaskRun(runBinding, task.ID())
+		}
+		if worldContextErr == nil {
+			libraryContextErr = errInteractiveRunBackgroundUnavailable
+		}
+	}
 	sessionKey := interactiveSessionKey(workspace, storyID, storyCtx.Snapshot.BranchID)
 
 	// B2: bind-before-start. New turn with Ref -> resolve & bind to Run scope.
