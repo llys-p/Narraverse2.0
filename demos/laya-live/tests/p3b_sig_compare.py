@@ -67,7 +67,7 @@ def _doubt_of(s):
 
 
 def run_group(gi, g):
-    ts = time.strftime("%H%M%S")
+    ts = time.strftime("%H%M%S") + str(time.time()).split(".")[1][:3]   # 亚秒盐：防止同秒重跑同桶污染
     sid = "p3bsig_%d_%s" % (gi + 1, ts)
     history, rows = [], []
     for rnd, (exp, line) in enumerate(g["turns"]):
@@ -102,15 +102,26 @@ def run_group(gi, g):
 
 
 def main():
+    argv = __import__("sys").argv
     out_path = None
-    if "--out" in __import__("sys").argv:
-        out_path = __import__("sys").argv[__import__("sys").argv.index("--out") + 1]
+    if "--out" in argv:
+        out_path = argv[argv.index("--out") + 1]
+    # --group <名>：只跑名字含该串的组（规则改动后低成本定向复跑，供复核闭环）
+    group_filter = None
+    if "--group" in argv:
+        group_filter = argv[argv.index("--group") + 1]
+    cases = [g for g in CASES
+             if (not group_filter) or (group_filter in g["name"])]
+    if not cases:
+        print("没有匹配 --group=%s 的组；可选组名：%s"
+              % (group_filter, "、".join(g["name"] for g in CASES)))
+        return
     hdr = "%-6s %-2s %-3s %-22s %-16s %12s %-6s %s"
     print(hdr % ("组", "轮", "期望", "doubt_shift(raw)", "规则标记", "doubt 前→后",
                  "档位", "NPC 台词前44字"))
     print("-" * 150)
     groups = []
-    for gi, g in enumerate(CASES):
+    for gi, g in enumerate(cases):
         rows = run_group(gi, g)
         groups.append({"name": g["name"], "note": g["note"], "turns": rows})
         for row in rows:
