@@ -325,7 +325,10 @@
    决策全在 Laya（或桥的回退引擎），叙事交 LLM。前端不含任何决策逻辑。
    ===================================================================== */
 const Q = new URLSearchParams(location.search);
-let BRIDGE = Q.get('bridge') || localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130';
+let BRIDGE = Q.get('bridge')
+  || (location.origin && location.origin.startsWith('http')
+      ? location.origin
+      : (localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130'));
 let CFG = null, actor = null, worldState = null, history = [], turn = 0, useLLM = true, busy = false;
 
 /* ★ 历史分桶（Phase3-Task2）：session_id 标识一次冒险 / 一个浏览器会话，
@@ -1077,7 +1080,9 @@ if(Q.has('auto')){
 (function(){
   'use strict';
   var BRIDGE = (new URLSearchParams(location.search)).get('bridge')
-              || localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130';
+              || (location.origin && location.origin.startsWith('http')
+                  ? location.origin
+                  : (localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130'));
   var KEY = 'laya_p2_scope_v1';
   var $ = function(id){ return document.getElementById(id); };
   var sidEl = $('p2sid'), aidEl = $('p2aid'), msgEl = $('p2msg');
