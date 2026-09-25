@@ -2985,6 +2985,43 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/narrate":
             actor = payload.get("actor") or CFG["actor"]
             bid = (payload.get("behavior") or {}).get("id")
+            if payload.get("mode") == "analysis":
+                # ★ P2-C（§7）：服务器选定的 analysis 模式。输入仅
+                #   {mode, session_id, actor_id, analysis_id}——拒绝客户端携带
+                #   actor/delta/behavior/state_line；不调 decide、不产生新候选、
+                #   绝不重复 Commit。committed 取回执快照；reference_only 仅当
+                #   版本/规则仍有效时引用；ready 未提交 → 409。
+                if not payload.get("analysis_id"):
+                    return self._json({"protocol_version": "laya-state-v1",
+                                       "error": {"code": "INVALID_REQUEST",
+                                                 "message": "mode=analysis 必须提供 analysis_id",
+                                                 "details": None}}, 422)
+                try:
+                    ctx = PROTOCOL.narrate_context(payload.get("analysis_id"),
+                                                   str(payload.get("session_id") or ""),
+                                                   str(payload.get("actor_id") or ""))
+                except _ProtoError as e:
+                    return self._json(e.body(), e.http)
+                n_actor = _copy.deepcopy(CFG["actor"])
+                _st = ctx.get("state") or {}
+                for _grp in ("relationship", "emotion", "goals"):
+                    if _st.get(_grp):
+                        n_actor[_grp] = dict(_st[_grp])
+                r = llm_narrate(n_actor, None, ctx.get("message") or "",
+                                (ctx.get("context") or {}).get("history") or [],
+                                state_line(n_actor), bool(payload.get("include_reasoning")))
+                base = {
+                    "ok": True, "mode": "analysis",
+                    "analysis_id": payload.get("analysis_id"),
+                    "state_version": ctx.get("state_version"),
+                    "state_source": ctx.get("state_source"),
+                    "commit_allowed": False, "state_commits": [],
+                    "state": ctx.get("state"),
+                }
+                if not r or r.get("error") or not r.get("line"):
+                    return self._json(dict(base, ok=False, line=None,
+                                           error="云端叙事失败（状态已确认/可参考，回复可在稍后重试）"), 502)
+                return self._json(dict(r, **base))
             if payload.get("mode") == "upstream":
                 # 只续写服务端确实判为歧义的轮次；生成文本不等于接受状态 Proposal。
                 pending = _PENDING.get(payload.get("turn_id"))

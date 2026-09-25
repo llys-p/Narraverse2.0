@@ -874,6 +874,59 @@ class LayaStateProtocol:
                     "replayed": False, "analysis_id": analysis_id,
                     "session_id": sid, "actor_id": aid, "reason": reason}
 
+    def narrate_context(self, analysis_id, session_id, actor_id):
+        """（P2-C §7）`POST /narrate mode="analysis"` 的服务端上下文：只读、不触发
+        重推理/在线翻译/提交，也不产生新候选。
+
+        committed   → 取提交回执的权威快照 + 服务器保存的原文/上下文；
+        reference_only → 仅当未过期、版本与规则指纹仍有效时，取基础快照并标注，
+                        auxiliary 明示不改变状态；
+        ready 未提交 → 409 ANALYSIS_NOT_COMMITTED（不允许未提交就生成叙事）；
+        expired/stale/invalidated → 410/409。
+
+        返回：state_source / state_version / message / context / state /
+              signals(availability=known)。调用方据此构造叙事并**绝不**重复 Commit。
+        """
+        with self.lock:
+            self._cleanup_expired()
+            a = self._analyses.get(analysis_id)
+            if not a or (a["session_id"], a["actor_id"]) != (str(session_id), str(actor_id)):
+                raise _ProtoError(404, "ANALYSIS_NOT_FOUND", "未知/已清理/scope 不符的 analysis_id")
+            known = {s: v for s, v in (a.get("signals") or {}).items()
+                     if (v or {}).get("availability") == "known"}
+            if a["status"] == "committed":
+                rec = a.get("commit_receipt") or {}
+                return {"state_source": "committed",
+                        "state_version": rec.get("state_version"),
+                        "commit_id": rec.get("commit_id"),
+                        "message": a.get("message"), "context": a.get("context") or {},
+                        "state": _copy.deepcopy(rec.get("state")),
+                        "signals": known}
+            if a["status"] == "reference_only":
+                self._maybe_expire(a)
+                if a["status"] != "reference_only":
+                    raise _ProtoError(410, "ANALYSIS_EXPIRED", "候选已过期，无法以参考状态引用")
+                cur = self.state_version((str(session_id), str(actor_id)))
+                if cur != a.get("base_state_version"):
+                    raise _ProtoError(409, "STATE_VERSION_CONFLICT",
+                                      "分析基准版本已过期，无法以参考状态引用",
+                                      {"current_state_version": cur})
+                if self.rules_fingerprint(self._effective_model(), force=True) \
+                        != a.get("rules_fingerprint"):
+                    raise _ProtoError(409, "RULESET_CHANGED",
+                                      "规则指纹已变化，无法以参考状态引用")
+                return {"state_source": "reference_only",
+                        "state_version": a.get("base_state_version"),
+                        "message": a.get("message"), "context": a.get("context") or {},
+                        "state": _copy.deepcopy(a.get("snapshot")),
+                        "signals": known}
+            if a["status"] == "ready":
+                raise _ProtoError(409, "ANALYSIS_NOT_COMMITTED",
+                                  "候选尚未提交，不能以 analysis 模式生成叙事")
+            self._maybe_expire(a)
+            self._maybe_stale(a)
+            raise _ProtoError(410, "ANALYSIS_INVALIDATED", "候选已失效，无法引用")
+
     # ======================================================================
     # 旧路由原子提交（P2-B2，§6.3 / §2.1 / §4.3）
     # ======================================================================
