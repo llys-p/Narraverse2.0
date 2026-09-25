@@ -274,6 +274,20 @@ chk('规则：cooperation 高 → doubt 正增量打折并略降',
     _r1["delta"][0]["delta"] == round(3.0 * 0.5 - 0.8, 3)
     and _r1["delta"][0].get("rule_adjudicated") == "pro_cooperation",
     'delta=%s' % _r1["delta"][0]["delta"])
+_h1 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 3.0)]},
+                                {"cooperation": 0.8, "disclose": 0.1, "hostility": 0.7},
+                                "（直视她的眼睛）你到底瞒着我什么？")
+chk('规则：敌意护栏 —— hostility 高时合作不减疑点（原样返回）',
+    _h1["delta"][0]["delta"] == 3.0
+    and _h1["delta"][0].get("rule_adjudicated") is None,
+    'delta=%s' % _h1["delta"][0]["delta"])
+_h2 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 3.0)]},
+                                {"cooperation": 0.8, "disclose": 0.1, "hostility": 0.2},
+                                "我能帮你，刚才是我说重了。")
+chk('规则：敌意护栏不误伤 —— hostility 低时照常打折',
+    _h2["delta"][0]["delta"] == round(3.0 * 0.5 - 0.8, 3)
+    and _h2["delta"][0].get("rule_adjudicated") == "pro_cooperation",
+    'delta=%s' % _h2["delta"][0]["delta"])
 _proto = {"delta": [_delta_item("doubt_shift", 3.0)]}
 _r2 = B.apply_rule_adjudication(_proto, {"cooperation": 0.2, "disclose": 0.2}, "今晚的酒不错。")
 chk('规则：无命中 → 返回原对象（零拷贝）', _r2 is _proto, '')

@@ -4993,6 +4993,9 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     三通道裁决：
       A) 模型侧：Laya 判「合作/坦白」倾向显著（cooperation ≥ 0.5 或
          disclose ≥ 0.5）→ 疑点正向增量打折并略降（old*0.5 - 0.8）。
+         ★ 敌意护栏（P3-B 实测）：若同时判到 hostility ≥ 0.5 —— 玩家正
+         带着敌意/威胁施压（如瞪视逼问），「合作」读数不应把疑点按下去，
+         此时**不打折**，交还原判定。避免「瞪视被读成合作→疑点被死区吃掉」。
       B) 证据词（规则侧，玩家原文命中**强证据动作词**）→ 疑点增量无条件取负
          （-|old|-0.8；该轮即使没有 doubt_shift 项也追加 -2.8）。对应
          「交出/摊牌/坦白」这类明确让渡行为：交出名单、放下刀、摊开双手……
@@ -5014,6 +5017,7 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     sv = signal_values or {}
     coop = _fnum(sv.get("cooperation"))
     disc = _fnum(sv.get("disclose"))
+    host = _fnum(sv.get("hostility"))
     # 通道 B / C（保守白名单，中文场景；B 优先于 C）
     text = str(player_input or "")
     evidence_hit = next((kw for kw in _EVIDENCE_STOP_WORDS if kw in text), None)
@@ -5070,6 +5074,10 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
             })
             changed = True
     else:
+        if host >= 0.5:
+            # ★ 敌意护栏：玩家正带敌意施压（hostility ≥ 0.5）时，合作读数
+            #   不打折疑点 —— 交还原判定（瞪视/逼问不该因「合作」被软化）。
+            return state_proposal
         for item in out.get("delta") or []:
             if item.get("source_signal") != "doubt_shift":
                 continue
