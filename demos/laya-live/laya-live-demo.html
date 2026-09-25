@@ -256,7 +256,7 @@
   <!-- 左 -->
   <div class="col">
     <div class="card">
-      <div class="ch">Actor State <span class="tag">每轮由决策结果改写</span></div>
+      <div class="ch">角色档案 <span class="tag">随对话更新</span></div>
       <div class="bd">
         <div class="actor-h">
           <div class="avatar">⚔</div>
@@ -323,7 +323,7 @@
           </div>
           <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:8px;min-height:120px">
             <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
-              <div style="font-size:11px;color:var(--dim);margin-bottom:4px">① 基准→当前（绿=已变灰=未变 黄=预览中）</div>
+              <div style="font-size:11px;color:var(--dim);margin-bottom:4px">① 基准 → 当前（绿=已变 / 灰=未变 / 黄=预览中）</div>
               <div id="p2authority" style="font-size:12px">—</div>
             </div>
             <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
@@ -499,6 +499,7 @@ function renderPanel(out){
        哪些信号被能力档案拦掉了、拦掉的理由是什么。 */
   const ROLE_ZH = {state_shift: '状态位移', behavior_tendency: '行为倾向', situation_assessment: '情境评估'};
   const ST_ZH = {active: '可直接用', auxiliary: '仅修正项', disabled: '不接入', semantic_review: '待查语义'};
+  const zh = s => (window.L ? window.L(s) : String(s));   // 第二段脚本提供的中→英映射（懒加载）
   const sp = out.state_proposal || {};
   const cpf = out.checkpoint_profile || sp.profile || {};
   const sigTab = out.signal_table || [];
@@ -517,30 +518,30 @@ function renderPanel(out){
         重新跑 <code>laya_bridge.py capability</code> 即可消除。</div>` : '');
 
   const capBox = (sigTab.length || shiftRows.length) ? `<div class="sec">
-      <div class="sl">⓿ Checkpoint Capability Profile
+      <div class="sl">⓿ 检查点能力档案
         <span class="bd2">P2 · 这些信号凭什么是可用的</span></div>
       <div class="kv">
         <span class="k">检查点</span><span class="v">${esc(cap.checkpoint || cpf.checkpoint || out.model || '—')}
-          <span class="pill ${cpf.fresh ? 'active' : 'semantic_review'}">${cpf.fresh ? 'fresh · 与实验一致' : 'stale · 需重新生成'}</span></span>
+          <span class="pill ${cpf.fresh ? 'active' : 'semantic_review'}">${cpf.fresh ? '新鲜 · 与实验一致' : '陈旧 · 需重新生成'}</span></span>
         <span class="k">档案号</span><span class="v">${esc(String(cap.profile_id || cpf.profile_id || '—').slice(0, 12))}
           <span class="tiny">${esc(cap.role_in_phase3 || '')}${cap.n_runs ? ' · ' + cap.n_runs + ' 次运行' : ''}</span></span>
-        <span class="k">status 分布</span><span class="v">active ${counts.active || 0} · auxiliary ${counts.auxiliary || 0}
-          · disabled ${counts.disabled || 0} · semantic_review ${counts.semantic_review || 0} <span class="tiny">/ 15</span></span>
-        <span class="k">可写 Actor State</span><span class="v">${writable.length
+        <span class="k">status 分布</span><span class="v">可直接用 ${counts.active || 0} · 仅修正项 ${counts.auxiliary || 0}
+          · 不接入 ${counts.disabled || 0} · 待查语义 ${counts.semantic_review || 0} <span class="tiny">/ 15</span></span>
+        <span class="k">可写 Actor 状态</span><span class="v">${writable.length
           ? esc(writable.join('、')) : '<span style="color:var(--bad)">无</span>'}</span>
       </div>
       ${shiftRows.length ? `<div class="tiny" style="margin:10px 0 5px">
-        会写 Actor State 的 6 个信号（role=state_shift，刻意不在信号面板上）</div>
+        会写 Actor 状态的 6 个信号（role=状态位移，刻意不在信号面板上）</div>
         <div style="display:flex;flex-wrap:wrap;gap:0 10px">${shiftRows.map(r =>
           `<span class="tiny" style="display:inline-flex;align-items:center;gap:4px;margin:2px 0">
             <span style="color:var(--txt)">${esc(r.label || shiftLabel(r.signal))}</span>
-            <span class="pill ${esc(r.status)}">${esc(r.status)}</span>
+            <span class="pill ${esc(r.status)}">${esc(ST_ZH[r.status] || r.status)}</span>
             <span class="tiny">${esc(r.grade || '—')}</span></span>`).join('')}</div>` : ''}
       ${capWarn}
       <div class="tiny" style="margin-top:8px;line-height:1.7">
         档案由 <code>tests/runs/</code> 的实验结果推导（等级不是手写的）。
         <b>role</b> 决定信号能流向哪里，<b>status</b> 决定它够不够格真的流过去 ——
-        只有 role=state_shift 且 status=active 才能产生状态增量。
+        只有 role=状态位移 且 status=可直接用 才能产生状态增量。
       </div>
     </div>` : '';
 
@@ -556,7 +557,7 @@ function renderPanel(out){
     const st = r.status;
     const lite = (!st || st === 'disabled' || st === 'semantic_review') ? ' siglite' : '';
     const pill = st
-      ? `<span class="pill ${esc(st)}" title="${esc(ST_ZH[st] || '')}">${esc(st)}</span>`
+      ? `<span class="pill ${esc(st)}" title="${esc(ST_ZH[st] || '')}">${esc(ST_ZH[st] || st)}</span>`
       : '<span class="pill">无档案</span>';
     const rtag = r.role
       ? `<span class="role">${esc(ROLE_ZH[r.role] || r.role)}${r.grade ? ' · ' + esc(r.grade) : ''}</span>`
@@ -583,7 +584,7 @@ function renderPanel(out){
     if (r && r.signal) {
       const rng = (r.range && r.range[0] != null)
         ? ` <span class="tiny">∈ [${r.range[0]}, ${r.range[1]}]</span>` : '';
-      return `<div class="kv"><span class="k">${esc(r.signal)}</span>
+      return `<div class="kv"><span class="k">${esc(zh(r.signal))}</span>
         <span class="v mono">${num(r.value)}${rng}</span></div>`;
     }
     if (r && r.why) return `<div class="tiny" style="margin:3px 0">· ${esc(r.why)}</div>`;
@@ -593,24 +594,24 @@ function renderPanel(out){
   // 命中 Policy 规则、且结论与 choice 首选不一致时，必须点明改判 —— 否则用户看到
   // 「最终候选 ≠ 分布第一名」会以为是 bug。
   const conflictBox = (b && b.conflict) ? `<div class="verdict" style="margin-top:9px;border-color:rgba(245,158,11,.45);background:rgba(245,158,11,.08)">
-      <span>⚑</span><span>choice 首选是「${esc(bname(base.id))}」，Policy 改判为「${esc(b.name)}」。<br>
-      <span class="tiny">choice 对复杂行为区分度弱，noul/score 才是校准过的量 —— 有冲突时以 Policy 为准。</span></span></div>` : '';
+      <span>⚑</span><span>choice 首选是「${esc(bname(base.id))}」，策略层改判为「${esc(b.name)}」。<br>
+      <span class="tiny">choice 对复杂行为区分度弱，noul/score 才是校准过的量 —— 有冲突时以策略层为准。</span></span></div>` : '';
 
-  const ambBox = pol.source === 'ambiguous' ? `<div class="verdict hold" style="margin-top:9px">
-      <span>?</span><span>Laya 本轮没有明确倾向，不硬选一个。已交回 Director / Story Agent 决定走向。</span></div>` : '';
+const ambBox = pol.source === 'ambiguous' ? `<div class="verdict hold" style="margin-top:9px">
+    <span>?</span><span>Laya 本轮没有明确倾向，不硬选一个。已交回导演 / 故事代理决定走向。</span></div>` : '';
 
-  const probRows = probs ? Object.entries(probs).sort((x, y) => y[1] - x[1]).map(([id, p]) =>
+const probRows = probs ? Object.entries(probs).sort((x, y) => y[1] - x[1]).map(([id, p]) =>
     `<div class="pr ${id === base.id ? 'sel' : ''}">
-      <div class="pr-h"><span class="n">${esc(bname(id))}</span>${id === base.id ? '<span class="hit">baseline</span>' : ''}
+      <div class="pr-h"><span class="n">${esc(bname(id))}</span>${id === base.id ? '<span class="hit">基线</span>' : ''}
         <span class="v mono">${num(p)}</span></div>
       <div class="pr-b"><i style="width:0" data-w="${(p * 100).toFixed(1)}"></i></div></div>`).join('')
     : '<div class="tiny">该版本未返回每项概率，只有置信度</div>';
 
   const intentProbs = (d.player_intent || {}).probabilities;
   const intentRows = intentProbs ? Object.entries(intentProbs).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([id, p]) =>
-    `<div class="pr"><div class="pr-h"><span class="n">${esc(id)}</span><span class="v mono">${num(p)}</span></div>
+    `<div class="pr"><div class="pr-h"><span class="n">${esc(zh(id))}</span><span class="v mono">${num(p)}</span></div>
      <div class="pr-b"><i style="width:0" data-w="${(p * 100).toFixed(1)}"></i></div></div>`).join('')
-    : `<div class="tiny">${esc((d.player_intent || {}).id || '—')}（无分布）</div>`;
+    : `<div class="tiny">${esc(zh((d.player_intent || {}).id || '—'))}（无分布）</div>`;
 
   /* ---- ④ 状态建议（§12：是 proposal，不是 Actor State 真值） ----
      ★ P2 起这里已经是**按能力档案过滤后**的结果：只有 role=state_shift 且 status=active
@@ -630,16 +631,16 @@ function renderPanel(out){
   const f2 = v => (v == null || isNaN(v)) ? '—' : (Number(v) > 0 ? '+' : '') + Number(v).toFixed(2);
   const deltas = props.map(x =>
     `<span class="chip ${x.delta < 0 ? 'minus' : (Math.abs(x.delta) < 0.01 ? 'flat' : '')}"
-      title="${esc(x.source_signal || '')} · grade ${esc(x.grade || '—')} · ${esc(x.attribute || '')}">${esc(x.label || x.source_signal)} ${f2(x.delta)}</span>`).join('')
-    || '<span class="tiny">无 —— 本检查点没有任何 state_shift 信号达到 active</span>';
+      title="${esc(x.source_signal || '')} · 等级 ${esc(x.grade || '—')} · ${esc(x.attribute || '')}">${esc(x.label || x.source_signal)} ${f2(x.delta)}</span>`).join('')
+    || '<span class="tiny">无 —— 本检查点没有任何状态位移信号达到可直接用</span>';
   // auxiliary：登记但不生效。必须显示「未生效」，否则会被误读成已经写进状态了。
   const auxHtml = auxRows.length ? `<div class="tiny" style="margin:9px 0 4px">
       auxiliary · 仅修正项（<b>本轮未生效</b>，P2 阶段对会写状态的量更保守）</div>` + auxRows.map(x =>
-    `<span class="chip flat" title="${esc((x.reason || []).join(' '))}">${esc(x.source_signal)} 若启用 ${f2(x.delta_if_enabled)} · applied=false</span>`).join('') : '';
+    `<span class="chip flat" title="${esc((x.reason || []).join(' '))}">${esc(x.source_signal)} 若启用 ${f2(x.delta_if_enabled)} · 未生效</span>`).join('') : '';
   const ignHtml = ignRows.length ? `<div class="tiny" style="margin:9px 0 2px">
       被能力档案拦下（逐条理由）</div>` + ignRows.map(x =>
     `<div class="ign"><span class="sn">${esc(x.source_signal || '—')}</span>
-      <span><span class="pill ${esc(x.status || 'disabled')}">${esc(x.status || '—')}</span>
+      <span><span class="pill ${esc(x.status || 'disabled')}">${esc(ST_ZH[x.status] || x.status || '—')}</span>
       ${esc(String((x.reason || [])[0] || '').slice(0, 96))}</span></div>`).join('') : '';
 
   const noul = (label, v, thr) => {
@@ -670,7 +671,7 @@ function renderPanel(out){
     ${capBox}
 
     <div class="sec">
-      <div class="sl">① Decision Signals <span class="bd2">Laya 判断了什么 · ${(out.decision_signals || []).length} 项</span></div>
+      <div class="sl">① 决策信号 <span class="bd2">Laya 判断了什么 · ${(out.decision_signals || []).length} 项</span></div>
       ${sigRows}
       <div class="tiny" style="margin-top:8px;line-height:1.7">
         这是本轮的主输出。<b>choice 只是 baseline，不是行为权威</b>。
@@ -679,9 +680,9 @@ function renderPanel(out){
     </div>
 
     <div class="sec">
-      <div class="sl">② Policy Resolver <span class="bd2">Narraverse 为什么这么决定</span></div>
+      <div class="sl">② 策略裁决 <span class="bd2">Narraverse 为什么这么决定</span></div>
       <div class="kv">
-        <span class="k">choice baseline</span><span class="v">${base.id ? esc(base.name) + ' <span class="tiny">(' + num(base.probabilities && base.probabilities[base.id]) + ')</span>' : '—'}</span>
+        <span class="k">choice 基线</span><span class="v">${base.id ? esc(base.name) + ' <span class="tiny">(' + num(base.probabilities && base.probabilities[base.id]) + ')</span>' : '—'}</span>
         <span class="k">最终候选</span><span class="v" style="font-weight:600">${b ? esc(b.name) : '—'}</span>
         <span class="k">裁决来源</span><span class="v" style="color:${srcColor}">${esc(srcTxt)}</span>
         <span class="k">置信水平</span><span class="v">${esc(pol.confidence_level || '—')}</span>
@@ -689,25 +690,25 @@ function renderPanel(out){
       <div class="tiny" style="margin:9px 0 4px">原因（可审计）</div>
       ${reasonRows}
       ${conflictBox}${ambBox}
-      <details style="margin-top:9px"><summary class="tiny">choice 原始分布（baseline 证据，不是决策依据）</summary>
+      <details style="margin-top:9px"><summary class="tiny">choice 原始分布（基线证据，非决策依据）</summary>
         <div style="margin-top:6px">${probRows}</div></details>
     </div>
 
     <div class="sec">
-      <div class="sl">③ Story Agent <span class="bd2">LLM 怎么把决定写成故事</span></div>
+      <div class="sl">③ 故事代理 <span class="bd2">LLM 怎么把决定写成故事</span></div>
       <div class="instr"><div class="lab">本轮行为：${b ? esc(b.name) : '—'}</div>${b ? esc(b.instr) : '—'}</div>
       <div class="tiny" style="margin-top:7px">最终台词见中间对话区。叙事不参与决策 —— 它只把决策表现成故事。</div>
     </div>
 
     <div class="sec">
-      <div class="sl">④ 状态建议 <span class="bd2">state_proposal · 已按能力档案过滤 · 非 Actor State 真值</span></div>
+      <div class="sl">④ 状态建议 <span class="bd2">状态提案 · 已按能力档案过滤 · 非 Actor 状态真值</span></div>
       ${scoreRows}
-      <div class="tiny" style="margin:9px 0 4px">active · 可交给 State Transition 裁决
+      <div class="tiny" style="margin:9px 0 4px">可直接使用 · 可交给状态转移裁决
         （${(sp.gate || {}).n_delta != null ? (sp.gate || {}).n_delta : props.length} 条）</div>
       <div>${deltas}</div>
       ${auxHtml}
       ${ignHtml}
-      <div class="verdict hold" style="margin-top:9px"><span>!</span><span>${esc((out.state_proposal_meta || {}).note || 'proposed_deltas 是决策建议，不是最终状态写入值。')}</span></div>
+      <div class="verdict hold" style="margin-top:9px"><span>!</span><span>${esc((out.state_proposal_meta || {}).note || '状态提案是决策建议，不是最终状态写入值。')}</span></div>
       <div class="tiny" style="margin-top:7px">归因系数 k₊=${out.attribution.k_positive} / k₋=${out.attribution.k_negative}
         ${out.attribution.enabled ? '' : '（已关闭）'} · 同一句话对不同人格产生不同增量</div>
     </div>
@@ -724,7 +725,7 @@ function renderPanel(out){
     <div class="sec">
       <div class="sl">⑥ 诊断 <span class="bd2">${out.engine === 'laya' ? 'Laya' : '回退引擎'} · ${esc(out.device || '')}</span></div>
       <div class="kv">
-        <span class="k">路径</span><span class="v">${esc(out.engine_detail)}</span>
+        <span class="k">加载路径</span><span class="v">${esc(out.engine_detail)}</span>
         <span class="k">一次前向传播</span><span class="v">${out.question_count} 题 / ${out.latency_breakdown ? out.latency_breakdown.decide_ms : out.latency_ms} ms</span>
         <span class="k">tick</span><span class="v">${esc(out.tick || 'npc')}</span>
         <span class="k">路由</span><span class="v">${out.routing ? esc(out.routing.model || '—') : '—'}</span>
@@ -858,12 +859,12 @@ async function send(text){
       pushMsg('sys', useLLM ? 'Laya 不确定 · 云端接续中' : 'Laya 不确定 · 请开启 LLM 生成',
         esc(out.decision.behavior_null_reason || '本轮判为歧义，由云端根据原始对话回应；状态不提交。'),
         `<div class="deco">
-           <span>behavior = <b>null</b></span>
-           <span>fallback = ${esc(String(out.decision.fallback || '—'))}</span>
-           <span>source = ${esc(String(out.decision.source || '—'))}</span>
+           <span>行为 = <b>空</b></span>
+           <span>回落 = ${esc(String(out.decision.fallback || '—'))}</span>
+           <span>来源 = ${esc(String(out.decision.source || '—'))}</span>
            <span>choice 首选 ${esc(cb.name || '—')}（<b>未被采纳</b>，仅审计）</span>
            <span>${out.question_count} 题 / ${out.latency_ms.toFixed(1)}ms</span>
-           <span>turn ${esc(String((out.turn||{}).turn_id || '—'))}</span>
+           <span>轮次 ${esc(String((out.turn||{}).turn_id || '—'))}</span>
          </div>`);
       if(!useLLM){
         history.push({role:'player', text, text_en: out.player_input_en || text});
@@ -1122,9 +1123,17 @@ if(Q.has('auto')){
     $('p2commit').disabled = !hasId;
     $('p2reject').disabled = !hasId;
     // reference_only / 非 ready 不允许 Commit（§3.3：reference_only 禁空 Commit）
-    if (S.status === 'reference_only'){ $('p2commit').disabled = true; flash('reference_only：仅参考，不能 Commit'); }
+    if (S.status === 'reference_only'){ $('p2commit').disabled = true; flash('仅参考：本次无可写信号，不能提交', true); }
     $('p2narrate').disabled = !(hasId && (S.status === 'committed' || S.status === 'reference_only'));
   }
+  var LABELS = { trust:'信任', doubt:'怀疑', respect:'尊重', fondness:'好感',
+                 trust_shift:'信任', doubt_shift:'怀疑', respect_shift:'尊重',
+                 fondness_shift:'好感', alert_shift:'警惕', goal_shift:'目标',
+                 cooperation:'合作', investigate:'探查', disclose:'坦白',
+                 confront:'对抗', hostility:'敌意', withdraw:'退缩',
+                 behavior_tendency:'行为倾向', situation_assessment:'情境评估',
+                 state_shift:'状态位移' };
+  function L(k){ return LABELS[k] || String(k==null?'':k); }
   function bar(label, base, cur){
     var max = (label === 'fondness') ? 1 : 100;
     var b = base===undefined?null:base, c = cur===undefined?null:cur;
@@ -1134,12 +1143,12 @@ if(Q.has('auto')){
     var dTxt = (d===0) ? '' : (d>0?'+':'')+d;
     var stateClass = '';
     var p = S.pending[label], a = S.applied[label];
-    if (p){ stateClass = '#b7791f'; dTxt = ''; }          // 预览中：黄
-    else if (a){ stateClass = '#2f855a'; }                // 已提交变化：绿
-    else if (c !== null && b !== null && c !== b){ stateClass = '#2f855a'; } // 相对基准已变化
+    if (p){ stateClass = '#b7791f'; dTxt = ''; }
+    else if (a){ stateClass = '#2f855a'; }
+    else if (c !== null && b !== null && c !== b){ stateClass = '#2f855a'; }
     var barBg = stateClass ? stateClass : '#718096';
     return '<div style="margin:4px 0"><div style="display:flex;justify-content:space-between;font-size:11px">'
-      + '<span style="color:var(--dim)">'+label+(p?'（预览中）':(a?'（已更新）':''))+'</span>'
+      + '<span style="color:var(--dim)">'+L(label)+(p?'（预览中）':(a?'（已更新）':''))+'</span>'
       + '<span style="'+ (stateClass?('color:'+stateClass+';font-weight:bold'):'color:var(--dim)') +'">'
       + (c===null?'—':c) + (dTxt?('&nbsp;'+dTxt):'') + '</span></div>'
       + '<div style="position:relative;height:6px;background:var(--line2);border-radius:3px">'
@@ -1166,13 +1175,32 @@ function renderState(cur){
       ['respect', bs.respect, st.respect], ['fondness', be.fondness, emo.fondness]
     ];
     $('p2authority').innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('') +
-      '<div style="margin-top:4px;font-size:10px;color:#b7791f">当前档案只有 doubt_shift 可写（见③）；trust/fondness 等齐变更属设计。</div>';
+      '<div style="margin-top:4px;font-size:10px;color:#b7791f">当前档案只有「怀疑」可写（见③）；信任/好感等齐变更属设计。</div>';
     // 同步右侧「角色状态」栏
     var _side = document.getElementById('statusSide');
     if (_side){
       var _stg = document.getElementById('statusTag');
-      if (_stg){ _stg.textContent = cur.initialized ? 'committed' : 'template'; }
+      if (_stg){ _stg.textContent = cur.initialized ? '已提交' : '模板'; }
       _side.innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('');
+    }
+    // 同步左侧「角色档案」卡（关系/情绪 + 本轮变化）
+    var _rel = document.getElementById('rel');
+    if (_rel){
+      _rel.innerHTML = rows.map(function(r){
+        var v = r[2]===null||r[2]===undefined ? '—' : r[2];
+        var b = r[1]===null||r[1]===undefined ? '—' : r[1];
+        return '<div style="font-size:12px;margin:2px 0">' + L(r[0]) + '：<b>' + v + '</b>（基准 ' + b + '）</div>';
+      }).join('');
+    }
+    var _chars = document.getElementById('chars');
+    if (_chars){
+      var changed = rows.filter(function(r){ return r[1]!==null && r[2]!==null && r[1]!==r[2]; });
+      _chars.innerHTML = changed.length
+        ? changed.map(function(r){
+            var dn = Math.round((r[2]-r[1])*100)/100;
+            return '<span class="tiny" style="color:#2f855a;margin-right:8px">' + L(r[0]) + ' ' + (dn>0?'+':'') + dn + '</span>';
+          }).join(' ')
+        : '<span class="tiny">本轮无变化</span>';
     }
   }
   function renderAnalysis(j){
@@ -1184,7 +1212,8 @@ function renderState(cur){
       var key = String(d.target || '').split('.').pop();
       S.pending[key] = { old: d.old_value, new: d.new_value };
     });
-    setTag(j.status, j.status === 'ready' ? '#2f855a'
+    setTag(j.status === 'ready' ? '可提交' : j.status === 'reference_only' ? '仅参考'
+           : j.status === 'committed' ? '已提交' : j.status, j.status === 'ready' ? '#2f855a'
             : (j.status === 'reference_only' ? '#b7791f'
                : (j.status === 'committed' ? '#3182ce' : '#718096')));
     // ② 本轮判断→变化（逐句链路：Laya 判了什么 → 影响哪个数值 → 预览新值）
@@ -1196,37 +1225,37 @@ function renderState(cur){
     lines.push('<div style="color:var(--dim);margin-bottom:2px">玩家原话：「'+ (S.lastMsg||'') +'」</div>');
     wd.forEach(function(d){
       var raw = (sig[d.source_signal]||{}).raw_delta;
-      lines.push('<div style="margin:3px 0"><span style="color:#2f855a;font-weight:bold">● '+d.source_signal+'</span>'
-        +'（Laya 读出 raw='+(raw===null||raw===undefined?'—':raw)+'）→ '+d.target
+      lines.push('<div style="margin:3px 0"><span style="color:#2f855a;font-weight:bold">● '+L(d.source_signal)+'</span>'
+        +'（读出 raw='+(raw===null||raw===undefined?'—':raw)+'）→ '+(d.target||'').split('.').pop()
         +'<br/><span style="color:#b7791f">提议 '+d.proposed_delta+' → 预览 '+d.old_value+' → '+d.new_value
-        +'（将 applied '+d.applied_delta+'）</span></div>');
+        +'（将应用 '+d.applied_delta+'）</span></div>');
     });
     aux.forEach(function(a){
-      lines.push('<div style="margin:2px 0;color:var(--dim)">· '+a.source_signal+'（辅助信号，只参考不改）</div>');
+      lines.push('<div style="margin:2px 0;color:var(--dim)">· '+L(a.source_signal)+'（辅助信号，只参考不改）</div>');
     });
     skp.forEach(function(s){
-      lines.push('<div style="margin:2px 0;color:var(--dim2,var(--dim))">· '+s.source_signal+'（跳过：'+(s.reason_codes||[]).join('/')+'）</div>');
+      lines.push('<div style="margin:2px 0;color:var(--dim2,var(--dim))">· '+L(s.source_signal)+'（跳过：'+(s.reason_codes||[]).join('/')+'）</div>');
     });
     var readouts = Object.keys(sig).filter(function(k){ return (sig[k]||{}).availability==='known'; });
     if (readouts.length){
       lines.push('<div style="margin-top:4px;font-size:11px;color:var(--dim)">已测定读数：'
-        + readouts.map(function(k){ return k+'='+((sig[k].raw_delta===null)?'—':sig[k].raw_delta); }).join(' · ')
+        + readouts.map(function(k){ return L(k)+'='+((sig[k].raw_delta===null)?'—':sig[k].raw_delta); }).join(' · ')
         + '</div>');
     }
     $('p2preview').innerHTML = lines.join('') +
       (wd.length? '' : '<span style="color:#b7791f">本轮无 writable 项（未提交）</span>');
     // ③ 参考信号 / 明细
     var ref = [];
-    aux.forEach(function(a){ ref.push(a.source_signal + '（aux，不改）；' + (a.reason_codes || []).join('/')); });
-    skp.forEach(function(s){ ref.push(s.source_signal + '（skip：' + (s.reason_codes || []).join('/') + '）'); });
+    aux.forEach(function(a){ ref.push(L(a.source_signal) + '（aux，不改）；' + (a.reason_codes || []).join('/')); });
+    skp.forEach(function(s){ ref.push(L(s.source_signal) + '（skip：' + (s.reason_codes || []).join('/') + '）'); });
     Object.keys(sig).forEach(function(k){
       var v = sig[k] || {};
-      ref.push(k + ': raw=' + (v.raw_delta === null ? '—' : v.raw_delta));
+      ref.push(L(k) + ': raw=' + (v.raw_delta === null ? '—' : v.raw_delta));
     });
     $('p2ref').innerHTML = ref.length ? ref.map(function(x){ return '<div>· '+x+'</div>'; }).join('')
       : '<span style="color:var(--dim)">—</span>';
-    flash(j.status === 'ready' ? 'ready：可 Commit；Commit 使本候选成为唯一状态写入来源。'
-         : (j.status === 'reference_only' ? 'reference_only：仅参考（' + (j.reason_codes || []).join('/') + '）' : ''));
+    flash(j.status === 'ready' ? '可提交：提交后本候选成为唯一状态写入来源。'
+         : (j.status === 'reference_only' ? '仅参考：本次无有效写入信号（' + (j.reason_codes || []).join('/') + '）' : ''));
     persist(); buttons();
   }
   function renderReceipt(c){
@@ -1259,7 +1288,7 @@ function renderState(cur){
     // 统一入口：用顶部聊天输入框的台词
     var oth = document.getElementById('inp');
     var msg = (oth && oth.value) || '';
-    if (!msg || !msg.trim()){ flash('请先在上方输入框输入台词，再点 Analyze', true); if(oth){ oth.focus(); } return; }
+    if (!msg || !msg.trim()){ flash('请先在上方输入框输入台词，再点分析', true); if(oth){ oth.focus(); } return; }
     S.lastMsg = msg;
     try{
       var st = (await api('/state?session_id=' + encodeURIComponent(S.sid)
@@ -1273,7 +1302,7 @@ function renderState(cur){
         expected_state_version: st.state_version, message: msg, context: {}
       });
       renderAnalysis(j);
-    }catch(e){ flash('analyze 失败：' + err2s(e), true); }
+    }catch(e){ flash('分析失败：' + err2s(e), true); }
   }
   async function commit(){
     try{
@@ -1286,7 +1315,7 @@ function renderState(cur){
       await loadState(false);
       // 提交成功后刷新权威值（三栏其一）；云端回复交给用户点按钮，或立即触发
       buttons();
-    }catch(e){ flash('commit 失败：' + err2s(e), true); }
+    }catch(e){ flash('提交失败：' + err2s(e), true); }
   }
   async function reject(){
     try{
@@ -1296,21 +1325,21 @@ function renderState(cur){
       S.pending = {}; S.applied = {};
       flash('已拒绝候选，事件关闭（同事件不可再提交）');
       persist(); await loadState(false); buttons();
-    }catch(e){ flash('reject 失败：' + err2s(e), true); }
+    }catch(e){ flash('拒绝失败：' + err2s(e), true); }
   }
   async function narrate(){
-    if (!S.analysis_id){ flash('先 Analyze 并提交', true); return; }
+    if (!S.analysis_id){ flash('先分析并提交', true); return; }
     try{
       var j = await api('/narrate', { mode: 'analysis', session_id: S.sid,
                                      actor_id: S.aid, analysis_id: S.analysis_id });
-      $('p2preview').innerHTML = '<div style="color:#2f855a">云端回复（' + j.state_source
+      $('p2preview').innerHTML = '<div style="color:#2f855a">云端回复（' + (j.state_source === 'committed' ? '已提交状态' : j.state_source)
         + '，version ' + j.state_version + '）：<b>' + (j.line || '（空）') + '</b></div>'
         + '<div style="color:var(--dim)">' + $('p2preview').innerHTML + '</div>';
-      flash('state_source=' + j.state_source + '；reply 不改变状态（commit_allowed=false）');
+      flash('回复来自' + (j.state_source === 'committed' ? '已提交状态' : j.state_source) + '；回复本身不改状态');
     }catch(e){
       if (e && e.message && e.message.indexOf('ANALYSIS_NOT_COMMITTED') === 0){
-        flash('候选尚未提交，不能生成叙事——先 Commit', true);
-      } else { flash('narrate 失败：' + err2s(e), true); }
+        flash('候选尚未提交，不能生成叙事——先提交', true);
+      } else { flash('云端回复失败：' + err2s(e), true); }
     }
   }
   function resetScope(){
@@ -1332,7 +1361,7 @@ function renderState(cur){
   $('p2commit').onclick = commit;
   $('p2reject').onclick = reject;
   $('p2narrate').onclick = narrate;
-  //（Enter 仍由旧「发送」接管：新协议请点上方 Analyze/Commit/云端回复 按钮）
+  //（Enter 仍由旧「发送」接管：新协议请点上方 分析/提交/云端回复 按钮，或直接对话自动执行）
   // 折叠：Decision Engine 面板（detail 过多时收起来）
   window.__foldPanel = function(btn){
     var p = document.getElementById('panel');
@@ -1367,7 +1396,7 @@ function renderState(cur){
     var txt = applied.map(function(d){
       var k = String(d.target || '').split('.').pop();
       var dn = Math.round((d.delta||0)*100)/100;
-      return k + ' ' + (dn>0?'+':'') + dn + ' → ' + d.new_value;
+      return L(k) + ' ' + (dn>0?'+':'') + dn + ' → ' + d.new_value;
     }).join('，');
     return '<div style="font-size:11px;color:#2f855a;margin:3px 34px 8px">这句让：' + _esc(txt) + '</div>';
   }
@@ -1411,7 +1440,7 @@ function renderState(cur){
       var nr = await api('/narrate', { mode: 'analysis', session_id: S.sid, actor_id: S.aid,
                                        analysis_id: S.analysis_id });
       addBubble('npc', nr.line || '', impact);
-      flash('state_source=' + nr.state_source + ' · version ' + nr.state_version);
+      flash('回复来自' + (nr.state_source === 'committed' ? '已提交状态' : nr.state_source) + ' · version ' + nr.state_version);
     }catch(e){
       addBubble('npc', '', '<div style="font-size:11px;color:#c53030;margin:3px 34px 8px">' + _esc(err2s(e)) + '</div>');
       flash('本轮失败：' + err2s(e), true);
