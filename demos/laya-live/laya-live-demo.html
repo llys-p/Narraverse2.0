@@ -1169,22 +1169,38 @@ function renderState(cur){
     setTag(j.status, j.status === 'ready' ? '#2f855a'
             : (j.status === 'reference_only' ? '#b7791f'
                : (j.status === 'committed' ? '#3182ce' : '#718096')));
-    // ② 待确认预览
+    // ② 本轮判断→变化（逐句链路：Laya 判了什么 → 影响哪个数值 → 预览新值）
     var wd = (j.state_proposal || {}).writable_delta || [];
-    var prov = wd.map(function(d){
-      return '<div style="color:#b7791f">'+d.source_signal+' → '+d.target+': <b>'+d.old_value+' → '+d.new_value+'</b>'
-        +'（proposed '+d.proposed_delta+' / applied '+d.applied_delta+'）</div>';
-    }).join('');
-    $('p2preview').innerHTML = wd.length
-      ? prov + '<div style="margin-top:4px;color:var(--dim)">未提交——服务端尚未变化</div>'
-      : '<span style="color:#b7791f">无 writable 项</span>';
-    // ③ 参考信号
     var aux = (j.state_proposal || {}).auxiliary || [];
     var skp = (j.state_proposal || {}).skipped || [];
+    var sig = j.signals || {};
+    var lines = [];
+    lines.push('<div style="color:var(--dim);margin-bottom:2px">玩家原话：「'+(msgEl.value||'')+'」</div>');
+    wd.forEach(function(d){
+      var raw = (sig[d.source_signal]||{}).raw_delta;
+      lines.push('<div style="margin:3px 0"><span style="color:#2f855a;font-weight:bold">● '+d.source_signal+'</span>'
+        +'（Laya 读出 raw='+(raw===null||raw===undefined?'—':raw)+'）→ '+d.target
+        +'<br/><span style="color:#b7791f">提议 '+d.proposed_delta+' → 预览 '+d.old_value+' → '+d.new_value
+        +'（将 applied '+d.applied_delta+'）</span></div>');
+    });
+    aux.forEach(function(a){
+      lines.push('<div style="margin:2px 0;color:var(--dim)">· '+a.source_signal+'（辅助信号，只参考不改）</div>');
+    });
+    skp.forEach(function(s){
+      lines.push('<div style="margin:2px 0;color:var(--dim2,var(--dim))">· '+s.source_signal+'（跳过：'+(s.reason_codes||[]).join('/')+'）</div>');
+    });
+    var readouts = Object.keys(sig).filter(function(k){ return (sig[k]||{}).availability==='known'; });
+    if (readouts.length){
+      lines.push('<div style="margin-top:4px;font-size:11px;color:var(--dim)">已测定读数：'
+        + readouts.map(function(k){ return k+'='+((sig[k].raw_delta===null)?'—':sig[k].raw_delta); }).join(' · ')
+        + '</div>');
+    }
+    $('p2preview').innerHTML = lines.join('') +
+      (wd.length? '' : '<span style="color:#b7791f">本轮无 writable 项（未提交）</span>');
+    // ③ 参考信号 / 明细
     var ref = [];
     aux.forEach(function(a){ ref.push(a.source_signal + '（aux，不改）；' + (a.reason_codes || []).join('/')); });
     skp.forEach(function(s){ ref.push(s.source_signal + '（skip：' + (s.reason_codes || []).join('/') + '）'); });
-    var sig = j.signals || {};
     Object.keys(sig).forEach(function(k){
       var v = sig[k] || {};
       ref.push(k + ': raw=' + (v.raw_delta === null ? '—' : v.raw_delta));
