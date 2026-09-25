@@ -293,6 +293,16 @@ chk('规则：证据词 → doubt 直接回落为负',
     and _r5["delta"][0].get("rule_adjudicated") == "evidence_handover",
     'delta=%s' % _r5["delta"][0]["delta"])
 
+# ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
+_p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
+_p55 = B.plot_stage({"relationship": {"doubt": 55, "trust": 40}})
+_p20 = B.plot_stage({"relationship": {"doubt": 20, "trust": 60}})
+_p35 = B.plot_stage({"relationship": {"doubt": 35, "trust": 40}})
+chk('剧情线：doubt>=70 → 决裂', _p80["key"] == "break", _p80["key"])
+chk('剧情线：doubt>=45 → 戒备', _p55["key"] == "guard", _p55["key"])
+chk('剧情线：doubt<=25 → 信任（trust 只读用疑点回落判定）', _p20["key"] == "trust", _p20["key"])
+chk('剧情线：其余 → 试探', _p35["key"] == "probing", _p35["key"])
+
 print('=' * 92)
 print('P2-C 后端自测：合计 %d 项：%d PASS / %d FAIL' % (N[0], N[0] - len(FAIL), len(FAIL)))
 if FAIL:

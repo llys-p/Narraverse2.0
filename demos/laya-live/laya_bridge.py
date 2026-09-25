@@ -3190,6 +3190,10 @@ class Handler(BaseHTTPRequestHandler):
                                    _w.get("proposed_delta")))
                 _signals_block = "\n".join(_blk) if _blk else None
                 _scene = (ctx.get("context") or {}).get("scene") or None
+                # ★ 玩法层：剧情阶段分块（决策呈现给叙事模型，让语气随关系档位走）
+                _stage = plot_stage(ctx.get("state"))
+                _stage_block = "当前关系档位：%s。%s（参考，不念数字）" % (_stage["txt"], _stage["hint"])
+                _signals_block = (_stage_block + "\n" + _signals_block) if _signals_block else _stage_block
                 r = llm_narrate(n_actor, None, ctx.get("message") or "",
                                 (ctx.get("context") or {}).get("history") or [],
                                 state_line(n_actor), bool(payload.get("include_reasoning")),
@@ -3201,6 +3205,7 @@ class Handler(BaseHTTPRequestHandler):
                     "state_source": ctx.get("state_source"),
                     "commit_allowed": False, "state_commits": [],
                     "state": ctx.get("state"),
+                    "plot_stage": _stage,
                 }
                 if not r or r.get("error") or not r.get("line"):
                     return self._json(dict(base, ok=False, line=None,
@@ -4930,6 +4935,33 @@ def _role_block(role_name, signal_values, profile, usable):
             "note": "本层只给值，不判读。阈值/分档属于 Policy Resolver，不得在这里定。",
         })
     return out
+
+
+# 剧情线档位（玩法层）：由 state 的可写/代理信号判定关系走向，
+# 供云端叙事（/narrate analysis 分块）与前端横幅（_plotline）共用。
+# ★ 判据：doubt 是可写代理；trust 只读（档案 grade=C → auxiliary 不可写），
+#   因此「信任渐生」用疑点回落（doubt<=25）判定，否则信任线永远不可达。
+_PLOT_STAGES = (
+    ("break",   "决裂边缘", "她对你已到决裂边缘，随时可能动手。", lambda d, t: d >= 70),
+    ("guard",   "戒备中",   "她在戒备，每句话都在试探你的来路。", lambda d, t: d >= 45),
+    ("trust",   "信任渐生", "疑点在消解，她开始松口，愿意吐露一两句真话。", lambda d, t: d <= 25),
+    ("probing", "试探阶段", "关系未定，她还在权衡是否信你。", lambda d, t: True),
+)
+
+
+def plot_stage(state):
+    """剧情线档位（玩法层）：返回 {"key","txt","hint"}。state 为 actor state 字典。"""
+    rel = (state or {}).get("relationship") or {}
+    d = _fnum(rel.get("doubt"))
+    t = _fnum(rel.get("trust"))
+    if not rel:
+        return {"key": "probing", "txt": "试探阶段", "hint": _PLOT_STAGES[3][2],
+                "doubt": d, "trust": t}
+    for key, txt, hint, cond in _PLOT_STAGES:
+        if cond(d, t):
+            return {"key": key, "txt": txt, "hint": hint, "doubt": d, "trust": t}
+    return {"key": "probing", "txt": "试探阶段", "hint": _PLOT_STAGES[3][2],
+            "doubt": d, "trust": t}
 
 
 def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
