@@ -303,6 +303,10 @@ func TestAutomationMutationCallbackChecksAgentChapterWrites(t *testing.T) {
 	writeTestChapter(t, workspace, 1)
 	app := &App{cfg: &config.Config{NovaDir: filepath.Join(root, "nova"), Workspace: workspace}, workspace: workspace}
 	app.ensureServices()
+	// 触发评估走 automationTriggerCoordinator 的后台 worker：inbox 项出现后 worker
+	// 仍会继续写「自动运行启动失败」标记等状态；用例结束前必须 Close 排空在途评估，
+	// 否则与 t.TempDir() 的 RemoveAll 清理竞态（Windows 间歇 "directory is not empty"）。
+	defer app.Close()
 	app.bookService = book.NewService(workspace)
 
 	task, err := app.CreateAutomation(automation.Task{
