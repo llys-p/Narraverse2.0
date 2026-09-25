@@ -294,31 +294,31 @@
       </div>
       <div class="composer">
         <div class="cbox">
-          <textarea id="inp" placeholder="说出你的台词……（Enter 发送 / Shift+Enter 换行）"></textarea>
+          <textarea id="inp" placeholder="说出你的台词……（Enter 发送，自动判断并影响角色）"></textarea>
           <button class="primary" id="btnSend">发送</button>
-        </div>
-        <div class="cbox" style="margin-top:6px">
-          <button id="p2go" type="button" title="分析这句话对角色状态的影响（不写状态）">分析</button>
-          <button id="p2commit" type="button" disabled title="确认生效：让变化真正写入状态（一次只+一次）">提交</button>
-          <button id="p2reject" type="button" disabled title="放弃本句影响（不写状态）">拒绝</button>
-          <button id="p2narrate" type="button" disabled title="按已提交状态生成一句中文回复（不改数值）">云端回复</button>
-          <span style="font-size:11px;color:var(--dim)">P2 操作：先「分析」→「提交」→「云端回复」</span>
         </div>
         <div class="quick" id="quick"></div>
       </div>
-      <!-- P2 状态协议面板：紧随输入框下方，不遮挡内容 -->
-      <section id="p2panel" style="width:100%;margin-top:10px;border-top:2px solid var(--line2);padding-top:8px;max-height:320px;overflow:auto">
-        <div class="ch" style="margin:0 0 8px;font-size:14px">P2 状态协议面板 <span class="tag" id="p2tag">idle</span>
-          <span style="font-size:11px;color:var(--dim);margin-left:8px" id="p2ver"></span>
-          <button type="button" id="p2fold" style="float:right;font-size:11px;cursor:pointer">收起</button>
+      <!-- 机制明细（默认折叠）：自动提交开关 + 手动单步调试 + P2 三栏 -->
+      <section id="p2panel" style="width:100%;margin-top:10px;border-top:2px solid var(--line2);padding-top:8px;max-height:340px;overflow:auto">
+        <div class="ch" style="margin:0 0 6px;font-size:13px;color:var(--dim)">机制明细（默认折叠，一般不用管）<span class="tag" id="p2tag">idle</span>
+          <button type="button" id="p2fold" style="float:right;font-size:11px;cursor:pointer">展开</button>
         </div>
         <div id="p2body">
-          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
-            <input id="p2sid" style="width:120px;font-size:12px" placeholder="session"/>
-            <input id="p2aid" style="width:90px;font-size:12px" placeholder="actor"/>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+            <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="autoCommit" checked/>自动提交（对话流默认开）</label>
+            <span style="color:var(--dim)">｜</span>
+            <input id="p2sid" style="width:100px;font-size:12px" placeholder="session"/>
+            <input id="p2aid" style="width:80px;font-size:12px" placeholder="actor"/>
             <button id="p2load" type="button" style="font-size:12px">读取</button>
             <button id="p2reset" type="button" style="font-size:12px">重置</button>
-            <span style="font-size:11px;color:var(--dim)">分析/提交/拒绝/云端回复 按钮在上方输入栏</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--dim)">手动单步（调试用）：</span>
+            <button id="p2go" type="button" style="font-size:12px" title="只分析，不写状态">分析</button>
+            <button id="p2commit" type="button" style="font-size:12px" disabled>提交</button>
+            <button id="p2reject" type="button" style="font-size:12px" disabled>拒绝</button>
+            <button id="p2narrate" type="button" style="font-size:12px" disabled>云端回复</button>
           </div>
           <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:8px;min-height:120px">
             <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
@@ -342,6 +342,10 @@
 
   <!-- 右 -->
   <div class="col">
+    <div class="card">
+      <div class="ch">角色状态 <span class="tag" id="statusTag">模板</span></div>
+      <div id="statusSide" style="font-size:12px;min-height:60px">—</div>
+    </div>
     <div class="card">
       <div class="ch">Decision Engine <span class="tag" id="panelTag">idle</span>
         <button type="button" id="panelToggle" style="float:right;font-size:11px;cursor:pointer">折叠</button>
@@ -1034,9 +1038,9 @@ async function boot(){
 }
 
 /* ---------- 事件 ---------- */
-$('btnSend').onclick = ()=>send($('inp').value);
+$('btnSend').onclick = ()=> (window.__p2send ? window.__p2send() : send($('inp').value));
 $('inp').addEventListener('keydown', e=>{
-  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send($('inp').value); }
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); (window.__p2send ? window.__p2send() : send($('inp').value)); }
 });
 $('btnWorld').onclick = worldTick;
 $('btnSettings').onclick = openSettings;
@@ -1160,7 +1164,14 @@ function renderState(cur){
     ];
     $('p2authority').innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('') +
       '<div style="margin-top:4px;font-size:10px;color:#b7791f">当前档案只有 doubt_shift 可写（见③）；trust/fondness 等齐变更属设计。</div>';
-}
+    // 同步右侧「角色状态」栏
+    var _side = document.getElementById('statusSide');
+    if (_side){
+      var _stg = document.getElementById('statusTag');
+      if (_stg){ _stg.textContent = cur.initialized ? 'committed' : 'template'; }
+      _side.innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('');
+    }
+  }
   function renderAnalysis(j){
     S.analysis_id = j.analysis_id; S.base_ver = j.base_state_version;
     S.status = j.status; S.can_commit = !!j.can_commit;
@@ -1334,6 +1345,86 @@ function renderState(cur){
     else { b.setAttribute('hidden', ''); btn.textContent = '展开'; }
   };
   document.getElementById('p2fold').onclick = function(){ window.__foldP2(this); };
+
+  // ---------- 自动对话链路（规格 §3：Enter/发送 = 分析→提交→回复 全自动）----------
+  function _esc(x){ return String(x==null?'':x).replace(/[&<>]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+  function _actorName(){ return ((CFG && CFG.actor && CFG.actor.name) || '莉亚'); }
+  function addBubble(who, text, impactHtml){
+    var chatBox = document.getElementById('chat');
+    if (!chatBox) return;
+    var el = document.createElement('div'); el.className = 'msg';
+    var nm = (who === 'npc') ? _actorName() : '玩家';
+    el.innerHTML = '<div class="who '+who+'"><span class="mk">·</span>'+nm+'</div>'
+      + '<div class="bubble">'+_esc(text)+'</div>';
+    if (impactHtml){ el.insertAdjacentHTML('beforeend', impactHtml); }
+    chatBox.appendChild(el); chatBox.scrollTop = chatBox.scrollHeight;
+  }
+  function _impactOf(applied){
+    if (!applied || !applied.length) return '';
+    var txt = applied.map(function(d){
+      var k = String(d.target || '').split('.').pop();
+      var dn = Math.round((d.delta||0)*100)/100;
+      return k + ' ' + (dn>0?'+':'') + dn + ' → ' + d.new_value;
+    }).join('，');
+    return '<div style="font-size:11px;color:#2f855a;margin:3px 34px 8px">这句让：' + _esc(txt) + '</div>';
+  }
+  window.__p2send = function(){
+    var inp = document.getElementById('inp');
+    var msg = inp ? inp.value : '';
+    if (!msg || !msg.trim()){ flash('请先输入台词再发送', true); if (inp){ inp.focus(); } return; }
+    autoConv(msg);
+  };
+  async function autoConv(msg){
+    if (!S.sid || !S.aid){ S.sid = 'demo_p2'; S.aid = 'lia'; sidEl.value = S.sid; aidEl.value = S.aid; }
+    var acEl = document.getElementById('autoCommit');
+    var auto = !acEl || acEl.checked;
+    addBubble('player', msg);
+    var inp = document.getElementById('inp'); if (inp){ inp.value = ''; }
+    S.lastMsg = msg;
+    try{
+      var st = (await api('/state?session_id=' + encodeURIComponent(S.sid)
+                          + '&actor_id=' + encodeURIComponent(S.aid))).current;
+      renderState(st);
+      // 每句都是新事件（同 event_id 重复分析会被协议按幂等/已提交拦截）
+      S.event_id = 'ev' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      var j = await api('/analyze', { session_id: S.sid, actor_id: S.aid, event_id: S.event_id,
+                                      expected_state_version: st.state_version,
+                                      message: msg, context: {} });
+      renderAnalysis(j);
+      var impact = '';
+      if (auto && j.status === 'ready' && (j.state_proposal||{}).writable_delta && j.state_proposal.writable_delta.length){
+        var c = await api('/commit_state', { session_id: S.sid, actor_id: S.aid,
+                                             analysis_id: S.analysis_id,
+                                             expected_state_version: S.base_ver });
+        renderReceipt(c);
+        await loadState(false);
+        impact = _impactOf(c.applied_delta || []);
+      } else if (j.status === 'reference_only'){
+        impact = '<div style="font-size:11px;color:#b7791f;margin:3px 34px 8px">仅参考：本句无可写信号，未影响状态</div>';
+      } else if (!auto){
+        impact = '<div style="font-size:11px;color:var(--dim);margin:3px 34px 8px">手动模式：点「提交」→「云端回复」</div>';
+      }
+      // 云端回复（committed / reference_only 均可；ready 未提交会 409，catch 兜底）
+      var nr = await api('/narrate', { mode: 'analysis', session_id: S.sid, actor_id: S.aid,
+                                       analysis_id: S.analysis_id });
+      addBubble('npc', nr.line || '', impact);
+      flash('state_source=' + nr.state_source + ' · version ' + nr.state_version);
+    }catch(e){
+      addBubble('npc', '', '<div style="font-size:11px;color:#c53030;margin:3px 34px 8px">' + _esc(err2s(e)) + '</div>');
+      flash('本轮失败：' + err2s(e), true);
+    }
+  }
+
+  // 默认折叠：机制明细 + Decision Engine（规格：平时不打扰对话）
+  (function(){
+    var b = document.getElementById('p2body');
+    if (b && !b.hasAttribute('hidden')){ b.setAttribute('hidden', ''); }
+    var f = document.getElementById('p2fold'); if (f){ f.textContent = '展开'; }
+    var p = document.getElementById('panel');
+    var pt = document.getElementById('panelToggle');
+    if (p){ p.setAttribute('data-fold', '1'); p.style.maxHeight = '80px'; }
+    if (pt){ pt.textContent = '展开'; }
+  })();
   // 恢复上次 scope / event_id / analysis_id 并只读查询（§7：刷新可恢复；epoch 变化才需清理）
   restore();
   // 无恢复数据时给默认值并自动读取 —— 打开页面即有内容，不用手动填+点读取
