@@ -1177,7 +1177,51 @@ def extract_line(text):
     return text, False
 
 
-def _build_narrate_prompt(actor, behavior, player_input, history, state_line, strict=False):
+def _build_narrate_prompt(actor, behavior, player_input, history, state_line, strict=False,
+                          proactive=False, signals_block=None, scene=None):
+    """构造叙事提示词。
+
+    ★ P3-A：`proactive=True` 时进入**分析模式规则分支**（允许自然追问/表态/有限线索/
+      话题转换，但不强制每轮提问，且不把信号当已发生事实）；legacy 分支（proactive
+      默认 False）的规则与旧语义完全不变。`signals_block`/`scene` 是 analysis 模式的
+      分块注入（参考信号 + 场景提示），供 DeepSeek 校准语气而非改写数值。
+    """
+    if proactive:
+        # ---- P3-A analysis 模式规则分支 ----
+        state_note = ("当前已提交数值（权威，只用于校准语气，不要在文本里念数字）：%s"
+                      % state_line)
+        scene_note = ("场景提示（本轮参考，不是已发生的场景切换）：%s" % scene) if scene else ""
+        sig_note = (signals_block
+                    + "\n（以上仅供调整语气与试探策略：这些信号是「角色此刻的感受倾向」"
+                      "参考，**不是**已发生的事实；不得据此泄露秘密、修改数值或替玩家做决定。）"
+                    if signals_block else "")
+        sys_p = (
+            "你在为一款文字冒险游戏写 NPC 的回应（分析模式）。\n"
+            "角色：%s，%s。\n"
+            "人物与场景补充：%s\n"
+            "%s\n"
+            "%s\n"
+            "%s\n"
+            "规则：\n"
+            "1) 台词用「」包裹，配少量动作或环境描写，2~4 句，不要分段列点。\n"
+            "2) 只写外部可见的言行。\n"
+            "3) 你可以自然追问、表达立场、透露有限线索或转换话题；"
+            "**不要求每轮都提问**，也不要强行推进剧情。\n"
+            "4) 你只调整语气与试探策略：状态数值和参考信号是「角色此刻的感受倾向」，"
+            "**不是已发生的事实**；不得据此泄露秘密、修改数值或替玩家决定。\n"
+            "5) 用中文。\n"
+            "格式（必须遵守）：把最终回应原文放进 <line> 与 </line> 之间。\n"
+            "这两个标签之外**一个字符都不要写**。"
+        ) % (actor.get("name", "NPC"), actor.get("identity", ""),
+             json.dumps({k: actor.get(k) for k in ("personality", "traits", "situation", "goals")},
+                        ensure_ascii=False),
+             state_note, scene_note, sig_note)
+        convo = "\n".join(
+            "%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"),
+                       h.get("text", "")) for h in (history or [])[-8:])
+        user_p = (convo + "\n玩家：%s\n\n请写出她此刻的回应。" % player_input).strip()
+        return sys_p, user_p
+
     behavior_note = (
         "本轮她决定做出的行为是「%s」（%s）。\n表现要求：%s"
         % (behavior["name"], behavior["desc"], behavior.get("instr", ""))
@@ -1217,8 +1261,10 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
     return sys_p, user_p
 
 
-def llm_narrate(actor, behavior, player_input, history, state_line, include_reasoning=False):
+def llm_narrate(actor, behavior, player_input, history, state_line, include_reasoning=False,
+                proactive=False, signals_block=None, scene=None):
     """调用 LLM 生成台词。
+    ★ P3-A：proactive/signals_block/scene 透传给 _build_narrate_prompt（analysis 模式）。
     实测要点（DeepSeek-V4.1-Flash）：
       - 模型 id 是 deepseek-flash，不是显示名 DeepSeek-V4.1-Flash
       - 输出里 reasoning_tokens 常占 60~80%，max_tokens 给太小会把推理吃光、content 变空字符串
@@ -1240,7 +1286,9 @@ def llm_narrate(actor, behavior, player_input, history, state_line, include_reas
 
     def once(strict):
         sys_p, user_p = _build_narrate_prompt(actor, behavior, player_input, history,
-                                              state_line, strict=strict)
+                                              state_line, strict=strict,
+                                              proactive=proactive,
+                                              signals_block=signals_block, scene=scene)
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}],
@@ -3007,9 +3055,23 @@ class Handler(BaseHTTPRequestHandler):
                 for _grp in ("relationship", "emotion", "goals"):
                     if _st.get(_grp):
                         n_actor[_grp] = dict(_st[_grp])
+                # ★ P3-A：参考信号分块（availability=known，标注不改状态）+ 场景分块
+                _blk = []
+                for _sig, _sv in (ctx.get("signals") or {}).items():
+                    _raw = (_sv or {}).get("raw_delta")
+                    _blk.append("%s: raw_delta=%s（参考，未提交前不算已变化）"
+                                % (_sig, "—" if _raw is None else _raw))
+                _wd = (ctx.get("writable_delta") or [])
+                for _w in _wd:
+                    _blk.append("%s → %s: 提议 %s（候选建议，未提交前不是已变化）"
+                                % (_w.get("source_signal"), _w.get("target"),
+                                   _w.get("proposed_delta")))
+                _signals_block = "\n".join(_blk) if _blk else None
+                _scene = (ctx.get("context") or {}).get("scene") or None
                 r = llm_narrate(n_actor, None, ctx.get("message") or "",
                                 (ctx.get("context") or {}).get("history") or [],
-                                state_line(n_actor), bool(payload.get("include_reasoning")))
+                                state_line(n_actor), bool(payload.get("include_reasoning")),
+                                proactive=True, signals_block=_signals_block, scene=_scene)
                 base = {
                     "ok": True, "mode": "analysis",
                     "analysis_id": payload.get("analysis_id"),

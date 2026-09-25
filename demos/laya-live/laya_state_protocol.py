@@ -901,7 +901,8 @@ class LayaStateProtocol:
                         "commit_id": rec.get("commit_id"),
                         "message": a.get("message"), "context": a.get("context") or {},
                         "state": _copy.deepcopy(rec.get("state")),
-                        "signals": known}
+                        "signals": known,
+                        "writable_delta": (a.get("state_proposal") or {}).get("writable_delta") or []}
             if a["status"] == "reference_only":
                 self._maybe_expire(a)
                 if a["status"] != "reference_only":
@@ -919,7 +920,8 @@ class LayaStateProtocol:
                         "state_version": a.get("base_state_version"),
                         "message": a.get("message"), "context": a.get("context") or {},
                         "state": _copy.deepcopy(a.get("snapshot")),
-                        "signals": known}
+                        "signals": known,
+                        "writable_delta": (a.get("state_proposal") or {}).get("writable_delta") or []}
             if a["status"] == "ready":
                 raise _ProtoError(409, "ANALYSIS_NOT_COMMITTED",
                                   "候选尚未提交，不能以 analysis 模式生成叙事")
