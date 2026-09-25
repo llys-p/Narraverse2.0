@@ -127,6 +127,26 @@ class LayaStateProtocol:
                     self._inflight.pop(k, None)
             return self.state_version(scope)
 
+    def reset_scopes(self, scopes):
+        """一批作用域 Reset：逐个换 generation（复用单个锁；供全部/按 session 清空）。"""
+        with self.lock:
+            return [self.reset_scope(s) for s in scopes]
+
+    def capture_legacy_scope(self, session_id, actor_id, actor=None):
+        """锁内一次性捕获 legacy 路由的「版本 + 状态快照」：
+
+        ★ 闭环审查（2026-09-25）：旧 /decide、/turn 在**推理开始前**固化一份
+          (base_state_version, state)，之后 propose_turn / commit_legacy_turn
+          都以这份为准 —— 推理窗口内的 Reset/Commit 会被版本冲突拦下，
+          杜绝「旧计算用推理后的新版本登记/提交」。
+        """
+        B = self.B
+        sid = str(session_id or "default")
+        aid = str(actor_id or (actor or {}).get("name") or "default")
+        with self.lock:
+            return self.state_version((sid, aid)), B.actor_state_snapshot(
+                sid, aid, actor=actor or B.CFG.get("actor"))
+
     # ======================================================================
     # 规则指纹（§5）
     # ======================================================================
@@ -271,9 +291,21 @@ class LayaStateProtocol:
         return a
 
     def _cleanup_expired(self):
-        """请求时清理：回收保留期已过的终态（committed/rejected/expired/stale/invalidated）；
-        腾出容量。返回可回收条数。"""
+        """请求时清理（闭环审查 2026-09-25 强化）：
+
+        1) 未查询的 ready/reference_only 超过 READY_TTL → **主动转 expired**（记终态时间）。
+           —— 否则「无人查询的过期候选永远停留在 ready」，只在容量满时才被想起，
+           长跑进程里容量 429 会越拖越频繁（风险4）。
+        2) 回收保留期已过的终态（committed/rejected/expired/stale/invalidated）。
+        返回可回收条数。
+        """
         now = self.now()
+        # 1) 惰性过期改为「请求时主动判定」：没有 get_analysis 查询也会转终态
+        for a in self._analyses.values():
+            if a["status"] in ("ready", "reference_only") and now >= a.get("expires_at", 0):
+                a["status"] = "expired"
+                a["terminal_at"] = a.get("expires_at") or now
+        # 2) 回收终态保留期
         drop = []
         for aid, a in self._analyses.items():
             if a["status"] in ("committed", "rejected", "expired", "stale", "invalidated"):
@@ -307,6 +339,7 @@ class LayaStateProtocol:
     def get_state(self, session_id, actor_id):
         scope = self._scope(session_id, actor_id)
         with self.lock:
+            self._cleanup_expired()
             ver = self.state_version(scope)
             initialized = scope in self.B._ACTOR_STATE
             state = self.B.actor_state_snapshot(session_id, actor_id,
@@ -354,6 +387,8 @@ class LayaStateProtocol:
             # ★ P1 审查：引擎身份门禁（就绪 + checkpoint 一致），在锁内、做任何
             #   分析之前判定；fallback/未加载一律 503，不产生候选。
             self._assert_engine(model)
+            # 闭环审查（2026-09-25）：请求时先清理（未查询的过期候选也转终态）
+            self._cleanup_expired()
             current = self.state_version(scope)
             if expected != current:
                 raise _ProtoError(409, "STATE_VERSION_CONFLICT",
@@ -959,6 +994,13 @@ class LayaStateProtocol:
         actor_id = str(p.get("actor") or "default")
         scope = (session_id, actor_id)
         with self.lock:
+            # ★ 闭环审查（2026-09-25）风险3：legacy 提交也拒绝 fallback 启发式结果。
+            #   登记时 `engine_used="fallback"`（真实推理失败落到启发式）→ 直接拒。
+            #   这是把新协议「引擎身份门禁」的语义补回旧路由，不让启发式冒充模型判断。
+            if p.get("engine_used") == "fallback":
+                return False, "该轮分析用了 fallback（启发式引擎，非 Laya 真实判断）→ 拒绝提交", {
+                    "stage": "rejected", "reason": "fallback_engine",
+                    "engine_used": p.get("engine_used")}
             # 版本：当前版本必须仍等于登记时的基础版本（期间任何提交都会使其 stale）
             current = self.state_version(scope)
             if current != p.get("base_state_version"):
@@ -970,8 +1012,12 @@ class LayaStateProtocol:
             if rules != p.get("rules_fingerprint"):
                 return False, "规则指纹已变化（配置/档案/检查点/基线），拒绝旧提交——请重新分析", {
                     "stage": "rejected", "reason": "ruleset_changed"}
-            snapshot = B.actor_state_snapshot(session_id, actor_id,
-                                              actor=p.get("actor_template") or B.CFG.get("actor"))
+            # 状态快照：优先用登记时锁内冻结的那份（分析用的就是它）；
+            # 旧 Pending（无 frozen_state）回退到本次提交时回读，语义不变。
+            snapshot = p.get("frozen_state")
+            if snapshot is None:
+                snapshot = B.actor_state_snapshot(session_id, actor_id,
+                                                  actor=p.get("actor_template") or B.CFG.get("actor"))
             commits, skipped, _preview = B.validate_state_delta(
                 session_id, actor_id, p.get("state_proposal") or {},
                 p.get("state_decision") or {"turn_id": turn_id},

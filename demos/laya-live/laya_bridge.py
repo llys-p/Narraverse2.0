@@ -1813,6 +1813,13 @@ def bucket_key(session_id, actor_id):
     return (str(session_id or "default"), str(actor_id or "default"))
 
 
+def _legacy_scope(session_id, actor_id, actor=None):
+    """归一 legacy (session, actor)，并返回 (scope, actor_name)。"""
+    sid = str(session_id or "default")
+    aid = str(actor_id or (actor or {}).get("name") or "default")
+    return (sid, aid), aid
+
+
 def history_for(session_id, actor_id):
     """取某个 (session, actor) 已提交的历史（副本）。"""
     return list(_HISTORY_BUCKETS.get(bucket_key(session_id, actor_id), []))
@@ -1825,19 +1832,38 @@ def next_turn_id(session_id, actor_id):
 
 
 def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source,
-                 state_proposal=None, state_decision=None, actor=None, record_history=True):
+                 state_proposal=None, state_decision=None, actor=None, record_history=True,
+                 engine_used=None, frozen_state=None, frozen_version=None):
     """登记一个待确认的决策和状态 Proposal。**不写历史、不写 Actor State**。
 
     ★ P2-B2：登记在**协议锁内**完成，并绑定作用域状态版本与规则指纹 ——
       旧 `/commit {turn_id}` 提交时用同一锁校验「当前版本 == 登记版本」，
       使旧/新提交共用同一版本体系（§6.3 / §9 L1）。
+
+    ★ 闭环审查（2026-09-25）：登记时把**版本**与**冻结快照**原子绑在一起：
+      - `engine_used="fallback"` 的候选（真实推理失败落到启发式）在提交时被拒，
+        不再把启发式结果冒充模型判断写入；
+      - `frozen_state` 由调用方在锁内捕获的服务器快照提供；无则登记时回读桶，
+        保证「分析用的状态」与「提交校验用的状态」是同一份。
     """
     session_id = str(session_id or "default")
     actor_id = str(actor_id or "default")
     scope = (session_id, actor_id)
     with PROTOCOL.lock:
-        base_ver = PROTOCOL.state_version(scope)
+        base_ver = frozen_version if frozen_version is not None else PROTOCOL.state_version(scope)
+        # ★ 推理期间已发生提交/Reset → 登记版本已过时：直接拒绝登记，避免旧计算
+        #   冒用新版本。让调用方重新跑一轮（decide 会用到这份版本重填）。
+        if frozen_version is not None and base_ver != PROTOCOL.state_version(scope):
+            _PENDING.pop(turn_id, None)
+            raise _ProtoError(409, "STATE_VERSION_CONFLICT",
+                              "本轮分析期间状态版本已变化（推理窗口内发生 Reset/Commit），"
+                              "拒绝登记旧计算；请重发",
+                              {"frozen_version": frozen_version,
+                               "current_state_version": PROTOCOL.state_version(scope)})
         rules = PROTOCOL.rules_fingerprint(PROTOCOL._effective_model(), force=False)
+        if frozen_state is None:
+            frozen_state = actor_state_snapshot(session_id, actor_id,
+                                                actor=actor or CFG.get("actor"))
         _PENDING[turn_id] = {
             "session": session_id, "actor": actor_id,
             "behavior": behavior_id, "intent": intent_id, "source": source,
@@ -1847,6 +1873,8 @@ def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source,
             "actor_template": _copy.deepcopy(actor) if actor else None,
             "base_state_version": base_ver,
             "rules_fingerprint": rules,
+            "engine_used": engine_used,
+            "frozen_state": _copy.deepcopy(frozen_state),
         }
         # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
         if len(_PENDING) > 200:
@@ -2619,12 +2647,18 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
     }
 
 
-def decide(payload):
-    """兼容现有 /decide 入口：分配 turn_id 后调用纯分析核，不写 Actor State。"""
+def decide(payload, frozen_state=None):
+    """兼容现有 /decide 入口：分配 turn_id 后调用纯分析核，不写 Actor State。
+
+    `frozen_state` 供 legacy handler 在锁内捕获的服务器状态快照 —— 与提交流程
+    共用同一份「版本+快照」，避免模型推理期间发生 Reset/Commit 时把旧计算
+    冒用的新版本提交（闭环审查 2026-09-25）。
+    """
     actor = payload.get("actor") or CFG["actor"]
     session_id = payload.get("session_id") or "default"
     actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
-    return analyze_core(payload, turn_id=next_turn_id(session_id, actor_id))
+    return analyze_core(payload, turn_id=next_turn_id(session_id, actor_id),
+                        frozen_state=frozen_state)
 
 
 def world_decide(payload):
@@ -2898,8 +2932,18 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read()
 
         if path == "/decide":
+            # ★ 闭环审查（2026-09-25）：先锁定一处「版本+状态快照」再跑分析 ——
+            #   若推理期间发生 Reset/Commit，propose_turn 用版本校验直接拒绝，
+            #   不让旧计算冒用新版本登记/提交。
+            _fx_version, _fx_state = PROTOCOL.capture_legacy_scope(
+                payload.get("session_id"), payload.get("actor_id"),
+                payload.get("actor") or CFG.get("actor"))
             try:
-                out = decide(payload)
+                try:
+                    out = decide(payload, frozen_state=_fx_state)
+                except TypeError:
+                    # 兼容单参数 mock/外部替换（如测试桩）：不传冻结快照
+                    out = decide(payload)
             except Exception as e:
                 return self._json({"error": repr(e)}, 500)
             dec = out.get("decision") or {}
@@ -2928,7 +2972,9 @@ class Handler(BaseHTTPRequestHandler):
                              state_proposal=out.get("state_proposal"),
                              state_decision=(out.get("state_validation") or {}).get("decision"),
                              actor=payload.get("actor") or CFG.get("actor"),
-                             record_history=not bool(payload.get("decision_history")))
+                             record_history=not bool(payload.get("decision_history")),
+                             engine_used=out.get("engine"),
+                             frozen_state=_fx_state, frozen_version=_fx_version)
             out = dict(out, history_gate={
                 "stage": "proposed",
                 "committed": False,
@@ -2947,8 +2993,15 @@ class Handler(BaseHTTPRequestHandler):
             #     /decide+/commit = 上游（Story / Director）可能否决的正式链路。
             #   两者共用同一套状态层，不存在"快路绕过校验"。
             #   确实要在 /turn 上也不写状态时传 commit_state=false。
+            _fx_version, _fx_state = PROTOCOL.capture_legacy_scope(
+                payload.get("session_id"), payload.get("actor_id"),
+                payload.get("actor") or CFG.get("actor"))
             try:
-                out = decide(payload)
+                try:
+                    out = decide(payload, frozen_state=_fx_state)
+                except TypeError:
+                    # 兼容单参数 mock/外部替换（如测试桩）：不传冻结快照
+                    out = decide(payload)
             except Exception as e:
                 return self._json({"error": repr(e)}, 500)
             turn = out.get("turn") or {}
@@ -2963,7 +3016,9 @@ class Handler(BaseHTTPRequestHandler):
                              (dec.get("player_intent") or {}).get("id"), dec.get("source"),
                              state_proposal=out.get("state_proposal"),
                              state_decision=(out.get("state_validation") or {}).get("decision"),
-                             actor=payload.get("actor") or CFG.get("actor"))
+                             actor=payload.get("actor") or CFG.get("actor"),
+                             engine_used=out.get("engine"),
+                             frozen_state=_fx_state, frozen_version=_fx_version)
                 ok, note, state_result = commit_turn(turn.get("turn_id"))
             elif do_commit:
                 note = ("本轮无行为（歧义 / 未给行为）→ 按 P3 第一版规则：不 commit 状态、"
@@ -3013,23 +3068,42 @@ class Handler(BaseHTTPRequestHandler):
             #   都不传 = 全清（保留旧行为，单角色演示方便）。
             #   ★ P2-B2：清状态/历史/重试均在同一事务锁内，并连同协议层
             #     reset_scope（换版本 generation、作废计算中的候选）一起执行。
+            #   ★ 闭环审查（2026-09-25）风险2：全部 / 按 session 清空时，也必须
+            #     对**每个受影响作用域**换 generation —— 否则旧协议候选仍可提交。
             sid = payload.get("session_id")
             aid = payload.get("actor_id")
-            new_ver = None
             with PROTOCOL.lock:
+                scopes = set()
                 if sid is not None and aid is not None:
-                    new_ver = PROTOCOL.reset_scope((str(sid), str(aid)))
-                hit = reset_history(sid, aid)
+                    scopes.add((str(sid), str(aid)))
+                else:
+                    for _ks in (set(_ACTOR_STATE) | set(PROTOCOL._buckets)):
+                        if sid is not None and str(_ks[0]) != str(sid):
+                            continue
+                        scopes.add(_ks)
+                    for _p in _PENDING.values():
+                        _pp = (_p.get("session"), _p.get("actor"))
+                        if sid is not None and str(_pp[0]) != str(sid):
+                            continue
+                        scopes.add(_pp)
+                new_ver = None
+                hit = None
+                for _sc in sorted(scopes):
+                    new_ver = PROTOCOL.reset_scope(_sc)
+                if scopes:
+                    hit = ["%s/%s" % s for s in sorted(scopes)]
                 hit_state = reset_actor_state(sid, aid)
+                hit_buckets = reset_history(sid, aid)
                 cleared = []
                 if sid is None and aid is None:
                     del _HISTORY[:]
                     cleared.append("history_display")
             return self._json({"ok": True, "cleared": cleared,
-                               "buckets_cleared": hit,
+                               "buckets_cleared": hit_buckets,
                                # ★ Phase3-P3：Actor State 与 history 同桶，就一起清。
                                #   只清一个会造出「历史清了但关系还在 82」的拧巴状态。
                                "actor_state_cleared": hit_state,
+                               "protocol_scopes_reset": hit,
                                "scope": ("全部" if sid is None and aid is None
                                          else "session=%s actor=%s" % (sid, aid)),
                                "state_version": new_ver})

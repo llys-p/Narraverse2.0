@@ -298,6 +298,111 @@ with assets_ctx():
         and ":1:" in rset["state_version"], 'ver=%s' % rset.get("state_version"))
 srv.shutdown()
 
+# ===========================================================================
+print("\n[R1-4] 闭环审查回归：版本原子绑定 / Reset 换代 / fallback 拒提 / TTL 终态")
+# ===========================================================================
+reset_all()
+with assets_ctx():
+    # ---- R1：分析窗口内版本变化 → propose_turn 拒绝登记旧计算 ----
+    fx_ver, fx_st = P.capture_legacy_scope("sR1", "Ria", B.CFG.get("actor"))
+    # 模拟推理窗口内发生一次提交/重置：推进版本
+    P.reset_scope(("sR1", "Ria"))
+    try:
+        B.propose_turn("R1t", "sR1", "Ria", "approach", "engage", "policy",
+                       state_proposal={"delta": []},
+                       state_decision={"behavior_is_null": False, "turn_id": "R1t"},
+                       frozen_state=fx_st, frozen_version=fx_ver)
+        chk('R1 推理窗口版本变化 → propose_turn 拒绝', False, '')
+    except _ProtoError as e:
+        chk('R1 推理窗口版本变化 → propose_turn 拒绝（STATE_VERSION_CONFLICT）',
+            e.code == "STATE_VERSION_CONFLICT", 'code=%s' % e.code)
+    # 窗口内无变化 → 正常登记，绑定冻结版本
+    fx_ver2, fx_st2 = P.capture_legacy_scope("sR1", "Ria", B.CFG.get("actor"))
+    B.propose_turn("R1t2", "sR1", "Ria", "approach", "engage", "policy",
+                   state_proposal={"delta": []},
+                   state_decision={"behavior_is_null": False, "turn_id": "R1t2"},
+                   frozen_state=fx_st2, frozen_version=fx_ver2)
+    chk('R1 窗口无变化正常登记且绑定冻结版本',
+        B._PENDING["R1t2"]["base_state_version"] == fx_ver2
+        and B._PENDING["R1t2"]["frozen_state"] is not None, '')
+
+    # ---- R3：legacy 提交拒绝 fallback 引擎结果 ----
+    B.propose_turn("R3t", "sR3", "Ria", "approach", "engage", "policy",
+                   state_proposal={"delta": []},
+                   state_decision={"behavior_is_null": False, "turn_id": "R3t"},
+                   engine_used="fallback")
+    ok, note, res = B.commit_turn("R3t")
+    chk('R3 fallback 旧候选 → 提交被拒（不冒充模型判断）',
+        not ok and res.get("reason") == "fallback_engine", 'ok=%s reason=%s' % (ok, res.get("reason")))
+    B.propose_turn("R3t2", "sR3", "Ria", "approach", "engage", "policy",
+                   state_proposal={"delta": []},
+                   state_decision={"behavior_is_null": False, "turn_id": "R3t2"},
+                   engine_used="laya")
+    ok2, _n2, res2 = B.commit_turn("R3t2")
+    chk('R3 真实引擎旧候选 → 正常提交', ok2, 'ok=%s' % ok2)
+
+    # ---- R4：未查询的过期候选在请求时主动转终态并可回收 ----
+    now[0] = 5000.0
+    _now = now[0]
+    P._analyses["cA"] = {"analysis_id": "cA", "session_id": "sR4", "actor_id": "Ria",
+                         "event_id": "e1", "status": "ready", "base_state_version": "v1:0:0:0",
+                         "created_at": _now - 100, "expires_at": _now - 50,
+                         "terminal_at": None, "message": "m", "context": {}, "input_sha256": "s",
+                         "state_proposal": {"writable_delta": []}, "signals": {},
+                         "capability": {}, "evidence": {}, "commit_receipt": None}
+    P._analyses["cB"] = {"analysis_id": "cB", "session_id": "sR4", "actor_id": "Ria",
+                         "event_id": "e2", "status": "committed", "base_state_version": "v1:0:0:0",
+                         "created_at": _now - 100, "expires_at": _now + 100,
+                         "terminal_at": _now - 50, "message": "m", "context": {}, "input_sha256": "s",
+                         "state_proposal": {"writable_delta": []}, "signals": {},
+                         "capability": {}, "evidence": {}, "commit_receipt": None}
+    P._cleanup_expired()
+    chk('R4 未查询的过期候选转终态（expired）', P._analyses["cA"]["status"] == "expired"
+        and P._analyses["cA"].get("terminal_at") == _now - 50, 'st=%s' % P._analyses["cA"]["status"])
+    chk('R4 仍在保留期内不回收', "cA" in P._analyses and "cB" in P._analyses, '')
+    now[0] += 3700   # 过保留期（3600s）
+    P._cleanup_expired()
+    chk('R4 过保留期后回收（终态 cA/cB 都移除）',
+        "cA" not in P._analyses and "cB" not in P._analyses, '')
+
+# ---- R2：/reset 全部清空时对受影响协议作用域换 generation ----
+reset_all()
+srv2 = ThreadingHTTPServer(("127.0.0.1", 0), B.Handler)
+port2 = srv2.server_address[1]
+threading.Thread(target=srv2.serve_forever, daemon=True).start()
+BASE2 = "http://127.0.0.1:%d" % port2
+_OPENER2 = __import__("urllib.request", fromlist=["build_opener"]).build_opener(
+    __import__("urllib.request", fromlist=["ProxyHandler"]).ProxyHandler({}))
+
+
+def _post2(path, body):
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = __import__("urllib.request", fromlist=["Request"]).Request(
+        BASE2 + path, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with _OPENER2.open(req, timeout=10) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except __import__("urllib.error", fromlist=["HTTPError"]).HTTPError as e:
+        return e.code, json.loads(e.read().decode("utf-8"))
+
+
+with assets_ctx():
+    _fz_v, _fz_s = P.capture_legacy_scope("sRx", "Rx", B.CFG.get("actor"))
+    B.propose_turn("Rx#1", "sRx", "Rx", "approach", "engage", "policy",
+                   state_proposal={"delta": []},
+                   state_decision={"behavior_is_null": False, "turn_id": "Rx#1"},
+                   frozen_state=_fz_s, frozen_version=_fz_v)
+    _gen_before = P._buckets[("sRx", "Rx")]["generation"]
+    # 全部 Reset（不带 session/actor）也必须作废协议候选/换 generation
+    st, r2 = _post2("/reset", {})
+    chk('R2 全清 Reset 也换协议 generation（含仅有 Pending 的作用域）',
+        st == 200 and P._buckets[("sRx", "Rx")]["generation"] == _gen_before + 1,
+        'st=%s gen=%d->%d reset=%r' % (st, _gen_before, P._buckets[("sRx", "Rx")]["generation"],
+                                       r2.get("protocol_scopes_reset")))
+    chk('R2 /reset 返回受影响的协议作用域清单',
+        ("sRx/Rx") in (r2.get("protocol_scopes_reset") or []), '')
+srv2.shutdown()
+
 print('=' * 92)
 print('P2-B2 旧路由事务/版本自测：合计 %d 项：%d PASS / %d FAIL'
       % (N[0], N[0] - len(FAIL), len(FAIL)))
