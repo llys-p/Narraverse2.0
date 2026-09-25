@@ -381,6 +381,30 @@ describe('NarraverseWorkspace', () => {
     await waitFor(() => expect(runtimeMocks.libraryClear).toHaveBeenCalledWith('narraverse'))
   })
 
+  it('binds the module4 consumer with the library carrier when the sandbox opens with a pending sandbox library', async () => {
+    runtimeMocks.libraryPending = {
+      narraverse: null,
+      module4: { libraryId: 'lib-4', expectedRevision: 'sha256:r4', manualItemIds: ['m4'], libraryName: '沙盒库', revisionLabel: 'sha256:r4', selectedCount: 1, launchedAt: 150 },
+    }
+    const view = render(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} />)
+    const iframe = view.container.querySelector('iframe') as HTMLIFrameElement
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/bind', expect.any(Object)))
+    const bindCall = vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/module4/bind'))
+    const bindBody = JSON.parse(String((bindCall?.[1] as RequestInit).body))
+    expect(bindBody.library_context).toEqual({ libraryId: 'lib-4', expectedRevision: 'sha256:r4', manualItemIds: ['m4'] })
+    expect(bindBody).not.toHaveProperty('world_context')
+    expect(runtimeMocks.libraryTake).toHaveBeenCalledWith('module4')
+    // 沙盒模型调用走 module4 路由，库 Ref 不进入代理请求。
+    dispatchFromIframe(iframe, {
+      source: 'narraverse', version: 2, type: 'model-call-request',
+      payload: { requestId: 'module4library0001', messages: [{ role: 'user', content: '推进沙盒' }], options: {} },
+    })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/call', expect.any(Object)))
+    const callBody = JSON.parse(String((vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/module4/call'))?.[1] as RequestInit).body))
+    expect(JSON.stringify(callBody)).not.toContain('lib-4')
+  })
+
   function dispatchFromIfaceCrossOrigin(iframe: HTMLIFrameElement) {
     const event = new MessageEvent('message', {
       data: { source: 'narraverse', version: 1, type: 'switch-mode', payload: { mode: 'ide' } },

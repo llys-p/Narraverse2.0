@@ -21,9 +21,11 @@ interface LibraryWorkspaceRouteProps {
   onLaunchGame?: () => void
   /** B4a：用户在库工作区显式带入叙界（宿主受控 iframe）。 */
   onLaunchNarraverse?: () => void
+  /** B4b：用户在库工作区显式带入开放沙盒（Module4）。 */
+  onLaunchModule4?: () => void
 }
 
-export function LibraryWorkspaceRoute({ workspace, onClose, onLaunchWriting, onLaunchGame, onLaunchNarraverse }: LibraryWorkspaceRouteProps) {
+export function LibraryWorkspaceRoute({ workspace, onClose, onLaunchWriting, onLaunchGame, onLaunchNarraverse, onLaunchModule4 }: LibraryWorkspaceRouteProps) {
   const { t } = useTranslation()
   const [section, setSection] = useState<LibrarySection>('mine')
   const [dirty, setDirty] = useState(false)
@@ -54,7 +56,7 @@ export function LibraryWorkspaceRoute({ workspace, onClose, onLaunchWriting, onL
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         {section === 'mine' ? (
-          <LibraryWorkspacePage onClose={onClose} onDirtyChange={setDirty} hasWritingBook={Boolean(workspace)} onLaunchWriting={onLaunchWriting} onLaunchGame={onLaunchGame} onLaunchNarraverse={onLaunchNarraverse} />
+          <LibraryWorkspacePage onClose={onClose} onDirtyChange={setDirty} hasWritingBook={Boolean(workspace)} onLaunchWriting={onLaunchWriting} onLaunchGame={onLaunchGame} onLaunchNarraverse={onLaunchNarraverse} onLaunchModule4={onLaunchModule4} />
         ) : (
           <Suspense fallback={null}>
             <LibraryView workspace={workspace} onClose={onClose} />

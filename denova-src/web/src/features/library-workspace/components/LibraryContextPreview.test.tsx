@@ -287,3 +287,65 @@ describe('library launch to Narraverse (B4a)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/宿主会话不可用/)
   })
 })
+
+describe('library launch to Module4 (B4b)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    hostStateMock.state = 'ready'
+  })
+
+  function renderModule4Preview(props: Partial<Parameters<typeof LibraryContextPreview>[0]> = {}) {
+    const captured: IframeLibraryContextLaunch[] = []
+    function PendingCapture() {
+      const { pending } = useIframeLibraryContextLaunch()
+      useEffect(() => {
+        if (pending.module4) captured.push(pending.module4)
+      }, [pending])
+      return null
+    }
+    const view = render(
+      <LibraryContextLaunchProvider>
+        <IframeLibraryContextLaunchProvider>
+          <PendingCapture />
+          <LibraryContextPreview library={library} revision="one" dirty={false} {...props} />
+        </IframeLibraryContextLaunchProvider>
+      </LibraryContextLaunchProvider>,
+    )
+    return { captured, view }
+  }
+
+  it('disables the sandbox launch button for unsaved drafts', () => {
+    renderModule4Preview({ dirty: true })
+    expect(screen.getByRole('button', { name: '带入开放沙盒' })).toBeDisabled()
+  })
+
+  it('hands off only the saved library ref to the module4 consumer and opens the sandbox', async () => {
+    const user = userEvent.setup()
+    const onLaunchModule4 = vi.fn()
+    const { captured } = renderModule4Preview({ onLaunchModule4 })
+    await user.click(screen.getByRole('button', { name: '带入开放沙盒' }))
+    await waitFor(() => expect(captured).toHaveLength(1))
+    expect(captured[0]).toEqual({
+      libraryId: 'abcdefghijklmnop',
+      expectedRevision: 'one',
+      manualItemIds: [],
+      libraryName: '测试库',
+      revisionLabel: 'one',
+      selectedCount: 0,
+      launchedAt: expect.any(Number),
+    })
+    expect(Object.keys(captured[0])).toEqual(['libraryId', 'expectedRevision', 'manualItemIds', 'libraryName', 'revisionLabel', 'selectedCount', 'launchedAt'])
+    expect(onLaunchModule4).toHaveBeenCalledOnce()
+  })
+
+  it('refuses the sandbox launch when the secure host session is unavailable', async () => {
+    hostStateMock.state = 'unavailable'
+    const user = userEvent.setup()
+    const onLaunchModule4 = vi.fn()
+    const { captured } = renderModule4Preview({ onLaunchModule4 })
+    await user.click(screen.getByRole('button', { name: '带入开放沙盒' }))
+    expect(captured).toHaveLength(0)
+    expect(onLaunchModule4).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/宿主会话不可用/)
+  })
+})

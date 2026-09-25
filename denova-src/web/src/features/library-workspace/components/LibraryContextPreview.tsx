@@ -20,15 +20,17 @@ interface Props {
   onLaunchGame?: () => void
   /** 用户显式发起带入叙界：写入一次性交接并切到叙界模式（宿主受控 iframe）。 */
   onLaunchNarraverse?: () => void
+  /** 用户显式发起带入开放沙盒：写入一次性交接并在叙界 iframe 内打开 Module4。 */
+  onLaunchModule4?: () => void
 }
 
 /** Session-only read preview. Opening the tab never issues a request. */
-export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting, onLaunchGame, onLaunchNarraverse }: Props) {
+export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting, onLaunchGame, onLaunchNarraverse, onLaunchModule4 }: Props) {
   const { t } = useTranslation()
   const { launchWritingLibrary } = useLibraryContextLaunch()
   const iframeLibraryLaunches = useIframeLibraryContextLaunch()
   const worldContextHost = useWorldContextHost()
-  const [narraverseNotice, setNarraverseNotice] = useState<string | null>(null)
+  const [iframeLaunchNotice, setIframeLaunchNotice] = useState<string | null>(null)
   const [manual, setManual] = useState<string[]>([])
   const [auto, setAuto] = useState<string[]>([])
   const [offset, setOffset] = useState(0)
@@ -100,24 +102,37 @@ export function LibraryContextPreview({ library, revision, dirty, hasWritingBook
   }
   // B4a：带入叙界（宿主受控 iframe）。与带入写作/游戏同源：只交接已保存库的 Ref
   // 三字段 + 摘要，autoItemIds 不进入授权；consumer 由宿主受控路由固定，Ref 不落 iframe。
-  // 宿主会话不可用时显式提示（与 world 侧带入叙界同一守卫），不写入交接。
+  // 宿主会话不可用时显式提示（与 world 侧带入同一守卫），不写入交接。
+  const iframeLaunchPayload = () => ({
+    libraryId: library.id,
+    expectedRevision: revision,
+    manualItemIds: manualIDs,
+    libraryName: library.name,
+    revisionLabel: revision,
+    selectedCount: manualIDs.length,
+    launchedAt: Date.now(),
+  })
   const launchToNarraverse = () => {
     if (dirty || !revision) return
     if (worldContextHost.state !== 'ready') {
-      setNarraverseNotice(t('workLibrary.preview.launchNarraverseHostUnavailable'))
+      setIframeLaunchNotice(t('workLibrary.preview.launchHostUnavailable'))
       return
     }
-    setNarraverseNotice(null)
-    iframeLibraryLaunches.launch('narraverse', {
-      libraryId: library.id,
-      expectedRevision: revision,
-      manualItemIds: manualIDs,
-      libraryName: library.name,
-      revisionLabel: revision,
-      selectedCount: manualIDs.length,
-      launchedAt: Date.now(),
-    })
+    setIframeLaunchNotice(null)
+    iframeLibraryLaunches.launch('narraverse', iframeLaunchPayload())
     onLaunchNarraverse?.()
+  }
+  // B4b：带入开放沙盒（Module4）。同一受控边界与 Ref 边界；打开走 App 的既有
+  // onOpenModule4（切叙界模式并在 iframe 内打开 Module4），不改沙盒规则与存档真源。
+  const launchToModule4 = () => {
+    if (dirty || !revision) return
+    if (worldContextHost.state !== 'ready') {
+      setIframeLaunchNotice(t('workLibrary.preview.launchHostUnavailable'))
+      return
+    }
+    setIframeLaunchNotice(null)
+    iframeLibraryLaunches.launch('module4', iframeLaunchPayload())
+    onLaunchModule4?.()
   }
   return (
     <section className="min-h-0 flex-1 overflow-y-auto p-3" aria-label={t('workLibrary.tab.preview')}>
@@ -170,11 +185,20 @@ export function LibraryContextPreview({ library, revision, dirty, hasWritingBook
         >
           {t('workLibrary.preview.launchNarraverse')}
         </Button>
+        {/* B4b：带入开放沙盒（Module4），沿用既有 onOpenModule4 受控入口。 */}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision}
+          onClick={launchToModule4}
+        >
+          {t('workLibrary.preview.launchModule4')}
+        </Button>
         <Button type="button" variant="ghost" onClick={() => { setAuto([]); setManual([]); setOffset(0) }}>{t('workLibrary.preview.clear')}</Button>
         {dirty ? <span role="status">{t('workLibrary.preview.saveFirst')}</span> : null}
         {stale ? <span role="status">{t('workLibrary.preview.stale')}</span> : null}
         {!hasWritingBook ? <span role="status">{t('workLibrary.preview.launchNeedBook')}</span> : null}
-        {narraverseNotice ? <span role="alert">{narraverseNotice}</span> : null}
+        {iframeLaunchNotice ? <span role="alert">{iframeLaunchNotice}</span> : null}
       </div>
       {error ? <p role="alert" className="mb-3 text-sm">{error}</p> : null}
       {gameLaunchOpen ? (

@@ -206,7 +206,7 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
 
   useEffect(() => {
     if (ready && host.state === 'ready' && openModule4) void bindConsumer('module4')
-  }, [bindConsumer, host.state, launches.pending.module4, openModule4, ready])
+  }, [bindConsumer, host.state, launches.pending.module4, libraryLaunches.pending.module4, openModule4, ready])
 
   useEffect(() => {
     if (openModule4 || !boundRef.current.module4) return
