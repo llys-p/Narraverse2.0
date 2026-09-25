@@ -162,7 +162,8 @@
 
 ### B5 · 四模式统一验收与交付（AI1；依赖 B2c、B3c、B4a、B4b）
 
-- [ ] 先审代码再在隔离 Denova executable/测试库跑写作→游戏→叙界→Module4；确认四个入口都**真正把获准内容送到现有模型链**，无暗中旧背景叠加、无剧情回写 Library、来源变更能阻断新读取。**脚手架就绪（2026-09-25）：统一验收 runbook 见 [B5 Runbook](../acceptance/LIBRARY_L3_B5_RUNBOOK.md)；工具 `denova-src/scripts/library-acceptance/`（假模型端点写作/游戏双模式、drive_writing/drive_game、scan_markers）已用隔离 exe + 假模型冒烟跑通游戏链（证据 `artifacts/b5-harness-smoke/`：回合 200、模型侧取材、48 文件零泄漏扫描 exit 0）。正式验收待叙界模块资产（NARRAVERSE_SOURCE_DIR）与真实模型额度。**
+- [ ] 先审代码再在隔离 Denova executable/测试库跑写作→游戏→叙界→Module4；确认四个入口都**真正把获准内容送到现有模型链**，无暗中旧背景叠加、无剧情回写 Library、来源变更能阻断新读取。**脚手架就绪（2026-09-25）：统一验收 runbook 见 [B5 Runbook](../acceptance/LIBRARY_L3_B5_RUNBOOK.md)；工具 `denova-src/scripts/library-acceptance/`（假模型端点写作/游戏双模式、drive_writing/drive_game、scan_markers）已用隔离 exe + 假模型冒烟跑通游戏链（证据 `artifacts/b5-harness-smoke/`：回合 200、模型侧取材、48 文件零泄漏扫描 exit 0）。正式验收待叙界模块资产与真实模型额度。**
+  **复审（2026-09-25）= NEED REVISION（仅脚手架，B4 无新阻断项）**：三处可能误报"全绿"已修复——① 端口归属校验（等本进程 stdout 监听地址+存活+特征字段，否则拒绝写入；负例占位服务 0 请求）；② 分链断言（写作/游戏各自的 SSE 完成、工具往返、模型取材；游戏 ledger 须元数据化读取事件）；③ 扫描器遍历错误真正接线（悬空目录负例 exit 1）。提交 `dfbda8c`，证据 `artifacts/harness-review-fixes/`，全绿复跑通过。后续：固定版本叙界资产做 B4a/B4b 页面验收（资产在主工作区，当前会话边界禁止本代理读取，待授权/复制）；B5 四模式真实模型取材。**
 - [ ] 测试取消/重连/regenerate/切实例/预算/来源故障；对 Session、工具结果、压缩源、run ledger、运行目录做脱敏扫描。分类记录缺口和环境失败，不以 UI 徽章或 HTTP 200 当送模证据。
 - [ ] 产出 L3 验收报告、精确提交 SHA 与部署状态。**完成记录：待填。**
 
