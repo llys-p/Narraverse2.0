@@ -356,6 +356,18 @@ chk('规则：真的出示徽章（递过去）仍按让渡压制',
     _e3["delta"][0]["delta"] == -2.3
     and _e3["delta"][0].get("rule_adjudicated") == "evidence_handover",
     'delta=%s' % _e3["delta"][0]["delta"])
+_e4 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 2.0)]},
+                                {}, "你就是接头人，我亲眼见过你交信物。")
+chk('规则：指控句「你交信物」不按让渡压制（原样返回）',
+    _e4["delta"][0]["delta"] == 2.0
+    and _e4["delta"][0].get("rule_adjudicated") is None,
+    'delta=%s' % _e4["delta"][0]["delta"])
+_e5 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 1.6)]},
+                                {}, "（从怀里掏出一封信，拍在桌上）这就是你要的证据。")
+chk('规则：掏信出示 仍按让渡压制（掏出+这就是）',
+    _e5["delta"][0]["delta"] == -2.4
+    and _e5["delta"][0].get("rule_adjudicated") == "evidence_handover",
+    'delta=%s' % _e5["delta"][0]["delta"])
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})

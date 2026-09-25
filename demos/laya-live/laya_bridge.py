@@ -5017,10 +5017,13 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     # 通道 B / C（保守白名单，中文场景；B 优先于 C）
     text = str(player_input or "")
     evidence_hit = next((kw for kw in _EVIDENCE_STOP_WORDS if kw in text), None)
-    if evidence_hit and any(m in text for m in _EVIDENCE_QUESTION_MARKERS):
-        # P3-B 实测反例：「你身上那枚徽章，哪来的？」、「你有证据吗？」是**质问**
-        # 物件来源，不是让渡 —— 裸名词命中会错误压制疑点（30→27 直接进信任档）。
-        # 含疑问/诘问标记时不当作让渡，交还给 Laya 判向。
+    if evidence_hit and (any(m in text for m in _EVIDENCE_QUESTION_MARKERS)
+                         or any(f in text for f in _EVIDENCE_ACCUSATION_FRAMES)):
+        # P3-B 实测反例1：质问「徽章哪来的/你有证据吗」是**质问**物件来源，
+        #   不是让渡 —— 裸名词命中会错误压制疑点（30→27 直接进信任档）。
+        # 反例2（无问号指控句）：「你交信物」「你身上那枚徽章」是当面对质，
+        #   也不是玩家掏出东西交给对方 —— 同样不得当让渡。
+        # 含这些标记时不当作让渡，交还给 Laya 判向。
         evidence_hit = None
     violence_hit = None
     if not evidence_hit and "放下" not in text:
@@ -5090,8 +5093,14 @@ _EVIDENCE_STOP_WORDS = (
 # 证据通道的「质问豁免」：命中这些疑问/诘问标记时，裸名词不算让渡
 # （P3-B 实测：徽章哪来的 / 你有证据吗 —— 玩家在质问，不该压制疑点）。
 _EVIDENCE_QUESTION_MARKERS = (
-    "？", "?", "哪来的", "从哪", "谁的", "谁给", "是不是", "有没有",
-    "吗", "呢", "什么", "怎么", "为啥", "为什么",
+    "？", "?", "哪来的", "从哪", "哪儿", "哪里", "谁的", "谁给",
+    "是不是", "有没有", "吗", "呢", "什么", "怎么", "为啥", "为什么", "啥",
+)
+
+# 证据通道的「指控豁免」：无问号的当面对质（你交信物 / 你身上那枚徽章），
+# 物件落在玩家对她的话语框架里、不是玩家掏出东西让渡 —— 同样不按让渡压制。
+_EVIDENCE_ACCUSATION_FRAMES = (
+    "你的", "你身上", "你腰间", "你手里", "你兜里", "你交", "你收",
 )
 
 # 暴力升级白名单：玩家「拔刀/掐脖/见血」类施压强动作（规则层裁决用，保守列举；
