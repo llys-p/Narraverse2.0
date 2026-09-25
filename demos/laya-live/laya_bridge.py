@@ -4970,16 +4970,20 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     ★ 口径（2026-09-25，用户方向）：Laya 负责识别玩家行动意图；
       数值公式与**胜负裁决**由规则层独立设计，不混进模型输出。
 
-    双通道裁决（任一命中即减缓疑点）：
+    三通道裁决：
       A) 模型侧：Laya 判「合作/坦白」倾向显著（cooperation ≥ 0.5 或
          disclose ≥ 0.5）→ 疑点正向增量打折并略降（old*0.5 - 0.8）。
-         —— 实测中对试探/对峙台词 Laya 倾向偏保守，单独不足以破单调。
-      B) 证据词（规则侧，玩家原文命中**强证据动作词**）→ 疑点正向增量
-         直接取负（-|old|*0.6 - 0.6）。对应「交出/摊牌/坦白」这类明确让渡
-         行为：交出名单、放下刀、摊开双手、和盘托出……
+      B) 证据词（规则侧，玩家原文命中**强证据动作词**）→ 疑点增量无条件取负
+         （-|old|-0.8；该轮即使没有 doubt_shift 项也追加 -2.8）。对应
+         「交出/摊牌/坦白」这类明确让渡行为：交出名单、放下刀、摊开双手……
+      C) 暴力升级（规则侧，命中**暴力动作词**）→ 疑点增量无条件抬升到保底
+         +2.5（无 doubt_shift 项则追加 +2.5）。对应拔刀/掐脖/见血这类施压
+         动作：让「决裂线」在持续暴力下必定推进，不再卡「模型对重复威胁
+         判零增量」的停滞。语言回落（「放下…」等让渡口吻）不触发；
+         B/C 同时命中时 B（让渡）优先 —— 放下比举刀更被当真。
          —— 规则层独立裁决，不依赖模型输出（这正是「胜负归规则层」）。
     安全边界：
-      - 只可能改到 source_signal == doubt_shift 且 delta > 0 的条目；
+      - 只可能改到 source_signal == doubt_shift 的条目；
       - 无命中时**逐字节返回原对象**（零拷贝）；
       - 不改 status/grade/target/range，只动 delta 并打 `rule_adjudicated`。
     """
@@ -4990,14 +4994,13 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     sv = signal_values or {}
     coop = _fnum(sv.get("cooperation"))
     disc = _fnum(sv.get("disclose"))
-    # 通道 B：证据词（保守白名单，中文场景）
+    # 通道 B / C（保守白名单，中文场景；B 优先于 C）
     text = str(player_input or "")
-    evidence_hit = False
-    for kw in _EVIDENCE_STOP_WORDS:
-        if kw in text:
-            evidence_hit = True
-            break
-    if coop < 0.5 and disc < 0.5 and not evidence_hit:
+    evidence_hit = next((kw for kw in _EVIDENCE_STOP_WORDS if kw in text), None)
+    violence_hit = None
+    if not evidence_hit and "放下" not in text:
+        violence_hit = next((kw for kw in _VIOLENCE_ESCALATION_WORDS if kw in text), None)
+    if not evidence_hit and not violence_hit and coop < 0.5 and disc < 0.5:
         return state_proposal
     out = _copy.deepcopy(state_proposal)
     changed = False
@@ -5017,6 +5020,25 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
                 "source_signal": "doubt_shift", "target": "relationship.doubt",
                 "delta": -2.8, "status": "active", "grade": "A", "role": "state_shift",
                 "label": "怀疑", "range": [0, 100], "rule_adjudicated": "evidence_handover",
+            })
+            changed = True
+    elif violence_hit:
+        # ★ 胜负归规则层：命中暴力动作词 → 疑点无条件抬升到保底 +2.5。
+        #   对称于证据通道：模型判 0/负 的施压轮也会被兜底，决裂线可持续推进。
+        target = next((it for it in out.get("delta") or []
+                       if it.get("source_signal") == "doubt_shift"), None)
+        if target is not None:
+            old = _fnum(target.get("delta"))
+            if old < _VIOLENCE_ESCALATION_FLOOR:
+                target["delta"] = _VIOLENCE_ESCALATION_FLOOR
+            target["rule_adjudicated"] = "violence_escalation"
+            changed = True
+        else:
+            out.setdefault("delta", []).append({
+                "source_signal": "doubt_shift", "target": "relationship.doubt",
+                "delta": _VIOLENCE_ESCALATION_FLOOR, "status": "active",
+                "grade": "A", "role": "state_shift",
+                "label": "怀疑", "range": [0, 100], "rule_adjudicated": "violence_escalation",
             })
             changed = True
     else:
@@ -5039,6 +5061,16 @@ _EVIDENCE_STOP_WORDS = (
     "信物", "徽章", "图纸", "家书", "坦白", "和盘托出",
     "搜我", "搜身", "敞开外衣", "毫无保留", "再无保留", "搜我身上",
 )
+
+# 暴力升级白名单：玩家「拔刀/掐脖/见血」类施压强动作（规则层裁决用，保守列举；
+# 与证据词互斥，且「放下…」让渡口吻不触发 —— 二者同时出现时证据词优先）。
+_VIOLENCE_ESCALATION_WORDS = (
+    "拔刀", "拔出", "抽刀", "出鞘", "刀锋", "匕首", "刀尖",
+    "掐", "按在墙上", "见血", "杀了你", "杀死你", "砍死",
+    "横在你喉前", "贴在你喉前", "贴上你的颈侧", "架在你脖子",
+    "永远闭嘴", "一脚踢翻", "揪住", "扎在桌上", "插进桌面", "掼在地上",
+)
+_VIOLENCE_ESCALATION_FLOOR = 2.5
 
 
 def _fnum(x):

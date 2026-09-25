@@ -300,6 +300,43 @@ chk('规则：证据词无 doubt 项 → 追加压制 -2.8',
         and w["rule_adjudicated"] == "evidence_handover" for w in _r6["delta"]),
     'delta=%r' % [_get := [ (w["source_signal"], w.get("delta")) for w in _r6["delta"] ]][0])
 
+# ---- 通道 C：暴力升级保底（决裂线可达，对称证据通道）----
+_c1 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 0.5)]},
+                                {}, "（拔出匕首，一刀扎在桌上）说不说！")
+chk('规则：暴力动作 → doubt 保底抬到 +2.5',
+    _c1["delta"][0]["delta"] == 2.5
+    and _c1["delta"][0].get("rule_adjudicated") == "violence_escalation",
+    'delta=%s' % _c1["delta"][0]["delta"])
+_c2 = B.apply_rule_adjudication({"delta": [{"source_signal": "trust_shift", "delta": 1.0}]},
+                                {}, "（掐着你脖子）再不开口我就掐死你。")
+chk('规则：暴力动作无 doubt 项 → 追加保底 +2.5',
+    any(w["source_signal"] == "doubt_shift" and w["delta"] == 2.5
+        and w["rule_adjudicated"] == "violence_escalation" for w in _c2["delta"]),
+    'delta=%r' % [(w["source_signal"], w.get("delta")) for w in _c2["delta"]])
+_c3 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", -1.5)]},
+                                {}, "（刀锋横在你喉前）我再问一遍！")
+chk('规则：暴力动作对模型负判定无条件抬起（对称证据无条件压负）',
+    _c3["delta"][0]["delta"] == 2.5
+    and _c3["delta"][0].get("rule_adjudicated") == "violence_escalation",
+    'delta=%s' % _c3["delta"][0]["delta"])
+_c4 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 1.0)]},
+                                {}, "（放下匕首，后退一步）刚才是我冒犯了。")
+chk('规则：语言回落「放下…」不触发暴力升级（原样返回）',
+    _c4["delta"][0]["delta"] == 1.0,
+    'delta=%s' % _c4["delta"][0]["delta"])
+_c5 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 2.0)]},
+                                {}, "（放下刀）名单在这里，你要就拿去。")
+chk('规则：证据词优先于暴力（让渡=压制，不回抬）',
+    _c5["delta"][0]["delta"] == -2.8
+    and _c5["delta"][0].get("rule_adjudicated") == "evidence_handover",
+    'delta=%s' % _c5["delta"][0]["delta"])
+_c6 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 4.0)]},
+                                {}, "（拔出匕首）我现在就要一个答案。")
+chk('规则：模型已给高于保底的增量 → 保留原值只打标记',
+    _c6["delta"][0]["delta"] == 4.0
+    and _c6["delta"][0].get("rule_adjudicated") == "violence_escalation",
+    'delta=%s' % _c6["delta"][0]["delta"])
+
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
 _p55 = B.plot_stage({"relationship": {"doubt": 55, "trust": 40}})
