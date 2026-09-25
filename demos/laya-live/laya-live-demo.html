@@ -1389,10 +1389,15 @@ function renderState(cur){
   };
   // 对话原文历史（供 /analyze 的 context.history 与叙事 convo 使用）
   window.__DIALOG = [];
-  // 协议 context.history 条目：{role: user|assistant, content}
+  // 协议 context.history 条目：{role: user|assistant, content}；
+  // content 服务端上限 MAX_CONTENT_CHARS=2000 —— LLM 偶发写超长台词会直接 422 断链，
+  // 这里在入队时截断（≤1500 字符，保留可读性）防御。
+  var _DIALOG_MAX_CHARS = 1500;
   function _pushDialog(who, text){
     var role = (who === 'player') ? 'user' : 'assistant';
-    window.__DIALOG.push({ role: role, content: text });
+    var t = String(text == null ? '' : text);
+    if (t.length > _DIALOG_MAX_CHARS){ t = t.slice(0, _DIALOG_MAX_CHARS); }
+    window.__DIALOG.push({ role: role, content: t });
     if (window.__DIALOG.length > 20){ window.__DIALOG.shift(); }
   }
   // /analyze 上下文：最近 8 轮原文（后端存进候选，/narrate 再拼进叙事路径）

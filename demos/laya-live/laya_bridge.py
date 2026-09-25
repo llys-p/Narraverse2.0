@@ -2402,6 +2402,10 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
         getattr(ENGINE, "model_name", None) or DEFAULT_MODEL_NAME)
     state_proposal, behavior_tendency, situation_assessment = build_state_proposal(
         answers, deltas, signal_values, _cap_prof, _cap_check)
+    # ★ 规则层事件裁决（2026-09-25）：独立于 Laya 输出的启发式修正。
+    #   口径：Laya 识别倾向，数值公式与裁决由规则层独立设计（见 apply_rule_adjudication）。
+    #   安全边界：只作用于 doubt_shift；无正向倾向时与旧版逐字节一致。
+    state_proposal = apply_rule_adjudication(state_proposal, signal_values)
 
     # ★ 信号总表（Task9/Task10 的展示接口）：把 role / status / grade 直接挂到每个信号上。
     #   为什么不让前端自己按名字 join 三份数据 —— 前端 join 一定会和后端漂，
@@ -4923,6 +4927,52 @@ def _role_block(role_name, signal_values, profile, usable):
             "note": "本层只给值，不判读。阈值/分档属于 Policy Resolver，不得在这里定。",
         })
     return out
+
+
+def apply_rule_adjudication(state_proposal, signal_values):
+    """规则层事件裁决（启发式，独立于 Laya 输出的数值公式层）。
+
+    ★ 口径（2026-09-25，用户方向）：Laya 负责识别玩家行动意图；
+      数值公式与**胜负裁决**由规则层独立设计，不混进模型输出。
+
+    当前实现，且只实现这一条保守规则：
+      - 当 Laya 判「玩家合作/坦白」倾向显著（cooperation ≥ 0.5 或 disclose ≥ 0.5）
+        时，对 doubt_shift 的**正向**增量打折并略降（old*0.5 - 0.8）。
+        目的：打破长对话里疑点单边上涨的单调体验——玩家给出可信线索/让步，
+        疑点至少不该继续抬高。
+    安全边界：
+      - 只可能改到 source_signal == doubt_shift 的条目；
+      - 无正向倾向时**逐字节返回原对象**（浅拷贝都省掉）；
+      - 不改 status/grade/target/range，只动 delta 并打 `rule_adjudicated` 标记。
+      - 负数/零 delta 不受打折影响（本来就低，不需要再压）。
+    """
+    ds = (state_proposal or {}).get("delta") or []
+    if not ds:
+        return state_proposal
+    coop = _fnum(signal_values.get("cooperation"))
+    disc = _fnum(signal_values.get("disclose"))
+    if coop < 0.5 and disc < 0.5:
+        return state_proposal
+    out = _copy.deepcopy(state_proposal)
+    changed = False
+    for item in out.get("delta") or []:
+        if item.get("source_signal") != "doubt_shift":
+            continue
+        old = _fnum(item.get("delta"))
+        if old <= 0:
+            continue
+        item["delta"] = round(old * 0.5 - 0.8, 3)
+        item["rule_adjudicated"] = True
+        changed = True
+    return out if changed else state_proposal
+
+
+def _fnum(x):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if v == v and v not in (float("inf"), float("-inf")) else 0.0
 
 
 def build_state_proposal(answers, deltas, signal_values, profile, check):
