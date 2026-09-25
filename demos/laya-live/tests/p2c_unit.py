@@ -337,6 +337,26 @@ chk('规则：模型已给高于保底的增量 → 保留原值只打标记',
     and _c6["delta"][0].get("rule_adjudicated") == "violence_escalation",
     'delta=%s' % _c6["delta"][0]["delta"])
 
+# ---- 通道 B 质问豁免（P3-B 实测反例：徽章哪来的 / 你有证据吗）----
+_e1 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 1.83)]},
+                                {}, "你身上那枚徽章，哪来的？")
+chk('规则：质问「徽章哪来的」不按让渡压制（原样返回）',
+    _e1["delta"][0]["delta"] == 1.83
+    and _e1["delta"][0].get("rule_adjudicated") is None,
+    'delta=%s' % _e1["delta"][0]["delta"])
+_e2 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 2.0)]},
+                                {}, "你有证据吗？是不是你干的？")
+chk('规则：质问「你有证据吗」不按让渡压制（原样返回）',
+    _e2["delta"][0]["delta"] == 2.0
+    and _e2["delta"][0].get("rule_adjudicated") is None,
+    'delta=%s' % _e2["delta"][0]["delta"])
+_e3 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 1.5)]},
+                                {}, "（翻出徽章递过去）这就是你要的徽章。")
+chk('规则：真的出示徽章（递过去）仍按让渡压制',
+    _e3["delta"][0]["delta"] == -2.3
+    and _e3["delta"][0].get("rule_adjudicated") == "evidence_handover",
+    'delta=%s' % _e3["delta"][0]["delta"])
+
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
 _p55 = B.plot_stage({"relationship": {"doubt": 55, "trust": 40}})

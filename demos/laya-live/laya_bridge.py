@@ -5017,6 +5017,11 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     # 通道 B / C（保守白名单，中文场景；B 优先于 C）
     text = str(player_input or "")
     evidence_hit = next((kw for kw in _EVIDENCE_STOP_WORDS if kw in text), None)
+    if evidence_hit and any(m in text for m in _EVIDENCE_QUESTION_MARKERS):
+        # P3-B 实测反例：「你身上那枚徽章，哪来的？」、「你有证据吗？」是**质问**
+        # 物件来源，不是让渡 —— 裸名词命中会错误压制疑点（30→27 直接进信任档）。
+        # 含疑问/诘问标记时不当作让渡，交还给 Laya 判向。
+        evidence_hit = None
     violence_hit = None
     if not evidence_hit and "放下" not in text:
         violence_hit = next((kw for kw in _VIOLENCE_ESCALATION_WORDS if kw in text), None)
@@ -5080,6 +5085,13 @@ _EVIDENCE_STOP_WORDS = (
     "证据", "证词", "名单", "账目", "账本", "供词",
     "信物", "徽章", "图纸", "家书", "坦白", "和盘托出",
     "搜我", "搜身", "敞开外衣", "毫无保留", "再无保留", "搜我身上",
+)
+
+# 证据通道的「质问豁免」：命中这些疑问/诘问标记时，裸名词不算让渡
+# （P3-B 实测：徽章哪来的 / 你有证据吗 —— 玩家在质问，不该压制疑点）。
+_EVIDENCE_QUESTION_MARKERS = (
+    "？", "?", "哪来的", "从哪", "谁的", "谁给", "是不是", "有没有",
+    "吗", "呢", "什么", "怎么", "为啥", "为什么",
 )
 
 # 暴力升级白名单：玩家「拔刀/掐脖/见血」类施压强动作（规则层裁决用，保守列举；
