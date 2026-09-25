@@ -2251,7 +2251,7 @@ def reset_history(session_id=None, actor_id=None):
     return hit
 
 
-def analyze_core(payload, turn_id=None, frozen_state=None):
+def analyze_core(payload, turn_id=None, frozen_state=None, legacy_adjudication=True):
     """运行 Laya 判断并生成 Proposal；只读 Actor State，不提交任何状态变化。
 
     ★ P2-B1（2026-09-25）：`frozen_state` 由协议层在锁内捕获（服务器内部，不接受
@@ -2424,7 +2424,8 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
     # ★ 规则层事件裁决（2026-09-25）：独立于 Laya 输出的启发式修正。
     #   口径：Laya 识别倾向，数值公式与裁决由规则层独立设计（见 apply_rule_adjudication）。
     #   安全边界：只作用于 doubt_shift；无命中时与旧版逐字节一致。
-    state_proposal = apply_rule_adjudication(state_proposal, signal_values, player_input)
+    if legacy_adjudication:
+        state_proposal = apply_rule_adjudication(state_proposal, signal_values, player_input)
 
     # ★ 信号总表（Task9/Task10 的展示接口）：把 role / status / grade 直接挂到每个信号上。
     #   为什么不让前端自己按名字 join 三份数据 —— 前端 join 一定会和后端漂，

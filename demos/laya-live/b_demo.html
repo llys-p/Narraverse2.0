@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Narraverse · 候选 B 自由交互</title>
+<style>
+body{font:16px/1.65 system-ui;background:#f5f2ec;color:#263331;max-width:960px;margin:28px auto;padding:0 18px}header{border-bottom:1px solid #bbb}
+main{display:grid;grid-template-columns:2fr 1fr;gap:22px}textarea{box-sizing:border-box;width:100%;min-height:105px;font:inherit;padding:9px}input,button{font:inherit;padding:7px}button{cursor:pointer;margin:9px 7px 9px 0}
+article,aside{background:#fff;padding:16px;margin:12px 0}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}article{white-space:pre-wrap}@media(max-width:700px){main{display:block}}
+</style>
+<header><h1>候选 B · 自由交互</h1><p>自然语言理解 → 事实约束 → Laya 证据 → 分级结算 → 确认提交</p></header>
+<p>场景：酒馆中有莉亚和奥伦。你持有徽章，地窖门锁着，钥匙在旧井。先预览，再确认这一轮。</p>
+<main><section><label>会话 <input id="sid" value="candidate-b-demo"></label><button id="reload">读取场景</button><button id="new">新会话</button>
+<div id="lines" aria-live="polite"></div><label for="message">你的话或行动</label>
+<textarea id="message" placeholder="我把徽章交给莉亚，请她亲自核对。"></textarea><br>
+<button id="analyze">分析预览</button><button id="commit" disabled>确认提交</button><p id="status" role="status"></p>
+<details><summary>完整审计过程</summary><pre id="trace"></pre></details></section>
+<aside><h2>当前已提交事实</h2><pre id="world"></pre></aside></main>
+<script>
+const $=id=>document.getElementById(id);let state=null,pending=null,busy=false;
+async function call(path,body){let r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let j=await r.json();if(!r.ok)throw Error((j.error?.code||'ERROR')+': '+(j.error?.message||'请求失败'));return j;}
+async function guard(job){if(busy)return;busy=true;$('analyze').disabled=true;$('commit').disabled=true;try{await job();}catch(e){$('status').textContent=e.message;}finally{busy=false;$('analyze').disabled=false;$('commit').disabled=!pending;}}
+async function refresh(){state=await call('/b/state?session_id='+encodeURIComponent($('sid').value));$('world').textContent=JSON.stringify({facts:state.states.b_runtime_world.facts,actors:{lia:state.states.lia,oren:state.states.oren}},null,2);}
+$('reload').onclick=()=>guard(refresh);$('new').onclick=()=>guard(async()=>{$('sid').value='b-'+crypto.randomUUID().slice(0,8);pending=null;$('lines').replaceChildren();await refresh();});
+$('sid').onchange=()=>{state=null;pending=null;$('commit').disabled=true;};
+$('analyze').onclick=()=>guard(async()=>{pending=null;await refresh();$('status').textContent='正在理解与结算…';let request={session_id:$('sid').value,event_id:crypto.randomUUID(),actor_id:'player',message:$('message').value,expected_versions:state.versions};let analysis=await call('/b/analyze',request);pending={request,analysis};$('trace').textContent=JSON.stringify(analysis,null,2);$('status').textContent='预览就绪；确认后才改变状态。';});
+$('commit').onclick=()=>guard(async()=>{let p=pending;let receipt=await call('/b/commit',{session_id:p.request.session_id,event_id:p.request.event_id,analysis_id:p.analysis.analysis_id,expected_versions:p.request.expected_versions});pending=null;await refresh();let narration=await call('/b/narrate',{session_id:p.request.session_id,event_id:p.request.event_id});let box=document.createElement('article');box.textContent='你：'+p.request.message+'\n\n'+narration.text;$('lines').append(box);$('trace').textContent=JSON.stringify({receipt,narration},null,2);$('status').textContent='已提交。';});guard(refresh);
+</script></html>

@@ -1,5 +1,9 @@
 # Laya 实时对话 Demo
 
+> **候选 B 自由交互版**：入口 `laya_interaction_b.py`（默认 8133）、试玩页面 `/b/demo`；
+> [架构](ARCHITECTURE.md) · [交接与启动](HANDOFF.md) · [人工流程例子](TRACE_EXAMPLE.md)。
+> 本候选待统一验收，尚未运行测试或真实推理。
+
 > **后续分工与交接**：[P0–P3 体验恢复计划](tasks/plan.md) · [阶段清单](tasks/todo.md) · [P2-A 协议定稿](tasks/P2-A-Analyze-Commit协议.md)。P1 修复基线 `17be8d5` 已通过用户提供的独立验收；P2-A 已定稿，新接口尚未实现。下一步 P2-B1，先复用已有代码、无模型验证；[P1 提示词](tasks/P1-执行提示词.md)留作历史。
 
 > **2026-09-24 新方向：**参见 [Laya 定位书：Narraverse 轻量判断引擎](Laya定位书.md)。后续 Demo 收缩为有限结构化判断、状态提交与云端叙事反馈；保留情绪和可选反应倾向体验。分析/校验/提交的底层职责已拆开，`/analyze` 与安全的 `/commit_state` 尚未施工。下文为旧 Demo 实现及实验记录，其中 Policy Resolver 的行为裁决职责不再作为新 Demo 的目标。
