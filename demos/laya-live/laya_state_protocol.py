@@ -874,6 +874,113 @@ class LayaStateProtocol:
                     "replayed": False, "analysis_id": analysis_id,
                     "session_id": sid, "actor_id": aid, "reason": reason}
 
+    # ======================================================================
+    # 旧路由原子提交（P2-B2，§6.3 / §2.1 / §4.3）
+    # ======================================================================
+    def commit_legacy_turn(self, turn_id):
+        """把旧 `/commit {turn_id}` 纳入同一事务边界与版本管理。
+
+        在**同一进程锁**内完成：版本检查（当前版本 == Pending 登记的基础版本）、
+        规则指纹复核、状态重验、历史 entries 与状态/审计/版本同锁发布、弹 Pending。
+        与协议新提交共用 state_version/锁；旧提交成功后旧 Pending 版本过期，
+        新分析基于旧版本也会被拒（反向亦然）—— 见 §9 的 L1 验收。
+
+        ★ legacy 特例（§6.3）：旧行为有效但无 writable 项时，仍接受一次
+          **行为历史**并推进一次桶版本（不写状态）；该特例不放松新
+          `/commit_state` 的 reference_only 禁令。
+
+        ★ 旧路由保留 fallback demo 可用：**不**套新协议的引擎身份门禁
+          （503）——兼容路径不是新页面重试的后门（§6.3），真实推理闭环由新协议负责。
+        """
+        B = self.B
+        p = B._PENDING.get(turn_id)
+        if p is None:
+            return False, "未知 turn_id（未被 propose 过，或已被提交/淘汰）", {
+                "stage": "rejected", "reason": "unknown_pending"}
+        if not p.get("behavior"):
+            return False, "该轮没有行为（ambiguous / behavior=null），不是已确认事实，拒绝写入历史", {
+                "stage": "rejected", "reason": "no_behavior"}
+        session_id = str(p.get("session") or "default")
+        actor_id = str(p.get("actor") or "default")
+        scope = (session_id, actor_id)
+        with self.lock:
+            # 版本：当前版本必须仍等于登记时的基础版本（期间任何提交都会使其 stale）
+            current = self.state_version(scope)
+            if current != p.get("base_state_version"):
+                return False, "状态版本已变化（该轮之后已有提交/重置），拒绝旧提交——请重新分析", {
+                    "stage": "rejected", "reason": "stale_state_version",
+                    "pending_base": p.get("base_state_version"), "current": current}
+            # 规则：Propose 时缓存指纹，提交时强制刷新核对磁盘漂移
+            rules = self.rules_fingerprint(self._effective_model(), force=True)
+            if rules != p.get("rules_fingerprint"):
+                return False, "规则指纹已变化（配置/档案/检查点/基线），拒绝旧提交——请重新分析", {
+                    "stage": "rejected", "reason": "ruleset_changed"}
+            snapshot = B.actor_state_snapshot(session_id, actor_id,
+                                              actor=p.get("actor_template") or B.CFG.get("actor"))
+            commits, skipped, _preview = B.validate_state_delta(
+                session_id, actor_id, p.get("state_proposal") or {},
+                p.get("state_decision") or {"turn_id": turn_id},
+                actor=p.get("actor_template") or B.CFG.get("actor"),
+                frozen_state=snapshot)
+            # ---- 发布（回滚模式与 commit_state 一致）----
+            new_state = _copy.deepcopy(snapshot)
+            applied = []
+            for r in commits:
+                B._set_path(new_state, r.get("target"), r.get("new_value"))
+                applied.append({"source_signal": r.get("signal"), "target": r.get("target"),
+                                "old_value": r.get("old"), "delta": r.get("final_delta"),
+                                "new_value": r.get("new_value")})
+            state_changed = any(abs(float(x.get("delta") or 0)) > 1e-9 for x in applied)
+            had_bucket = scope in B._ACTOR_STATE
+            saved_bucket = _copy.deepcopy(B._ACTOR_STATE.get(scope)) if had_bucket else None
+            had_trace = scope in B._STATE_TRACE
+            saved_trace = _copy.deepcopy(B._STATE_TRACE.get(scope)) if had_trace else None
+            meta = self._ensure_bucket_meta(scope)
+            saved_revision = meta["revision"]
+            prev_ver = current
+            try:
+                new_ver = self._bump_revision(scope)
+                if commits:
+                    B._ACTOR_STATE[scope] = new_state
+                tr = B._STATE_TRACE.setdefault(scope, [])
+                tr.append({
+                    "t": self.now(), "kind": "legacy_accept",
+                    "turn_id": turn_id,
+                    "session_id": session_id, "actor_id": actor_id,
+                    "before_version": prev_ver, "after_version": new_ver,
+                    "rules_fingerprint": p.get("rules_fingerprint"),
+                    "applied_delta": applied, "new_state": new_state,
+                })
+                del tr[:-(self.B._STATE_TRACE_MAX if hasattr(self.B, "_STATE_TRACE_MAX") else 30)]
+            except Exception:
+                meta["revision"] = saved_revision
+                if had_bucket:
+                    B._ACTOR_STATE[scope] = saved_bucket
+                else:
+                    B._ACTOR_STATE.pop(scope, None)
+                if had_trace:
+                    B._STATE_TRACE[scope] = saved_trace
+                else:
+                    B._STATE_TRACE.pop(scope, None)
+                raise
+            # 行为历史（legacy 特例：无 writable 也接受行为历史）
+            k = B.bucket_key(session_id, actor_id)
+            if p.get("entries"):
+                bucket = B._HISTORY_BUCKETS.setdefault(k, [])
+                bucket.extend(p["entries"])
+                del bucket[:-(B._HISTORY_MAX if hasattr(B, "_HISTORY_MAX") else 50)]
+            B._PENDING.pop(turn_id, None)
+            view = B.actor_state_view(session_id, actor_id)
+            note = ("已提交状态 Proposal 与历史，该桶现有 %d 条" % len(B._HISTORY_BUCKETS.get(k, []))
+                    if applied else
+                    "本轮无 writable 状态项：仅接受行为历史并推进版本（legacy 特例），状态未变")
+            return True, note, {
+                "state_commits": commits, "state_skipped": skipped,
+                "actor_state": view, "state_version": new_ver,
+                "stage": "committed",
+                "history_bucket": "%s/%s" % k, "history_entries": len(p.get("entries") or []),
+            }
+
 
 class _ProtoError(Exception):
     """协议错误：携带 HTTP 状态码与错误码（§8）。"""

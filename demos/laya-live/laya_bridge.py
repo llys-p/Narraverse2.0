@@ -1768,45 +1768,42 @@ def next_turn_id(session_id, actor_id):
 
 def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source,
                  state_proposal=None, state_decision=None, actor=None, record_history=True):
-    """登记一个待确认的决策和状态 Proposal。**不写历史、不写 Actor State**。"""
-    _PENDING[turn_id] = {
-        "session": str(session_id or "default"), "actor": str(actor_id or "default"),
-        "behavior": behavior_id, "intent": intent_id, "source": source,
-        "entries": decision_history_entries(intent_id, behavior_id) if record_history else [],
-        "state_proposal": _copy.deepcopy(state_proposal or {}),
-        "state_decision": _copy.deepcopy(state_decision or {}),
-        "actor_template": _copy.deepcopy(actor) if actor else None,
-    }
-    # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
-    if len(_PENDING) > 200:
-        for k in list(_PENDING)[:100]:
-            _PENDING.pop(k, None)
+    """登记一个待确认的决策和状态 Proposal。**不写历史、不写 Actor State**。
+
+    ★ P2-B2：登记在**协议锁内**完成，并绑定作用域状态版本与规则指纹 ——
+      旧 `/commit {turn_id}` 提交时用同一锁校验「当前版本 == 登记版本」，
+      使旧/新提交共用同一版本体系（§6.3 / §9 L1）。
+    """
+    session_id = str(session_id or "default")
+    actor_id = str(actor_id or "default")
+    scope = (session_id, actor_id)
+    with PROTOCOL.lock:
+        base_ver = PROTOCOL.state_version(scope)
+        rules = PROTOCOL.rules_fingerprint(PROTOCOL._effective_model(), force=False)
+        _PENDING[turn_id] = {
+            "session": session_id, "actor": actor_id,
+            "behavior": behavior_id, "intent": intent_id, "source": source,
+            "entries": decision_history_entries(intent_id, behavior_id) if record_history else [],
+            "state_proposal": _copy.deepcopy(state_proposal or {}),
+            "state_decision": _copy.deepcopy(state_decision or {}),
+            "actor_template": _copy.deepcopy(actor) if actor else None,
+            "base_state_version": base_ver,
+            "rules_fingerprint": rules,
+        }
+        # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
+        if len(_PENDING) > 200:
+            for k in list(_PENDING)[:100]:
+                _PENDING.pop(k, None)
     return _PENDING[turn_id]
 
 
 def commit_turn(turn_id):
-    """显式提交某轮的状态 Proposal 与历史。返回 (ok, note, state_result)。"""
-    p = _PENDING.get(turn_id)
-    if p is None:
-        return False, "未知 turn_id（未被 propose 过，或已被提交/淘汰）", {}
-    if not p.get("behavior"):
-        # ambiguous 轮次没有行为 —— 没有可确认的事实，不许进历史
-        return False, "该轮没有行为（ambiguous / behavior=null），不是已确认事实，拒绝写入历史", {}
+    """显式提交某轮的状态 Proposal 与历史。返回 (ok, note, state_result)。
 
-    commits, skipped, state_view = commit_state(
-        p["session"], p["actor"], p.get("state_proposal") or {},
-        p.get("state_decision") or {"turn_id": turn_id},
-        actor=p.get("actor_template") or CFG.get("actor"))
-    k = bucket_key(p["session"], p["actor"])
-    bucket = _HISTORY_BUCKETS.get(k, [])
-    if p["entries"]:
-        bucket = _HISTORY_BUCKETS.setdefault(k, [])
-        bucket.extend(p["entries"])
-        del bucket[:-_HISTORY_MAX]
-    _PENDING.pop(turn_id, None)
-    return True, "已提交状态 Proposal 与历史，该桶现有 %d 条" % len(bucket), {
-        "state_commits": commits, "state_skipped": skipped, "actor_state": state_view,
-    }
+    ★ P2-B2：委托给协议层 `commit_legacy_turn` —— 与新的 `/commit_state`
+      共用同一进程锁与版本体系（版本检查、规则复核、历史/状态/版本同锁发布）。
+    """
+    return PROTOCOL.commit_legacy_turn(turn_id)
 
 
 # ============================================================================
@@ -2946,6 +2943,8 @@ class Handler(BaseHTTPRequestHandler):
             ok, note, state_result = commit_turn(tid)
             return self._json({"ok": ok, "turn_id": tid, "note": note,
                                "stage": "committed" if ok else "rejected",
+                               "reason": state_result.get("reason"),
+                               "state_version": state_result.get("state_version"),
                                "state_commits": state_result.get("state_commits") or [],
                                "state_skipped": state_result.get("state_skipped") or [],
                                "actor_state": state_result.get("actor_state")},
@@ -2954,21 +2953,28 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/reset":
             # ★ 按桶清（Phase3-Task2）：传 session_id（+可选 actor_id）只清那一个桶，
             #   都不传 = 全清（保留旧行为，单角色演示方便）。
+            #   ★ P2-B2：清状态/历史/重试均在同一事务锁内，并连同协议层
+            #     reset_scope（换版本 generation、作废计算中的候选）一起执行。
             sid = payload.get("session_id")
             aid = payload.get("actor_id")
-            hit = reset_history(sid, aid)
-            hit_state = reset_actor_state(sid, aid)
-            cleared = []
-            if sid is None and aid is None:
-                del _HISTORY[:]
-                cleared.append("history_display")
+            new_ver = None
+            with PROTOCOL.lock:
+                if sid is not None and aid is not None:
+                    new_ver = PROTOCOL.reset_scope((str(sid), str(aid)))
+                hit = reset_history(sid, aid)
+                hit_state = reset_actor_state(sid, aid)
+                cleared = []
+                if sid is None and aid is None:
+                    del _HISTORY[:]
+                    cleared.append("history_display")
             return self._json({"ok": True, "cleared": cleared,
                                "buckets_cleared": hit,
                                # ★ Phase3-P3：Actor State 与 history 同桶，就一起清。
                                #   只清一个会造出「历史清了但关系还在 82」的拧巴状态。
                                "actor_state_cleared": hit_state,
                                "scope": ("全部" if sid is None and aid is None
-                                         else "session=%s actor=%s" % (sid, aid))})
+                                         else "session=%s actor=%s" % (sid, aid)),
+                               "state_version": new_ver})
 
         if path == "/world":
             try:
