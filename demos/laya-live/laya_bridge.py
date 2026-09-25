@@ -3228,7 +3228,8 @@ class Handler(BaseHTTPRequestHandler):
                     if group in snapshot:
                         actor[group] = snapshot[group]
                 r = llm_narrate(actor, None, payload_text(payload), payload.get("history") or [],
-                                state_line(actor), bool(payload.get("include_reasoning")))
+                                state_line(actor), bool(payload.get("include_reasoning")),
+                                signals_block=_narrate_stage_block(sid, aid, actor))
                 if not r or r.get("error") or not r.get("line"):
                     return self._json({"error": "云端接续失败，请稍后重试；本轮未提交状态。",
                                        "state_commits": [], "commit_allowed": False}, 502)
@@ -3274,7 +3275,11 @@ class Handler(BaseHTTPRequestHandler):
                                 payload.get("history") or (pre or {}).get("history"),
                                 payload.get("state_line")
                                 or (pre or {}).get("state_line") or state_line(actor),
-                                bool(payload.get("include_reasoning")))
+                                bool(payload.get("include_reasoning")),
+                                signals_block=_narrate_stage_block(
+                                    str(payload.get("session_id") or "default"),
+                                    str(payload.get("actor_id") or actor.get("name") or "default"),
+                                    actor))
                 if r and not r.get("error"):
                     return self._json(dict(r, **({"decision": pre} if pre else {})))
                 if r and r.get("error"):
@@ -4940,11 +4945,13 @@ def _role_block(role_name, signal_values, profile, usable):
 # 剧情线档位（玩法层）：由 state 的可写/代理信号判定关系走向，
 # 供云端叙事（/narrate analysis 分块）与前端横幅（_plotline）共用。
 # ★ 判据：doubt 是可写代理；trust 只读（档案 grade=C → auxiliary 不可写），
-#   因此「信任渐生」用疑点回落（doubt<=30）判定，否则信任线永远不可达。
+#   因此「信任渐生」用疑点回落（doubt<30，严格小于）判定，否则信任线永远不可达。
+#   用严格 < 是为避开处女档边界：未提交状态 doubt 恰为 30，d<=30 会让开场
+#   就说「她开始松口」。真实信任弧落在 27 以下，不受影响。
 _PLOT_STAGES = (
     ("break",   "决裂边缘", "她对你已到决裂边缘，随时可能动手。", lambda d, t: d >= 70),
     ("guard",   "戒备中",   "她在戒备，每句话都在试探你的来路。", lambda d, t: d >= 45),
-    ("trust",   "信任渐生", "疑点在消解，她开始松口，愿意吐露一两句真话。", lambda d, t: d <= 30),
+    ("trust",   "信任渐生", "疑点在消解，她开始松口，愿意吐露一两句真话。", lambda d, t: d < 30),
     ("probing", "试探阶段", "关系未定，她还在权衡是否信你。", lambda d, t: True),
 )
 
@@ -4962,6 +4969,19 @@ def plot_stage(state):
             return {"key": key, "txt": txt, "hint": hint, "doubt": d, "trust": t}
     return {"key": "probing", "txt": "试探阶段", "hint": _PLOT_STAGES[3][2],
             "doubt": d, "trust": t}
+
+
+def _narrate_stage_block(sid, aid, actor):
+    """旧路由（mode=upstream / 带 behavior 的 /narrate）叙事用：按当前已提交状态
+    给一条「关系档位」分块，与 P2 分析模式同文案 —— 让整页（含旧演示流）的
+    台词语气都随关系档位走，而不是永远「试探阶段」。"""
+    snap = actor_state_snapshot(sid, aid, actor)
+    merged = _copy.deepcopy(actor)
+    for _g in ("relationship", "emotion", "goals"):
+        if (snap or {}).get(_g):
+            merged[_g] = dict(snap[_g])
+    _st = plot_stage(merged)
+    return "当前关系档位：%s。%s（参考，不念数字）" % (_st["txt"], _st["hint"])
 
 
 def apply_rule_adjudication(state_proposal, signal_values, player_input=""):

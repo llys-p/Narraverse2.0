@@ -341,10 +341,12 @@ chk('规则：模型已给高于保底的增量 → 保留原值只打标记',
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
 _p55 = B.plot_stage({"relationship": {"doubt": 55, "trust": 40}})
 _p20 = B.plot_stage({"relationship": {"doubt": 28, "trust": 60}})
+_p30 = B.plot_stage({"relationship": {"doubt": 30, "trust": 60}})
 _p35 = B.plot_stage({"relationship": {"doubt": 35, "trust": 40}})
 chk('剧情线：doubt>=70 → 决裂', _p80["key"] == "break", _p80["key"])
 chk('剧情线：doubt>=45 → 戒备', _p55["key"] == "guard", _p55["key"])
-chk('剧情线：doubt<=30 → 信任（trust 只读用疑点回落判定）', _p20["key"] == "trust", _p20["key"])
+chk('剧情线：doubt<30 → 信任（trust 只读用疑点回落判定）', _p20["key"] == "trust", _p20["key"])
+chk('剧情线：doubt=30 处女档边界 → 试探（严格 <30 才信任）', _p30["key"] == "probing", _p30["key"])
 chk('剧情线：其余 → 试探', _p35["key"] == "probing", _p35["key"])
 
 # ===========================================================================
@@ -383,7 +385,7 @@ def _walk_to_band(sid, ev_prefix, msg, dd, band):
     band_fn = {
         "break":  lambda d: d >= 70,
         "guard":  lambda d: 45 <= d < 70,
-        "trust":  lambda d: d <= 30,
+        "trust":  lambda d: d < 30,
         "probing": lambda d: 30 < d < 45,
     }[band]
     _cap[:] = []
@@ -437,6 +439,24 @@ for _sid, _ev, _msg, _dd, _exp, _txt, _hint in _STAGE_CASES:
             (_nr or {}).get("state_source") == "committed"
             and (_nr or {}).get("state_version"),
             'src=%s ver=%s' % ((_nr or {}).get("state_source"), (_nr or {}).get("state_version")))
+
+# ---- 旧流叙事档位注入（整页一致：/narrate 带 behavior 也随关系档位走）----
+_bs0 = B._narrate_stage_block("stg_legacy2", "lia", B.CFG["actor"])
+chk('旧流分块：未提交（模板）→ 试探阶段', "试探阶段" in _bs0, 'blk=%r' % _bs0[:40])
+with assets_ctx(deltas=([{"question": "doubt_shift", "target": "relationship.doubt",
+                          "delta": 30.0, "label": "怀疑", "raw": 30.0,
+                          "range": [0, 100]}], {})), \
+     mock.patch.object(B, 'llm_narrate', side_effect=_probe):
+    _lgd, _lgnr = _walk_to_band("stg_legacy", "lg",
+                                "你最好把来路说清楚，别跟我打马虎眼。", 30.0, "guard")
+    _cap[:] = []
+    _st, _ = _post3("/narrate", {"session_id": "stg_legacy", "actor_id": "lia",
+                                 "behavior": {"id": "probe"}, "use_llm": True,
+                                 "message": "（追问）那麻袋里到底是什么？"})
+    _blk = (_cap[-1] or {}).get("signals_block") or ""
+    chk('旧流叙事收到关系档位分块（戒备中，与 P2 同文案）',
+        "戒备中" in _blk and "参考，不念数字" in _blk,
+        'blk=%r' % (_blk[:70] if _blk else None))
 srv3.shutdown()
 
 print('=' * 92)
