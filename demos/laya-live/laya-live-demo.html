@@ -1029,5 +1029,246 @@ if(Q.has('auto')){
   })(0);
 }
 </script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     P2 状态协议面板（Analyze/Commit v1，独立于上方旧演示流）
+     流程：GET /state → 生成 event_id → /analyze → 预览/参考 → /commit_state
+          （或 /reject_analysis）→ GET /state 刷新 → /narrate mode=analysis
+     纪律（§7）：服务端值是唯一权威，禁止本地累加；reference_only 显示
+     「仅参考」；刷新可恢复 scope/event_id/analysis_id；epoch 变化提示重置。
+  ═══════════════════════════════════════════════════════════════════════ -->
+<section id="p2panel" style="border-top:2px solid var(--line2);margin-top:28px;padding-top:14px">
+  <div class="ch" style="margin:0 0 10px">P2 状态协议面板 <span class="tag" id="p2tag">idle</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
+    <label style="font-size:12px;color:var(--dim)">session_id
+      <input id="p2sid" style="width:140px" placeholder="demo_p2"/>
+    </label>
+    <label style="font-size:12px;color:var(--dim)">actor_id
+      <input id="p2aid" style="width:110px" placeholder="lia"/>
+    </label>
+    <button id="p2load" type="button">读取 /state</button>
+    <button id="p2reset" type="button">重置会话</button>
+    <span style="font-size:11px;color:var(--dim)" id="p2ver">—</span>
+  </div>
+  <div style="display:flex;gap:8px">
+    <input id="p2msg" style="flex:1" placeholder="玩家台词（进入 /analyze）"/>
+    <button id="p2go" type="button">Analyze</button>
+    <button id="p2commit" type="button" disabled>Commit</button>
+    <button id="p2reject" type="button" disabled>Reject</button>
+    <button id="p2narrate" type="button" disabled>云端回复</button>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px">
+    <div style="border:1px solid var(--line2);border-radius:8px;padding:9px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">① 当前权威值（服务端快照）</div>
+      <div id="p2authority" style="font-size:12px;min-height:60px">—</div>
+    </div>
+    <div style="border:1px solid var(--line2);border-radius:8px;padding:9px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">② 待确认预览（未提交）</div>
+      <div id="p2preview" style="font-size:12px;min-height:60px">—</div>
+    </div>
+    <div style="border:1px solid var(--line2);border-radius:8px;padding:9px">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">③ 参考信号（不改状态）</div>
+      <div id="p2ref" style="font-size:12px;min-height:60px">—</div>
+    </div>
+  </div>
+  <div id="p2note" style="margin-top:8px;font-size:12px;color:var(--dim)"></div>
+</section>
+<script>
+(function(){
+  'use strict';
+  var BRIDGE = (new URLSearchParams(location.search)).get('bridge')
+              || localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130';
+  var KEY = 'laya_p2_scope_v1';
+  var $ = function(id){ return document.getElementById(id); };
+  var sidEl = $('p2sid'), aidEl = $('p2aid'), msgEl = $('p2msg');
+  var tag = $('p2tag'), verEl = $('p2ver'), note = $('p2note');
+  var S = { sid: null, aid: null, event_id: null, analysis_id: null, base_ver: null,
+            status: null, can_commit: false };
+  function epochOf(v){ return String(v||'').split(':').slice(0,2).join(':'); }
+  function err2s(e){ return (e && e.message) ? e.message : String(e); }
+  function setTag(t, cls){ tag.textContent = t; tag.style.background = cls || ''; }
+  function flash(m, isErr){ note.textContent = m; note.style.color = isErr ? '#c53030' : 'var(--dim)'; }
+  async function api(path, body){
+    var opts = { headers: { 'Content-Type': 'application/json' } };
+    if (body){ opts.method = 'POST'; opts.body = JSON.stringify(body); }
+    var r = await fetch(BRIDGE + path, opts);
+    var j = null; try { j = await r.json(); } catch(_e){}
+    if (!r.ok){
+      var code = (j && j.error && j.error.code) || ('HTTP ' + r.status);
+      throw new Error(code + (j && j.error && j.error.message ? ': ' + j.error.message : ''));
+    }
+    return j;
+  }
+  function persist(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(_e){} }
+  function restore(){
+    try{
+      var s = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (s && s.sid && s.aid){ S = Object.assign(S, s); sidEl.value = S.sid; aidEl.value = S.aid; }
+    }catch(_e){}
+  }
+  function buttons(){
+    var hasId = !!(S.analysis_id && S.status);
+    $('p2commit').disabled = !hasId;
+    $('p2reject').disabled = !hasId;
+    // reference_only / 非 ready 不允许 Commit（§3.3：reference_only 禁空 Commit）
+    if (S.status === 'reference_only'){ $('p2commit').disabled = true; flash('reference_only：仅参考，不能 Commit'); }
+    $('p2narrate').disabled = !(hasId && (S.status === 'committed' || S.status === 'reference_only'));
+  }
+  function renderState(cur){
+    if (!cur) return;
+    S.sid = cur.session_id; S.aid = cur.actor_id;
+    verEl.textContent = 'state_version: ' + cur.state_version
+      + '　' + (cur.initialized ? '已初始化(' + cur.source + ')' : '模板初值');
+    setTag(cur.initialized ? '已提交快照' : '模板', cur.initialized ? '#2f855a' : '#718096');
+    // ① 权威值：信任/怀疑/好感等核心数值（只读服务端）
+    var st = (cur.state || {}).relationship || {};
+    var emo = (cur.state || {}).emotion || {};
+    var rows = [
+      ['trust', st.trust], ['doubt', st.doubt], ['respect', st.respect],
+      ['fondness', emo.fondness]
+    ];
+    $('p2authority').innerHTML = '<table style="border-collapse:collapse"><tr><th style="text-align:left;padding:2px 10px 2px 0">字段</th><th style="text-align:left;padding:2px">值</th></tr>' +
+      rows.map(function(r){ return '<tr><td style="padding:2px 10px 2px 0;color:var(--dim)">'+r[0]+'</td><td style="padding:2px"><b>'+(r[1]===undefined?'—':r[1])+'</b></td></tr>'; }).join('') + '</table>';
+  }
+  function renderAnalysis(j){
+    S.analysis_id = j.analysis_id; S.base_ver = j.base_state_version;
+    S.status = j.status; S.can_commit = !!j.can_commit;
+    setTag(j.status, j.status === 'ready' ? '#2f855a'
+            : (j.status === 'reference_only' ? '#b7791f'
+               : (j.status === 'committed' ? '#3182ce' : '#718096')));
+    // ② 待确认预览
+    var wd = (j.state_proposal || {}).writable_delta || [];
+    var pv = (j.state_proposal || {}).preview_state || {};
+    var prov = wd.map(function(d){
+      return '<div>'+d.source_signal+' → '+d.target+': <b>'+d.old_value+' → '+d.new_value+'</b>'
+        +'（proposed '+d.proposed_delta+' / applied '+d.applied_delta+'）</div>';
+    }).join('');
+    $('p2preview').innerHTML = wd.length
+      ? prov + '<div style="margin-top:4px;color:var(--dim)">预览 new_value（未提交）按需展示——服务端尚未变化</div>'
+      : '<span style="color:#b7791f">无 writable 项</span>';
+    // ③ 参考信号
+    var aux = (j.state_proposal || {}).auxiliary || [];
+    var skp = (j.state_proposal || {}).skipped || [];
+    var ref = [];
+    aux.forEach(function(a){ ref.push(a.source_signal + '（aux，不改）；' + (a.reason_codes || []).join('/')); });
+    skp.forEach(function(s){ ref.push(s.source_signal + '（skip：' + (s.reason_codes || []).join('/') + '）'); });
+    var sig = j.signals || {};
+    Object.keys(sig).forEach(function(k){
+      var v = sig[k] || {};
+      ref.push(k + ': raw=' + (v.raw_delta === null ? '—' : v.raw_delta));
+    });
+    $('p2ref').innerHTML = ref.length ? ref.map(function(x){ return '<div>· '+x+'</div>'; }).join('')
+      : '<span style="color:var(--dim)">—</span>';
+    flash(j.status === 'ready' ? 'ready：可 Commit；Commit 使本候选成为唯一状态写入来源。'
+         : (j.status === 'reference_only' ? 'reference_only：仅参考（' + (j.reason_codes || []).join('/') + '）' : ''));
+    persist(); buttons();
+  }
+  function renderReceipt(c){
+    setTag('committed', '#3182ce');
+    flash('已提交：' + c.commit_id + '　state_version ' + c.state_version
+      + (c.state_changed ? '' : '（本轮数值无变化）'));
+  }
+  async function loadState(first){
+    if (!sidEl.value || !aidEl.value){ flash('请先填 session_id / actor_id', true); return; }
+    S.sid = sidEl.value.trim(); S.aid = aidEl.value.trim();
+    try{
+      var j = await api('/state?session_id=' + encodeURIComponent(S.sid)
+                        + '&actor_id=' + encodeURIComponent(S.aid));
+      renderState(j.current);
+      if (!first && S.base_ver && epochOf(j.current.state_version) !== epochOf(S.base_ver)){
+        flash('版本 epoch 已变化（服务重启/会话重置）—— 旧候选已失效，请重新分析', true);
+        S.analysis_id = null; S.event_id = null;
+      }
+      persist();
+    }catch(e){ flash('读取 /state 失败：' + err2s(e), true); }
+  }
+  async function analyze(){
+    if (!S.sid || !S.aid){ return loadState(false); }
+    var msg = msgEl.value;
+    if (!msg || !msg.trim()){ flash('请输入台词', true); return; }
+    try{
+      var st = (await api('/state?session_id=' + encodeURIComponent(S.sid)
+                          + '&actor_id=' + encodeURIComponent(S.aid))).current;
+      renderState(st);
+      if (!S.event_id){
+        S.event_id = 'ev' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      }
+      var j = await api('/analyze', {
+        session_id: S.sid, actor_id: S.aid, event_id: S.event_id,
+        expected_state_version: st.state_version, message: msg, context: {}
+      });
+      renderAnalysis(j);
+    }catch(e){ flash('analyze 失败：' + err2s(e), true); }
+  }
+  async function commit(){
+    try{
+      var c = await api('/commit_state', {
+        session_id: S.sid, actor_id: S.aid,
+        analysis_id: S.analysis_id, expected_state_version: S.base_ver
+      });
+      renderReceipt(c);
+      S.status = 'committed'; persist();
+      await loadState(false);
+      // 提交成功后刷新权威值（三栏其一）；云端回复交给用户点按钮，或立即触发
+      buttons();
+    }catch(e){ flash('commit 失败：' + err2s(e), true); }
+  }
+  async function reject(){
+    try{
+      await api('/reject_analysis', { session_id: S.sid, actor_id: S.aid,
+                                      analysis_id: S.analysis_id, reason: 'user_cancelled' });
+      S.analysis_id = null; S.event_id = null; S.status = null;
+      flash('已拒绝候选，事件关闭（同事件不可再提交）');
+      persist(); await loadState(false); buttons();
+    }catch(e){ flash('reject 失败：' + err2s(e), true); }
+  }
+  async function narrate(){
+    if (!S.analysis_id){ flash('先 Analyze 并提交', true); return; }
+    try{
+      var j = await api('/narrate', { mode: 'analysis', session_id: S.sid,
+                                     actor_id: S.aid, analysis_id: S.analysis_id });
+      $('p2preview').innerHTML = '<div style="color:#2f855a">云端回复（' + j.state_source
+        + '，version ' + j.state_version + '）：<b>' + (j.line || '（空）') + '</b></div>'
+        + '<div style="color:var(--dim)">' + $('p2preview').innerHTML + '</div>';
+      flash('state_source=' + j.state_source + '；reply 不改变状态（commit_allowed=false）');
+    }catch(e){
+      if (e && e.message && e.message.indexOf('ANALYSIS_NOT_COMMITTED') === 0){
+        flash('候选尚未提交，不能生成叙事——先 Commit', true);
+      } else { flash('narrate 失败：' + err2s(e), true); }
+    }
+  }
+  function resetScope(){
+    try{
+      localStorage.removeItem(KEY);
+      api('/reset', { session_id: S.sid, actor_id: S.aid }).catch(function(){});
+    }catch(_e){}
+    S.sid = sidEl.value.trim(); S.aid = aidEl.value.trim();
+    S.event_id = null; S.analysis_id = null; S.base_ver = null; S.status = null;
+    sidEl.value = S.sid || ''; aidEl.value = S.aid || '';
+    msgEl.value = ''; verEl.textContent = '—';
+    $('p2authority').innerHTML = '—'; $('p2preview').innerHTML = '—'; $('p2ref').innerHTML = '—';
+    setTag('已重置', '#718096'); buttons(); loadState(false);
+  }
+  $('p2load').onclick = function(){ loadState(false); };
+  $('p2reset').onclick = resetScope;
+  $('p2go').onclick = analyze;
+  $('p2commit').onclick = commit;
+  $('p2reject').onclick = reject;
+  $('p2narrate').onclick = narrate;
+  msgEl.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); analyze(); } });
+  // 恢复上次 scope / event_id / analysis_id 并只读查询（§7：刷新可恢复；epoch 变化才需清理）
+  restore();
+  if (S.analysis_id){
+    api('/analysis/' + encodeURIComponent(S.analysis_id)
+        + '?session_id=' + encodeURIComponent(S.sid)
+        + '&actor_id=' + encodeURIComponent(S.aid)).then(function(j){
+      renderAnalysis(j);            // 恢复候选只读状态
+      return loadState(false);      // 并刷新权威值
+    }).catch(function(e){ flash('恢复失败（候选可能已过期）：' + err2s(e), true); });
+  } else if (S.sid && S.aid){
+    loadState(false);
+  }
+})();
+</script>
 </body>
 </html>
