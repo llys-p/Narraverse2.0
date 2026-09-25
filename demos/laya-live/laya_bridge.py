@@ -1223,8 +1223,10 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
                         ensure_ascii=False),
              state_note, scene_note, sig_note)
         convo = "\n".join(
-            "%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"),
-                       h.get("text", "")) for h in (history or [])[-8:])
+            "%s：%s" % ("玩家" if h.get("role") in ("player", "user")
+                       else actor.get("name", "NPC"),
+                       h.get("content") if h.get("content") is not None else h.get("text", ""))
+            for h in (history or [])[-8:])
         user_p = (convo + "\n玩家：%s\n\n请写出她此刻的回应。" % player_input).strip()
         return sys_p, user_p
 
@@ -1253,7 +1255,9 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
         "不要解释你为什么这么写。直接开始写她的言行。"
     ) % (actor.get("name", "NPC"), actor.get("identity", ""), behavior_note, state_line)
     convo = "\n".join(
-        "%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"), h.get("text", ""))
+        "%s：%s" % ("玩家" if h.get("role") in ("player", "user")
+                   else actor.get("name", "NPC"),
+                   h.get("content") if h.get("content") is not None else h.get("text", ""))
         for h in (history or [])[-8:]
     )
     user_p = (convo + "\n玩家：%s\n\n请写出她此刻的回应。" % player_input).strip()

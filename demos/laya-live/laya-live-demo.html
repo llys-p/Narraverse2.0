@@ -1387,11 +1387,26 @@ function renderState(cur){
     if (!msg || !msg.trim()){ flash('请先输入台词再发送', true); if (inp){ inp.focus(); } return; }
     autoConv(msg);
   };
+  // 对话原文历史（供 /analyze 的 context.history 与叙事 convo 使用）
+  window.__DIALOG = [];
+  // 协议 context.history 条目：{role: user|assistant, content}
+  function _pushDialog(who, text){
+    var role = (who === 'player') ? 'user' : 'assistant';
+    window.__DIALOG.push({ role: role, content: text });
+    if (window.__DIALOG.length > 20){ window.__DIALOG.shift(); }
+  }
+  // /analyze 上下文：最近 8 轮原文（后端存进候选，/narrate 再拼进叙事路径）
+  // 注：context 白名单只有 history/scene，且 scene 必须是 ≤MAX_SCENE_CHARS 的字符串；
+  //   场景已由状态快照与叙事 prompt 覆盖，这里只发历史，避免把结构化对象送进白名单报错。
+  function _ctxForAnalysis(){
+    return { history: window.__DIALOG.slice(-8) };
+  }
   async function autoConv(msg){
     if (!S.sid || !S.aid){ S.sid = 'demo_p2'; S.aid = 'lia'; sidEl.value = S.sid; aidEl.value = S.aid; }
     var acEl = document.getElementById('autoCommit');
     var auto = !acEl || acEl.checked;
     addBubble('player', msg);
+    _pushDialog('player', msg);
     var inp = document.getElementById('inp'); if (inp){ inp.value = ''; }
     S.lastMsg = msg;
     try{
@@ -1402,7 +1417,7 @@ function renderState(cur){
       S.event_id = 'ev' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       var j = await api('/analyze', { session_id: S.sid, actor_id: S.aid, event_id: S.event_id,
                                       expected_state_version: st.state_version,
-                                      message: msg, context: {} });
+                                      message: msg, context: _ctxForAnalysis() });
       renderAnalysis(j);
       var impact = '';
       if (auto && j.status === 'ready' && (j.state_proposal||{}).writable_delta && j.state_proposal.writable_delta.length){
@@ -1421,6 +1436,7 @@ function renderState(cur){
       var nr = await api('/narrate', { mode: 'analysis', session_id: S.sid, actor_id: S.aid,
                                        analysis_id: S.analysis_id });
       addBubble('npc', nr.line || '', impact);
+      if (nr.line){ _pushDialog('npc', nr.line); }
       flash('回复来自' + (nr.state_source === 'committed' ? '已提交状态' : nr.state_source) + ' · version ' + nr.state_version);
     }catch(e){
       addBubble('npc', '', '<div style="font-size:11px;color:#c53030;margin:3px 34px 8px">' + _esc(err2s(e)) + '</div>');
