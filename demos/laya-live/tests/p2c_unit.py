@@ -530,6 +530,19 @@ with assets_ctx(deltas=([{"question": "doubt_shift", "target": "relationship.dou
     chk('旧流叙事收到关系档位分块（戒备中，与 P2 同文案）',
         "戒备中" in _blk and "参考，不念数字" in _blk,
         'blk=%r' % (_blk[:70] if _blk else None))
+    # ★ prompt 级断言：只收到 kwarg 不够 —— legacy 分支必须真正消费档位块
+    #   （P3-B 检查发现修复前是死代码：signals_block 传了但没进 prompt）。
+    _bp = next(_b for _b in (B.CFG.get("behaviors") or []) if _b.get("id") == "probe")
+    _bp_sys, _bp_usr = B._build_narrate_prompt(
+        B.CFG["actor"], _bp, "（追问）那麻袋里到底是什么？", [], "信任 40 / 怀疑 55",
+        strict=False, signals_block="当前关系档位：戒备中。她在戒备（参考，不念数字）")
+    chk('旧流 prompt 真正注入档位块（legacy 消费 signals_block）',
+        "关系档位" in _bp_sys and "戒备中" in _bp_sys and "不念数字" in _bp_sys,
+        'sys=%r' % (_bp_sys[-160:] if _bp_sys else None))
+    _bp0_sys, _ = B._build_narrate_prompt(
+        B.CFG["actor"], _bp, "（追问）那麻袋里到底是什么？", [], "信任 40 / 怀疑 55",
+        strict=False, signals_block=None)
+    chk('旧流 prompt 无档位块时不注入（原文案不变）', "关系档位" not in _bp0_sys, '')
 srv3.shutdown()
 
 print('=' * 92)

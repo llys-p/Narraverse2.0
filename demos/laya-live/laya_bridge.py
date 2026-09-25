@@ -1240,6 +1240,11 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
         + json.dumps({k: actor.get(k) for k in ("personality", "traits", "situation", "goals")},
                      ensure_ascii=False)
     )
+    # ★ legacy 分支同样消费 signals_block（旧流档位注入）：只校准语气，不改语义。
+    #   P3-B 检查发现：analysis 分支（proactive=True）会消费它，legacy 分支此前
+    #   参数传了但没进 prompt —— 旧流叙事永远「试探阶段」。
+    stage_note = ("\n关系档位（参考，只校准语气，不念数字）：%s" % signals_block
+                  if signals_block else "")
     sys_p = (
         "你在为一款文字冒险游戏写 NPC 的回应。\n"
         "角色：%s，%s。\n"
@@ -1253,7 +1258,8 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
         "格式（必须遵守）：把最终回应原文放进 <line> 与 </line> 之间。\n"
         "这两个标签之外**一个字符都不要写** —— 不要复述上面的规则、不要写你的思路或提纲、"
         "不要解释你为什么这么写。直接开始写她的言行。"
-    ) % (actor.get("name", "NPC"), actor.get("identity", ""), behavior_note, state_line)
+    ) % (actor.get("name", "NPC"), actor.get("identity", ""),
+         behavior_note + stage_note, state_line)
     convo = "\n".join(
         "%s：%s" % ("玩家" if h.get("role") in ("player", "user")
                    else actor.get("name", "NPC"),
