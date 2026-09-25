@@ -305,7 +305,9 @@
   <!-- 右 -->
   <div class="col">
     <div class="card">
-      <div class="ch">Decision Engine <span class="tag" id="panelTag">idle</span></div>
+      <div class="ch">Decision Engine <span class="tag" id="panelTag">idle</span>
+        <button type="button" id="panelToggle" style="float:right;font-size:11px;cursor:pointer">折叠</button>
+      </div>
       <div id="panel" style="max-height:420px;overflow-y:auto"><div class="empty">等待第一轮输入。</div></div>
     </div>
     <div class="card">
@@ -1040,9 +1042,12 @@ if(Q.has('auto')){
      纪律（§7）：服务端值是唯一权威，禁止本地累加；reference_only 显示
      「仅参考」；刷新可恢复 scope/event_id/analysis_id；epoch 变化提示重置。
   ═══════════════════════════════════════════════════════════════════════ -->
-<section id="p2panel" style="position:sticky;bottom:0;background:var(--bg,#0a0c11);z-index:10;max-height:60vh;overflow:auto;border-top:2px solid var(--line2);margin-top:18px;padding:10px 0 4px">
+<section id="p2panel" style="position:sticky;bottom:0;background:var(--bg,#0a0c11);z-index:10;max-height:320px;overflow:auto;border-top:2px solid var(--line2);margin-top:12px;padding:8px 0 2px">
   <div class="ch" style="margin:0 0 8px;font-size:14px">P2 状态协议面板 <span class="tag" id="p2tag">idle</span>
-    <span style="font-size:11px;color:var(--dim);margin-left:8px" id="p2ver"></span></div>
+    <span style="font-size:11px;color:var(--dim);margin-left:8px" id="p2ver"></span>
+    <button type="button" id="p2fold" style="float:right;font-size:11px;cursor:pointer">收起</button>
+  </div>
+  <div id="p2body">
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
     <input id="p2sid" style="width:120px;font-size:12px" placeholder="session"/>
     <input id="p2aid" style="width:90px;font-size:12px" placeholder="actor"/>
@@ -1054,21 +1059,22 @@ if(Q.has('auto')){
     <button id="p2reject" type="button" style="font-size:12px" disabled>Reject</button>
     <button id="p2narrate" type="button" style="font-size:12px" disabled>云端回复</button>
   </div>
-  <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:8px;min-height:150px">
-    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:230px;overflow:auto">
+  <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:8px;min-height:120px">
+    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
       <div style="font-size:11px;color:var(--dim);margin-bottom:4px">① 基准→当前（绿=已变灰=未变 黄=预览中）</div>
       <div id="p2authority" style="font-size:12px">—</div>
     </div>
-    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:230px;overflow:auto">
-      <div style="font-size:11px;color:var(--dim);margin-bottom:4px">② 待确认预览（未提交）</div>
+    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px">② 本轮判断→变化</div>
       <div id="p2preview" style="font-size:12px">—</div>
     </div>
-    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:230px;overflow:auto">
+    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
       <div style="font-size:11px;color:var(--dim);margin-bottom:4px">③ 参考信号（不改状态）</div>
       <div id="p2ref" style="font-size:12px">—</div>
     </div>
   </div>
   <div id="p2note" style="margin-top:6px;font-size:12px;color:var(--dim)"></div>
+  </div>
 </section>
 <script>
 (function(){
@@ -1312,6 +1318,21 @@ function renderState(cur){
   $('p2reject').onclick = reject;
   $('p2narrate').onclick = narrate;
   msgEl.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); analyze(); } });
+  // 折叠：Decision Engine 面板（detail 过多时收起来）
+  window.__foldPanel = function(btn){
+    var p = document.getElementById('panel');
+    var collapsed = p.getAttribute('data-fold') === '1';
+    if (collapsed){ p.setAttribute('data-fold', '0'); p.style.maxHeight = '420px'; btn.textContent = '折叠'; }
+    else { p.setAttribute('data-fold', '1'); p.style.maxHeight = '80px'; btn.textContent = '展开'; }
+  };
+  document.getElementById('panelToggle').onclick = function(){ window.__foldPanel(this); };
+  // 折叠：P2 面板（避免遮挡聊天输入框，需要时展开）
+  window.__foldP2 = function(btn){
+    var b = document.getElementById('p2body');
+    if (b.hasAttribute('hidden')){ b.removeAttribute('hidden'); btn.textContent = '收起'; }
+    else { b.setAttribute('hidden', ''); btn.textContent = '展开'; }
+  };
+  document.getElementById('p2fold').onclick = function(){ window.__foldP2(this); };
   // 恢复上次 scope / event_id / analysis_id 并只读查询（§7：刷新可恢复；epoch 变化才需清理）
   restore();
   if (S.analysis_id){
