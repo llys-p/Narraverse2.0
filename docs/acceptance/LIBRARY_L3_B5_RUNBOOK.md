@@ -15,6 +15,9 @@ executable + 真实模型的四模式实际读取为准。任何未跑项、环�
 
 ## 1. 隔离实例搭建
 
+最快路径（写作+游戏两链一键自检，含扫描与取材校验）：`python denova-src/scripts/library-acceptance/run_smoke.py`
+（默认证据目录 `artifacts/library-acceptance-smoke/run-<时间戳>/`）；需要四模式页面口径时按下面分步执行。
+
 ```bash
 # 1) 构建（分支 HEAD）
 cd denova-src && go build -o <轮次目录>/denova-l3.exe ./cmd/denova

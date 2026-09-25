@@ -13,7 +13,22 @@
 | `drive_game.py` | 游戏链：建书 → 建 `fixed_template` 故事 → 选中 → `POST /api/interactive/chat`（同上 Ref 三字段）→ SSE 落盘。 |
 | `scan_markers.py` | 落盘标记直扫：`--root` 数据目录、`--allow` 允许含标记的库源文件 glob、`--marker` 标记串、`--require` 必备落盘目标 glob。遍历/读取错误、泄漏命中、允许文件缺标记、必备目标缺失都会失败退出（防假绿）。 |
 
-## 快速开始（隔离实例）
+## 一键自检（推荐先跑这个）
+
+在仓库根目录执行（Python 3 即可，Windows/Git Bash 通用）：
+
+```bash
+python denova-src/scripts/library-acceptance/run_smoke.py
+```
+
+它会：构建隔离 exe 与假模型 → 自建虚构库（resident/auto/manual 三条，正文嵌唯一 ASCII 标记）
+→ 依次跑写作链与游戏链 → 标记直扫 → 校验模型侧取材与库文件只读，最后停掉两个进程。
+默认工作目录 `<worktree>/artifacts/library-acceptance-smoke/run-<时间戳>/`（证据：两条链 SSE、
+假模型请求日志、扫描报告、exe 日志）；默认端口 18085（exe）/18086（假模型），不影响 8080。
+可调参数：`--workdir`（证据目录）、`--exe`（复用已有 exe，跳过构建）、`--exe-port`、`--model-port`。
+退出码 0 = 全绿。
+
+## 快速开始（隔离实例，分步）
 
 ```bash
 # 1) 假模型（单独进程）
