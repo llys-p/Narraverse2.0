@@ -1,6 +1,6 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-25（Asia/Shanghai；A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c、B3a+审查修正、B3b、B3c 均完成，**B3 整体验收 = PASS WITH FOLLOW-UPS（报告 [B3 验收](../acceptance/LIBRARY_L3_B3_ACCEPTANCE.md)；D1 修复轮提交 `0e46907` 复审 PASS，审核方独立复跑 agent 6 例+12 子例、app 2 集成测试及 vet/build/diff-check；跟进项：正式 executable 重放待发布前补（可用假模型强制读取、无付费额度），扫描遍历错误加固已提交 `806d6bb`）**，在分支 `library-b2a` 本地未推送；**B4a 进行中（后端+前端已接线并过定向测试，提交 `368a0ec`/`582bb2b`；正式页面验证待做）**，B4b/B5 待继续）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-25（Asia/Shanghai；A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c、B3a+审查修正、B3b、B3c 均完成，**B3 整体验收 = PASS WITH FOLLOW-UPS（报告 [B3 验收](../acceptance/LIBRARY_L3_B3_ACCEPTANCE.md)；D1 修复轮提交 `0e46907` 复审 PASS，审核方独立复跑 agent 6 例+12 子例、app 2 集成测试及 vet/build/diff-check；跟进项：正式 executable 重放待发布前补（可用假模型强制读取、无付费额度），扫描遍历错误加固已提交 `806d6bb`）**，在分支 `library-b2a` 本地未推送；**B4a/B4b 均进行中（后端+前端已接线并过定向测试，提交 `368a0ec`/`582bb2b`/`7074e7b`/`8219f75`；正式页面验证待做）**，B5 待继续）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
@@ -158,7 +158,7 @@
 
 ### B4b · Module4 受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
-- [ ] 沿用同一受控边界，不改 Adventure 规则、存档真源或模型 Settings；正式页面验证动作成败与背景读取状态独立、切实例不串库。**完成记录：待填。**
+- [ ] 沿用同一受控边界，不改 Adventure 规则、存档真源或模型 Settings；正式页面验证动作成败与背景读取状态独立、切实例不串库。**进行中（2026-09-25 09:12，AI1）：后端+前端已接线并过定向测试（提交 `7074e7b` 后端、`8219f75` 前端）：module4 库载体走与叙界同一受控边界（Ref 三字段/与 world 互斥/consumer 路由固定/scopeKey 派生/绑定期固定 revision+装配计费/每次 call 前置并计费/幂等释放/摘要脱敏；沙盒模型模块与 Settings 未改）；库预览新增「带入开放沙盒」（经既有 `onOpenModule4` 受控入口）；跨消费者不串库与解除独立性由 app 2 例 + 前端 4 例覆盖。正式页面验证（动作成败与背景读取状态独立、切实例不串库）待做——叙界模块资产不在本工作树，同 B4a 缺口。**
 
 ### B5 · 四模式统一验收与交付（AI1；依赖 B2c、B3c、B4a、B4b）
 
