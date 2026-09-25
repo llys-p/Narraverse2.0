@@ -2406,6 +2406,11 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
     gated_id, gate_hit = apply_gates(answers, choice_argmax)
     signal_rows, signal_values = signal_snapshot(answers)
     policy = policy_resolve(signal_values, choice_argmax)
+    # ★ TI 校准调试（env: LAYA_TI_DEBUG=1）：打印真实信号读数，供阈值定标（路线 A）
+    if os.environ.get("LAYA_TI_DEBUG"):
+        _sv = {k: round(_fnum(v), 3) for k, v in (signal_values or {}).items()
+               if k in ("hostility", "confront", "disclose", "cooperation")}
+        print("[TI-DEBUG] player=%r signals=%s" % (str(player_input)[:40], _sv))
 
     # ---- ★★ Phase3-P2 Task10：按能力档案过滤后的统一 Proposal ------------------
     # 只有 role=state_shift 且 status=active 的 signal 能产出 delta。
@@ -5002,10 +5007,10 @@ def _narrate_stage_block(sid, aid, actor):
 # （如「你要的东西在枯井底」「今晚镇上会少一个人」）也能被结构化地识别为
 # 让渡/施压。v1 阈值是启发式定标，留常量待路线 A（信号校准）用数据校准。
 # ==========================================================================
-TI_SURRENDER_DISCLOSE = 0.5          # disclose ≥ 此值 → 让渡（承认/坦白）
-TI_ESCALATION_HOSTILITY = 0.5        # hostility ≥ 此值 → 施压
-TI_ESCALATION_CONFRONT = 0.6         # confront ≥ 此值 且 hostility 也够 → 施压
-TI_ESCALATION_CONFRONT_HOST = 0.35
+_TI = {
+    "surrender": {"disclose": 0.5, "hostility_max": 0.5, "confront_max": 0.5},
+    "escalation": {"hostility": 0.5, "confront": 0.6, "confront_hostility": 0.35},
+}
 
 
 def interpret_turn(text, signal_values):
@@ -5013,21 +5018,29 @@ def interpret_turn(text, signal_values):
 
     返回 {"event": "surrender"|"escalation"|None, "confidence": float,
           "basis": [str]}。basis 记录判定依据（信号读数），供 debug/复核。
-    让渡优先于施压（B 优先 C 的既有语义）；施压要求无让渡读数。
+
+    校准（2026-09-26 实测，LAYA_TI_DEBUG=1）：
+      - 让渡句 disclose 落在 0.50~0.54（勉强过线）；
+      - 「拔出匕首见血」这类暴力句 disclose 也会到 0.51 —— 因此 surrender
+        必须**低敌意/低对峙门**（hostility/confront < 0.5），否则暴力被误判让渡而压疑点。
+      - 自然施压句 hostility/confront 多落在 0.44~0.49，未达 escalation 阈值；
+        这两类句子结构化不硬判，交还模型/关键词 fallback。
     """
     sv = signal_values or {}
     d = _fnum(sv.get("disclose"))
     h = _fnum(sv.get("hostility"))
     c = _fnum(sv.get("confront"))
-    if d >= TI_SURRENDER_DISCLOSE:
+    cfg = _TI
+    if d >= cfg["surrender"]["disclose"] and h < cfg["surrender"]["hostility_max"] \
+            and c < cfg["surrender"]["confront_max"]:
         return {"event": "surrender", "confidence": d,
-                "basis": ["disclose=%.2f" % d]}
-    if d < TI_SURRENDER_DISCLOSE and (h >= TI_ESCALATION_HOSTILITY
-                                      or (c >= TI_ESCALATION_CONFRONT
-                                          and h >= TI_ESCALATION_CONFRONT_HOST)):
+                "basis": ["disclose=%.2f host=%.2f confront=%.2f" % (d, h, c)]}
+    if d < cfg["surrender"]["disclose"] and (
+            h >= cfg["escalation"]["hostility"]
+            or (c >= cfg["escalation"]["confront"]
+                and h >= cfg["escalation"]["confront_hostility"])):
         return {"event": "escalation", "confidence": max(h, c),
-                "basis": ["confront=%.2f" % c if c else None, "hostility=%.2f" % h
-                          if h else None]}
+                "basis": ["disclose=%.2f host=%.2f confront=%.2f" % (d, h, c)]}
     return {"event": None, "confidence": 0.0, "basis": []}
 
 
@@ -5091,10 +5104,13 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
 
     判定顺序：
       S）结构化事件（interpret_turn）：
-          surrender —— disclose ≥ 0.5 → 证据压制（同 B 语义）
+          surrender —— disclose ≥ 0.5 且 hostility < 0.5 且 confront < 0.5
+                       （无威胁披露）→ 证据压制（同 B 语义）
           escalation —— disclose < 0.5 且 (hostility ≥ 0.5 或
                         (confront ≥ 0.6 且 hostility ≥ 0.35)) → 暴力保底（同 C）
-          —— 让渡优先于施压（B 优先 C 的既有语义）。
+          ★ 校准（2026-09-26 实测）：暴力句 disclose 也会 ≥0.5，故 surrender
+            必须带低敌意/低对峙门；带敌意/对峙的披露不硬判，交还模型/关键词
+            fallback（防「拔刀见血」被误当让渡压掉疑点）。
       F）fallback 旧关键词（F-B 证据词 / F-C 暴力词，带豁免/护栏），仅当结构化
           未判出事件时兜底；再落到 A。
       A）模型侧：Laya 判「合作」显著（cooperation ≥ 0.5）→ 疑点正向增量打折。

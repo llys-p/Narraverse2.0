@@ -427,11 +427,10 @@ _ti2 = B.apply_rule_adjudication(
     {"delta": [_delta_item("doubt_shift", 2.0)]},
     {"disclose": 0.6, "hostility": 0.8, "cooperation": 0.2},
     "我说了实话，你别再逼我。")
-chk('TI：让渡优先于施压（disclose 与 hostility 并存 → 压制不抬升）',
-    _ti2["delta"][0]["delta"] == -2.8
-    and _ti2["delta"][0].get("adjudication_source") == "structured",
-    'delta=%s src=%s' % (_ti2["delta"][0]["delta"],
-                         _ti2["delta"][0].get("adjudication_source")))
+chk('TI：带敌意披露不硬判（防暴力句误当让渡）→ 原样返回交还模型',
+    _ti2["delta"][0]["delta"] == 2.0
+    and _ti2["delta"][0].get("rule_adjudicated") is None,
+    'delta=%s' % _ti2["delta"][0]["delta"])
 _ti3 = B.apply_rule_adjudication(
     {"delta": [_delta_item("doubt_shift", -0.5)]},
     {"hostility": 0.83, "disclose": 0.1, "cooperation": 0.2},
@@ -476,13 +475,32 @@ _ti7_commits, _ti7_skip, _ti7_pv = B.validate_state_delta(
                     ti_basis=["disclose=0.80"])]},
     {}, actor=B.CFG["actor"],
     frozen_state={"relationship": {"doubt": 35.0}})
-_ti7_chk = (_ti7_commits and _ti7_commits[0].get("adjudication_source") == "structured"
+_ti_chk = (_ti7_commits and _ti7_commits[0].get("adjudication_source") == "structured"
             and any("disclose" in (b or "") for b in
                     (_ti7_commits[0].get("ti_basis") or [])))
 chk('TI：规则标记与来源随 validate 透传（structured + ti_basis）',
-    _ti7_chk,
+    _ti_chk,
     'src=%s basis=%s' % (_ti7_commits[0].get("adjudication_source"),
                          (_ti7_commits[0] or {}).get("ti_basis")))
+# 校准反例（2026-09-26 实测）：暴力句 disclose 也会 ≥0.5 → 必须防误判让渡
+_ti8 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", 2.0)]},
+    {"disclose": 0.51, "hostility": 0.55, "confront": 0.53, "cooperation": 0.35},
+    "（拔出匕首）再不开口，我就让你见血。")
+chk('TI：暴力+微披露（实测模型读数）→ 结构化不硬判，落 keywords 暴力保底',
+    _ti8["delta"][0]["delta"] == 2.5
+    and _ti8["delta"][0].get("adjudication_source") == "keyword",
+    'delta=%s src=%s' % (_ti8["delta"][0]["delta"],
+                         _ti8["delta"][0].get("adjudication_source")))
+_ti9 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", 1.5)]},
+    {"disclose": 0.52, "hostility": 0.41, "confront": 0.54, "cooperation": 0.3},
+    "（掏出密令递过去）你自己看。")
+chk('TI：对峙披露（confront 高）→ 结构化不硬判，落 keywords 让渡压制',
+    _ti9["delta"][0]["delta"] == -2.3
+    and _ti9["delta"][0].get("adjudication_source") == "keyword",
+    'delta=%s src=%s' % (_ti9["delta"][0]["delta"],
+                         _ti9["delta"][0].get("adjudication_source")))
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
