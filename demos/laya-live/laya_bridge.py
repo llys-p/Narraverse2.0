@@ -5010,9 +5010,6 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
       - 无命中时**逐字节返回原对象**（零拷贝）；
       - 不改 status/grade/target/range，只动 delta 并打 `rule_adjudicated`。
     """
-    ds = (state_proposal or {}).get("delta") or []
-    if not ds:
-        return state_proposal
     # 通道 A：模型倾向
     sv = signal_values or {}
     coop = _fnum(sv.get("cooperation"))
@@ -5034,7 +5031,10 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
         violence_hit = next((kw for kw in _VIOLENCE_ESCALATION_WORDS if kw in text), None)
     if not evidence_hit and not violence_hit and coop < 0.5 and disc < 0.5:
         return state_proposal
-    out = _copy.deepcopy(state_proposal)
+    # ★ 规则通道必须**先于**「delta 为空」守卫判定：模型对全部信号判空时
+    #   （proposal.delta=[]），拔刀/让渡句仍由规则层兜底追加保底（胜负归规则层，
+    #   不依赖模型给不给信号）。无命中时空列表依旧原样返回。
+    out = _copy.deepcopy(state_proposal or {})
     changed = False
     if evidence_hit:
         # ★ 胜负归规则层：命中证据词时**无条件**施加疑点压制（不依赖 Laya 输出）。

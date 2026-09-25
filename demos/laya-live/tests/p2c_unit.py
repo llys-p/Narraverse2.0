@@ -394,6 +394,21 @@ chk('规则：质问密令来源（哪来的）不按让渡压制',
     _cvr2["delta"][0]["delta"] == 1.5
     and _cvr2["delta"][0].get("rule_adjudicated") is None,
     'delta=%s' % _cvr2["delta"][0]["delta"])
+_v0a = B.apply_rule_adjudication({"delta": []}, {},
+                                 "（拔出匕首）再不开口，我就让你见血。")
+chk('规则：模型全判空 + 拔刀 → 规则层仍追加保底 +2.5',
+    any(w["source_signal"] == "doubt_shift" and w["delta"] == 2.5
+        and w["rule_adjudicated"] == "violence_escalation" for w in _v0a["delta"]),
+    'delta=%r' % _v0a["delta"])
+_v0b = B.apply_rule_adjudication({"delta": []}, {},
+                                 "（放下刀）名单在这里，你自己拿。")
+chk('规则：模型全判空 + 让渡 → 规则层仍追加压制 -2.8',
+    any(w["source_signal"] == "doubt_shift" and w["delta"] == -2.8
+        and w["rule_adjudicated"] == "evidence_handover" for w in _v0b["delta"]),
+    'delta=%r' % _v0b["delta"])
+_v0c_proto = {"delta": []}
+_v0c = B.apply_rule_adjudication(_v0c_proto, {}, "今晚的酒不错。")
+chk('规则：模型全判空 + 中性 → 原样返回（零拷贝）', _v0c is _v0c_proto, '')
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
