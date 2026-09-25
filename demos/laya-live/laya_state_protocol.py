@@ -517,7 +517,12 @@ class LayaStateProtocol:
                 "proposed_delta": d.get("delta") or r.get("proposal"),
                 "applied_delta": r.get("final_delta"),
                 "old_value": r.get("old"), "new_value": r.get("new_value"),
+                # ★ TI v1：裁决标记与来源透传（供前端/debug 复核）
+                "rule_adjudicated": d.get("rule_adjudicated") or r.get("rule_adjudicated"),
+                "adjudication_source": d.get("adjudication_source") or r.get("adjudication_source"),
             })
+            if d.get("ti_basis") or r.get("ti_basis"):
+                writable[-1]["ti_basis"] = d.get("ti_basis") or r.get("ti_basis")
         aux_out = [{
             "source_signal": a.get("source_signal"),
             "proposed_delta": a.get("delta_if_enabled") if a.get("delta_if_enabled") is not None
@@ -772,7 +777,10 @@ class LayaStateProtocol:
                     "old_value": r.get("old"), "delta": r.get("final_delta"),
                     "new_value": r.get("new_value"),
                     "rule_adjudicated": r.get("rule_adjudicated"),
+                    "adjudication_source": r.get("adjudication_source"),
                 })
+                if r.get("ti_basis"):
+                    applied[-1]["ti_basis"] = list(r.get("ti_basis"))
             state_changed = any(abs(float(x.get("delta") or 0)) > 1e-9 for x in applied)
             prev_ver = current
             commit_id = "cm_" + uuid.uuid4().hex[:12]
@@ -1040,7 +1048,10 @@ class LayaStateProtocol:
                 applied.append({"source_signal": r.get("signal"), "target": r.get("target"),
                                 "old_value": r.get("old"), "delta": r.get("final_delta"),
                                 "new_value": r.get("new_value"),
-                                "rule_adjudicated": r.get("rule_adjudicated")})
+                                "rule_adjudicated": r.get("rule_adjudicated"),
+                                "adjudication_source": r.get("adjudication_source")})
+                if r.get("ti_basis"):
+                    applied[-1]["ti_basis"] = list(r.get("ti_basis"))
             state_changed = any(abs(float(x.get("delta") or 0)) > 1e-9 for x in applied)
             had_bucket = scope in B._ACTOR_STATE
             saved_bucket = _copy.deepcopy(B._ACTOR_STATE.get(scope)) if had_bucket else None
