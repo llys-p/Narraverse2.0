@@ -277,14 +277,16 @@ chk('规则：cooperation 高 → doubt 正增量打折并略降',
 _h1 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 3.0)]},
                                 {"cooperation": 0.8, "disclose": 0.1, "hostility": 0.7},
                                 "（直视她的眼睛）你到底瞒着我什么？")
-chk('规则：敌意护栏 —— hostility 高时合作不减疑点（原样返回）',
+chk('规则：TI v1 —— hostility≥0.5 被结构化判为施压 → 保底抬升（3.0 已超保底则保留）',
     _h1["delta"][0]["delta"] == 3.0
-    and _h1["delta"][0].get("rule_adjudicated") is None,
-    'delta=%s' % _h1["delta"][0]["delta"])
+    and _h1["delta"][0].get("rule_adjudicated") == "violence_escalation"
+    and _h1["delta"][0].get("adjudication_source") == "structured",
+    'delta=%s src=%s' % (_h1["delta"][0]["delta"],
+                         _h1["delta"][0].get("adjudication_source")))
 _h2 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 3.0)]},
                                 {"cooperation": 0.8, "disclose": 0.1, "hostility": 0.2},
                                 "我能帮你，刚才是我说重了。")
-chk('规则：敌意护栏不误伤 —— hostility 低时照常打折',
+chk('规则：hostility 低不构成施压 → cooperation 照常打折',
     _h2["delta"][0]["delta"] == round(3.0 * 0.5 - 0.8, 3)
     and _h2["delta"][0].get("rule_adjudicated") == "pro_cooperation",
     'delta=%s' % _h2["delta"][0]["delta"])
@@ -292,8 +294,8 @@ _proto = {"delta": [_delta_item("doubt_shift", 3.0)]}
 _r2 = B.apply_rule_adjudication(_proto, {"cooperation": 0.2, "disclose": 0.2}, "今晚的酒不错。")
 chk('规则：无命中 → 返回原对象（零拷贝）', _r2 is _proto, '')
 _r3 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", -1.5)]},
-                                {"cooperation": 0.1, "disclose": 0.8}, "")
-chk('规则：doubt 负增量不受折扣影响', _r3["delta"][0]["delta"] == -1.5, '')
+                                {"cooperation": 0.8, "disclose": 0.3}, "")
+chk('规则：cooperation 打折不影响负增量', _r3["delta"][0]["delta"] == -1.5, '')
 _r4 = B.apply_rule_adjudication(
     {"delta": [_delta_item("doubt_shift", 2.0), _delta_item("trust_shift", 1.0)]},
     {"cooperation": 0.9, "disclose": 0.1}, "")
@@ -409,6 +411,62 @@ chk('规则：模型全判空 + 让渡 → 规则层仍追加压制 -2.8',
 _v0c_proto = {"delta": []}
 _v0c = B.apply_rule_adjudication(_v0c_proto, {}, "今晚的酒不错。")
 chk('规则：模型全判空 + 中性 → 原样返回（零拷贝）', _v0c is _v0c_proto, '')
+
+# ---- Turn Interpretation v1：结构化事件触发（信号驱动主判定，关键词 fallback）----
+_ti1 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", 2.0)]},
+    {"disclose": 0.76, "hostility": 0.2, "cooperation": 0.3},
+    "（沉默片刻）罢了，我把知道的都告诉你。" )
+chk('TI：disclose 高（无罪表新表达）→ 结构化让渡压制 -2.8 且标注 structured',
+    _ti1["delta"][0]["delta"] == -2.8
+    and _ti1["delta"][0].get("adjudication_source") == "structured"
+    and any("disclose" in b for b in (_ti1["delta"][0].get("ti_basis") or [])),
+    'delta=%s src=%s' % (_ti1["delta"][0]["delta"],
+                         _ti1["delta"][0].get("adjudication_source")))
+_ti2 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", 2.0)]},
+    {"disclose": 0.6, "hostility": 0.8, "cooperation": 0.2},
+    "我说了实话，你别再逼我。")
+chk('TI：让渡优先于施压（disclose 与 hostility 并存 → 压制不抬升）',
+    _ti2["delta"][0]["delta"] == -2.8
+    and _ti2["delta"][0].get("adjudication_source") == "structured",
+    'delta=%s src=%s' % (_ti2["delta"][0]["delta"],
+                         _ti2["delta"][0].get("adjudication_source")))
+_ti3 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", -0.5)]},
+    {"hostility": 0.83, "disclose": 0.1, "cooperation": 0.2},
+    "（眼神冷下来）再说下去，今晚就不是坐在这儿谈了。")
+chk('TI：hostility 高（无罪表新表达）→ 结构化施压保底 +2.5 且标注 structured',
+    _ti3["delta"][0]["delta"] == 2.5
+    and _ti3["delta"][0].get("adjudication_source") == "structured",
+    'delta=%s src=%s' % (_ti3["delta"][0]["delta"],
+                         _ti3["delta"][0].get("adjudication_source")))
+_ti4 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", 0.5)]},
+    {"confront": 0.72, "hostility": 0.4, "cooperation": 0.3},
+    "（一步步上前，直到你们之间只剩半步）你最好给我个解释。")
+chk('TI：confront 高 + hostility 够 → 结构化施压保底',
+    _ti4["delta"][0]["delta"] == 2.5
+    and _ti4["delta"][0].get("adjudication_source") == "structured",
+    'delta=%s src=%s' % (_ti4["delta"][0]["delta"],
+                         _ti4["delta"][0].get("adjudication_source")))
+_ti5_proto = {"delta": [_delta_item("doubt_shift", 1.0)]}
+_ti5 = B.apply_rule_adjudication(
+    _ti5_proto,
+    {"confront": 0.7, "hostility": 0.2, "cooperation": 0.2},
+    "（只是问话）你昨夜去过镇口吗？")
+chk('TI：confront 高但 hostility 不足 → 不算施压，落入 fallback 且无关键词 → 原样返回',
+    _ti5 is _ti5_proto,
+    'delta=%s' % _ti5["delta"][0]["delta"])
+_ti6 = B.apply_rule_adjudication(
+    {"delta": [_delta_item("doubt_shift", 1.0)]},
+    {"cooperation": 0.2, "disclose": 0.2, "hostility": 0.2},
+    "（放下刀）名单在这里，你自己拿。")
+chk('TI：结构化未命中 → fallback 关键词让渡（source=keyword）',
+    _ti6["delta"][0]["delta"] == -1.8
+    and _ti6["delta"][0].get("adjudication_source") == "keyword",
+    'delta=%s src=%s' % (_ti6["delta"][0]["delta"],
+                         _ti6["delta"][0].get("adjudication_source")))
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})

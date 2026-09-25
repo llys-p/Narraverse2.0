@@ -4990,39 +4990,134 @@ def _narrate_stage_block(sid, aid, actor):
     return "当前关系档位：%s。%s（参考，不念数字）" % (_st["txt"], _st["hint"])
 
 
+# ==========================================================================
+# Turn Interpretation v1（用户定方向，2026-09-26）
+# 结构化事件触发：规则通道的主判定从「关键词命中」升级为「Laya 结构化信号事件」，
+# 旧关键词逻辑降级为 fallback/debug（不删除）。这样玩家换一种不带旧词表的说法
+# （如「你要的东西在枯井底」「今晚镇上会少一个人」）也能被结构化地识别为
+# 让渡/施压。v1 阈值是启发式定标，留常量待路线 A（信号校准）用数据校准。
+# ==========================================================================
+TI_SURRENDER_DISCLOSE = 0.5          # disclose ≥ 此值 → 让渡（承认/坦白）
+TI_ESCALATION_HOSTILITY = 0.5        # hostility ≥ 此值 → 施压
+TI_ESCALATION_CONFRONT = 0.6         # confront ≥ 此值 且 hostility 也够 → 施压
+TI_ESCALATION_CONFRONT_HOST = 0.35
+
+
+def interpret_turn(text, signal_values):
+    """把本轮玩家输入解释为结构化事件。
+
+    返回 {"event": "surrender"|"escalation"|None, "confidence": float,
+          "basis": [str]}。basis 记录判定依据（信号读数），供 debug/复核。
+    让渡优先于施压（B 优先 C 的既有语义）；施压要求无让渡读数。
+    """
+    sv = signal_values or {}
+    d = _fnum(sv.get("disclose"))
+    h = _fnum(sv.get("hostility"))
+    c = _fnum(sv.get("confront"))
+    if d >= TI_SURRENDER_DISCLOSE:
+        return {"event": "surrender", "confidence": d,
+                "basis": ["disclose=%.2f" % d]}
+    if d < TI_SURRENDER_DISCLOSE and (h >= TI_ESCALATION_HOSTILITY
+                                      or (c >= TI_ESCALATION_CONFRONT
+                                          and h >= TI_ESCALATION_CONFRONT_HOST)):
+        return {"event": "escalation", "confidence": max(h, c),
+                "basis": ["confront=%.2f" % c if c else None, "hostility=%.2f" % h
+                          if h else None]}
+    return {"event": None, "confidence": 0.0, "basis": []}
+
+
+def _adjudicate_suppress(out, source, ti=None):
+    """证据通道：疑点增量无条件取负（-|old|-0.8；无 doubt 项则追加 -2.8）。"""
+    target = next((it for it in out.get("delta") or []
+                   if it.get("source_signal") == "doubt_shift"), None)
+    if target is not None:
+        target["delta"] = round(-abs(_fnum(target.get("delta"))) - 0.8, 3)
+        target["rule_adjudicated"] = "evidence_handover"
+        target["adjudication_source"] = source
+        if ti:
+            target["ti_basis"] = ti.get("basis") or []
+        return True
+    item = {
+        "source_signal": "doubt_shift", "target": "relationship.doubt",
+        "delta": -2.8, "status": "active", "grade": "A", "role": "state_shift",
+        "label": "怀疑", "range": [0, 100], "rule_adjudicated": "evidence_handover",
+        "adjudication_source": source,
+    }
+    if ti:
+        item["ti_basis"] = ti.get("basis") or []
+    out.setdefault("delta", []).append(item)
+    return True
+
+
+def _adjudicate_escalate(out, source, ti=None):
+    """暴力通道：疑点增量抬到保底 +2.5（无 doubt 项则追加 +2.5）。"""
+    target = next((it for it in out.get("delta") or []
+                   if it.get("source_signal") == "doubt_shift"), None)
+    if target is not None:
+        old = _fnum(target.get("delta"))
+        if old < _VIOLENCE_ESCALATION_FLOOR:
+            target["delta"] = _VIOLENCE_ESCALATION_FLOOR
+        target["rule_adjudicated"] = "violence_escalation"
+        target["adjudication_source"] = source
+        if ti:
+            target["ti_basis"] = ti.get("basis") or []
+        return True
+    item = {
+        "source_signal": "doubt_shift", "target": "relationship.doubt",
+        "delta": _VIOLENCE_ESCALATION_FLOOR, "status": "active",
+        "grade": "A", "role": "state_shift",
+        "label": "怀疑", "range": [0, 100], "rule_adjudicated": "violence_escalation",
+        "adjudication_source": source,
+    }
+    if ti:
+        item["ti_basis"] = ti.get("basis") or []
+    out.setdefault("delta", []).append(item)
+    return True
+
+
 def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     """规则层事件裁决（启发式，独立于 Laya 输出的数值公式层）。
 
-    ★ 口径（2026-09-25，用户方向）：Laya 负责识别玩家行动意图；
-      数值公式与**胜负裁决**由规则层独立设计，不混进模型输出。
+    ★ 口径（2026-09-25，用户方向）：Laya 负责识别玩家行动意图；数值公式与
+      胜负裁决由规则层独立设计。★ Turn Interpretation v1（2026-09-26，用户
+      定方向）：主判定从「关键词触发」升级为「结构化事件触发」（interpret_turn
+      基于 Laya 结构化信号），**旧关键词逻辑保留为 fallback/debug 不删除**，
+      命中来源以 `adjudication_source = "structured"|"keyword"` 标注。
 
-    三通道裁决：
-      A) 模型侧：Laya 判「合作/坦白」倾向显著（cooperation ≥ 0.5 或
-         disclose ≥ 0.5）→ 疑点正向增量打折并略降（old*0.5 - 0.8）。
-         ★ 敌意护栏（P3-B 实测）：若同时判到 hostility ≥ 0.5 —— 玩家正
-         带着敌意/威胁施压（如瞪视逼问），「合作」读数不应把疑点按下去，
-         此时**不打折**，交还原判定。避免「瞪视被读成合作→疑点被死区吃掉」。
-      B) 证据词（规则侧，玩家原文命中**强证据动作词**）→ 疑点增量无条件取负
-         （-|old|-0.8；该轮即使没有 doubt_shift 项也追加 -2.8）。对应
-         「交出/摊牌/坦白」这类明确让渡行为：交出名单、放下刀、摊开双手……
-      C) 暴力升级（规则侧，命中**暴力动作词**）→ 疑点增量无条件抬升到保底
-         +2.5（无 doubt_shift 项则追加 +2.5）。对应拔刀/掐脖/见血这类施压
-         动作：让「决裂线」在持续暴力下必定推进，不再卡「模型对重复威胁
-         判零增量」的停滞。语言回落（「放下…」等让渡口吻）不触发；
-         B/C 同时命中时 B（让渡）优先 —— 放下比举刀更被当真。
-         —— 规则层独立裁决，不依赖模型输出（这正是「胜负归规则层」）。
+    判定顺序：
+      S）结构化事件（interpret_turn）：
+          surrender —— disclose ≥ 0.5 → 证据压制（同 B 语义）
+          escalation —— disclose < 0.5 且 (hostility ≥ 0.5 或
+                        (confront ≥ 0.6 且 hostility ≥ 0.35)) → 暴力保底（同 C）
+          —— 让渡优先于施压（B 优先 C 的既有语义）。
+      F）fallback 旧关键词（F-B 证据词 / F-C 暴力词，带豁免/护栏），仅当结构化
+          未判出事件时兜底；再落到 A。
+      A）模型侧：Laya 判「合作」显著（cooperation ≥ 0.5）→ 疑点正向增量打折。
+         敌意护栏：hostility ≥ 0.5 则不因此软化（避免瞪视被读成合作）。
     安全边界：
       - 只可能改到 source_signal == doubt_shift 的条目；
       - 无命中时**逐字节返回原对象**（零拷贝）；
-      - 不改 status/grade/target/range，只动 delta 并打 `rule_adjudicated`。
+      - 不改 status/grade/target/range，只动 delta 并打 `rule_adjudicated`、
+        `adjudication_source`（与结构化判定时的 `ti_basis`）。
     """
-    # 通道 A：模型倾向
+    text = str(player_input or "")
     sv = signal_values or {}
     coop = _fnum(sv.get("cooperation"))
     disc = _fnum(sv.get("disclose"))
     host = _fnum(sv.get("hostility"))
-    # 通道 B / C（保守白名单，中文场景；B 优先于 C）
-    text = str(player_input or "")
+
+    # ---- 主判定：结构化事件（Turn Interpretation v1）----
+    ti = interpret_turn(text, sv)
+    if ti.get("event") == "surrender":
+        out = _copy.deepcopy(state_proposal or {})
+        _adjudicate_suppress(out, "structured", ti)
+        return out
+    if ti.get("event") == "escalation":
+        out = _copy.deepcopy(state_proposal or {})
+        _adjudicate_escalate(out, "structured", ti)
+        return out
+
+    # ---- fallback：旧关键词逻辑（保留为 fallback/debug，不删除）----
     evidence_hit = next((kw for kw in _EVIDENCE_STOP_WORDS if kw in text), None)
     if evidence_hit and (any(m in text for m in _EVIDENCE_QUESTION_MARKERS)
                          or any(f in text for f in _EVIDENCE_ACCUSATION_FRAMES)):
@@ -5044,41 +5139,10 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
     changed = False
     if evidence_hit:
         # ★ 胜负归规则层：命中证据词时**无条件**施加疑点压制（不依赖 Laya 输出）。
-        #   此前规则只在 Laya 给正 delta 时接管——Laya 判 0/负的证据轮会漏网，
-        #   信任线仍不可达（实测）。现在：doubt_shift 项无论正负改写成
-        #   -|old|-0.8；若该轮连 doubt_shift 项都没有，则追加一条 -2.8。
-        target = next((it for it in out.get("delta") or []
-                       if it.get("source_signal") == "doubt_shift"), None)
-        if target is not None:
-            target["delta"] = round(-abs(_fnum(target.get("delta"))) - 0.8, 3)
-            target["rule_adjudicated"] = "evidence_handover"
-            changed = True
-        else:
-            out.setdefault("delta", []).append({
-                "source_signal": "doubt_shift", "target": "relationship.doubt",
-                "delta": -2.8, "status": "active", "grade": "A", "role": "state_shift",
-                "label": "怀疑", "range": [0, 100], "rule_adjudicated": "evidence_handover",
-            })
-            changed = True
+        changed = _adjudicate_suppress(out, "keyword")
     elif violence_hit:
         # ★ 胜负归规则层：命中暴力动作词 → 疑点无条件抬升到保底 +2.5。
-        #   对称于证据通道：模型判 0/负 的施压轮也会被兜底，决裂线可持续推进。
-        target = next((it for it in out.get("delta") or []
-                       if it.get("source_signal") == "doubt_shift"), None)
-        if target is not None:
-            old = _fnum(target.get("delta"))
-            if old < _VIOLENCE_ESCALATION_FLOOR:
-                target["delta"] = _VIOLENCE_ESCALATION_FLOOR
-            target["rule_adjudicated"] = "violence_escalation"
-            changed = True
-        else:
-            out.setdefault("delta", []).append({
-                "source_signal": "doubt_shift", "target": "relationship.doubt",
-                "delta": _VIOLENCE_ESCALATION_FLOOR, "status": "active",
-                "grade": "A", "role": "state_shift",
-                "label": "怀疑", "range": [0, 100], "rule_adjudicated": "violence_escalation",
-            })
-            changed = True
+        changed = _adjudicate_escalate(out, "keyword")
     else:
         if host >= 0.5:
             # ★ 敌意护栏：玩家正带敌意施压（hostility ≥ 0.5）时，合作读数
