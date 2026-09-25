@@ -184,10 +184,6 @@ func TestWorldContextHost_LibraryBindFailuresAreExplicitAndLeaveNoBinding(t *tes
 	if _, err := host.bindLibrary(context.Background(), token, worldcontext.ConsumerNarraverse, frame, hostLibraryControl(l, revision, []string{"manual-unknown"})); libraryruntime.CodeOf(err) != libraryruntime.ErrSelectionInvalid {
 		t.Fatalf("unknown manual item must be selection_invalid, got %v", err)
 	}
-	// B4a 只接叙界：Module4 的库载体显式拒绝（B4b 按其受控适配另行接入）。
-	if _, err := host.bindLibrary(context.Background(), token, worldcontext.ConsumerModule4, frame, hostLibraryControl(l, revision, nil)); worldcontext.CodeOf(err) != worldcontext.ErrInvalidRequest {
-		t.Fatalf("module4 library bind must be rejected for now, got %v", err)
-	}
 }
 
 func TestWorldContextHost_LibraryRebindAndExpiryReleaseExactlyOnce(t *testing.T) {
@@ -269,5 +265,147 @@ func TestWorldContextHost_LibraryCallBudgetIsExplicit(t *testing.T) {
 		Messages: []ModelGatewayMessage{{Role: "user", Content: "继续"}},
 	}); err != nil {
 		t.Fatalf("binding must stay usable after a budget failure: %v", err)
+	}
+}
+
+// B4b（L3.4 沙盒）：Module4 走同一受控边界——库载体 bind/call/解除，语义与叙界一致。
+func TestWorldContextHost_Module4LibraryBindCallAndRelease(t *testing.T) {
+	var upstream []ModelGatewayMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []ModelGatewayMessage `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode upstream: %v", err)
+		}
+		upstream = payload.Messages
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"sandbox generated"}}]}`))
+	}))
+	defer server.Close()
+
+	host, l, revision, libraryPath, _ := newHostLibraryTestService(t)
+	host.app.cfg.OpenAIAPIKey = "test-key"
+	host.app.cfg.OpenAIBaseURL = server.URL
+	host.app.cfg.OpenAIModel = "test-model"
+	before, err := os.ReadFile(libraryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := hostSessionForTest(t, host)
+	frame := "frame_abcdefghijklmnop"
+
+	state, err := host.bindLibrary(context.Background(), token, worldcontext.ConsumerModule4, frame, hostLibraryControl(l, revision, []string{"manual-1"}))
+	if err != nil || state.State != "active" || state.LibraryName != l.Name {
+		t.Fatalf("module4 library bind state=%+v err=%v", state, err)
+	}
+	result, callState, err := host.generate(context.Background(), token, worldcontext.ConsumerModule4, frame, ModelGatewayChatRequest{
+		Messages: []ModelGatewayMessage{{Role: "user", Content: "推进沙盒"}},
+	})
+	if err != nil || result.Content != "sandbox generated" || callState.State != "active" {
+		t.Fatalf("module4 call result=%+v state=%+v err=%v", result, callState, err)
+	}
+	if len(upstream) != 2 {
+		t.Fatalf("upstream messages=%d, want leading+iframe: %#v", len(upstream), upstream)
+	}
+	if !strings.HasPrefix(upstream[0].Content, libraryruntime.EphemeralLibraryContextHeader()) || !strings.Contains(upstream[0].Content, "HOSTLIB-RES-01") || !strings.Contains(upstream[0].Content, "HOSTLIB-MAN-01") {
+		t.Fatalf("module4 leading message must carry the bound library background")
+	}
+	if upstream[1].Content != "推进沙盒" {
+		t.Fatalf("iframe message must stay after the leading background: %#v", upstream)
+	}
+	after, err := os.ReadFile(libraryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("module4 library call modified the library source file")
+	}
+
+	binding := hostBindingForTest(t, host, token, worldcontext.ConsumerModule4, frame)
+	if binding == nil || binding.libraryRun == nil {
+		t.Fatal("module4 library binding missing")
+	}
+	run := binding.libraryRun
+	if err := host.unbind(token, worldcontext.ConsumerModule4, frame); err != nil {
+		t.Fatalf("module4 unbind: %v", err)
+	}
+	if st := run.Status(); st.State != "completed" {
+		t.Fatalf("module4 unbind must complete the run, got %s", st.State)
+	}
+}
+
+// B4b：同一宿主会话 + 同一 frame 实例下两个消费者各绑各库，回调互不串库；
+// 解除其一不影响另一绑定的继续使用。
+func TestWorldContextHost_LibraryBindingsPerConsumerDoNotCross(t *testing.T) {
+	var upstream [][]ModelGatewayMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []ModelGatewayMessage `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode upstream: %v", err)
+		}
+		upstream = append(upstream, payload.Messages)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"generated"}}]}`))
+	}))
+	defer server.Close()
+
+	host, l1, rev1, _, _ := newHostLibraryTestService(t)
+	host.app.cfg.OpenAIAPIKey = "test-key"
+	host.app.cfg.OpenAIBaseURL = server.URL
+	host.app.cfg.OpenAIModel = "test-model"
+	ctx := context.Background()
+	// 第二个库（沙盒侧）：正文标记与叙界侧库不同，用于不串库断言。
+	l2, _, err := host.app.CreateWorkLibrary(ctx, library.CreateInput{Name: "沙盒集成库"})
+	if err != nil {
+		t.Fatalf("准备第二个库失败: %v", err)
+	}
+	strPtr := func(s string) *string { return &s }
+	if _, _, err := host.app.CreateWorkLibraryItem(ctx, l2.ID, library.ItemInput{
+		ID: "sandbox-1", Name: "沙盒一", Type: "character", Origin: "original", LoadMode: "resident",
+		Content: strPtr("SANDBOXLIB-RES-01 沙盒常驻正文"),
+	}); err != nil {
+		t.Fatalf("准备沙盒条目失败: %v", err)
+	}
+	_, rev2, err := host.app.GetWorkLibrary(ctx, l2.ID)
+	if err != nil {
+		t.Fatalf("读取第二个库版本失败: %v", err)
+	}
+
+	token := hostSessionForTest(t, host)
+	frame := "frame_abcdefghijklmnop"
+	if _, err := host.bindLibrary(ctx, token, worldcontext.ConsumerNarraverse, frame, hostLibraryControl(l1, rev1, nil)); err != nil {
+		t.Fatalf("narraverse bind: %v", err)
+	}
+	if _, err := host.bindLibrary(ctx, token, worldcontext.ConsumerModule4, frame, hostLibraryControl(l2, rev2, nil)); err != nil {
+		t.Fatalf("module4 bind: %v", err)
+	}
+
+	if _, _, err := host.generate(ctx, token, worldcontext.ConsumerNarraverse, frame, ModelGatewayChatRequest{Messages: []ModelGatewayMessage{{Role: "user", Content: "叙界"}}}); err != nil {
+		t.Fatalf("narraverse call: %v", err)
+	}
+	if _, _, err := host.generate(ctx, token, worldcontext.ConsumerModule4, frame, ModelGatewayChatRequest{Messages: []ModelGatewayMessage{{Role: "user", Content: "沙盒"}}}); err != nil {
+		t.Fatalf("module4 call: %v", err)
+	}
+	if len(upstream) != 2 {
+		t.Fatalf("upstream calls=%d, want 2", len(upstream))
+	}
+	narraverseLeading := upstream[0][0].Content
+	sandboxLeading := upstream[1][0].Content
+	if !strings.Contains(narraverseLeading, "HOSTLIB-RES-01") || strings.Contains(narraverseLeading, "SANDBOXLIB-RES-01") {
+		t.Fatalf("narraverse call crossed libraries: %q", narraverseLeading)
+	}
+	if !strings.Contains(sandboxLeading, "SANDBOXLIB-RES-01") || strings.Contains(sandboxLeading, "HOSTLIB-RES-01") {
+		t.Fatalf("module4 call crossed libraries: %q", sandboxLeading)
+	}
+
+	// 解除叙界绑定不影响沙盒绑定。
+	if err := host.unbind(token, worldcontext.ConsumerNarraverse, frame); err != nil {
+		t.Fatalf("narraverse unbind: %v", err)
+	}
+	if _, _, err := host.generate(ctx, token, worldcontext.ConsumerModule4, frame, ModelGatewayChatRequest{Messages: []ModelGatewayMessage{{Role: "user", Content: "再来"}}}); err != nil {
+		t.Fatalf("module4 binding must survive the narraverse unbind: %v", err)
 	}
 }

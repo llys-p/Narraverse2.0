@@ -342,7 +342,7 @@ func (s *WorldContextHostService) bind(ctx context.Context, token string, consum
 	return state, nil
 }
 
-// BindLibraryHostFrame 为受控 iframe 绑定作品设定库背景（B4a/L3.3 叙界）。
+// BindLibraryHostFrame 为受控 iframe 绑定作品设定库背景（B4a 叙界 / B4b Module4 共用同一受控边界）。
 // 与 world 载体互斥：同一次 bind 只承载一种背景，换绑即显式释放旧载体。
 // 绑定期失败（revision 冲突/授权无效/预算不足/库不可用）显式返回并阻断，不留半绑定。
 func (a *App) BindLibraryHostFrame(ctx context.Context, token string, consumer worldcontext.Consumer, frame string, ctrl HostFrameLibraryControl) (HostContextState, error) {
@@ -352,10 +352,6 @@ func (a *App) BindLibraryHostFrame(ctx context.Context, token string, consumer w
 func (s *WorldContextHostService) bindLibrary(ctx context.Context, token string, consumer worldcontext.Consumer, frame string, ctrl HostFrameLibraryControl) (HostContextState, error) {
 	if !validHostConsumer(consumer) || !validFrameInstance(frame) {
 		return HostContextState{}, trustedHostError()
-	}
-	if consumer != worldcontext.ConsumerNarraverse {
-		// B4a 只接叙界；Module4 的库载体在 B4b 按其受控适配另行接入。
-		return HostContextState{}, &worldcontext.DomainError{Code: worldcontext.ErrInvalidRequest, Message: "该 iframe 暂不支持库背景"}
 	}
 	// 与 world bind 共用同一把串行锁，保证同一 frame 的并发换绑不会写回旧载体。
 	s.bindMu.Lock()
