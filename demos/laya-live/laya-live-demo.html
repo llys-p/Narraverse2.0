@@ -1505,6 +1505,56 @@ function renderState(cur){
   } else if (S.sid && S.aid){
     loadState(false);
   }
+
+  // ★ 剧本演示：?script=trust|break —— 走真实 P2 链路（/analyze→/commit→/narrate），
+  //   固定节奏喂话，让剧情线档位与数值变化现场展开（无人值守 / 截图 / 新手演示）。
+  //   零 UI 改动：只在 URL 带参时启用，喂话入口就是同一个对话窗。
+  var SCRIPT_LINES = {
+    trust: [
+      '说真的，这一路我没有骗过你一个字。',
+      '（撩起袖子，露出旧伤）我在南边当过斥候，认得那种灰军装。',
+      '（压低声音）名单的事我可以做主坦白——后巷棺材铺底下。',
+      '（放下刀，双手摊开）我来镇子只有一件事：查清那批货。',
+      '（掏出一封信）这是出发前的密令，你可以看。',
+    ],
+    break: [
+      '（直视她的眼睛）你到底瞒着我什么？',
+      '（一步逼近）你前天半夜从东边哨站回来，对吧？',
+      '（揪住她领口）那些灰军装给了你多少钱！说！',
+      '（掏出匕首扎在桌上）现在，把你知道的全给我抖出来！',
+      '（反手把刀插进桌面）我最后一次问你：你到底说不说？',
+      '（一脚踢翻凳子，举起刀）我看你是活腻了！',
+      '（刀锋贴上你的颈侧）再敢糊弄半个字，我让你永远闭嘴。',
+      '（缓缓把刀横过来）那就别怪我了。',
+      '（拽住她衣领，拉近到面前）我再问最后一次——说！',
+      '（拔刀出鞘，刀尖抵到你心口）今天，没有第三次机会了。',
+    ],
+  };
+  var _sq = new URLSearchParams(location.search);
+  var _ac = _sq.get('script');
+  if ((_ac === 'trust' || _ac === 'break') && (SCRIPT_LINES[_ac] || []).length){
+    S.sid = 'demo_scr_' + _ac; S.aid = 'lia';
+    if (sidEl){ sidEl.value = S.sid; }
+    if (aidEl){ aidEl.value = S.aid; }
+    persist();
+    // ★ 串行播放：必须等上一句整轮（analyze→commit→narrate）结束再发下一句，
+    //   否则并发的 /analyze 会以旧版本提交 → STATE_VERSION_CONFLICT / 叙事 404。
+    var _spd = Math.max(700, Number(_sq.get('speed')) || 2600);
+    (function runScr(i){
+      if (i >= SCRIPT_LINES[_ac].length){
+        // 完成：保持演示 scope 不跳走，使右卡数值与剧情横幅停在弧线终点；
+        // 想开新对话请用「清空/重置」或直接换 scope。
+        flash('剧本完成：' + (_ac === 'trust' ? '信任线 → 疑点回落。重置后开新对话' : '决裂线 → 决裂边缘。重置后开新对话'));
+        loadState(false);
+        return;
+      }
+      setTimeout(function(){
+        Promise.resolve(autoConv(SCRIPT_LINES[_ac][i]))   // 错误已由 autoConv 气泡展示
+          .catch(function(){ /* 继续播放下一条 */ })
+          .then(function(){ runScr(i + 1); });
+      }, _spd);
+    })(0);
+  }
 })();
 </script>
 </body>
