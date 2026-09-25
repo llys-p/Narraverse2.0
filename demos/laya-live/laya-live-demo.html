@@ -1133,7 +1133,8 @@ if(Q.has('auto')){
       ['fondness', emo.fondness]
     ];
     $('p2authority').innerHTML = '<table style="border-collapse:collapse"><tr><th style="text-align:left;padding:2px 10px 2px 0">字段</th><th style="text-align:left;padding:2px">值</th></tr>' +
-      rows.map(function(r){ return '<tr><td style="padding:2px 10px 2px 0;color:var(--dim)">'+r[0]+'</td><td style="padding:2px"><b>'+(r[1]===undefined?'—':r[1])+'</b></td></tr>'; }).join('') + '</table>';
+      rows.map(function(r){ return '<tr><td style="padding:2px 10px 2px 0;color:var(--dim)">'+r[0]+'</td><td style="padding:2px"><b>'+(r[1]===undefined?'—':r[1])+'</b></td></tr>'; }).join('') + '</table>' +
+      '<div style="margin-top:6px;color:#b7791f">提示：当前能力档案只有 <b>doubt_shift（怀疑）</b> 可写（见③）；trust/fondness 等是辅助信号，Commit 后仍不变 —— 这是刻意的（不是没生效）。</div>';
   }
   function renderAnalysis(j){
     S.analysis_id = j.analysis_id; S.base_ver = j.base_state_version;

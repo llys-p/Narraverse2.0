@@ -1412,6 +1412,12 @@ def translate_to_en(text):
     ★ 失败时**抛 TranslationFailure**（fail-closed），不再返回中文原文。
       返回 (None, "none") 这种「带毒的成功」是本案的原始 bug，已移除。
       如果确实要复现历史实验条件，显式设 `LAYA_XLATE_FAIL_OPEN=1`。
+
+    ★ 2026-09-25（P3-B 体验回归）：max_tokens 1600→8000。
+      实测（deepseek-flash，P2 面板 /analyze）：翻译请求的推理 token 高达
+      r=6553，finish=length、content 空 → fail-closed 502。这与 2026-09-24
+      的「reasoning 吃光预算」同源（当时 600→1600）；当前模型推理更重，
+      预算必须留足。这是对真实可复现缺陷的配置修复，不是凑参数。
     """
     if not text:
         return "", "empty"
@@ -1439,14 +1445,16 @@ def translate_to_en(text):
             #   注意这**不是**「调参凑测试过」：它修的是一个真实的、可复现的
             #   「长句/怪句必失败」缺陷 —— 修复前 263 条里有 2 条**稳定**失败，
             #   且失败与句子长度/矛盾程度相关，与内容好坏无关。
+            #   ★★ 2026-09-25：推理进一步加重（r=6553），1600 仍会被吃光 → 8000。
             {"role": "system", "content": "You are a translation engine. Translate the user's "
                                           "Chinese game-dialogue line into English. Output ONLY "
                                           "the English translation, nothing else. Do not explain, "
                                           "do not comment, do not add notes, even if the source "
-                                          "line seems contradictory or odd - just translate it literally."},
+                                          "line seems contradictory or odd - just translate it literally. "
+                                          "Do not think out loud; answer directly."},
             {"role": "user", "content": text},
         ],
-        "temperature": 0.0, "max_tokens": 1600, "stream": False, "effort": "low",
+        "temperature": 0.0, "max_tokens": 8000, "stream": False, "effort": "low",
     }
     err = "empty_response"
     try:
@@ -1479,6 +1487,8 @@ def translate_to_en(text):
     except Exception as e:
         err = "exc_%s" % type(e).__name__
     if XLATE_FAIL_CLOSED:
+        if os.environ.get("LAYA_TRACE"):
+            sys.stderr.write("[xlate-trace] translate_to_en fail-closed err=%s\n" % err)
         raise TranslationFailure(err, text)
     return text, "none"
 
@@ -3548,9 +3558,13 @@ def _cached_translate(text, cache):
         return cache[text]
     try:
         en, _src = translate_to_en(text)
-    except TranslationFailure:
+    except TranslationFailure as e:
+        if os.environ.get("LAYA_TRACE"):
+            sys.stderr.write("[xlate-trace] _cached_translate: TranslationFailure reason=%s\n" % e.reason)
         return None
     if not en or en == text:
+        if os.environ.get("LAYA_TRACE"):
+            sys.stderr.write("[xlate-trace] _cached_translate: en=%r empty_or_same (text=%r)\n" % (en, text))
         return None
     cache[text] = en
     try:
