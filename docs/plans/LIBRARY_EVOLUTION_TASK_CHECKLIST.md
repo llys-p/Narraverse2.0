@@ -154,11 +154,11 @@
 
 ### B4a · 叙界受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
-- [ ] 沿用既有宿主受控入口绑定新库，iframe 首次请求等待绑定；不下发运行秘密，不改 iframe 信任根或 Module3 引擎；正式页面验证实际取材。**进行中（2026-09-25 08:23，AI1）：后端+前端已接线并过定向测试（提交 `368a0ec` 后端、`582bb2b` 前端）：bind 新增 library 载体（与 world 互斥；consumer 路由固定、scopeKey 宿主会话+frame 派生；Module4 保持 world-only 待 B4b）；绑定期固定 revision + 装配只读背景，每次 /call 前置并计费；换绑/解绑/撤销/过期幂等释放；响应/摘要脱敏（无库 ID/revision/scopeKey/运行 ID）；「带入叙界」入口含宿主就绪守卫与草稿禁用；app 4 例 + handlers 1 例 + 前端 6 例全过、tsc/构建过。正式页面验证实际取材待做——叙界模块资产不在本工作树，需按 `scripts/sync-narraverse-assets.mjs` 以 `NARRAVERSE_SOURCE_DIR` 同步后驱动；与 B3 executable 重放同类缺口，建议专项验收轮补做。**
+- [ ] 沿用既有宿主受控入口绑定新库，iframe 首次请求等待绑定；不下发运行秘密，不改 iframe 信任根或 Module3 引擎；正式页面验证实际取材。**进行中（2026-09-25 08:23，AI1；审查交接见 [B4 段交接](../acceptance/LIBRARY_L3_B4_HANDOFF.md)）：后端+前端已接线并过定向测试（提交 `368a0ec` 后端、`582bb2b` 前端）：bind 新增 library 载体（与 world 互斥；consumer 路由固定、scopeKey 宿主会话+frame 派生；Module4 保持 world-only 待 B4b）；绑定期固定 revision + 装配只读背景，每次 /call 前置并计费；换绑/解绑/撤销/过期幂等释放；响应/摘要脱敏（无库 ID/revision/scopeKey/运行 ID）；「带入叙界」入口含宿主就绪守卫与草稿禁用；app 4 例 + handlers 1 例 + 前端 6 例全过、tsc/构建过。正式页面验证实际取材待做——叙界模块资产不在本工作树，需按 `scripts/sync-narraverse-assets.mjs` 以 `NARRAVERSE_SOURCE_DIR` 同步后驱动；与 B3 executable 重放同类缺口，建议专项验收轮补做。**
 
 ### B4b · Module4 受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
-- [ ] 沿用同一受控边界，不改 Adventure 规则、存档真源或模型 Settings；正式页面验证动作成败与背景读取状态独立、切实例不串库。**进行中（2026-09-25 09:12，AI1）：后端+前端已接线并过定向测试（提交 `7074e7b` 后端、`8219f75` 前端）：module4 库载体走与叙界同一受控边界（Ref 三字段/与 world 互斥/consumer 路由固定/scopeKey 派生/绑定期固定 revision+装配计费/每次 call 前置并计费/幂等释放/摘要脱敏；沙盒模型模块与 Settings 未改）；库预览新增「带入开放沙盒」（经既有 `onOpenModule4` 受控入口）；跨消费者不串库与解除独立性由 app 2 例 + 前端 4 例覆盖。正式页面验证（动作成败与背景读取状态独立、切实例不串库）待做——叙界模块资产不在本工作树，同 B4a 缺口。**
+- [ ] 沿用同一受控边界，不改 Adventure 规则、存档真源或模型 Settings；正式页面验证动作成败与背景读取状态独立、切实例不串库。**进行中（2026-09-25 09:12，AI1；审查交接见 [B4 段交接](../acceptance/LIBRARY_L3_B4_HANDOFF.md)）：后端+前端已接线并过定向测试（提交 `7074e7b` 后端、`8219f75` 前端）：module4 库载体走与叙界同一受控边界（Ref 三字段/与 world 互斥/consumer 路由固定/scopeKey 派生/绑定期固定 revision+装配计费/每次 call 前置并计费/幂等释放/摘要脱敏；沙盒模型模块与 Settings 未改）；库预览新增「带入开放沙盒」（经既有 `onOpenModule4` 受控入口）；跨消费者不串库与解除独立性由 app 2 例 + 前端 4 例覆盖。正式页面验证（动作成败与背景读取状态独立、切实例不串库）待做——叙界模块资产不在本工作树，同 B4a 缺口。**
 
 ### B5 · 四模式统一验收与交付（AI1；依赖 B2c、B3c、B4a、B4b）
 
