@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -10,6 +11,39 @@ import (
 
 	novaApp "denova/internal/app"
 )
+
+// B4a（L3.3 叙界）：iframe 库载体的 wire 校验——载体互斥、严格字段、空白拒绝。
+func TestWorldContextHostWire_LibraryCarrierValidation(t *testing.T) {
+	if !hostBindCarrierConflict(hostBindWire{
+		WorldContext:   json.RawMessage(`{"worldId":"w1"}`),
+		LibraryContext: json.RawMessage(`{"libraryId":"l1"}`),
+	}) {
+		t.Fatal("world+library carriers in one bind must conflict")
+	}
+	if hostBindCarrierConflict(hostBindWire{WorldContext: json.RawMessage(`{"worldId":"w1"}`)}) {
+		t.Fatal("a single carrier must not conflict")
+	}
+	if hostRawPresent(json.RawMessage(`  `)) {
+		t.Fatal("blank carrier must be treated as absent")
+	}
+	ctrl, err := decodeHostLibraryContext(json.RawMessage(`{"libraryId":" lib-1 ","expectedRevision":" rev-1 ","manualItemIds":[" m1 ","m2"]}`))
+	if err != nil || ctrl.LibraryID != "lib-1" || ctrl.ExpectedRevision != "rev-1" || len(ctrl.ManualItemIDs) != 2 || ctrl.ManualItemIDs[0] != "m1" {
+		t.Fatalf("ctrl=%+v err=%v", ctrl, err)
+	}
+	for _, bad := range []string{
+		`{"libraryId":"l","expectedRevision":"r","consumer":"narraverse"}`,
+		`{"libraryId":"","expectedRevision":"r"}`,
+		`{"libraryId":"l","expectedRevision":" "}`,
+		`{"libraryId":"l","expectedRevision":"r","manualItemIds":[" "]}`,
+		`{"libraryId":"l","expectedRevision":"r","manualItemIds":"m1"}`,
+		`null`,
+		`[]`,
+	} {
+		if _, err := decodeHostLibraryContext(json.RawMessage(bad)); err == nil {
+			t.Fatalf("bad library carrier accepted: %s", bad)
+		}
+	}
+}
 
 func TestWorldContextHostWire_ExactKeysAndModelBudget(t *testing.T) {
 	if exactObjectKeys([]byte(`{"frameInstance":"abcdefghijklmnop","consumer":"module4"}`), map[string]struct{}{"frameInstance": {}}) == nil {

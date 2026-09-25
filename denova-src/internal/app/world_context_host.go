@@ -8,10 +8,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/cloudwego/eino/schema"
+
 	"denova/internal/agent"
+	"denova/internal/libraryruntime"
 	"denova/internal/worldcontext"
 )
 
@@ -34,6 +38,12 @@ type hostFrameBinding struct {
 	runContextID string
 	inFlight     bool
 	summary      worldcontext.UIViewSummary
+	// library 载体（与 world 载体互斥，B4a/L3.3）：run 持有临时读取授权与累计预算；
+	// libraryLeading 是绑定期 AssembleInitial 产出的临时背景文本，只存内存并在每次
+	// /call 时前置到模型输入，绝不回传 iframe、不落盘。
+	libraryRun     *libraryruntime.Run
+	libraryLeading string
+	librarySummary HostContextState
 }
 
 type hostSession struct {
@@ -48,8 +58,18 @@ type hostSession struct {
 type HostContextState struct {
 	State         string `json:"state"`
 	WorldName     string `json:"worldName,omitempty"`
+	LibraryName   string `json:"libraryName,omitempty"`
 	RevisionLabel string `json:"revisionLabel,omitempty"`
 	SelectedCount int    `json:"selectedCount,omitempty"`
+}
+
+// HostFrameLibraryControl 是受控 iframe 一次 library bind 的载体（B4a/L3.3）。
+// consumer 与 scopeKey 由宿主层服务端派生，绝不接受客户端提交值；ManualItemIDs
+// 是用户本次显式授权的 manual 条目集合，autoItemIds 不进入运行授权。
+type HostFrameLibraryControl struct {
+	LibraryID        string
+	ExpectedRevision string
+	ManualItemIDs    []string
 }
 
 // WorldContextHostService owns the process-local trust root and iframe
@@ -87,6 +107,12 @@ func trustedHostError() error {
 
 func hostBindingKey(consumer worldcontext.Consumer, frame string) string {
 	return string(consumer) + ":" + frame
+}
+
+// hostFrameScopeKey 派生受控 iframe 的运行归属键（宿主会话 + frame 实例 + consumer），
+// 与写作的 task:<id>、游戏的 story/turn 同构，绝不接受客户端提交值。
+func hostFrameScopeKey(hash [32]byte, frame string, consumer worldcontext.Consumer) string {
+	return fmt.Sprintf("iframe:%x:%s:%s", hash[:6], frame, consumer)
 }
 
 func validHostConsumer(consumer worldcontext.Consumer) bool {
@@ -200,10 +226,28 @@ func (s *WorldContextHostService) sweepLocked(now time.Time) []hostFrameBinding 
 }
 
 func (s *WorldContextHostService) releaseBindings(items []hostFrameBinding) {
-	for _, binding := range items {
-		if binding.scopeKey != "" {
-			s.world.ReleaseWorldRun(binding.consumer, binding.scopeKey)
+	for i := range items {
+		s.releaseBinding(&items[i], true)
+	}
+}
+
+// releaseBinding 释放一条 frame 绑定的底层载体，幂等：library → Cancel/Complete，
+// world → 归还 Registry。aborted 表示宿主主动中止（替换/撤销/过期/关闭），
+// 否则为正常结束（iframe 显式 unbind）。
+func (s *WorldContextHostService) releaseBinding(binding *hostFrameBinding, aborted bool) {
+	if binding == nil {
+		return
+	}
+	if binding.libraryRun != nil {
+		if aborted {
+			binding.libraryRun.Cancel()
+		} else {
+			binding.libraryRun.Complete()
 		}
+		return
+	}
+	if binding.scopeKey != "" {
+		s.world.ReleaseWorldRun(binding.consumer, binding.scopeKey)
 	}
 }
 
@@ -251,7 +295,7 @@ func (s *WorldContextHostService) bind(ctx context.Context, token string, consum
 		return HostContextState{}, err
 	}
 	key := hostBindingKey(consumer, frame)
-	scopeKey := fmt.Sprintf("iframe:%x:%s:%s", hash[:6], frame, consumer)
+	scopeKey := hostFrameScopeKey(hash, frame, consumer)
 	var rc *worldcontext.RunContext
 	if ref != nil {
 		rc, _, err = s.world.BindWorldRun(ctx, consumer, scopeKey, *ref)
@@ -286,9 +330,90 @@ func (s *WorldContextHostService) bind(ctx context.Context, token string, consum
 	}
 	session.bindings[key] = binding
 	s.mu.Unlock()
-	if previous != nil && previous.scopeKey != "" && rc == nil {
+	switch {
+	case previous == nil:
+	case previous.libraryRun != nil:
+		// 旧载体是库背景：world bind 不经过 World Registry 的同 scope 替换，
+		// 必须显式取消旧库运行（幂等）。
+		s.releaseBinding(previous, true)
+	case previous.scopeKey != "" && rc == nil:
 		s.world.ReleaseWorldRun(previous.consumer, previous.scopeKey)
 	}
+	return state, nil
+}
+
+// BindLibraryHostFrame 为受控 iframe 绑定作品设定库背景（B4a/L3.3 叙界）。
+// 与 world 载体互斥：同一次 bind 只承载一种背景，换绑即显式释放旧载体。
+// 绑定期失败（revision 冲突/授权无效/预算不足/库不可用）显式返回并阻断，不留半绑定。
+func (a *App) BindLibraryHostFrame(ctx context.Context, token string, consumer worldcontext.Consumer, frame string, ctrl HostFrameLibraryControl) (HostContextState, error) {
+	return a.worldContextHost().bindLibrary(ctx, token, consumer, frame, ctrl)
+}
+
+func (s *WorldContextHostService) bindLibrary(ctx context.Context, token string, consumer worldcontext.Consumer, frame string, ctrl HostFrameLibraryControl) (HostContextState, error) {
+	if !validHostConsumer(consumer) || !validFrameInstance(frame) {
+		return HostContextState{}, trustedHostError()
+	}
+	if consumer != worldcontext.ConsumerNarraverse {
+		// B4a 只接叙界；Module4 的库载体在 B4b 按其受控适配另行接入。
+		return HostContextState{}, &worldcontext.DomainError{Code: worldcontext.ErrInvalidRequest, Message: "该 iframe 暂不支持库背景"}
+	}
+	// 与 world bind 共用同一把串行锁，保证同一 frame 的并发换绑不会写回旧载体。
+	s.bindMu.Lock()
+	defer s.bindMu.Unlock()
+	hash, err := s.authenticate(token, true)
+	if err != nil {
+		return HostContextState{}, err
+	}
+	key := hostBindingKey(consumer, frame)
+	scopeKey := hostFrameScopeKey(hash, frame, consumer)
+	run, err := s.app.BindWorkLibraryRuntime(ctx, libraryruntime.BindInput{
+		Consumer:         libraryruntime.Consumer(consumer),
+		ScopeKey:         scopeKey,
+		LibraryID:        strings.TrimSpace(ctrl.LibraryID),
+		ExpectedRevision: strings.TrimSpace(ctrl.ExpectedRevision),
+		ManualItemIDs:    ctrl.ManualItemIDs,
+	})
+	if err != nil {
+		return HostContextState{}, err
+	}
+	ephemeral, err := run.AssembleInitial(ctx)
+	if err != nil {
+		run.Cancel()
+		return HostContextState{}, err
+	}
+	st := run.Status()
+	state := HostContextState{State: "active", LibraryName: st.LibraryName}
+	if st.Revision != "" {
+		state.RevisionLabel = revisionWireLabel(st.Revision)
+	}
+	if st.ManualCount > 0 {
+		state.SelectedCount = st.ManualCount
+	}
+
+	s.mu.Lock()
+	session := s.sessions[hash]
+	if session == nil || s.closed {
+		s.mu.Unlock()
+		run.Cancel()
+		return HostContextState{}, trustedHostError()
+	}
+	if _, exists := session.bindings[key]; !exists && len(session.bindings) >= hostMaxFrames {
+		s.mu.Unlock()
+		run.Cancel()
+		return HostContextState{}, &worldcontext.DomainError{Code: worldcontext.ErrContextUnavailable, Message: "宿主 frame 数量超过上限"}
+	}
+	previous := session.bindings[key]
+	binding := &hostFrameBinding{
+		consumer:       consumer,
+		frame:          frame,
+		scopeKey:       scopeKey,
+		libraryRun:     run,
+		libraryLeading: ephemeral.LeadingText(),
+		librarySummary: state,
+	}
+	session.bindings[key] = binding
+	s.mu.Unlock()
+	s.releaseBinding(previous, true)
 	return state, nil
 }
 
@@ -314,9 +439,7 @@ func (s *WorldContextHostService) unbind(token string, consumer worldcontext.Con
 	binding := session.bindings[key]
 	delete(session.bindings, key)
 	s.mu.Unlock()
-	if binding != nil && binding.scopeKey != "" {
-		s.world.ReleaseWorldRun(binding.consumer, binding.scopeKey)
-	}
+	s.releaseBinding(binding, false)
 	return nil
 }
 
@@ -374,6 +497,9 @@ func (s *WorldContextHostService) generate(ctx context.Context, token string, co
 	binding.inFlight = true
 	runContextID := binding.runContextID
 	summary := binding.summary
+	libraryRun := binding.libraryRun
+	libraryLeading := binding.libraryLeading
+	librarySummary := binding.librarySummary
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -386,7 +512,21 @@ func (s *WorldContextHostService) generate(ctx context.Context, token string, co
 	}()
 
 	state := HostContextState{State: "none"}
-	if runContextID != "" {
+	switch {
+	case libraryRun != nil:
+		// 库载体：临时背景在绑定期装配（并经 AssembleInitial 计费），每次调用只做
+		// 前置与本回合输入的预算计入；iframe 提交的消息照常原样送入模型。
+		if chargeErr := chargeHostLibraryInput(libraryRun, req.Messages); chargeErr != nil {
+			return ModelGatewayChatResult{}, HostContextState{}, chargeErr
+		}
+		if libraryLeading != "" {
+			messages := make([]ModelGatewayMessage, 0, len(req.Messages)+1)
+			messages = append(messages, ModelGatewayMessage{Role: "user", Content: libraryLeading})
+			messages = append(messages, req.Messages...)
+			req.Messages = messages
+		}
+		state = librarySummary
+	case runContextID != "":
 		rc, getErr := s.world.GetWorldRunByID(runContextID, consumer)
 		if getErr != nil {
 			return ModelGatewayChatResult{}, HostContextState{}, getErr
@@ -407,6 +547,22 @@ func (s *WorldContextHostService) generate(ctx context.Context, token string, co
 	}
 	result, err := s.app.GenerateModel(ctx, req)
 	return result, state, err
+}
+
+// chargeHostLibraryInput 把 iframe 本次提交的消息量测后经 ChargeExternal 计入单运行
+// 累计预算（与写作链同口径：字节数 + 定点 token 估算）。临时库背景已在绑定期
+// AssembleInitial 计费，这里不重复计入；超限返回 budget_exceeded，由 wire 层显式下发。
+func chargeHostLibraryInput(run *libraryruntime.Run, messages []ModelGatewayMessage) error {
+	if run == nil {
+		return nil
+	}
+	converted := make([]*schema.Message, 0, len(messages))
+	totalBytes := 0
+	for _, message := range messages {
+		totalBytes += len(message.Content)
+		converted = append(converted, &schema.Message{Role: schema.RoleType(message.Role), Content: message.Content})
+	}
+	return run.ChargeExternal(totalBytes, agent.EstimateContextTokens(converted, nil))
 }
 
 func (s *WorldContextHostService) Close() {

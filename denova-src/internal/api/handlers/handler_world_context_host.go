@@ -14,6 +14,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 
 	novaApp "denova/internal/app"
+	"denova/internal/libraryruntime"
 	"denova/internal/worldcontext"
 )
 
@@ -27,8 +28,53 @@ const (
 )
 
 type hostBindWire struct {
-	FrameInstance string          `json:"frameInstance"`
-	WorldContext  json.RawMessage `json:"world_context"`
+	FrameInstance  string          `json:"frameInstance"`
+	WorldContext   json.RawMessage `json:"world_context"`
+	LibraryContext json.RawMessage `json:"library_context"`
+}
+
+// hostLibraryContextWire 是受控 iframe 的库载体（camelCase，与 L2 预览 DTO 一致）；
+// consumer/scopeKey 由宿主层派生，出现即拒绝。
+type hostLibraryContextWire struct {
+	LibraryID        string   `json:"libraryId"`
+	ExpectedRevision string   `json:"expectedRevision"`
+	ManualItemIDs    []string `json:"manualItemIds"`
+}
+
+func hostRawPresent(raw json.RawMessage) bool {
+	return len(bytes.TrimSpace(raw)) > 0
+}
+
+// hostBindCarrierConflict 报告一次 bind 同时携带 world 与 library 两种背景载体
+// （B4a/L3.3：两类互斥，不做优先级吞并）。
+func hostBindCarrierConflict(wire hostBindWire) bool {
+	return hostRawPresent(wire.WorldContext) && hostRawPresent(wire.LibraryContext)
+}
+
+// decodeHostLibraryContext 严格解析库载体：未知字段、空库 ID、空版本、空白条目一律拒绝。
+func decodeHostLibraryContext(raw json.RawMessage) (novaApp.HostFrameLibraryControl, error) {
+	if exactObjectKeys(raw, map[string]struct{}{"libraryId": {}, "expectedRevision": {}, "manualItemIds": {}}) != nil {
+		return novaApp.HostFrameLibraryControl{}, errors.New("library context shape is invalid")
+	}
+	var wire hostLibraryContextWire
+	if err := decodeStrictJSON(raw, &wire); err != nil {
+		return novaApp.HostFrameLibraryControl{}, err
+	}
+	ctrl := novaApp.HostFrameLibraryControl{
+		LibraryID:        strings.TrimSpace(wire.LibraryID),
+		ExpectedRevision: strings.TrimSpace(wire.ExpectedRevision),
+	}
+	if ctrl.LibraryID == "" || ctrl.ExpectedRevision == "" {
+		return novaApp.HostFrameLibraryControl{}, errors.New("library id and revision are required")
+	}
+	for _, itemID := range wire.ManualItemIDs {
+		trimmed := strings.TrimSpace(itemID)
+		if trimmed == "" {
+			return novaApp.HostFrameLibraryControl{}, errors.New("manual item id must not be blank")
+		}
+		ctrl.ManualItemIDs = append(ctrl.ManualItemIDs, trimmed)
+	}
+	return ctrl, nil
 }
 
 type hostModelOptionsWire struct {
@@ -172,7 +218,7 @@ func (h *Handlers) handleWorldContextHostBind(ctx context.Context, c *app.Reques
 		return
 	}
 	body, err := hostRequestBody(c, 64*1024)
-	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}, "world_context": {}}) != nil {
+	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}, "world_context": {}, "library_context": {}}) != nil {
 		writeContextPreviewRequestError(c, "iframe 绑定请求格式无效")
 		return
 	}
@@ -181,8 +227,28 @@ func (h *Handlers) handleWorldContextHostBind(ctx context.Context, c *app.Reques
 		writeContextPreviewRequestError(c, "iframe 绑定请求格式无效")
 		return
 	}
+	// 背景载体互斥（B4a/L3.3）：一次 bind 只承载 world 或 library 一种背景，
+	// 不做优先级吞并；两类都不携带时是显式 bare 绑定（state=none）。
+	if hostBindCarrierConflict(wire) {
+		writeContextPreviewRequestError(c, "iframe 绑定不接受同时携带世界与库背景")
+		return
+	}
+	if hostRawPresent(wire.LibraryContext) {
+		ctrl, decodeErr := decodeHostLibraryContext(wire.LibraryContext)
+		if decodeErr != nil {
+			writeContextPreviewRequestError(c, "iframe 库绑定请求格式无效")
+			return
+		}
+		state, bindErr := h.app.BindLibraryHostFrame(ctx, hostToken(c), consumer, wire.FrameInstance, ctrl)
+		if bindErr != nil {
+			h.writeHostBindError(c, bindErr)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"contextSummary": state})
+		return
+	}
 	var ref *worldcontext.Ref
-	if len(bytes.TrimSpace(wire.WorldContext)) > 0 {
+	if hostRawPresent(wire.WorldContext) {
 		ref, err = decodeWorldContextRef(wire.WorldContext)
 		if err != nil {
 			writeContextPreviewError(c, err)
@@ -195,6 +261,17 @@ func (h *Handlers) handleWorldContextHostBind(ctx context.Context, c *app.Reques
 		return
 	}
 	c.JSON(consts.StatusOK, map[string]any{"contextSummary": state})
+}
+
+// writeHostBindError 下发 iframe 绑定期错误：库载体错误复用 libraryruntime 稳定码映射，
+// 其余走 worldcontext 领域错误映射；两类文案都不含库正文、运行秘密或本机路径。
+func (h *Handlers) writeHostBindError(c *app.RequestContext, err error) {
+	var libErr *libraryruntime.Error
+	if errors.As(err, &libErr) {
+		h.writeLibraryRuntimePreparationError(c, libErr)
+		return
+	}
+	writeContextPreviewError(c, err)
 }
 
 func (h *Handlers) HandleWorldContextHostNarraverseBind(ctx context.Context, c *app.RequestContext) {
@@ -241,6 +318,11 @@ func (h *Handlers) handleWorldContextHostCall(ctx context.Context, c *app.Reques
 	var domainErr *worldcontext.DomainError
 	if errors.As(err, &domainErr) {
 		writeContextPreviewError(c, err)
+		return
+	}
+	var libErr *libraryruntime.Error
+	if errors.As(err, &libErr) {
+		h.writeLibraryRuntimePreparationError(c, libErr)
 		return
 	}
 	var gatewayErr *novaApp.ModelGatewayError
