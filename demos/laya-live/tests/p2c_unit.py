@@ -382,6 +382,18 @@ chk('规则：掏信出示 仍按让渡压制（掏出+这就是）',
     _e5["delta"][0]["delta"] == -2.4
     and _e5["delta"][0].get("rule_adjudicated") == "evidence_handover",
     'delta=%s' % _e5["delta"][0]["delta"])
+_cvr1 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 2.0)]},
+                                  {}, "（掏出密令递过去）你自己看。")
+chk('规则：掏出密令递过去 → 按让渡压制（挽回探针补漏）',
+    _cvr1["delta"][0]["delta"] == -2.8
+    and _cvr1["delta"][0].get("rule_adjudicated") == "evidence_handover",
+    'delta=%s' % _cvr1["delta"][0]["delta"])
+_cvr2 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 1.5)]},
+                                  {}, "那纸密令，你从哪来的？")
+chk('规则：质问密令来源（哪来的）不按让渡压制',
+    _cvr2["delta"][0]["delta"] == 1.5
+    and _cvr2["delta"][0].get("rule_adjudicated") is None,
+    'delta=%s' % _cvr2["delta"][0]["delta"])
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
