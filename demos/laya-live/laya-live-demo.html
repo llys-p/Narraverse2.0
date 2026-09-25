@@ -1377,7 +1377,9 @@ function renderState(cur){
     var txt = applied.map(function(d){
       var k = String(d.target || '').split('.').pop();
       var dn = Math.round((d.delta||0)*100)/100;
-      return L(k) + ' ' + (dn>0?'+':'') + dn + ' → ' + d.new_value;
+      var tag = d.rule_adjudicated === 'evidence_handover' ? '（出示证据，疑点回落）'
+              : d.rule_adjudicated === 'pro_cooperation' ? '（合作倾向，疑点趋缓）' : '';
+      return L(k) + ' ' + (dn>0?'+':'') + dn + ' → ' + d.new_value + tag;
     }).join('，');
     return '<div style="font-size:11px;color:#2f855a;margin:3px 34px 8px">这句让：' + _esc(txt) + '</div>';
   }

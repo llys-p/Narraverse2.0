@@ -2165,6 +2165,9 @@ def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=N
         r = state_transition(sig, d.get("delta"), _dig(st, d.get("target")), allowed=True)
         r.update(grade=d.get("grade"), status=stt, role=d.get("role"),
                  attribute=d.get("attribute"), checkpoint=d.get("checkpoint"))
+        # ★ 规则层裁决标记随 delta 透传（前端可视化「为何这个值变/回落」）
+        if d.get("rule_adjudicated"):
+            r["rule_adjudicated"] = d["rule_adjudicated"]
         if r["committed"]:
             _set_path(st, d.get("target"), r["new_value"])
             r.update(validated=True, committed=False)

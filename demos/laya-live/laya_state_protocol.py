@@ -771,6 +771,7 @@ class LayaStateProtocol:
                     "source_signal": r.get("signal"), "target": r.get("target"),
                     "old_value": r.get("old"), "delta": r.get("final_delta"),
                     "new_value": r.get("new_value"),
+                    "rule_adjudicated": r.get("rule_adjudicated"),
                 })
             state_changed = any(abs(float(x.get("delta") or 0)) > 1e-9 for x in applied)
             prev_ver = current
@@ -1038,7 +1039,8 @@ class LayaStateProtocol:
                 B._set_path(new_state, r.get("target"), r.get("new_value"))
                 applied.append({"source_signal": r.get("signal"), "target": r.get("target"),
                                 "old_value": r.get("old"), "delta": r.get("final_delta"),
-                                "new_value": r.get("new_value")})
+                                "new_value": r.get("new_value"),
+                                "rule_adjudicated": r.get("rule_adjudicated")})
             state_changed = any(abs(float(x.get("delta") or 0)) > 1e-9 for x in applied)
             had_bucket = scope in B._ACTOR_STATE
             saved_bucket = _copy.deepcopy(B._ACTOR_STATE.get(scope)) if had_bucket else None
