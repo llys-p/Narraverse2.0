@@ -1245,7 +1245,13 @@ function renderState(cur){
   async function analyze(){
     if (!S.sid || !S.aid){ return loadState(false); }
     var msg = msgEl.value;
-    if (!msg || !msg.trim()){ flash('请输入台词', true); return; }
+    if (!msg || !msg.trim()){
+      // 兜底取顶部旧演示输入框的台词（用户常在那里打字）
+      var oth = document.getElementById('inp');
+      msg = (oth && oth.value) || '';
+    }
+    if (!msg || !msg.trim()){ flash('请先输入台词（上方或 P2 输入框）', true); msgEl.focus(); return; }
+    msgEl.value = msg;   // 回填，②栏「玩家原话」正确回显
     try{
       var st = (await api('/state?session_id=' + encodeURIComponent(S.sid)
                           + '&actor_id=' + encodeURIComponent(S.aid))).current;
@@ -1335,6 +1341,8 @@ function renderState(cur){
   document.getElementById('p2fold').onclick = function(){ window.__foldP2(this); };
   // 恢复上次 scope / event_id / analysis_id 并只读查询（§7：刷新可恢复；epoch 变化才需清理）
   restore();
+  // 无恢复数据时给默认值并自动读取 —— 打开页面即有内容，不用手动填+点读取
+  if (!S.sid){ S.sid = 'demo_p2'; S.aid = 'lia'; sidEl.value = S.sid; aidEl.value = S.aid; persist(); }
   if (S.analysis_id){
     api('/analysis/' + encodeURIComponent(S.analysis_id)
         + '?session_id=' + encodeURIComponent(S.sid)
