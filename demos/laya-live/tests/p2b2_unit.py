@@ -73,6 +73,12 @@ def reset_all():
 
 @contextmanager
 def assets_ctx(deltas=None, engine_ready=True):
+    import types as _types
+    _fake_engine = _types.SimpleNamespace(
+        ready=engine_ready,
+        predict=lambda _s, _q: {"answers": B.fallback_decide(B.CFG["actor"], None, "", _q)[0]},
+        detail="stub", model_name=None, last_error=None,
+        device_label=lambda: "cpu", describe=lambda: {"kind": "fake"})
     with mock.patch.object(B, 'load_capability_profile',
                            side_effect=lambda m: _lcp(m, FAKE_PROF, None)), \
          mock.patch.object(B, 'load_capability_profiles', return_value={"profiles": {}}), \
@@ -81,7 +87,8 @@ def assets_ctx(deltas=None, engine_ready=True):
          mock.patch.object(B, '_cached_translate', return_value='EN'), \
          mock.patch.object(B, '_engine_identity',
                            return_value={"ready": engine_ready, "model_name": "typed-decisions",
-                                         "detail": "stub"}):
+                                         "detail": "stub"}), \
+         mock.patch.object(B, 'ENGINE', _fake_engine):
         yield
 
 

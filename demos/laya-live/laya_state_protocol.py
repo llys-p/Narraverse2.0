@@ -482,6 +482,16 @@ class LayaStateProtocol:
                 self._release_inflight(scope, event_id, expected)
             raise _ProtoError(502, "MODEL_INFERENCE_FAILED",
                               core.get("note") or core.get("invalid_reason") or "分析核心失败")
+        # ★ C3（2026-09-25）：推理**结果**回落 fallback 也必须拒绝。
+        #   开始时的 _assert_engine 只保证「进入时引擎就绪」；若 predict 中途抛异常，
+        #   analyze_core 会回落 fallback 引擎并**正常返回候选**。这里对返回结果
+        #   做后置引擎校验 —— fallback 结果不得进入可提交候选。
+        if core.get("engine") != B.ENGINE_MODE_LAYA:
+            with self.lock:
+                self._release_inflight(scope, event_id, expected)
+            raise _ProtoError(503, "MODEL_UNAVAILABLE",
+                              "该轮实际推理回落到 fallback（启发式），拒绝产生可提交候选",
+                              {"engine_used": core.get("engine")})
 
         # ---- judgment 语义校验（§6.2：不需要 NPC 行为）----
         judgment = {"behavior_is_null": False, "awaiting_upstream": False,

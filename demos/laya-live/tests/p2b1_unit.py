@@ -75,6 +75,22 @@ def reset_all():
     now[0] = 1000.0
 
 
+def _fake_engine(engine_ready=True, engine_model="typed-decisions"):
+    """可被 `mock.patch.object(B, 'ENGINE', fake)` 的 READY 引擎桩（零模型）。
+
+    ★ model_name 必须保持 None：协议 `_effective_model()` 在引擎未加载时回落
+      DEFAULT_MODEL_NAME，R2 用例正是利用「身份(identity)与期望模型不一致→503」
+      来测试身份门禁的。predict 复用 fallback 数据当合法 answers（schema 一致），
+      engine 标记为 laya，供协议层 C3 结果级校验放行；内容在协议层测试里无关紧要。
+    """
+    import types
+    return types.SimpleNamespace(
+        ready=engine_ready,
+        predict=lambda _state, _q: {"answers": B.fallback_decide(B.CFG["actor"], None, "", _q)[0]},
+        detail="stub-fake", model_name=None, last_error=None,
+        device_label=lambda: "cpu (fake)", describe=lambda: {"kind": "fake"})
+
+
 @contextmanager
 def assets_ctx(profile=None, check=None, deltas=None, xlate="EN_TEST", engine_ready=True,
                engine_model="typed-decisions"):
@@ -87,7 +103,8 @@ def assets_ctx(profile=None, check=None, deltas=None, xlate="EN_TEST", engine_re
          mock.patch.object(B, 'build_deltas',
                            side_effect=lambda a, q, ac: _bd(a, q, ac, deltas)), \
          mock.patch.object(B, '_cached_translate', return_value=xlate), \
-         mock.patch.object(B, '_engine_identity', return_value=eng):
+         mock.patch.object(B, '_engine_identity', return_value=eng), \
+         mock.patch.object(B, 'ENGINE', _fake_engine(engine_ready, engine_model)):
         yield
 
 
@@ -261,7 +278,8 @@ with mock.patch.object(B, 'load_capability_profile',
      mock.patch.object(B, '_cached_translate', return_value="EN"), \
      mock.patch.object(B, '_engine_identity', return_value={"ready": True,
                                                             "model_name": "typed-decisions",
-                                                            "detail": "stub"}):
+                                                            "detail": "stub"}), \
+     mock.patch.object(B, 'ENGINE', _fake_engine(True, "typed-decisions")):
     r = P.analyze(base_req(event="ev_ref"))
     chk('A5 档案不可用 → reference_only/can_commit=false',
         r["status"] == "reference_only" and r["can_commit"] is False,
@@ -595,6 +613,30 @@ with assets_ctx(engine_ready=False):
         chk('R3 commit 引擎未就绪 → 503 MODEL_UNAVAILABLE',
             e.code == "MODEL_UNAVAILABLE", 'code=%s' % e.code)
     chk('R3 拒绝后无状态写入', not B._ACTOR_STATE, '')
+# R3b（C3）：analyze 途中 predict 抛异常 → 回落 fallback → 结果级校验拒绝
+reset_all()
+import types as _boom_types
+_boom_engine = _boom_types.SimpleNamespace(
+    ready=True,
+    predict=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("inference boom")),
+    detail="boom", model_name=None, last_error=None,
+    device_label=lambda: "cpu", describe=lambda: {"kind": "boom"})
+with mock.patch.object(B, 'load_capability_profile',
+                       side_effect=lambda m: _lcp(m, FAKE_PROF, None)), \
+     mock.patch.object(B, 'load_capability_profiles', return_value={"profiles": {}}), \
+     mock.patch.object(B, 'build_deltas', side_effect=lambda a, q, ac: _bd(a, q, ac)), \
+     mock.patch.object(B, '_cached_translate', return_value="EN"), \
+     mock.patch.object(B, '_engine_identity', return_value={"ready": True,
+                                                            "model_name": "typed-decisions",
+                                                            "detail": "boom"}), \
+     mock.patch.object(B, 'ENGINE', _boom_engine):
+    try:
+        P.analyze(base_req(event="ev_boom"))
+        chk('R3b predict 抛异常 → analyze 被拒', False, '应 503')
+    except _ProtoError as e:
+        chk('R3b predict 抛异常回落 fallback → 503 MODEL_UNAVAILABLE',
+            e.code == "MODEL_UNAVAILABLE", 'code=%s' % e.code)
+    chk('R3b 拒绝后零候选零 in-flight', not P._analyses and not P._inflight, '')
 # R4 非有限 deltas（NaN）→ 不进 writable；commit 不可
 reset_all()
 bad_nan = (copy.deepcopy(FAKE_DELTAS[0])[:1], {})
