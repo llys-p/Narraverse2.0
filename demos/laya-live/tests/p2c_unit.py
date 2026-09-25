@@ -269,22 +269,29 @@ def _delta_item(sig, d):
 
 
 _r1 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 3.0)]},
-                                {"cooperation": 0.72, "disclose": 0.1})
+                                {"cooperation": 0.72, "disclose": 0.1}, "")
 chk('规则：cooperation 高 → doubt 正增量打折并略降',
     _r1["delta"][0]["delta"] == round(3.0 * 0.5 - 0.8, 3)
-    and _r1["delta"][0].get("rule_adjudicated") is True,
+    and _r1["delta"][0].get("rule_adjudicated") == "pro_cooperation",
     'delta=%s' % _r1["delta"][0]["delta"])
 _proto = {"delta": [_delta_item("doubt_shift", 3.0)]}
-_r2 = B.apply_rule_adjudication(_proto, {"cooperation": 0.2, "disclose": 0.2})
-chk('规则：无正向倾向 → 返回原对象（零拷贝）', _r2 is _proto, '')
+_r2 = B.apply_rule_adjudication(_proto, {"cooperation": 0.2, "disclose": 0.2}, "今晚的酒不错。")
+chk('规则：无命中 → 返回原对象（零拷贝）', _r2 is _proto, '')
 _r3 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", -1.5)]},
-                                {"cooperation": 0.1, "disclose": 0.8})
+                                {"cooperation": 0.1, "disclose": 0.8}, "")
 chk('规则：doubt 负增量不受折扣影响', _r3["delta"][0]["delta"] == -1.5, '')
 _r4 = B.apply_rule_adjudication(
     {"delta": [_delta_item("doubt_shift", 2.0), _delta_item("trust_shift", 1.0)]},
-    {"cooperation": 0.9, "disclose": 0.1})
+    {"cooperation": 0.9, "disclose": 0.1}, "")
 chk('规则：只影响 doubt_shift，不动 trust', _r4["delta"][0]["delta"] == 0.2
     and _r4["delta"][1]["delta"] == 1.0, '')
+_r5 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 2.0)]},
+                                {"cooperation": 0.1, "disclose": 0.1},
+                                "（放下刀，双手摊开）名单在这里。")
+chk('规则：证据词 → doubt 直接回落为负',
+    _r5["delta"][0]["delta"] == round(-2.0 * 0.6 - 0.6, 3)
+    and _r5["delta"][0].get("rule_adjudicated") == "evidence_handover",
+    'delta=%s' % _r5["delta"][0]["delta"])
 
 print('=' * 92)
 print('P2-C 后端自测：合计 %d 项：%d PASS / %d FAIL' % (N[0], N[0] - len(FAIL), len(FAIL)))
