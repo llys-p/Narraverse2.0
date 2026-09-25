@@ -310,6 +310,98 @@ chk('剧情线：doubt>=45 → 戒备', _p55["key"] == "guard", _p55["key"])
 chk('剧情线：doubt<=30 → 信任（trust 只读用疑点回落判定）', _p20["key"] == "trust", _p20["key"])
 chk('剧情线：其余 → 试探', _p35["key"] == "probing", _p35["key"])
 
+# ===========================================================================
+print("\n[T-stage] /narrate handler 剧情线四档走查（stub e2e：注入 + 响应字段）")
+print("   目的：玩法层档位必须走真实 handler 路径 —— 提交后 /narrate mode=analysis")
+print("   注入「关系档位」分块给叙事模型，且响应回传 plot_stage；四档对称验证。")
+# ===========================================================================
+reset_all()
+_cap = []
+def _probe(*a, **k):
+    _cap.append(dict(k))
+    return dict(LLM_OK)
+srv3 = ThreadingHTTPServer(("127.0.0.1", 0), B.Handler)
+_port3 = srv3.server_address[1]
+threading.Thread(target=srv3.serve_forever, daemon=True).start()
+_BASE3 = "http://127.0.0.1:%d" % _port3
+def _get3(path):
+    try:
+        with _OPENER.open(_BASE3 + path, timeout=10) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except __import__("urllib.error", fromlist=["HTTPError"]).HTTPError as e:
+        return e.code, json.loads(e.read().decode("utf-8"))
+def _post3(path, body):
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = __import__("urllib.request", fromlist=["Request"]).Request(
+        _BASE3 + path, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with _OPENER.open(req, timeout=10) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except __import__("urllib.error", fromlist=["HTTPError"]).HTTPError as e:
+        return e.code, json.loads(e.read().decode("utf-8"))
+
+def _walk_to_band(sid, ev_prefix, msg, dd, band):
+    """在 sid 上逐步 analyze→commit 直到 doubt 落入 band（每回合疑点增量有
+    per_turn 上限 +5，故需多回合逼近）；返回 (doubt, 最后事件的 /narrate 响应)。"""
+    band_fn = {
+        "break":  lambda d: d >= 70,
+        "guard":  lambda d: 45 <= d < 70,
+        "trust":  lambda d: d <= 30,
+        "probing": lambda d: 30 < d < 45,
+    }[band]
+    _cap[:] = []
+    last_aid = None
+    d = None
+    for i in range(16):
+        st, s = _get3("/state?session_id=%s&actor_id=lia" % sid)
+        ver = s["current"]["state_version"]
+        st, ar = _post3("/analyze", {"session_id": sid, "actor_id": "lia",
+                                     "event_id": "%s_t%d" % (ev_prefix, i),
+                                     "expected_state_version": ver,
+                                     "message": msg, "context": {}})
+        st, cr = _post3("/commit_state", {"session_id": sid, "actor_id": "lia",
+                                          "analysis_id": ar["analysis_id"],
+                                          "expected_state_version": ver})
+        last_aid = ar["analysis_id"]
+        d = (cr.get("new_state") or cr.get("state") or {}).get("relationship", {}).get("doubt")
+        if d is not None and band_fn(d):
+            break
+    st, nr = _post3("/narrate", {"mode": "analysis", "session_id": sid, "actor_id": "lia",
+                                 "analysis_id": last_aid})
+    return d, nr
+
+_STAGE_CASES = [
+    # (sid, 事件前缀, 台词, doubt增量×回合, 期望档位, 档位文案, 提示片段)
+    ("stg_break", "b", "（逼近一步，语气沉下去）我不是来听你打太极的，把实话吐出来。", 90.0,
+     "break", "决裂边缘", "随时可能动手"),
+    ("stg_guard", "g", "你最好把来路说清楚，别跟我打马虎眼。", 30.0,
+     "guard", "戒备中", "戒备"),
+    ("stg_trust", "t", "说真的，我这一路没有骗过你一个字。", -15.0,
+     "trust", "信任渐生", "松口"),
+    ("stg_probe", "p", "我听说这镇子上最近不太平，你常驻这边吧？", 5.0,
+     "probing", "试探阶段", "权衡"),
+]
+for _sid, _ev, _msg, _dd, _exp, _txt, _hint in _STAGE_CASES:
+    with assets_ctx(deltas=([{"question": "doubt_shift", "target": "relationship.doubt",
+                              "delta": _dd, "label": "怀疑", "raw": _dd, "range": [0, 100]}], {})), \
+         mock.patch.object(B, 'llm_narrate', side_effect=_probe):
+        _d, _nr = _walk_to_band(_sid, _ev, _msg, _dd, _exp)
+        _got = (_nr or {}).get("plot_stage") or {}
+        chk('档位[%s] 提交后 doubt=%s → 响应 plot_stage=%s'
+            % (_exp, _d, (_got or {}).get("key")),
+            _nr is not None and (_got or {}).get("key") == _exp
+            and (_d is None or (B.plot_stage({"relationship": {"doubt": _d}}).get("key") == _exp)),
+            'doubt=%s key=%s' % (_d, (_got or {}).get("key")))
+        _blk = (_cap[-1] or {}).get("signals_block") or ""
+        chk('档位[%s] 注入「%s」分块给叙事模型' % (_exp, _txt),
+            _txt in _blk and _hint in _blk and "参考，不念数字" in _blk,
+            'blk=%r' % (_blk[:80] if _blk else None))
+        chk('档位[%s] 响应含 state_source/state_version（提交语义完整）' % _exp,
+            (_nr or {}).get("state_source") == "committed"
+            and (_nr or {}).get("state_version"),
+            'src=%s ver=%s' % ((_nr or {}).get("state_source"), (_nr or {}).get("state_version")))
+srv3.shutdown()
+
 print('=' * 92)
 print('P2-C 后端自测：合计 %d 项：%d PASS / %d FAIL' % (N[0], N[0] - len(FAIL), len(FAIL)))
 if FAIL:
