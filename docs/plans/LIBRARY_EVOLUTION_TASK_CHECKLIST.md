@@ -1,6 +1,6 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-25（Asia/Shanghai；A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c、B3a+审查修正、B3b、B3c 均完成，**B3 整体验收 = PASS WITH FOLLOW-UPS（报告 [B3 验收](../acceptance/LIBRARY_L3_B3_ACCEPTANCE.md)；D1 修复轮提交 `0e46907` 复审 PASS，审核方独立复跑 agent 6 例+12 子例、app 2 集成测试及 vet/build/diff-check；跟进项：正式 executable 重放待发布前补（可用假模型强制读取、无付费额度），扫描遍历错误加固已提交 `806d6bb`）**，在分支 `library-b2a` 本地未推送；B4a/B4b/B5 已获准继续）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-25（Asia/Shanghai；A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c、B3a+审查修正、B3b、B3c 均完成，**B3 整体验收 = PASS WITH FOLLOW-UPS（报告 [B3 验收](../acceptance/LIBRARY_L3_B3_ACCEPTANCE.md)；D1 修复轮提交 `0e46907` 复审 PASS，审核方独立复跑 agent 6 例+12 子例、app 2 集成测试及 vet/build/diff-check；跟进项：正式 executable 重放待发布前补（可用假模型强制读取、无付费额度），扫描遍历错误加固已提交 `806d6bb`）**，在分支 `library-b2a` 本地未推送；**B4a 进行中（后端+前端已接线并过定向测试，提交 `368a0ec`/`582bb2b`；正式页面验证待做）**，B4b/B5 待继续）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
@@ -154,7 +154,7 @@
 
 ### B4a · 叙界受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
-- [ ] 沿用既有宿主受控入口绑定新库，iframe 首次请求等待绑定；不下发运行秘密，不改 iframe 信任根或 Module3 引擎；正式页面验证实际取材。**完成记录：待填。**
+- [ ] 沿用既有宿主受控入口绑定新库，iframe 首次请求等待绑定；不下发运行秘密，不改 iframe 信任根或 Module3 引擎；正式页面验证实际取材。**进行中（2026-09-25 08:23，AI1）：后端+前端已接线并过定向测试（提交 `368a0ec` 后端、`582bb2b` 前端）：bind 新增 library 载体（与 world 互斥；consumer 路由固定、scopeKey 宿主会话+frame 派生；Module4 保持 world-only 待 B4b）；绑定期固定 revision + 装配只读背景，每次 /call 前置并计费；换绑/解绑/撤销/过期幂等释放；响应/摘要脱敏（无库 ID/revision/scopeKey/运行 ID）；「带入叙界」入口含宿主就绪守卫与草稿禁用；app 4 例 + handlers 1 例 + 前端 6 例全过、tsc/构建过。正式页面验证实际取材待做——叙界模块资产不在本工作树，需按 `scripts/sync-narraverse-assets.mjs` 以 `NARRAVERSE_SOURCE_DIR` 同步后驱动；与 B3 executable 重放同类缺口，建议专项验收轮补做。**
 
 ### B4b · Module4 受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
