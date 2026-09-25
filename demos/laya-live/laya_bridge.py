@@ -499,6 +499,24 @@ ENGINE = LayaEngine()
 # ★ P2-B1：协议实例（注入 bridge 模块引用；锁/版本/候选/事件都在协议模块内）。
 PROTOCOL = LayaStateProtocol(sys.modules[__name__])
 
+
+def _finite_number(v):
+    """JSON 数值须有限且非布尔（禁止 NaN/Infinity，布尔不当数字）。"""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v \
+        and v not in (float("inf"), float("-inf"))
+
+
+def _engine_identity():
+    """协议引擎身份门禁用的只读身份：实际引擎是否就绪 + 实际加载的 checkpoint 名。
+
+    ★ P1 审查（2026-09-25）：Analyze/Commit 都要求「引擎就绪且加载的检查点与
+      所选档案一致」，不满足时协议层返回 503 MODEL_UNAVAILABLE。这是**身份门禁**，
+      用于杜绝「Laya 未加载/降级到 fallback 时仍把启发式结果冒充真实判断提交」。
+    """
+    return {"ready": bool(getattr(ENGINE, "ready", False)),
+            "model_name": getattr(ENGINE, "model_name", None),
+            "detail": getattr(ENGINE, "detail", "")}
+
 # ==========================================================================
 # 2. 回退引擎
 #    Laya 不可用时的降级路径。只做关键词 + 角色状态权重，输出 schema 与
@@ -773,7 +791,14 @@ def build_deltas(answers, questions, actor):
 
     deltas = []
     for qid, spec in paths.items():
-        if qid not in answers or answers[qid].get("_value") is None:
+        if qid not in answers:
+            continue
+        v = answers[qid].get("_value")
+        # ★ P1 审查（2026-09-25）：非有限数值（NaN/Infinity/布尔）在**映射前**就拒绝。
+        #   旧行为会把 NaN 送进 _lerp_table：NaN 与所有阈值比较都为 False → 落入
+        #   else 分支当「最大档」映射，产出一条看起来正常、实则由异常值驱动的
+        #   最大增量提案 —— 这类值绝不能成为状态数值。布尔同样不当数字。
+        if v is None or not _finite_number(v):
             continue
         mapping = questions.get(qid, {}).get("mapping")
         raw = _lerp_table(mapping, answers[qid]["_value"])
@@ -1947,6 +1972,12 @@ def state_transition(signal, proposal_delta, current_value, allowed=True):
     if proposal_delta is None:
         out["skipped_reason"] = "本轮没有拿到该 signal 的数值（未出值或未达 active）"
         return out
+    # ★ P1 审查（2026-09-25）：核心状态公式也拒绝非有限数值（老/新路径共用本函数，
+    #   双层兜底：build_deltas 映射前 + 这里提交/预演前）。NaN 会在 range clamp
+    #   阶段产生 NaN 新值并写入 Actor State —— 那是最难查的一类污染。
+    if not _finite_number(proposal_delta) or not _finite_number(current_value):
+        out["skipped_reason"] = "数值非有限（NaN/Infinity/布尔），拒绝写入"
+        return out
 
     lo_max = (t.get("per_turn_max") or {}).get(signal,
              (t.get("per_turn_max") or {}).get("default"))
@@ -2028,6 +2059,15 @@ def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=N
                             "committed": False,
                             "skipped_reason": "status=%s 不在 write_status=%s 里"
                                               % (stt, t.get("write_status"))})
+            continue
+        # ★ P1 审查（2026-09-25）：校验层显式拒绝非有限数值，避免异常值进入
+        #   状态公式（state_transition 亦有守卫，这里是语义更清晰的提前标注）。
+        if not _finite_number(d.get("delta")):
+            skipped.append({"source_signal": sig, "target": d.get("target"),
+                            "proposal": d.get("delta"), "old": _dig(st, d.get("target")),
+                            "final_delta": 0.0, "new_value": _dig(st, d.get("target")),
+                            "committed": False,
+                            "skipped_reason": "delta 非有限（NaN/Infinity/布尔），拒绝写入"})
             continue
         r = state_transition(sig, d.get("delta"), _dig(st, d.get("target")), allowed=True)
         r.update(grade=d.get("grade"), status=stt, role=d.get("role"),
@@ -2573,6 +2613,10 @@ def world_decide(payload):
 class Handler(BaseHTTPRequestHandler):
     server_version = "LayaBridge/0.1"
     protocol_version = "HTTP/1.1"   # 开 keep-alive：一轮对话有 2~3 次请求
+    # ★ P1 审查（2026-09-25）：请求读超时兜底 —— 防「声明 Content-Length 大于实际
+    #   字节」的请求让读取线程永久挂起（rfile.read(n) 会一直等缺的字节）。
+    #   超时按 socket 异常捕获并转 400，连接随后关闭。
+    timeout = 10
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[bridge] %s - %s\n" % (self.address_string(), fmt % args))
@@ -2603,20 +2647,39 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def _read_protocol(self):
-        """协议端点专用读取：区分空 body / 超限(413) / 坏 JSON(400)。"""
-        n = int(self.headers.get("Content-Length") or 0)
+        """协议端点专用读取：区分空 body / 未声明长度 / 超限(413) / 坏 JSON(400) / 顶层类型(422)。
+
+        ★ P1 审查（2026-09-25）三处加固：
+          1) Content-Length 缺失或非整数 → 400（不再把空 body 当 `{}` 之类继续路由）；
+          2) 实际读到的字节数必须等于声明长度（防「加大声明长度」后带着残缺 body 进入路由）；
+          3) JSON 顶层必须是对象，数组/标量 → 422 INVALID_REQUEST（约定错误协议，不允许越层 404/500）。
+        """
+        cl = self.headers.get("Content-Length")
+        if cl is None:
+            raise _ProtoError(400, "INVALID_JSON", "缺少 Content-Length，无法确定请求体边界")
+        try:
+            n = int(str(cl).strip())
+        except (TypeError, ValueError):
+            raise _ProtoError(400, "INVALID_JSON", "Content-Length 不是合法整数")
+        if n <= 0:
+            raise _ProtoError(400, "INVALID_JSON", "请求体为空")
         if n > MAX_BODY_BYTES:
             raise _ProtoError(413, "PAYLOAD_TOO_LARGE", "请求体超过 64 KiB 上限")
-        if not n:
-            raise _ProtoError(400, "INVALID_JSON", "请求体为空")
         try:
-            raw = self.rfile.read(n).decode("utf-8")
-        except Exception as e:
-            raise _ProtoError(400, "INVALID_JSON", "读取请求体失败：%r" % (e,))
+            raw = self.rfile.read(n)
+        except OSError as e:
+            # 含 socket.timeout：声明长度大于实际且连接不再来字节时，按超时/断连转 400
+            raise _ProtoError(400, "INVALID_JSON", "读取请求体失败或超时：%r" % (e,))
+        if len(raw) != n:
+            raise _ProtoError(400, "INVALID_JSON",
+                              "请求体不完整（声明 %d 字节，实际读到 %d 字节）" % (n, len(raw)))
         try:
-            return json.loads(raw)
+            body = json.loads(raw.decode("utf-8"))
         except Exception:
             raise _ProtoError(400, "INVALID_JSON", "JSON 无法解析")
+        if not isinstance(body, dict):
+            raise _ProtoError(422, "INVALID_REQUEST", "请求体顶层必须是 JSON 对象")
+        return body
 
     # ---- routes ----
     def do_OPTIONS(self):

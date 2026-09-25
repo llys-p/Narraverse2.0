@@ -115,13 +115,12 @@ class LayaStateProtocol:
             m = self._ensure_bucket_meta(scope)
             m["generation"] += 1
             m["revision"] = 0
+            inv_at = self.now()
             for aid, a in list(self._analyses.items()):
                 if (a["session_id"], a["actor_id"]) == scope:
-                    if a["status"] in ("ready", "reference_only"):
-                        self._analyses[aid]["status"] = "invalidated"
-                        self._analyses[aid]["terminal_at"] = self.now()
-                    elif a["status"] == "in_flight":
-                        self._analyses[aid]["status"] = "invalidated"
+                    if a["status"] in ("ready", "reference_only", "in_flight"):
+                        a["status"] = "invalidated"
+                        a["terminal_at"] = inv_at
             self._events.pop(scope, None)
             for k in list(self._inflight):
                 if k[0] == scope:
@@ -162,6 +161,23 @@ class LayaStateProtocol:
     def _effective_model(self):
         eng = getattr(self.B.ENGINE, "model_name", None)
         return eng or self.B.DEFAULT_MODEL_NAME
+
+    def _assert_engine(self, model):
+        """引擎身份门禁（P1 审查）：实际引擎必须就绪且加载的检查点 == 所选模型。
+
+        杜绝「Laya 未加载 / 降级到 fallback 启发式时，仍把结果冒充真实判断提交」。
+        Analyze 与 Commit 共用；不满足 → 503 MODEL_UNAVAILABLE，不产生/不发布任何
+        可写提案，也不允许回放已提交回执伪装成功。
+        """
+        eng = self.B._engine_identity()
+        if not eng.get("ready") or eng.get("model_name") != model:
+            raise _ProtoError(503, "MODEL_UNAVAILABLE",
+                              "引擎未就绪或实际加载的检查点与所选档案不一致"
+                              "（拒绝 fallback 启发式冒充真实判断）",
+                              {"engine_ready": bool(eng.get("ready")),
+                               "engine_model": eng.get("model_name"),
+                               "required_model": model,
+                               "detail": eng.get("detail") or ""})
 
     # ======================================================================
     # 请求校验（§3.2 / §3.4 / §3.5，白名单 + 未知字段 422）
@@ -242,21 +258,27 @@ class LayaStateProtocol:
         return a
 
     def _maybe_stale(self, a):
-        """惰性失效：基准版本与当前版本/epoch/generation 不符 → stale。"""
+        """惰性失效：基准版本与当前版本/epoch/generation 不符 → stale。
+
+        ★ P1 审查：标记 stale 时记录 terminal_at（终态时间），让
+          stale/invalidated 也能被 _cleanup_expired 纳入回收。
+        """
         cur = self.state_version((a["session_id"], a["actor_id"]))
         if a["status"] in ("ready", "reference_only", "expired"):
             if cur != a.get("base_state_version"):
                 a["status"] = "stale"
+                a["terminal_at"] = self.now()
         return a
 
     def _cleanup_expired(self):
-        """请求时清理：只清保留期已过的终态；腾出容量。返回可回收条数。"""
+        """请求时清理：回收保留期已过的终态（committed/rejected/expired/stale/invalidated）；
+        腾出容量。返回可回收条数。"""
         now = self.now()
         drop = []
         for aid, a in self._analyses.items():
-            if a["status"] in ("committed", "rejected", "expired"):
+            if a["status"] in ("committed", "rejected", "expired", "stale", "invalidated"):
                 tt = a.get("terminal_at") or a.get("expires_at") or 0
-                if now >= tt + RECEIPT_TTL_S:
+                if tt and now >= tt + RECEIPT_TTL_S:
                     drop.append(aid)
         for aid in drop:
             self._analyses.pop(aid, None)
@@ -329,6 +351,9 @@ class LayaStateProtocol:
             xlate_src = None
 
         with self.lock:
+            # ★ P1 审查：引擎身份门禁（就绪 + checkpoint 一致），在锁内、做任何
+            #   分析之前判定；fallback/未加载一律 503，不产生候选。
+            self._assert_engine(model)
             current = self.state_version(scope)
             if expected != current:
                 raise _ProtoError(409, "STATE_VERSION_CONFLICT",
@@ -464,8 +489,9 @@ class LayaStateProtocol:
             if d.get("source_signal") in by_signal and not writable:
                 pass
         for r in skipped:
-            if r.get("signal"):
-                skipped_out.append({"source_signal": r.get("signal"),
+            sig = r.get("signal") or r.get("source_signal")
+            if sig:
+                skipped_out.append({"source_signal": sig,
                                     "reason_codes": _skip_reason_codes(r)})
         for ig in ignored_core:
             skipped_out.append({"source_signal": ig.get("source_signal"),
@@ -583,6 +609,7 @@ class LayaStateProtocol:
     def get_analysis(self, analysis_id, session_id, actor_id):
         scope = self._scope(session_id, actor_id)
         with self.lock:
+            self._cleanup_expired()
             a = self._analyses.get(analysis_id)
             if not a or (a["session_id"], a["actor_id"]) != scope:
                 raise _ProtoError(404, "ANALYSIS_NOT_FOUND", "未知/已清理/scope 不符的 analysis_id")
@@ -647,6 +674,11 @@ class LayaStateProtocol:
         model = self._effective_model()
 
         with self.lock:
+            # ★ P1 审查：请求时先执行 TTL 清理（超 3600s 的回执/终态先被回收，
+            #   之后才允许回放 —— 否则「回放早于清理」会让过期回执继续返回 200）。
+            self._cleanup_expired()
+            # ★ P1 审查：引擎身份门禁；提交同样要求就绪 + checkpoint 一致。
+            self._assert_engine(model)
             a = self._analyses.get(analysis_id)
             if not a or (a["session_id"], a["actor_id"]) != scope:
                 raise _ProtoError(404, "ANALYSIS_NOT_FOUND", "未知/已清理/scope 不符的 analysis_id")
@@ -806,6 +838,7 @@ class LayaStateProtocol:
             raise _ProtoError(422, "INVALID_REQUEST", "reason 只允许 user_cancelled/director_rejected/superseded")
         scope = self._scope(sid, aid)
         with self.lock:
+            self._cleanup_expired()
             a = self._analyses.get(analysis_id)
             if not a or (a["session_id"], a["actor_id"]) != scope:
                 raise _ProtoError(404, "ANALYSIS_NOT_FOUND", "未知/已清理/scope 不符的 analysis_id")
@@ -860,6 +893,8 @@ class _ProtoError(Exception):
 
 def _skip_reason_codes(skip):
     txt = str(skip.get("skipped_reason") or "").lower()
+    if "非有限" in txt or "nan" in txt or "infinity" in txt or "布尔" in txt:
+        return ["UNKNOWN_VALUE"]
     if "没有 range" in txt or "range" in txt:
         return ["TARGET_UNAVAILABLE"]
     if "status=" in txt and ("auxiliary" in txt or "write_status" in txt):

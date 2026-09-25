@@ -73,15 +73,18 @@ def reset_all():
 
 
 @contextmanager
-def assets_ctx(profile=None, check=None, deltas=None, xlate="EN_TEST"):
+def assets_ctx(profile=None, check=None, deltas=None, xlate="EN_TEST", engine_ready=True,
+               engine_model="typed-decisions"):
     use_prof = FAKE_PROF if profile is None else profile
+    eng = {"ready": engine_ready, "model_name": engine_model, "detail": "stub"}
     with mock.patch.object(B, 'load_capability_profile',
                            side_effect=lambda m: _lcp(m, use_prof, check)), \
          mock.patch.object(B, 'load_capability_profiles',
                            return_value={"profiles": {}}), \
          mock.patch.object(B, 'build_deltas',
                            side_effect=lambda a, q, ac: _bd(a, q, ac, deltas)), \
-         mock.patch.object(B, '_cached_translate', return_value=xlate):
+         mock.patch.object(B, '_cached_translate', return_value=xlate), \
+         mock.patch.object(B, '_engine_identity', return_value=eng):
         yield
 
 
@@ -252,7 +255,10 @@ with mock.patch.object(B, 'load_capability_profile',
                                                      "checkpoint": "typed-decisions", "profile_id": None})), \
      mock.patch.object(B, 'load_capability_profiles', return_value={"profiles": {}}), \
      mock.patch.object(B, 'build_deltas', side_effect=lambda a, q, ac: _bd(a, q, ac)), \
-     mock.patch.object(B, '_cached_translate', return_value="EN"):
+     mock.patch.object(B, '_cached_translate', return_value="EN"), \
+     mock.patch.object(B, '_engine_identity', return_value={"ready": True,
+                                                            "model_name": "typed-decisions",
+                                                            "detail": "stub"}):
     r = P.analyze(base_req(event="ev_ref"))
     chk('A5 档案不可用 → reference_only/can_commit=false',
         r["status"] == "reference_only" and r["can_commit"] is False,
@@ -491,7 +497,7 @@ with assets_ctx():
         chk('C5 Reset 后提交被拒', False, '')
     except _ProtoError as e:
         chk('C5 Reset 后 → 410 ANALYSIS_INVALIDATED', e.code == "ANALYSIS_INVALIDATED", 'code=%s' % e.code)
-    # 回执清理：committed 后超 3600s 重试 → 404
+    # 回执清理：committed 后超 3600s，请求时自动清理 → 原请求重试 404（不再 replayed）
     reset_all()
     now[0] = 1000.0
     r = P.analyze(base_req())
@@ -499,14 +505,16 @@ with assets_ctx():
                         "analysis_id": r["analysis_id"],
                         "expected_state_version": r["base_state_version"]})
     now[0] += 3601
-    P._cleanup_expired()
     try:
+        # 不手动 _cleanup —— 验证 commit_state 请求时先清理，回放不得越过 TTL
         P.commit_state({"session_id": "demo_01", "actor_id": "lia",
                         "analysis_id": r["analysis_id"],
                         "expected_state_version": r["base_state_version"]})
-        chk('C5 回执清理后重试被拒', False, '')
+        chk('C5 回执超 TTL 后请求时清理 → 提交被拒', False, '应 404')
     except _ProtoError as e:
-        chk('C5 回执清理后 → 404 ANALYSIS_NOT_FOUND', e.code == "ANALYSIS_NOT_FOUND", 'code=%s' % e.code)
+        chk('C5 回执超 TTL 回放被拒（请求时清理）', e.code == "ANALYSIS_NOT_FOUND",
+            'code=%s' % e.code)
+    chk('C5 回执超 TTL 后候选已被回收', r["analysis_id"] not in P._analyses, '')
     # 容量满：patch 上限小值 → 429
     reset_all()
     now[0] = 1000.0
@@ -549,6 +557,79 @@ with assets_ctx():
     # 候选仍 ready（可重试提交）
     q = P.get_analysis(aid, 'demo_01', 'lia')
     chk('C6 候选仍 ready 可重试', q["status"] == "ready", 'status=%s' % q["status"])
+
+# ===========================================================================
+print("\n[R 审查修复反例] 引擎门禁 / 非有限数值 / stale.invalidated 回收")
+# ===========================================================================
+# R1 引擎未就绪 → analyze 直接 503（不做 fallback 冒充）
+reset_all()
+with assets_ctx(engine_ready=False):
+    try:
+        P.analyze(base_req())
+        chk('R1 引擎未就绪 analyze 被拒', False, '')
+    except _ProtoError as e:
+        chk('R1 引擎未就绪 → 503 MODEL_UNAVAILABLE', e.code == "MODEL_UNAVAILABLE", 'code=%s' % e.code)
+    chk('R1 引擎未就绪不产生候选', not P._analyses, '')
+# R2 checkpoint 不匹配 → 503
+reset_all()
+with assets_ctx(engine_model="english"):
+    try:
+        P.analyze(base_req())
+        chk('R2 checkpoint 不匹配 analyze 被拒', False, '')
+    except _ProtoError as e:
+        chk('R2 checkpoint 不匹配 → 503 MODEL_UNAVAILABLE', e.code == "MODEL_UNAVAILABLE", 'code=%s' % e.code)
+# R3 Commit 时引擎不满足 → 503（先正常分析，切换身份再提交）
+reset_all()
+with assets_ctx():
+    r = P.analyze(base_req())
+with assets_ctx(engine_ready=False):
+    try:
+        P.commit_state({"session_id": "demo_01", "actor_id": "lia",
+                        "analysis_id": r["analysis_id"],
+                        "expected_state_version": r["base_state_version"]})
+        chk('R3 引擎未就绪 commit 被拒', False, '')
+    except _ProtoError as e:
+        chk('R3 commit 引擎未就绪 → 503 MODEL_UNAVAILABLE',
+            e.code == "MODEL_UNAVAILABLE", 'code=%s' % e.code)
+    chk('R3 拒绝后无状态写入', not B._ACTOR_STATE, '')
+# R4 非有限 deltas（NaN）→ 不进 writable；commit 不可
+reset_all()
+bad_nan = (copy.deepcopy(FAKE_DELTAS[0])[:1], {})
+bad_nan[0][0]["delta"] = float("nan")
+with assets_ctx(deltas=bad_nan):
+    r = P.analyze(base_req(event="ev_nan"))
+    wd = (r["state_proposal"] or {}).get("writable_delta") or []
+    sb = (r["state_proposal"] or {}).get("skipped") or []
+    chk('R4 NaN deltas 不进 writable', not wd, 'wd=%d' % len(wd))
+    chk('R4 NaN 进 skipped 且 reason 含 UNKNOWN_VALUE',
+        any("UNKNOWN_VALUE" in (s.get("reason_codes") or []) for s in sb),
+        'sb=%s' % [[s.get("source_signal"), s.get("reason_codes")] for s in sb])
+# R5 idempotent accessibility outside protocol: state_transition NaN → skipped
+stt = B.state_transition('doubt_shift', float('nan'), 30, allowed=True)
+chk('R5 核心公式拒绝 NaN', not stt["committed"] and "非有限" in (stt.get("skipped_reason") or ""),
+    'committed=%s reason=%s' % (stt["committed"], stt.get("skipped_reason")))
+# R6 stale 记录 terminal_at 并被回收
+reset_all()
+now[0] = 1000.0
+with assets_ctx():
+    P.analyze(base_req(event="stale1"))
+    P.reset_scope(("demo_01", "lia"))   # 使 stale1 候选 invalidated 且设 terminal_at
+    r2 = P.analyze(base_req(event="stale2", expected=P.state_version(("demo_01", "lia"))))
+    P.commit_state({"session_id": "demo_01", "actor_id": "lia",
+                    "analysis_id": r2["analysis_id"],
+                    "expected_state_version": r2["base_state_version"]})
+    # 现在有一条 invalidated（stale1 的候选，Reset 后）+ 一条 committed（stale2）
+    n_inv = sum(1 for a in P._analyses.values() if a["status"] == "invalidated")
+    chk('R6 Reset 产生 invalidated 且记 terminal_at',
+        n_inv == 1 and all(a.get("terminal_at") for a in P._analyses.values()
+                           if a["status"] in ("invalidated", "stale")), 'n_inv=%d' % n_inv)
+    before = len(P._analyses)
+    now[0] += 3601
+    P._cleanup_expired()
+    chk('R6 stale/invalidated 超保留期被回收',
+        len(P._analyses) < before and not any(
+            a["status"] in ("stale", "invalidated") for a in P._analyses.values()),
+        '%d -> %d' % (before, len(P._analyses)))
 
 # ===========================================================================
 print("\n[HTTP] 路由层（本机临时端口，mock 翻译/档案，fallback 引擎）")
@@ -639,6 +720,44 @@ with assets_ctx():
     st, rr = _post("/reject_analysis", {"session_id": "demo_01", "actor_id": "lia",
                                         "analysis_id": ar2["analysis_id"], "reason": "superseded"})
     chk('HTTP /reject_analysis 200 rejected', st == 200 and rr["status"] == "rejected", 'st=%s' % st)
+    # 传输反例：顶层 JSON 数组 → 422（约定错误协议，不越层 404/500）
+    import http.client as _hc
+    conn = _hc.HTTPConnection('127.0.0.1', port, timeout=5)
+    arr = b'["not", "an", "object"]'
+    conn.request('POST', '/analyze', body=arr, headers={'Content-Type': 'application/json',
+                                                        'Content-Length': str(len(arr))})
+    resp = conn.getresponse()
+    st_arr = resp.status
+    err_arr = json.loads(resp.read().decode())["error"]
+    conn.close()
+    chk('HTTP 顶层数组 → 422 INVALID_REQUEST (结构化错误)',
+        st_arr == 422 and err_arr["code"] == "INVALID_REQUEST", 'st=%s code=%s' % (st_arr, err_arr.get("code")))
+    # 传输反例：声明 CL 大于实际字节 → 400（不得带残缺 body 进入路由）。
+    # 服务端读超时兜底（Handler.timeout=10s）后返回 400；client 超时要大于它。
+    conn = _hc.HTTPConnection('127.0.0.1', port, timeout=15)
+    real = b'{}'
+    conn.request('POST', '/analyze', body=real, headers={'Content-Type': 'application/json',
+                                                         'Content-Length': str(len(real) + 999)})
+    resp = conn.getresponse()
+    st_cl = resp.status
+    err_cl = json.loads(resp.read().decode())
+    conn.close()
+    chk('HTTP 声明长度大于实际 → 400 INVALID_JSON（不进入路由）',
+        st_cl == 400 and err_cl["error"]["code"] == "INVALID_JSON", 'st=%s code=%s'
+        % (st_cl, err_cl.get("error", {}).get("code")))
+    # 传输反例：Content-Length 非整数 → 400
+    conn = _hc.HTTPConnection('127.0.0.1', port, timeout=5)
+    conn.putrequest('POST', '/analyze')
+    conn.putheader('Content-Type', 'application/json')
+    conn.putheader('Content-Length', 'abc')
+    conn.endheaders()
+    resp = conn.getresponse()
+    st_bad = resp.status
+    err_bad = json.loads(resp.read().decode())
+    conn.close()
+    chk('HTTP 非法 Content-Length → 400 INVALID_JSON',
+        st_bad == 400 and err_bad["error"]["code"] == "INVALID_JSON", 'st=%s code=%s'
+        % (st_bad, err_bad.get("error", {}).get("code")))
 srv.shutdown()
 
 print('=' * 92)
