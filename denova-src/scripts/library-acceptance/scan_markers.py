@@ -14,6 +14,7 @@
 """
 import argparse
 import fnmatch
+import os
 import pathlib
 import sys
 
@@ -38,13 +39,13 @@ def main():
     files = []
     walk_errors = []
 
-    def on_error(_err):
-        walk_errors.append(str(_err))
+    def on_error(err):
+        walk_errors.append(str(err))
 
-    for p in root.rglob("*"):
-        if p.is_dir():
-            continue
-        files.append(p)
+    # os.walk 的 onerror 必须真正接到遍历上：目录不可读/枚举失败时失败退出，绝不静默漏扫。
+    for dirpath, _dirnames, filenames in os.walk(root, onerror=on_error):
+        for name in filenames:
+            files.append(pathlib.Path(dirpath) / name)
     if walk_errors:
         print("walk errors:", walk_errors, file=sys.stderr)
         return 1

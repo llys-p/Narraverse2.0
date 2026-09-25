@@ -87,7 +87,23 @@ def main():
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(body)
     events = [line[7:] for line in body.splitlines() if line.startswith("event: ")]
-    print("chat:", status, "| events:", events)
+    required = ["library_context_state", "tool_call", "tool_result", "interactive_turn_persisted", "done"]
+    problems = []
+    for name in required:
+        if name not in events:
+            problems.append("缺少事件 " + name)
+    if events and events[0] != "library_context_state":
+        problems.append("首事件不是 library_context_state")
+    if "error" in events:
+        problems.append("出现 error 事件")
+    if events.count("tool_call") < 1 or events.count("tool_result") < 1:
+        problems.append("缺少工具往返（tool_call/tool_result）")
+    print("chat:", status, "| events:", events, "| tool round-trips:", events.count("tool_call"))
+    if problems:
+        for item in problems:
+            print("SSE 断言失败:", item)
+        raise SystemExit(1)
+    print("SSE 完成与工具往返断言通过")
 
 
 if __name__ == "__main__":

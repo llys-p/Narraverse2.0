@@ -64,7 +64,15 @@ def main():
         raise SystemExit(1)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(body)
-    print("chat:", status, "| bytes:", len(body), "| tail:", body[-200:].replace("\n", "\\n"))
+    print("chat:", status, "| bytes:", len(body))
+    if '"finishReason":"stop"' not in body or "[DONE]" not in body:
+        print("SSE 未确认完成（缺 finishReason:stop 或 [DONE]）；tail:", body[-300:].replace(chr(10), "\n"))
+        raise SystemExit(1)
+    if '"type":"error"' in body:
+        idx = body.find('"type":"error"')
+        print("SSE 含错误事件：", body[max(0, idx - 80):idx + 200].replace(chr(10), "\n"))
+        raise SystemExit(1)
+    print("SSE 完成断言通过")
 
 
 if __name__ == "__main__":
