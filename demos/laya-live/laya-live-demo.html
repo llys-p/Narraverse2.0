@@ -256,7 +256,7 @@
   <!-- 左 -->
   <div class="col">
     <div class="card">
-      <div class="ch">角色档案 <span class="tag">随对话更新</span></div>
+      <div class="ch">角色档案 <span class="tag">静态初始快照</span></div>
       <div class="bd">
         <div class="actor-h">
           <div class="avatar">⚔</div>
@@ -267,7 +267,7 @@
         <div class="grp"><div class="gh">特质 / 情绪</div><div id="traits"></div></div>
         <div class="grp"><div class="gh">关系</div><div id="rel"></div></div>
         <div class="grp"><div class="gh">目标 / 处境</div><div id="goal"></div></div>
-        <div class="grp"><div class="gh">本轮状态变化</div><div class="chars" id="chars"><span class="tiny">尚未产生变化</span></div></div>
+        <div class="grp"><div class="gh">本轮状态变化</div><div class="chars" id="chars"><span class="tiny">见右侧「角色状态」栏</span></div></div>
         <div class="grp"><div class="gh">归因系数</div><div id="attr" class="tiny">—</div></div>
       </div>
     </div>
@@ -1176,31 +1176,12 @@ function renderState(cur){
     ];
     $('p2authority').innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('') +
       '<div style="margin-top:4px;font-size:10px;color:#b7791f">当前档案只有「怀疑」可写（见③）；信任/好感等齐变更属设计。</div>';
-    // 同步右侧「角色状态」栏
+    // 同步右侧「角色状态」栏（唯一随对话更新处；变化只在这里显示）
     var _side = document.getElementById('statusSide');
     if (_side){
       var _stg = document.getElementById('statusTag');
       if (_stg){ _stg.textContent = cur.initialized ? '已提交' : '模板'; }
       _side.innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('');
-    }
-    // 同步左侧「角色档案」卡（关系/情绪 + 本轮变化）
-    var _rel = document.getElementById('rel');
-    if (_rel){
-      _rel.innerHTML = rows.map(function(r){
-        var v = r[2]===null||r[2]===undefined ? '—' : r[2];
-        var b = r[1]===null||r[1]===undefined ? '—' : r[1];
-        return '<div style="font-size:12px;margin:2px 0">' + L(r[0]) + '：<b>' + v + '</b>（基准 ' + b + '）</div>';
-      }).join('');
-    }
-    var _chars = document.getElementById('chars');
-    if (_chars){
-      var changed = rows.filter(function(r){ return r[1]!==null && r[2]!==null && r[1]!==r[2]; });
-      _chars.innerHTML = changed.length
-        ? changed.map(function(r){
-            var dn = Math.round((r[2]-r[1])*100)/100;
-            return '<span class="tiny" style="color:#2f855a;margin-right:8px">' + L(r[0]) + ' ' + (dn>0?'+':'') + dn + '</span>';
-          }).join(' ')
-        : '<span class="tiny">本轮无变化</span>';
     }
   }
   function renderAnalysis(j){
