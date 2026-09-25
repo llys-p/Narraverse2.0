@@ -85,8 +85,13 @@ def assets_ctx(deltas=None, engine_ready=True):
         yield
 
 
-def manual_pending(sid, aid, tid="m1", behavior="approach", with_delta=True):
-    """确定性构造一个「有行为」的旧 Pending（不依赖 fallback 是否歧义）。返回 turn_id。"""
+def manual_pending(sid, aid, tid="m1", behavior="approach", with_delta=True,
+                   engine_used=B.ENGINE_MODE_LAYA):
+    """确定性构造一个「有行为」的旧 Pending（不依赖 fallback 是否歧义）。返回 turn_id。
+
+    `engine_used` 默认取 `ENGINE_MODE_LAYA` —— R3 门禁是白名单，「未声明引擎」会被拒，
+    大多数用例要的是「过引擎门禁、专测版本/事务」路径，因此显式声明为真实引擎。
+    """
     sp = {"delta": [{"source_signal": "doubt_shift", "target": "relationship.doubt",
                      "delta": 3.0, "status": "active", "grade": "A",
                      "role": "state_shift", "label": "怀疑", "range": [0, 100]}]} \
@@ -96,7 +101,7 @@ def manual_pending(sid, aid, tid="m1", behavior="approach", with_delta=True):
                    state_decision={"behavior_is_null": False,
                                    "awaiting_upstream": False,
                                    "source": "policy", "turn_id": tid},
-                   actor=None)
+                   actor=None, engine_used=engine_used)
     return tid
 
 
@@ -110,7 +115,8 @@ def run_real_decide(sid, aid):
     B.propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
                    beh.get("id"), (dec.get("player_intent") or {}).get("id"),
                    dec.get("source"), state_proposal=out.get("state_proposal"),
-                   state_decision=(out.get("state_validation") or {}).get("decision"), actor=None)
+                   state_decision=(out.get("state_validation") or {}).get("decision"), actor=None,
+                   engine_used=out.get("engine"))
     return out, bool(beh.get("id"))
 
 
@@ -326,18 +332,32 @@ with assets_ctx():
         B._PENDING["R1t2"]["base_state_version"] == fx_ver2
         and B._PENDING["R1t2"]["frozen_state"] is not None, '')
 
-    # ---- R3：legacy 提交拒绝 fallback 引擎结果 ----
+    # ---- R3：legacy 提交拒绝 fallback 引擎结果（白名单：非 Laya 一律拒）----
     B.propose_turn("R3t", "sR3", "Ria", "approach", "engage", "policy",
                    state_proposal={"delta": []},
                    state_decision={"behavior_is_null": False, "turn_id": "R3t"},
-                   engine_used="fallback")
+                   engine_used=B.ENGINE_MODE_FALLBACK)
     ok, note, res = B.commit_turn("R3t")
     chk('R3 fallback 旧候选 → 提交被拒（不冒充模型判断）',
         not ok and res.get("reason") == "fallback_engine", 'ok=%s reason=%s' % (ok, res.get("reason")))
+    # None（未声明引擎）也必须拒 —— 不抱默认信任
+    B.propose_turn("R3tN", "sR3", "Ria", "approach", "engage", "policy",
+                   state_proposal={"delta": []},
+                   state_decision={"behavior_is_null": False, "turn_id": "R3tN"})
+    okN, _nN, resN = B.commit_turn("R3tN")
+    chk('R3 未声明引擎（None）→ 同样拒绝', not okN and resN.get("reason") == "fallback_engine",
+        'ok=%s reason=%s' % (okN, resN.get("reason")))
+    # 未知字符串同样拒（白名单而非黑名单）
+    B.propose_turn("R3tU", "sR3", "Ria", "approach", "engage", "policy",
+                   state_proposal={"delta": []},
+                   state_decision={"behavior_is_null": False, "turn_id": "R3tU"},
+                   engine_used="heuristic")
+    okU, _nU, resU = B.commit_turn("R3tU")
+    chk('R3 未知引擎名 → 同样拒绝（白名单语义）', not okU and resU.get("reason") == "fallback_engine", '')
     B.propose_turn("R3t2", "sR3", "Ria", "approach", "engage", "policy",
                    state_proposal={"delta": []},
                    state_decision={"behavior_is_null": False, "turn_id": "R3t2"},
-                   engine_used="laya")
+                   engine_used=B.ENGINE_MODE_LAYA)
     ok2, _n2, res2 = B.commit_turn("R3t2")
     chk('R3 真实引擎旧候选 → 正常提交', ok2, 'ok=%s' % ok2)
 
@@ -402,6 +422,61 @@ with assets_ctx():
     chk('R2 /reset 返回受影响的协议作用域清单',
         ("sRx/Rx") in (r2.get("protocol_scopes_reset") or []), '')
 srv2.shutdown()
+
+# ===========================================================================
+print("\n[B-1] HTTP 级：推理窗口内 Reset → /decide 返回结构化 409，而不是掐断连接")
+# ===========================================================================
+reset_all()
+srv3 = ThreadingHTTPServer(("127.0.0.1", 0), B.Handler)
+port3 = srv3.server_address[1]
+threading.Thread(target=srv3.serve_forever, daemon=True).start()
+BASE3 = "http://127.0.0.1:%d" % port3
+_OPENER3 = __import__("urllib.request", fromlist=["build_opener"]).build_opener(
+    __import__("urllib.request", fromlist=["ProxyHandler"]).ProxyHandler({}))
+
+
+def _post3(path, body):
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = __import__("urllib.request", fromlist=["Request"]).Request(
+        BASE3 + path, data=data, headers={"Content-Type": "application/json"})
+    try:
+        with _OPENER3.open(req, timeout=10) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except __import__("urllib.error", fromlist=["HTTPError"]).HTTPError as e:
+        return e.code, json.loads(e.read().decode("utf-8"))
+
+
+with assets_ctx():
+    _tmp_real = B.decide
+
+    def _decide_reset_mid_window(payload):
+        """单参数桩：推理期间把作用域 Reset 一次，制造 frozen_version 冲突。"""
+        P.reset_scope(("sB1", "Bia"))
+        return {
+            'engine': B.ENGINE_MODE_LAYA,
+            'turn': {'turn_id': 'sB1/Bia#b1', 'session_id': 'sB1', 'actor_id': 'Bia',
+                     'history_bucket': 'sB1/Bia'},
+            'decision': {'behavior': {'id': 'approach'}, 'source': 'policy',
+                         'player_intent': {'id': 'engage'}},
+            'state_proposal': {"delta": []},
+            'state_validation': {'decision': {"behavior_is_null": False,
+                                              "turn_id": "sB1/Bia#b1"}},
+            'state_commits': [], 'state_skipped': [],
+            'actor_state': B.actor_state_analysis_view('sB1', 'Bia', B.CFG.get('actor')),
+        }
+
+    B.decide = _decide_reset_mid_window
+    try:
+        st3, b3 = _post3("/decide", {"session_id": "sB1", "actor_id": "Bia",
+                                     "player_input": "hi", "player_input_en": "EN"})
+    finally:
+        B.decide = _tmp_real
+    chk('B-1 /decide 推理窗口 Reset → 409 + STATE_VERSION_CONFLICT（非掐断连接）',
+        st3 == 409 and (b3.get("error") or {}).get("code") == "STATE_VERSION_CONFLICT",
+        'st=%s body=%r' % (st3, (b3.get("error") or {}).get("code")))
+    chk('B-1 无脏登记（_PENDING 不残留）', "sB1/Bia#b1" not in B._PENDING,
+        'pending=%r' % (list(B._PENDING.keys())))
+srv3.shutdown()
 
 print('=' * 92)
 print('P2-B2 旧路由事务/版本自测：合计 %d 项：%d PASS / %d FAIL'

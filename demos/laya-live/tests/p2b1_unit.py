@@ -4,6 +4,9 @@
 L1（旧路由共用事务边界）属于 P2-B2，不在这里。
 引擎走 fallback（ENGINE 未 init → ready=False，零模型）；翻译/档案/deltas 全 mock；
 TTL 用假时钟；并发用线程。HTTP 路由层用本机临时端口。
+
+★ 运行环境（S-5，2026-09-25）：Windows 控制台默认 GBK 编不出来 ✅，会第一行就崩——
+  请用 `PYTHONIOENCODING=utf-8 python tests/p2b1_unit.py` 运行。
 """
 import copy
 import json

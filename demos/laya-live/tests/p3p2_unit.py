@@ -319,7 +319,7 @@ def _fake_decide(_payload):
     _seq[0] += 1
     _tid = 'T13/Lia#%d' % _seq[0]
     return {
-        'engine': 'unit',
+        'engine': B.ENGINE_MODE_LAYA,
         'turn': {'turn_id': _tid, 'session_id': 'T13', 'actor_id': 'Lia',
                  'history_bucket': 'T13/Lia'},
         'decision': {'behavior': {'id': 'unit_behavior'}, 'source': 'unit',
@@ -385,7 +385,8 @@ chk('自定义角色预览采用实际模板',
     _custom_out['state_validation']['preview']['state']['relationship']['doubt'] == 12)
 chk('自定义角色分析不创建状态', not B.actor_state_view('T14', 'Custom')['exists'])
 B.propose_turn('T14#1', 'T14', 'Custom', 'unit', None, 'unit',
-               _proposal, _decision, _custom, record_history=False)
+               _proposal, _decision, _custom, record_history=False,
+               engine_used=B.ENGINE_MODE_LAYA)
 _ok, _, _result = B.commit_turn('T14#1')
 chk('显式历史模式仍能提交状态且不重复写历史',
     _ok and _result['actor_state']['state']['relationship']['doubt'] == 16 and

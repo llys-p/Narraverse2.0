@@ -98,6 +98,12 @@ ENV_PATH = HERE / ".env"
 ENV_AUTHORITATIVE = ("DEEPSEEK_API_KEY", "LLM_API_KEY")
 PORT = int(os.environ.get("LAYA_BRIDGE_PORT", "8130"))
 
+# ★ Qoder 审查 M-1（2026-09-25）：引擎标识的**单一权威**字面量。
+#   旧路由 legacy 门禁（engine_used）与 /decide、/world 的取值得共用这份常量，
+#   避免「黑名单只挡一个拼写、改名即静默失效」的自证缺口。
+ENGINE_MODE_LAYA = "laya"
+ENGINE_MODE_FALLBACK = "fallback"
+
 
 def load_env_file(path=ENV_PATH):
     """把 .env 读进 os.environ。优先级分两类：
@@ -2346,17 +2352,17 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
     laya_q = build_laya_questions(all_questions)          # 交给 Laya 的（只有 type/instructions/criteria）
     fallback_q = laya_q
 
-    engine_used, meta_raw, routing = "fallback", {}, None
+    engine_used, meta_raw, routing = ENGINE_MODE_FALLBACK, {}, None
     if ENGINE.ready:
         try:
             res = ENGINE.predict(state_doc, laya_q)
             raw_answers, meta_raw = normalize_laya(res)
             routing = res.get("routing") if isinstance(res, dict) else None
-            engine_used = "laya"
+            engine_used = ENGINE_MODE_LAYA
         except Exception as e:
             meta_raw = {"laya_error": repr(e)}
             ENGINE.last_error = repr(e)
-    if engine_used == "fallback":
+    if engine_used == ENGINE_MODE_FALLBACK:
         raw_answers, _intent, _pairs = fallback_decide(actor, world_state, player_input, fallback_q, seed)
     latency_ms = (time.perf_counter() - t0) * 1000
 
@@ -2505,8 +2511,8 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
 
     return {
         "engine": engine_used,
-        "engine_detail": ENGINE.detail if engine_used == "laya" else (ENGINE.detail or "未安装 laya"),
-        "confidence_reliable": engine_used == "laya",
+        "engine_detail": ENGINE.detail if engine_used == ENGINE_MODE_LAYA else (ENGINE.detail or "未安装 laya"),
+        "confidence_reliable": engine_used == ENGINE_MODE_LAYA,
         "latency_ms": round(latency_ms, 2),
         "lang": LANG,
         # ★ 输入自检：让我们一眼看出「这轮到底吃到了什么输入」
@@ -2667,17 +2673,17 @@ def world_decide(payload):
     laya_q = build_laya_questions(qs)
     names = CFG["world"].get("names", {})
     t0 = time.perf_counter()
-    engine_used = "fallback"
+    engine_used = ENGINE_MODE_FALLBACK
     raw_answers, meta_raw, routing = {}, {}, None
     if ENGINE.ready:
         try:
             res = ENGINE.predict({"world_state": state, "role": "WORLD"}, laya_q)
             raw_answers, meta_raw = normalize_laya(res)
             routing = res.get("routing") if isinstance(res, dict) else None
-            engine_used = "laya"
+            engine_used = ENGINE_MODE_LAYA
         except Exception as e:
             meta_raw = {"laya_error": repr(e)}
-    if engine_used == "fallback":
+    if engine_used == ENGINE_MODE_FALLBACK:
         raw_answers, _i, _p = fallback_decide(CFG["actor"], state, "", laya_q)
     latency_ms = (time.perf_counter() - t0) * 1000
     answers = normalize_answers(raw_answers, laya_q)
@@ -2781,7 +2787,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/health", "/"):
             return self._json({
                 "ok": True,
-                "engine": "laya" if ENGINE.ready else "fallback",
+                "engine": ENGINE_MODE_LAYA if ENGINE.ready else ENGINE_MODE_FALLBACK,
                 "laya": ENGINE.describe(),
                 "config_path": str(CFG_PATH),
                 "questions": list(CFG["questions"].keys()),
@@ -2941,9 +2947,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 try:
                     out = decide(payload, frozen_state=_fx_state)
-                except TypeError:
-                    # 兼容单参数 mock/外部替换（如测试桩）：不传冻结快照
-                    out = decide(payload)
+                except TypeError as _sig_e:
+                    # == Qoder M-2（2026-09-25）：只兼容「单参数桩」这一个签名差异 ====
+                    #   str 含 "unexpected keyword argument" 才回退（测试桩/外部单参替换）；
+                    #   分析核内部真抛的 TypeError 原样上抛（且绝不重跑推理）。
+                    if "unexpected keyword argument" in str(_sig_e):
+                        out = decide(payload)
+                        out.setdefault("frozen_binding_skipped", True)
+                    else:
+                        raise
             except Exception as e:
                 return self._json({"error": repr(e)}, 500)
             dec = out.get("decision") or {}
@@ -2967,14 +2979,21 @@ class Handler(BaseHTTPRequestHandler):
             #   旧实现在这里 extend _DECISION_HISTORY —— 于是「判了歧义、上游根本没采纳」
             #   的轮次也会污染下一轮 state，而且完全静默。现在只有 /commit 才进桶。
             if turn.get("turn_id"):
-                propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
-                             beh.get("id"), intent_id, dec.get("source"),
-                             state_proposal=out.get("state_proposal"),
-                             state_decision=(out.get("state_validation") or {}).get("decision"),
-                             actor=payload.get("actor") or CFG.get("actor"),
-                             record_history=not bool(payload.get("decision_history")),
-                             engine_used=out.get("engine"),
-                             frozen_state=_fx_state, frozen_version=_fx_version)
+                try:
+                    propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
+                                 beh.get("id"), intent_id, dec.get("source"),
+                                 state_proposal=out.get("state_proposal"),
+                                 state_decision=(out.get("state_validation") or {}).get("decision"),
+                                 actor=payload.get("actor") or CFG.get("actor"),
+                                 record_history=not bool(payload.get("decision_history")),
+                                 engine_used=out.get("engine"),
+                                 frozen_state=_fx_state, frozen_version=_fx_version)
+                except _ProtoError as e:
+                    # ★ Qoder 审查 B-1（2026-09-25）：propose_turn 现在会因
+                    #   推理窗口内版本变化抛 409，必须翻译成 HTTP 响应，
+                    #   否则异常逃到 socketserver 会直接掐断连接（客户端
+                    #   RemoteDisconnected，日志却仍记 200，排障被误导）。
+                    return self._json(e.body(), e.http)
             out = dict(out, history_gate={
                 "stage": "proposed",
                 "committed": False,
@@ -2999,9 +3018,13 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 try:
                     out = decide(payload, frozen_state=_fx_state)
-                except TypeError:
-                    # 兼容单参数 mock/外部替换（如测试桩）：不传冻结快照
-                    out = decide(payload)
+                except TypeError as _sig_e:
+                    # M-2：只兼容「单参数桩」，其它 TypeError 原样上抛、绝不重跑推理
+                    if "unexpected keyword argument" in str(_sig_e):
+                        out = decide(payload)
+                        out.setdefault("frozen_binding_skipped", True)
+                    else:
+                        raise
             except Exception as e:
                 return self._json({"error": repr(e)}, 500)
             turn = out.get("turn") or {}
@@ -3011,14 +3034,18 @@ class Handler(BaseHTTPRequestHandler):
             ok, note = (False, "commit_state=false → 本轮不写状态、不写历史")
             state_result = {}
             if do_commit and beh.get("id"):
-                propose_turn(turn.get("turn_id"), turn.get("session_id"),
-                             turn.get("actor_id"), beh.get("id"),
-                             (dec.get("player_intent") or {}).get("id"), dec.get("source"),
-                             state_proposal=out.get("state_proposal"),
-                             state_decision=(out.get("state_validation") or {}).get("decision"),
-                             actor=payload.get("actor") or CFG.get("actor"),
-                             engine_used=out.get("engine"),
-                             frozen_state=_fx_state, frozen_version=_fx_version)
+                try:
+                    propose_turn(turn.get("turn_id"), turn.get("session_id"),
+                                 turn.get("actor_id"), beh.get("id"),
+                                 (dec.get("player_intent") or {}).get("id"), dec.get("source"),
+                                 state_proposal=out.get("state_proposal"),
+                                 state_decision=(out.get("state_validation") or {}).get("decision"),
+                                 actor=payload.get("actor") or CFG.get("actor"),
+                                 engine_used=out.get("engine"),
+                                 frozen_state=_fx_state, frozen_version=_fx_version)
+                except _ProtoError as e:
+                    # B-1（2026-09-25）：同 /decide，把 409 翻译成 HTTP 响应而非掐断连接
+                    return self._json(e.body(), e.http)
                 ok, note, state_result = commit_turn(turn.get("turn_id"))
             elif do_commit:
                 note = ("本轮无行为（歧义 / 未给行为）→ 按 P3 第一版规则：不 commit 状态、"

@@ -127,11 +127,6 @@ class LayaStateProtocol:
                     self._inflight.pop(k, None)
             return self.state_version(scope)
 
-    def reset_scopes(self, scopes):
-        """一批作用域 Reset：逐个换 generation（复用单个锁；供全部/按 session 清空）。"""
-        with self.lock:
-            return [self.reset_scope(s) for s in scopes]
-
     def capture_legacy_scope(self, session_id, actor_id, actor=None):
         """锁内一次性捕获 legacy 路由的「版本 + 状态快照」：
 
@@ -979,8 +974,11 @@ class LayaStateProtocol:
           **行为历史**并推进一次桶版本（不写状态）；该特例不放松新
           `/commit_state` 的 reference_only 禁令。
 
-        ★ 旧路由保留 fallback demo 可用：**不**套新协议的引擎身份门禁
-          （503）——兼容路径不是新页面重试的后门（§6.3），真实推理闭环由新协议负责。
+        ★ Qoder 审查（2026-09-25）：legacy 已补**引擎门禁（白名单）** ——
+          登记时 `engine_used` 必须 == `B.ENGINE_MODE_LAYA` 才可提交；
+          fallback / 未声明 / 未知引擎一律拒（reason=fallback_engine）。
+          早期版本刻意不套门禁，现已在 commit_legacy_turn 内补回，
+          「旧路由可 fallback」的旧语义不再成立，见 §6.3 的变更记录。
         """
         B = self.B
         p = B._PENDING.get(turn_id)
@@ -994,11 +992,11 @@ class LayaStateProtocol:
         actor_id = str(p.get("actor") or "default")
         scope = (session_id, actor_id)
         with self.lock:
-            # ★ 闭环审查（2026-09-25）风险3：legacy 提交也拒绝 fallback 启发式结果。
-            #   登记时 `engine_used="fallback"`（真实推理失败落到启发式）→ 直接拒。
-            #   这是把新协议「引擎身份门禁」的语义补回旧路由，不让启发式冒充模型判断。
-            if p.get("engine_used") == "fallback":
-                return False, "该轮分析用了 fallback（启发式引擎，非 Laya 真实判断）→ 拒绝提交", {
+            # ★ 闭环审查（2026-09-25）风险3 + Qoder M-1：legacy 提交拒绝非真实引擎结果。
+            #   白名单：只有 `engine_used == ENGINE_MODE_LAYA` 才允许提交 —— 任何其它值
+            #   （fallback / None / 未知名）一律拒，启发式与未知来源都不能冒充模型判断。
+            if p.get("engine_used") != B.ENGINE_MODE_LAYA:
+                return False, "该轮分析引擎不是 Laya（engine_used=%r）→ 拒绝提交" % p.get("engine_used"), {
                     "stage": "rejected", "reason": "fallback_engine",
                     "engine_used": p.get("engine_used")}
             # 版本：当前版本必须仍等于登记时的基础版本（期间任何提交都会使其 stale）
