@@ -169,6 +169,7 @@ def main():
         print("[restart] 假模型（game 模式）")
         stop_process(model_proc)
         env_model.update({"FAKE_MODEL_MODE": "game",
+                          "FAKE_READ_ITEM": "auto-1",
                           "FAKE_MODEL_LOG": str(run_root / "fake-requests-game.jsonl")})
         model_proc = start_process([str(fake)], workdir, env_model, run_root / "fake-model-game.log")
         time.sleep(1.0)
