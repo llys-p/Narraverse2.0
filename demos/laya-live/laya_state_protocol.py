@@ -78,6 +78,66 @@ class LayaStateProtocol:
     # ======================================================================
     # 版本
     # ======================================================================
+    def commit_interaction_bundle(self, session_id, world_id, event_id,
+                                  expected_versions, new_states, trace, receipt):
+        """Candidate A internal commit adapter: one transaction across actors + runtime scene.
+
+        The Interaction service validates rules and builds server-owned new_states first.
+        This is not an HTTP arbitrary-delta endpoint. It shares legacy state and version
+        authority, so either side invalidates the other's outstanding calculations.
+        """
+        B = self.B
+        with self.lock:
+            world_scope = (session_id, world_id)
+            events = self._events.get(world_scope, {})
+            prior = events.get(event_id, {}).get("interaction_receipt")
+            if prior:
+                if prior.get("base_versions") != expected_versions:
+                    raise _ProtoError(409, "IDEMPOTENCY_CONFLICT", "事件已按其他基准提交")
+                return dict(_copy.deepcopy(prior), replayed=True)
+            for entity, expected in expected_versions.items():
+                if self.state_version((session_id, entity)) != expected:
+                    raise _ProtoError(409, "STATE_VERSION_CONFLICT", "场景或角色已变化，请重新分析")
+            if not set(new_states).issubset(expected_versions):
+                raise _ProtoError(422, "INVALID_WRITE_SET", "写入目标未在读取版本集中")
+            scopes = [(session_id, entity) for entity in new_states]
+            saved = {scope: (_copy.deepcopy(B._ACTOR_STATE.get(scope)),
+                              _copy.deepcopy(B._STATE_TRACE.get(scope)),
+                              _copy.deepcopy(self._ensure_bucket_meta(scope))) for scope in scopes}
+            saved_events = _copy.deepcopy(self._events.get(world_scope))
+            result = _copy.deepcopy(receipt)
+            try:
+                versions = dict(expected_versions)
+                for entity, state in new_states.items():
+                    scope = (session_id, entity)
+                    B._ACTOR_STATE[scope] = _copy.deepcopy(state)
+                    versions[entity] = self._bump_revision(scope)
+                    item = dict(_copy.deepcopy(trace), before_version=expected_versions[entity],
+                                after_version=versions[entity], actor_id=entity)
+                    history = B._STATE_TRACE.setdefault(scope, [])
+                    history.append(item)
+                    del history[:-getattr(B, "_STATE_TRACE_MAX", 30)]
+                result.update(versions=versions, base_versions=dict(expected_versions), replayed=False)
+                self._events.setdefault(world_scope, {})[event_id] = {
+                    "status": "committed", "interaction_receipt": result}
+                return _copy.deepcopy(result)
+            except Exception:
+                for scope, (state, history, meta) in saved.items():
+                    if state is None:
+                        B._ACTOR_STATE.pop(scope, None)
+                    else:
+                        B._ACTOR_STATE[scope] = state
+                    if history is None:
+                        B._STATE_TRACE.pop(scope, None)
+                    else:
+                        B._STATE_TRACE[scope] = history
+                    self._buckets[scope] = meta
+                if saved_events is None:
+                    self._events.pop(world_scope, None)
+                else:
+                    self._events[world_scope] = saved_events
+                raise
+
     def _scope(self, session_id, actor_id):
         return (str(session_id), str(actor_id))
 
