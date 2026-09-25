@@ -467,6 +467,22 @@ chk('TI：结构化未命中 → fallback 关键词让渡（source=keyword）',
     and _ti6["delta"][0].get("adjudication_source") == "keyword",
     'delta=%s src=%s' % (_ti6["delta"][0]["delta"],
                          _ti6["delta"][0].get("adjudication_source")))
+# 透传：adjudication_source / ti_basis 必须随 commit 校验输出（供前端/debug 复核）
+_ti7_commits, _ti7_skip, _ti7_pv = B.validate_state_delta(
+    "ti7", "lia",
+    {"delta": [dict(_delta_item("doubt_shift", -2.8), target="relationship.doubt",
+                    rule_adjudicated="evidence_handover",
+                    adjudication_source="structured",
+                    ti_basis=["disclose=0.80"])]},
+    {}, actor=B.CFG["actor"],
+    frozen_state={"relationship": {"doubt": 35.0}})
+_ti7_chk = (_ti7_commits and _ti7_commits[0].get("adjudication_source") == "structured"
+            and any("disclose" in (b or "") for b in
+                    (_ti7_commits[0].get("ti_basis") or [])))
+chk('TI：规则标记与来源随 validate 透传（structured + ti_basis）',
+    _ti7_chk,
+    'src=%s basis=%s' % (_ti7_commits[0].get("adjudication_source"),
+                         (_ti7_commits[0] or {}).get("ti_basis")))
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})

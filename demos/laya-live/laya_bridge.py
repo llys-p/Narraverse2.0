@@ -2174,6 +2174,11 @@ def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=N
         # ★ 规则层裁决标记随 delta 透传（前端可视化「为何这个值变/回落」）
         if d.get("rule_adjudicated"):
             r["rule_adjudicated"] = d["rule_adjudicated"]
+        # ★ TI v1：判定来源（structured/keyword）与依据随 delta 透传，供 debug/复核
+        if d.get("adjudication_source"):
+            r["adjudication_source"] = d["adjudication_source"]
+        if d.get("ti_basis"):
+            r["ti_basis"] = list(d["ti_basis"])
         if r["committed"]:
             _set_path(st, d.get("target"), r["new_value"])
             r.update(validated=True, committed=False)
