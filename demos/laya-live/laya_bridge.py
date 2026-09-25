@@ -5001,19 +5001,34 @@ def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
         return state_proposal
     out = _copy.deepcopy(state_proposal)
     changed = False
-    for item in out.get("delta") or []:
-        if item.get("source_signal") != "doubt_shift":
-            continue
-        old = _fnum(item.get("delta"))
-        if old <= 0:
-            continue
-        if evidence_hit:
-            item["delta"] = round(-abs(old) * 0.6 - 0.6, 3)
-            item["rule_adjudicated"] = "evidence_handover"
+    if evidence_hit:
+        # ★ 胜负归规则层：命中证据词时**无条件**施加疑点压制（不依赖 Laya 输出）。
+        #   此前规则只在 Laya 给正 delta 时接管——Laya 判 0/负的证据轮会漏网，
+        #   信任线仍不可达（实测）。现在：doubt_shift 项无论正负改写成
+        #   -|old|-0.8；若该轮连 doubt_shift 项都没有，则追加一条 -2.8。
+        target = next((it for it in out.get("delta") or []
+                       if it.get("source_signal") == "doubt_shift"), None)
+        if target is not None:
+            target["delta"] = round(-abs(_fnum(target.get("delta"))) - 0.8, 3)
+            target["rule_adjudicated"] = "evidence_handover"
+            changed = True
         else:
+            out.setdefault("delta", []).append({
+                "source_signal": "doubt_shift", "target": "relationship.doubt",
+                "delta": -2.8, "status": "active", "grade": "A", "role": "state_shift",
+                "label": "怀疑", "range": [0, 100], "rule_adjudicated": "evidence_handover",
+            })
+            changed = True
+    else:
+        for item in out.get("delta") or []:
+            if item.get("source_signal") != "doubt_shift":
+                continue
+            old = _fnum(item.get("delta"))
+            if old <= 0:
+                continue
             item["delta"] = round(old * 0.5 - 0.8, 3)
             item["rule_adjudicated"] = "pro_cooperation"
-        changed = True
+            changed = True
     return out if changed else state_proposal
 
 
@@ -5022,6 +5037,7 @@ _EVIDENCE_STOP_WORDS = (
     "放下刀", "放下剑", "摊开", "交给你", "交出来", "交给",
     "证据", "证词", "名单", "账目", "账本", "供词",
     "信物", "徽章", "图纸", "家书", "坦白", "和盘托出",
+    "搜我", "搜身", "敞开外衣", "毫无保留", "再无保留", "搜我身上",
 )
 
 

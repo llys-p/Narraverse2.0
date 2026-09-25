@@ -289,9 +289,16 @@ _r5 = B.apply_rule_adjudication({"delta": [_delta_item("doubt_shift", 2.0)]},
                                 {"cooperation": 0.1, "disclose": 0.1},
                                 "（放下刀，双手摊开）名单在这里。")
 chk('规则：证据词 → doubt 直接回落为负',
-    _r5["delta"][0]["delta"] == round(-2.0 * 0.6 - 0.6, 3)
+    _r5["delta"][0]["delta"] == round(-2.0 - 0.8, 3)
     and _r5["delta"][0].get("rule_adjudicated") == "evidence_handover",
     'delta=%s' % _r5["delta"][0]["delta"])
+# 证据词且本轮无 doubt_shift 项 → 规则层追加确定性压制（胜负归规则层，不依赖模型）
+_r6 = B.apply_rule_adjudication({"delta": [{"source_signal": "trust_shift", "delta": 1.0}]},
+                                {}, "（放下刀）名单在后巷棺底。")
+chk('规则：证据词无 doubt 项 → 追加压制 -2.8',
+    any(w["source_signal"] == "doubt_shift" and w["delta"] == -2.8
+        and w["rule_adjudicated"] == "evidence_handover" for w in _r6["delta"]),
+    'delta=%r' % [_get := [ (w["source_signal"], w.get("delta")) for w in _r6["delta"] ]][0])
 
 # ---- 剧情线档位（玩法层 plot_stage，与前端横幅同判据）----
 _p80 = B.plot_stage({"relationship": {"doubt": 80, "trust": 40}})
