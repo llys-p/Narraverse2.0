@@ -7,6 +7,10 @@ const runtimeMocks = vi.hoisted(() => ({
   hostState: 'ready' as 'checking' | 'ready' | 'unavailable',
   pending: { narraverse: null as null | Record<string, unknown>, module4: null as null | Record<string, unknown> },
   take: vi.fn(),
+  libraryPending: { narraverse: null as null | Record<string, unknown>, module4: null as null | Record<string, unknown> },
+  libraryTake: vi.fn(),
+  libraryClear: vi.fn(),
+  worldClear: vi.fn(),
 }))
 
 vi.mock('next-themes', () => ({
@@ -16,7 +20,21 @@ vi.mock('@/features/world-context-runtime/WorldContextHostProvider', () => ({
   useWorldContextHost: () => ({ state: runtimeMocks.hostState, migration: null }),
 }))
 vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () => ({
-  useIframeWorldContextLaunch: () => ({ pending: runtimeMocks.pending, take: runtimeMocks.take, launch: vi.fn(), clear: vi.fn() }),
+  useIframeWorldContextLaunch: () => ({ pending: runtimeMocks.pending, take: runtimeMocks.take, launch: vi.fn(), clear: runtimeMocks.worldClear }),
+}))
+vi.mock('@/features/library-context-runtime/IframeLibraryContextLaunchProvider', () => ({
+  useIframeLibraryContextLaunch: () => ({
+    pending: runtimeMocks.libraryPending,
+    take: (consumer: 'narraverse' | 'module4') => {
+      runtimeMocks.libraryTake(consumer)
+      const current = runtimeMocks.libraryPending[consumer]
+      // 原地清除：组件闭包持有的是同一个 pending 对象引用。
+      runtimeMocks.libraryPending[consumer] = null
+      return current
+    },
+    launch: vi.fn(),
+    clear: runtimeMocks.libraryClear,
+  }),
 }))
 
 describe('NarraverseWorkspace', () => {
@@ -27,6 +45,10 @@ describe('NarraverseWorkspace', () => {
     runtimeMocks.hostState = 'ready'
     runtimeMocks.pending = { narraverse: null, module4: null }
     runtimeMocks.take.mockReset()
+    runtimeMocks.libraryPending = { narraverse: null, module4: null }
+    runtimeMocks.libraryTake.mockReset()
+    runtimeMocks.libraryClear.mockReset()
+    runtimeMocks.worldClear.mockReset()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input)
       if (path.endsWith('/call')) return new Response(JSON.stringify({ content: '生成结果', contextSummary: { state: 'active' } }), { status: 200 })
@@ -284,6 +306,79 @@ describe('NarraverseWorkspace', () => {
     })
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/call', expect.any(Object)))
     expect(fetch).not.toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.any(Object))
+  })
+
+  it('binds the library carrier and waits for it before the first call without sending the ref downstream', async () => {
+    runtimeMocks.libraryPending = {
+      narraverse: { libraryId: 'lib-9', expectedRevision: 'sha256:r9', manualItemIds: ['m1'], libraryName: '叙界库', revisionLabel: 'sha256:r9', selectedCount: 1, launchedAt: 100 },
+      module4: null,
+    }
+    const deferredBind: { resolve?: (response: Response) => void } = {}
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/bind')) return new Promise<Response>((resolve) => { deferredBind.resolve = resolve })
+      if (path.endsWith('/narraverse/call')) return new Response(JSON.stringify({ content: '生成结果', contextSummary: { state: 'active' } }), { status: 200 })
+      return new Response('', { status: 204 })
+    })
+    const { iframe } = renderWorkspace()
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/bind', expect.any(Object)))
+    const bindBody = JSON.parse(String((vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/narraverse/bind'))?.[1] as RequestInit).body))
+    expect(bindBody.library_context).toEqual({ libraryId: 'lib-9', expectedRevision: 'sha256:r9', manualItemIds: ['m1'] })
+    expect(bindBody).not.toHaveProperty('world_context')
+    expect(JSON.stringify(bindBody)).not.toContain('scopeKey')
+
+    dispatchFromIframe(iframe, {
+      source: 'narraverse', version: 2, type: 'model-call-request',
+      payload: { requestId: 'libraryfirstcall1', messages: [{ role: 'user', content: '继续' }], options: {} },
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(fetch).not.toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.any(Object))
+
+    deferredBind.resolve?.(new Response(JSON.stringify({ contextSummary: { state: 'active', libraryName: '叙界库', revisionLabel: 'sha256:r9', selectedCount: 1 } }), { status: 200 }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.any(Object)))
+    const callBody = JSON.parse(String((vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/narraverse/call'))?.[1] as RequestInit).body))
+    // 库 Ref 只交给宿主 bind；模型代理请求里绝不出现库引用或运行身份。
+    expect(JSON.stringify(callBody)).not.toContain('lib-9')
+    expect(JSON.stringify(callBody)).not.toContain('scopeKey')
+    expect(runtimeMocks.libraryTake).toHaveBeenCalledWith('narraverse')
+  })
+
+  it('prefers the library carrier when the library launch is the later one', async () => {
+    runtimeMocks.pending = {
+      narraverse: { worldId: 'w1', expectedWorldRevision: 'sha256:r1', selection: {}, worldName: '世界', selectedCount: 1, launchedAt: 100 },
+      module4: null,
+    }
+    runtimeMocks.libraryPending = {
+      narraverse: { libraryId: 'lib-9', expectedRevision: 'sha256:r9', manualItemIds: [], libraryName: '叙界库', revisionLabel: 'sha256:r9', selectedCount: 0, launchedAt: 200 },
+      module4: null,
+    }
+    const { iframe } = renderWorkspace()
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/bind', expect.any(Object)))
+    const bindBody = JSON.parse(String((vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/narraverse/bind'))?.[1] as RequestInit).body))
+    expect(bindBody.library_context).toEqual({ libraryId: 'lib-9', expectedRevision: 'sha256:r9', manualItemIds: [] })
+    expect(bindBody).not.toHaveProperty('world_context')
+    // 败者 pending 被清除，避免下一次绑定意外复现旧背景。
+    await waitFor(() => expect(runtimeMocks.worldClear).toHaveBeenCalledWith('narraverse'))
+  })
+
+  it('keeps the world carrier when the world launch is the later one', async () => {
+    runtimeMocks.pending = {
+      narraverse: { worldId: 'w1', expectedWorldRevision: 'sha256:r1', selection: {}, worldName: '世界', selectedCount: 1, launchedAt: 300 },
+      module4: null,
+    }
+    runtimeMocks.libraryPending = {
+      narraverse: { libraryId: 'lib-9', expectedRevision: 'sha256:r9', manualItemIds: [], libraryName: '叙界库', revisionLabel: 'sha256:r9', selectedCount: 0, launchedAt: 200 },
+      module4: null,
+    }
+    const { iframe } = renderWorkspace()
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/bind', expect.any(Object)))
+    const bindBody = JSON.parse(String((vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/narraverse/bind'))?.[1] as RequestInit).body))
+    expect(bindBody.world_context).toEqual(expect.objectContaining({ worldId: 'w1' }))
+    expect(bindBody).not.toHaveProperty('library_context')
+    await waitFor(() => expect(runtimeMocks.libraryClear).toHaveBeenCalledWith('narraverse'))
   })
 
   function dispatchFromIfaceCrossOrigin(iframe: HTMLIFrameElement) {

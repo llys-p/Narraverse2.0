@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { WorkLibrary } from '@/lib/api-client'
 import { useLibraryContextLaunch } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import { useIframeLibraryContextLaunch } from '@/features/library-context-runtime/IframeLibraryContextLaunchProvider'
+import { useWorldContextHost } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { previewWorkLibrary, type LibraryPreview } from '../library-context-api'
 import { LibraryGameLaunchDialog } from './LibraryGameLaunchDialog'
 
@@ -16,12 +18,17 @@ interface Props {
   onLaunchWriting?: () => void
   /** 用户显式发起带入游戏：选择目标故事/分支成功后写入一次性交接并切到游戏模式。 */
   onLaunchGame?: () => void
+  /** 用户显式发起带入叙界：写入一次性交接并切到叙界模式（宿主受控 iframe）。 */
+  onLaunchNarraverse?: () => void
 }
 
 /** Session-only read preview. Opening the tab never issues a request. */
-export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting, onLaunchGame }: Props) {
+export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting, onLaunchGame, onLaunchNarraverse }: Props) {
   const { t } = useTranslation()
   const { launchWritingLibrary } = useLibraryContextLaunch()
+  const iframeLibraryLaunches = useIframeLibraryContextLaunch()
+  const worldContextHost = useWorldContextHost()
+  const [narraverseNotice, setNarraverseNotice] = useState<string | null>(null)
   const [manual, setManual] = useState<string[]>([])
   const [auto, setAuto] = useState<string[]>([])
   const [offset, setOffset] = useState(0)
@@ -91,6 +98,27 @@ export function LibraryContextPreview({ library, revision, dirty, hasWritingBook
     revisionLabel: revision,
     selectedCount: manualIDs.length,
   }
+  // B4a：带入叙界（宿主受控 iframe）。与带入写作/游戏同源：只交接已保存库的 Ref
+  // 三字段 + 摘要，autoItemIds 不进入授权；consumer 由宿主受控路由固定，Ref 不落 iframe。
+  // 宿主会话不可用时显式提示（与 world 侧带入叙界同一守卫），不写入交接。
+  const launchToNarraverse = () => {
+    if (dirty || !revision) return
+    if (worldContextHost.state !== 'ready') {
+      setNarraverseNotice(t('workLibrary.preview.launchNarraverseHostUnavailable'))
+      return
+    }
+    setNarraverseNotice(null)
+    iframeLibraryLaunches.launch('narraverse', {
+      libraryId: library.id,
+      expectedRevision: revision,
+      manualItemIds: manualIDs,
+      libraryName: library.name,
+      revisionLabel: revision,
+      selectedCount: manualIDs.length,
+      launchedAt: Date.now(),
+    })
+    onLaunchNarraverse?.()
+  }
   return (
     <section className="min-h-0 flex-1 overflow-y-auto p-3" aria-label={t('workLibrary.tab.preview')}>
       <p className="mb-3 text-sm text-muted-foreground">{t('workLibrary.preview.hint')}</p>
@@ -133,10 +161,20 @@ export function LibraryContextPreview({ library, revision, dirty, hasWritingBook
         >
           {t('workLibrary.preview.launchGame')}
         </Button>
+        {/* B4a：带入叙界（宿主受控 iframe，库 Ref 只交给同源宿主页面）。 */}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision}
+          onClick={launchToNarraverse}
+        >
+          {t('workLibrary.preview.launchNarraverse')}
+        </Button>
         <Button type="button" variant="ghost" onClick={() => { setAuto([]); setManual([]); setOffset(0) }}>{t('workLibrary.preview.clear')}</Button>
         {dirty ? <span role="status">{t('workLibrary.preview.saveFirst')}</span> : null}
         {stale ? <span role="status">{t('workLibrary.preview.stale')}</span> : null}
         {!hasWritingBook ? <span role="status">{t('workLibrary.preview.launchNeedBook')}</span> : null}
+        {narraverseNotice ? <span role="alert">{narraverseNotice}</span> : null}
       </div>
       {error ? <p role="alert" className="mb-3 text-sm">{error}</p> : null}
       {gameLaunchOpen ? (

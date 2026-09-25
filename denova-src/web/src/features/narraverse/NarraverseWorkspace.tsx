@@ -4,6 +4,7 @@ import { useTheme } from 'next-themes'
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
 import { useWorldContextHost } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { useIframeWorldContextLaunch, type IframeWorldConsumer } from '@/features/world-context-runtime/IframeWorldContextLaunchProvider'
+import { useIframeLibraryContextLaunch } from '@/features/library-context-runtime/IframeLibraryContextLaunchProvider'
 
 const READY_TIMEOUT_MS = 6000
 const MESSAGE_TEXT_LIMIT = 32_000
@@ -93,6 +94,7 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
   const { theme, resolvedTheme } = useTheme()
   const host = useWorldContextHost()
   const launches = useIframeWorldContextLaunch()
+  const libraryLaunches = useIframeLibraryContextLaunch()
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const readyTimerRef = useRef<number | null>(null)
   const frameInstanceRef = useRef(randomFrameInstance())
@@ -134,15 +136,31 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
     const activeBind = bindInFlightRef.current[consumer]
     if (activeBind) {
       await activeBind
-      if (!forceBare && !launches.pending[consumer] && boundRef.current[consumer]) return true
+      if (!forceBare && !launches.pending[consumer] && !libraryLaunches.pending[consumer] && boundRef.current[consumer]) return true
       return bindConsumer(consumer, forceBare)
     }
     const operation = (async () => {
-    const launch = forceBare ? null : launches.pending[consumer]
-    if (!launch && boundRef.current[consumer]) return true
+    // B4a：世界与库背景互斥——后带入者获胜（launchedAt 裁决），败者 pending 在绑定成功后清除。
+    const worldLaunch = forceBare ? null : launches.pending[consumer]
+    const libraryLaunch = forceBare ? null : libraryLaunches.pending[consumer]
+    let launch = worldLaunch
+    let library = libraryLaunch
+    if (launch && library) {
+      if (library.launchedAt >= launch.launchedAt) {
+        launch = null
+      } else {
+        library = null
+      }
+    }
+    if (!launch && !library && boundRef.current[consumer]) return true
     const body: Record<string, unknown> = { frameInstance: frameInstanceRef.current }
     if (launch) {
       body.world_context = { worldId: launch.worldId, expectedWorldRevision: launch.expectedWorldRevision, selection: launch.selection }
+    }
+    if (library) {
+      // 库 Ref 三字段（camelCase，与写作/游戏同一冻结 wire）只提交给同源宿主端；
+      // consumer/scopeKey 由服务端派生，iframe 与响应都拿不到 Ref 与运行身份。
+      body.library_context = { libraryId: library.libraryId, expectedRevision: library.expectedRevision, manualItemIds: library.manualItemIds }
     }
     try {
       const response = await fetch(`/api/world-context/host/${consumer}/bind`, {
@@ -156,6 +174,12 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
       }
       boundRef.current[consumer] = true
       if (launch) launches.take(consumer)
+      if (library) libraryLaunches.take(consumer)
+      if (worldLaunch && libraryLaunch) {
+        // 互斥裁决的败者 pending 不保留，避免下一次绑定意外复现旧背景。
+        if (!launch) launches.clear(consumer)
+        if (!library) libraryLaunches.clear(consumer)
+      }
       const summary = (data.contextSummary && typeof data.contextSummary === 'object')
         ? data.contextSummary as { state?: unknown } : { state: 'none' }
       const nextState = summary.state === 'active' || summary.state === 'degraded' ? summary.state : 'none'
@@ -174,11 +198,11 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
     } finally {
       if (bindInFlightRef.current[consumer] === operation) bindInFlightRef.current[consumer] = null
     }
-  }, [host.state, launches, postHostMessage, ready])
+  }, [host.state, launches, libraryLaunches, postHostMessage, ready])
 
   useEffect(() => {
     if (ready && host.state === 'ready') void bindConsumer('narraverse')
-  }, [bindConsumer, host.state, launches.pending.narraverse, ready])
+  }, [bindConsumer, host.state, launches.pending.narraverse, libraryLaunches.pending.narraverse, ready])
 
   useEffect(() => {
     if (ready && host.state === 'ready' && openModule4) void bindConsumer('module4')

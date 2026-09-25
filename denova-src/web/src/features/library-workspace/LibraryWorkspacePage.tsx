@@ -20,9 +20,11 @@ interface LibraryWorkspacePageProps {
   onLaunchWriting?: () => void
   /** B3b：用户显式发起带入游戏：选择目标故事/分支成功后写入一次性交接并切到游戏模式。 */
   onLaunchGame?: () => void
+  /** B4a：用户显式发起带入叙界：写入一次性交接并切到叙界模式（宿主受控 iframe）。 */
+  onLaunchNarraverse?: () => void
 }
 
-export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = false, onLaunchWriting, onLaunchGame }: LibraryWorkspacePageProps) {
+export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = false, onLaunchWriting, onLaunchGame, onLaunchNarraverse }: LibraryWorkspacePageProps) {
   const { t } = useTranslation()
   const [openId, setOpenId] = useState<string | null>(null)
   const [listToken, setListToken] = useState(0)
@@ -52,6 +54,7 @@ export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = 
           hasWritingBook={hasWritingBook}
           onLaunchWriting={onLaunchWriting}
           onLaunchGame={onLaunchGame}
+          onLaunchNarraverse={onLaunchNarraverse}
           onDirtyChange={(value) => {
             setDirty(value)
             onDirtyChange?.(value)

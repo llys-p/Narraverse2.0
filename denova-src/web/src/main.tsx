@@ -20,6 +20,7 @@ import { GameLibraryContextLaunchProvider } from '@/features/library-context-run
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 import { WorldContextHostProvider } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { IframeWorldContextLaunchProvider } from '@/features/world-context-runtime/IframeWorldContextLaunchProvider'
+import { IframeLibraryContextLaunchProvider } from '@/features/library-context-runtime/IframeLibraryContextLaunchProvider'
 
 function redirectLocalhostToCanonicalLoopback(): boolean {
   if (window.location.hostname.toLowerCase() !== 'localhost') return false
@@ -53,6 +54,7 @@ if (!isRedirectingToCanonicalOrigin) {
             <RuntimeErrorBoundary>
               <WorldContextHostProvider>
                 <IframeWorldContextLaunchProvider>
+                  <IframeLibraryContextLaunchProvider>
                   <WorldContextLaunchProvider>
                     <WorldContextRunProvider>
                       <LibraryContextLaunchProvider>
@@ -66,6 +68,7 @@ if (!isRedirectingToCanonicalOrigin) {
                       </LibraryContextLaunchProvider>
                     </WorldContextRunProvider>
                   </WorldContextLaunchProvider>
+                  </IframeLibraryContextLaunchProvider>
                 </IframeWorldContextLaunchProvider>
               </WorldContextHostProvider>
               <Toaster richColors closeButton />

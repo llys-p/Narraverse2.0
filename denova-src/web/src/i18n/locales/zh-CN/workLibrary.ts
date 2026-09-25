@@ -9,6 +9,8 @@ const workLibrary = {
   'workLibrary.preview.launchWriting': "带入写作",
   'workLibrary.preview.launchNeedBook': "先打开一本书，再带入写作。",
   'workLibrary.preview.launchGame': "带入游戏",
+  'workLibrary.preview.launchNarraverse': "带入叙界",
+  'workLibrary.preview.launchNarraverseHostUnavailable': "安全宿主会话不可用。请从 Denova 正式启动入口重新打开页面，再带入叙界。",
   'workLibrary.preview.launchGameTitle': "选择目标故事与分支",
   'workLibrary.preview.launchGameDescription': "把「{{name}}」作为游戏背景。选择目标故事与分支后，下一次发送将使用这份设定库（只读）。",
   'workLibrary.preview.launchGameStoryLabel': "目标故事",

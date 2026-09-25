@@ -14,7 +14,16 @@ import {
   useGameLibraryContextLaunch,
   type GameLibraryContextLaunch,
 } from '@/features/library-context-runtime/GameLibraryContextLaunchProvider'
+import {
+  IframeLibraryContextLaunchProvider,
+  useIframeLibraryContextLaunch,
+  type IframeLibraryContextLaunch,
+} from '@/features/library-context-runtime/IframeLibraryContextLaunchProvider'
 import { previewWorkLibrary } from '../library-context-api'
+
+const { hostStateMock } = vi.hoisted(() => ({
+  hostStateMock: { state: 'ready' as 'checking' | 'ready' | 'unavailable' },
+}))
 
 const { getInteractiveStoriesMock, getInteractiveBranchesMock, selectInteractiveStoryMock, switchInteractiveBranchMock } = vi.hoisted(() => ({
   getInteractiveStoriesMock: vi.fn(),
@@ -24,6 +33,9 @@ const { getInteractiveStoriesMock, getInteractiveBranchesMock, selectInteractive
 }))
 
 vi.mock('../library-context-api', () => ({ previewWorkLibrary: vi.fn() }))
+vi.mock('@/features/world-context-runtime/WorldContextHostProvider', () => ({
+  useWorldContextHost: () => ({ state: hostStateMock.state, migration: null }),
+}))
 vi.mock('@/features/interactive/api', () => ({
   getInteractiveStories: getInteractiveStoriesMock,
   getInteractiveBranches: getInteractiveBranchesMock,
@@ -211,5 +223,67 @@ describe('library launch to game (B3b)', () => {
     expect(Object.keys(captured[0])).toEqual(['libraryId', 'expectedRevision', 'manualItemIds', 'libraryName', 'revisionLabel', 'selectedCount', 'storyId', 'branchId', 'launchedAt'])
     expect(onLaunchGame).toHaveBeenCalledOnce()
     expect(selectInteractiveStoryMock).toHaveBeenCalledWith('story-1')
+  })
+})
+
+describe('library launch to Narraverse (B4a)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    hostStateMock.state = 'ready'
+  })
+
+  function renderNarraversePreview(props: Partial<Parameters<typeof LibraryContextPreview>[0]> = {}) {
+    const captured: IframeLibraryContextLaunch[] = []
+    function PendingCapture() {
+      const { pending } = useIframeLibraryContextLaunch()
+      useEffect(() => {
+        if (pending.narraverse) captured.push(pending.narraverse)
+      }, [pending])
+      return null
+    }
+    const view = render(
+      <LibraryContextLaunchProvider>
+        <IframeLibraryContextLaunchProvider>
+          <PendingCapture />
+          <LibraryContextPreview library={library} revision="one" dirty={false} {...props} />
+        </IframeLibraryContextLaunchProvider>
+      </LibraryContextLaunchProvider>,
+    )
+    return { captured, view }
+  }
+
+  it('disables the Narraverse launch button for unsaved drafts', () => {
+    renderNarraversePreview({ dirty: true })
+    expect(screen.getByRole('button', { name: '带入叙界' })).toBeDisabled()
+  })
+
+  it('hands off only the saved library ref and enters Narraverse when the host session is ready', async () => {
+    const user = userEvent.setup()
+    const onLaunchNarraverse = vi.fn()
+    const { captured } = renderNarraversePreview({ onLaunchNarraverse })
+    await user.click(screen.getByRole('button', { name: '带入叙界' }))
+    await waitFor(() => expect(captured).toHaveLength(1))
+    expect(captured[0]).toEqual({
+      libraryId: 'abcdefghijklmnop',
+      expectedRevision: 'one',
+      manualItemIds: [],
+      libraryName: '测试库',
+      revisionLabel: 'one',
+      selectedCount: 0,
+      launchedAt: expect.any(Number),
+    })
+    expect(Object.keys(captured[0])).toEqual(['libraryId', 'expectedRevision', 'manualItemIds', 'libraryName', 'revisionLabel', 'selectedCount', 'launchedAt'])
+    expect(onLaunchNarraverse).toHaveBeenCalledOnce()
+  })
+
+  it('refuses to launch when the secure host session is unavailable', async () => {
+    hostStateMock.state = 'unavailable'
+    const user = userEvent.setup()
+    const onLaunchNarraverse = vi.fn()
+    const { captured } = renderNarraversePreview({ onLaunchNarraverse })
+    await user.click(screen.getByRole('button', { name: '带入叙界' }))
+    expect(captured).toHaveLength(0)
+    expect(onLaunchNarraverse).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/宿主会话不可用/)
   })
 })
