@@ -1202,7 +1202,7 @@ function renderState(cur){
     if (d === undefined){ el.style.display = 'none'; return; }
     if (d >= 70){ st = { txt: '决裂边缘 · 她随时会翻脸', c: '#f87171', sys: '她按住了剑柄，看你的眼神已经不对了。再逼一步，就不是对话了。', key: 'break' }; }
     else if (d >= 45){ st = { txt: '戒备中 · 她在试探你', c: '#fbbf24', sys: '', key: 'guard' }; }
-    else if (d <= 25){ st = { txt: '信任渐生 · 她开始松口', c: '#34d399', sys: '她叹了口气，把一直攥着的刀鞘松开了一寸。风向变了。', key: 'trust' }; }
+    else if (d <= 30){ st = { txt: '信任渐生 · 她开始松口', c: '#34d399', sys: '她叹了口气，把一直攥着的刀鞘松开了一寸。风向变了。', key: 'trust' }; }
     else { st = { txt: '试探阶段 · 关系未定', c: '#8b93a6', sys: '', key: 'probing' }; }
     el.style.display = 'block'; el.style.color = st.c;
     el.textContent = '剧情线：' + st.txt;

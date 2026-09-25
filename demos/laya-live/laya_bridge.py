@@ -4940,11 +4940,11 @@ def _role_block(role_name, signal_values, profile, usable):
 # 剧情线档位（玩法层）：由 state 的可写/代理信号判定关系走向，
 # 供云端叙事（/narrate analysis 分块）与前端横幅（_plotline）共用。
 # ★ 判据：doubt 是可写代理；trust 只读（档案 grade=C → auxiliary 不可写），
-#   因此「信任渐生」用疑点回落（doubt<=25）判定，否则信任线永远不可达。
+#   因此「信任渐生」用疑点回落（doubt<=30）判定，否则信任线永远不可达。
 _PLOT_STAGES = (
     ("break",   "决裂边缘", "她对你已到决裂边缘，随时可能动手。", lambda d, t: d >= 70),
     ("guard",   "戒备中",   "她在戒备，每句话都在试探你的来路。", lambda d, t: d >= 45),
-    ("trust",   "信任渐生", "疑点在消解，她开始松口，愿意吐露一两句真话。", lambda d, t: d <= 25),
+    ("trust",   "信任渐生", "疑点在消解，她开始松口，愿意吐露一两句真话。", lambda d, t: d <= 30),
     ("probing", "试探阶段", "关系未定，她还在权衡是否信你。", lambda d, t: True),
 )
 
