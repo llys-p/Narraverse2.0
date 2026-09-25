@@ -1186,7 +1186,9 @@ function renderState(cur){
     }
     _plotline(cur);
   }
-  // 剧情线横幅：以 doubt/trust 判定当前「与莉亚的关系走向」，给对话进度感
+  // 剧情线横幅：以 doubt/trust 判定当前「与莉亚的关系走向」，给对话进度感；
+  // 首达关键阈值（决裂/信任）时在对话区弹一条系统提示，形成剧情转向反馈。
+  window.__LAST_PLOT = '';
   function _plotline(cur){
     var el = document.getElementById('plotline');
     if (!el) return;
@@ -1197,12 +1199,19 @@ function renderState(cur){
     var d = rel.doubt, t = rel.trust;
     var st = '';
     if (d === undefined){ el.style.display = 'none'; return; }
-    if (d >= 70){ st = { txt: '决裂边缘 · 她随时会翻脸', c: '#f87171' }; }
-    else if (t !== undefined && t >= 55){ st = { txt: '信任渐生 · 她开始松口', c: '#34d399' }; }
-    else if (d >= 45){ st = { txt: '戒备中 · 她在试探你', c: '#fbbf24' }; }
-    else { st = { txt: '试探阶段 · 关系未定', c: '#8b93a6' }; }
+    if (d >= 70){ st = { txt: '决裂边缘 · 她随时会翻脸', c: '#f87171', sys: '她按住了剑柄，看你的眼神已经不对了。再逼一步，就不是对话了。', key: 'break' }; }
+    else if (t !== undefined && t >= 55){ st = { txt: '信任渐生 · 她开始松口', c: '#34d399', sys: '她叹了口气，把一直攥着的刀鞘松开了一寸。风向变了。', key: 'trust' }; }
+    else if (d >= 45){ st = { txt: '戒备中 · 她在试探你', c: '#fbbf24', sys: '', key: 'guard' }; }
+    else { st = { txt: '试探阶段 · 关系未定', c: '#8b93a6', sys: '', key: 'probing' }; }
     el.style.display = 'block'; el.style.color = st.c;
     el.textContent = '剧情线：' + st.txt;
+    // 首达关键阈值 → 系统提示（防重复）
+    if (st.key === 'break' || st.key === 'trust'){
+      if (window.__LAST_PLOT !== st.key){
+        window.__LAST_PLOT = st.key;
+        if (st.sys){ addBubble('sys', st.sys, ''); }
+      }
+    }
   }
   function renderAnalysis(j){
     S.analysis_id = j.analysis_id; S.base_ver = j.base_state_version;
@@ -1386,7 +1395,8 @@ function renderState(cur){
     var chatBox = document.getElementById('chat');
     if (!chatBox) return;
     var el = document.createElement('div'); el.className = 'msg';
-    var nm = (who === 'npc') ? _actorName() : '玩家';
+    var nm = (who === 'npc') ? _actorName() : (who === 'sys' ? '系统' : '玩家');
+    if (who === 'sys'){ el.className = 'msg sys'; }
     el.innerHTML = '<div class="who '+who+'"><span class="mk">·</span>'+nm+'</div>'
       + '<div class="bubble">'+_esc(text)+'</div>';
     if (impactHtml){ el.insertAdjacentHTML('beforeend', impactHtml); }
