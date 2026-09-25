@@ -302,6 +302,7 @@
       <!-- 机制明细（默认折叠）：自动提交开关 + 手动单步调试 + P2 三栏 -->
       <section id="p2panel" style="width:100%;margin-top:10px;border-top:2px solid var(--line2);padding-top:8px;max-height:340px;overflow:auto">
         <div class="ch" style="margin:0 0 6px;font-size:13px;color:var(--dim)">机制明细（默认折叠，一般不用管）<span class="tag" id="p2tag">idle</span>
+          <span id="p2ver" style="font-size:11px;color:var(--dim);margin-left:8px"></span>
           <button type="button" id="p2fold" style="float:right;font-size:11px;cursor:pointer">展开</button>
         </div>
         <div id="p2body">
@@ -1153,8 +1154,10 @@ function renderState(cur){
     if (!S.baseline){
       S.baseline = JSON.parse(JSON.stringify((cur.state)||{}));
     }
-    verEl.textContent = 'version ' + cur.state_version + ' · '
+    if (verEl){
+      verEl.textContent = 'version ' + cur.state_version + ' · '
       + (cur.initialized ? '已初始化(' + cur.source + ')' : '模板');
+    }
     setTag(cur.initialized ? '已提交快照' : '模板', cur.initialized ? '#2f855a' : '#718096');
     var st = (cur.state || {}).relationship || {}, emo = (cur.state || {}).emotion || {};
     var bs = (S.baseline || {}).relationship || {}, be = (S.baseline || {}).emotion || {};
@@ -1319,7 +1322,7 @@ function renderState(cur){
     S.event_id = null; S.analysis_id = null; S.base_ver = null; S.status = null;
     S.baseline = null; S.pending = {}; S.applied = {}; S.lastMsg = '';
     sidEl.value = S.sid || ''; aidEl.value = S.aid || '';
-    verEl.textContent = '—';
+    if (verEl){ verEl.textContent = '—'; }
     $('p2authority').innerHTML = '—'; $('p2preview').innerHTML = '—'; $('p2ref').innerHTML = '—';
     setTag('已重置', '#718096'); buttons(); loadState(false);
   }
