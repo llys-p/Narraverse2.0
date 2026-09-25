@@ -297,6 +297,13 @@
           <textarea id="inp" placeholder="说出你的台词……（Enter 发送 / Shift+Enter 换行）"></textarea>
           <button class="primary" id="btnSend">发送</button>
         </div>
+        <div class="cbox" style="margin-top:6px">
+          <button id="p2go" type="button">Analyze</button>
+          <button id="p2commit" type="button" disabled>Commit</button>
+          <button id="p2reject" type="button" disabled>Reject</button>
+          <button id="p2narrate" type="button" disabled>云端回复</button>
+          <span style="font-size:11px;color:var(--dim)">P2 协议操作（用上方输入框的台词）</span>
+        </div>
         <div class="quick" id="quick"></div>
       </div>
     </div>
@@ -1053,11 +1060,7 @@ if(Q.has('auto')){
     <input id="p2aid" style="width:90px;font-size:12px" placeholder="actor"/>
     <button id="p2load" type="button" style="font-size:12px">读取</button>
     <button id="p2reset" type="button" style="font-size:12px">重置</button>
-    <input id="p2msg" style="flex:1;min-width:200px;font-size:12px" placeholder="玩家台词 → /analyze"/>
-    <button id="p2go" type="button" style="font-size:12px">Analyze</button>
-    <button id="p2commit" type="button" style="font-size:12px" disabled>Commit</button>
-    <button id="p2reject" type="button" style="font-size:12px" disabled>Reject</button>
-    <button id="p2narrate" type="button" style="font-size:12px" disabled>云端回复</button>
+    <span style="font-size:11px;color:var(--dim)">Analyze/Commit/Reject/云端回复 在上方输入栏（统一对话入口）</span>
   </div>
   <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:8px;min-height:120px">
     <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:200px;overflow:auto">
@@ -1085,10 +1088,11 @@ if(Q.has('auto')){
                   : (localStorage.getItem('laya_bridge_url') || 'http://127.0.0.1:8130'));
   var KEY = 'laya_p2_scope_v1';
   var $ = function(id){ return document.getElementById(id); };
-  var sidEl = $('p2sid'), aidEl = $('p2aid'), msgEl = $('p2msg');
+  var sidEl = $('p2sid'), aidEl = $('p2aid');
   var tag = $('p2tag'), verEl = $('p2ver'), note = $('p2note');
   var S = { sid: null, aid: null, event_id: null, analysis_id: null, base_ver: null,
             status: null, can_commit: false,
+            lastMsg: '',         // 本轮 Analyze 使用的玩家原话（②栏回显）
             baseline: null,        // 基准快照：首次未初始化读取的模板状态
             pending: {},           // 预览中变化（未提交）：field -> {old,new}
             applied: {} };         // 刚提交变化（绿）：field -> {old,new}
@@ -1181,7 +1185,7 @@ function renderState(cur){
     var skp = (j.state_proposal || {}).skipped || [];
     var sig = j.signals || {};
     var lines = [];
-    lines.push('<div style="color:var(--dim);margin-bottom:2px">玩家原话：「'+(msgEl.value||'')+'」</div>');
+    lines.push('<div style="color:var(--dim);margin-bottom:2px">玩家原话：「'+ (S.lastMsg||'') +'」</div>');
     wd.forEach(function(d){
       var raw = (sig[d.source_signal]||{}).raw_delta;
       lines.push('<div style="margin:3px 0"><span style="color:#2f855a;font-weight:bold">● '+d.source_signal+'</span>'
@@ -1244,14 +1248,11 @@ function renderState(cur){
   }
   async function analyze(){
     if (!S.sid || !S.aid){ return loadState(false); }
-    var msg = msgEl.value;
-    if (!msg || !msg.trim()){
-      // 兜底取顶部旧演示输入框的台词（用户常在那里打字）
-      var oth = document.getElementById('inp');
-      msg = (oth && oth.value) || '';
-    }
-    if (!msg || !msg.trim()){ flash('请先输入台词（上方或 P2 输入框）', true); msgEl.focus(); return; }
-    msgEl.value = msg;   // 回填，②栏「玩家原话」正确回显
+    // 统一入口：用顶部聊天输入框的台词
+    var oth = document.getElementById('inp');
+    var msg = (oth && oth.value) || '';
+    if (!msg || !msg.trim()){ flash('请先在上方输入框输入台词，再点 Analyze', true); if(oth){ oth.focus(); } return; }
+    S.lastMsg = msg;
     try{
       var st = (await api('/state?session_id=' + encodeURIComponent(S.sid)
                           + '&actor_id=' + encodeURIComponent(S.aid))).current;
@@ -1311,9 +1312,9 @@ function renderState(cur){
     }catch(_e){}
     S.sid = sidEl.value.trim(); S.aid = aidEl.value.trim();
     S.event_id = null; S.analysis_id = null; S.base_ver = null; S.status = null;
-    S.baseline = null; S.pending = {}; S.applied = {};
+    S.baseline = null; S.pending = {}; S.applied = {}; S.lastMsg = '';
     sidEl.value = S.sid || ''; aidEl.value = S.aid || '';
-    msgEl.value = ''; verEl.textContent = '—';
+    verEl.textContent = '—';
     $('p2authority').innerHTML = '—'; $('p2preview').innerHTML = '—'; $('p2ref').innerHTML = '—';
     setTag('已重置', '#718096'); buttons(); loadState(false);
   }
@@ -1323,7 +1324,7 @@ function renderState(cur){
   $('p2commit').onclick = commit;
   $('p2reject').onclick = reject;
   $('p2narrate').onclick = narrate;
-  msgEl.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); analyze(); } });
+  //（Enter 仍由旧「发送」接管：新协议请点上方 Analyze/Commit/云端回复 按钮）
   // 折叠：Decision Engine 面板（detail 过多时收起来）
   window.__foldPanel = function(btn){
     var p = document.getElementById('panel');
