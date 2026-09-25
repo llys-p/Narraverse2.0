@@ -1,6 +1,6 @@
 # 作品设定库 L1–L4 交接任务清单
 
-状态快照：2026-09-25（Asia/Shanghai；A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c、B3a+审查修正、B3b、B3c 均完成，**B3 整体验收 = PASS WITH FOLLOW-UPS（报告 [B3 验收](../acceptance/LIBRARY_L3_B3_ACCEPTANCE.md)；D1 修复轮提交 `0e46907` 复审 PASS，审核方独立复跑 agent 6 例+12 子例、app 2 集成测试及 vet/build/diff-check；跟进项：正式 executable 修复后重放已用假模型完成（2026-09-25，隔离 exe（HEAD 构建）+ 确定性假模型端点，证据 `artifacts/b3-exe-replay/`：SSE 链路完整、模型侧确收库正文、run ledger 的 659B 工具内容恢复完整元数据且零正文、全通道标记直扫 0 命中、库文件 sha256 逐字节不变；真实模型页面复验仍属 B5 口径），扫描遍历错误加固已提交 `806d6bb`）**，在分支 `library-b2a` 本地未推送；**B4a/B4b 均进行中（后端+前端已接线并过定向测试，提交 `368a0ec`/`582bb2b`/`7074e7b`/`8219f75`；正式页面验证待做）**，B5 脚手架就绪（runbook + `scripts/library-acceptance/`，游戏链已冒烟），正式验收待叙界模块资产与真实模型额度）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
+状态快照：2026-09-25（Asia/Shanghai；A1/A2 已推送；B0 完成、B1 完成+修复轮、B2a+修正轮、B2b、B2c、B3a+审查修正、B3b、B3c 均完成，**B3 整体验收 = PASS WITH FOLLOW-UPS（报告 [B3 验收](../acceptance/LIBRARY_L3_B3_ACCEPTANCE.md)；D1 修复轮提交 `0e46907` 复审 PASS，审核方独立复跑 agent 6 例+12 子例、app 2 集成测试及 vet/build/diff-check；跟进项：正式 executable 修复后重放已用假模型完成（2026-09-25，隔离 exe（HEAD 构建）+ 确定性假模型端点，证据 `artifacts/b3-exe-replay/`：SSE 链路完整、模型侧确收库正文、run ledger 的 659B 工具内容恢复完整元数据且零正文、全通道标记直扫 0 命中、库文件 sha256 逐字节不变；真实模型页面复验仍属 B5 口径），扫描遍历错误加固已提交 `806d6bb`）**，在分支 `library-b2a` 本地未推送；**B4a/B4b 均进行中（后端+前端已接线并过定向测试，提交 `368a0ec`/`582bb2b`/`7074e7b`/`8219f75`；正式页面验证待做）**；**B4 段独立复核（Trae，2026-09-25）= PASS（无阻断项）**，B5 脚手架就绪（runbook + `scripts/library-acceptance/`，双链冒烟 + 负例验证），正式页面验收待叙界模块资产（可取得但受会话边界限制）、真实模型轮待额度）。**本文件是后续 AI 唯一勾选表**；设计理由见 [总骨架](LIBRARY_EVOLUTION_BLUEPRINT.md)，L1/L2 证据见 [验收报告](../acceptance/LIBRARY_L1_L2_ACCEPTANCE.md)。每次接手先重查 Git，本快照不是永久事实。
 
 ## 1. 先知道现在是什么状态
 
@@ -154,16 +154,16 @@
 
 ### B4a · 叙界受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
-- [ ] 沿用既有宿主受控入口绑定新库，iframe 首次请求等待绑定；不下发运行秘密，不改 iframe 信任根或 Module3 引擎；正式页面验证实际取材。**进行中（2026-09-25 08:23，AI1；审查交接见 [B4 段交接](../acceptance/LIBRARY_L3_B4_HANDOFF.md)）：后端+前端已接线并过定向测试（提交 `368a0ec` 后端、`582bb2b` 前端）：bind 新增 library 载体（与 world 互斥；consumer 路由固定、scopeKey 宿主会话+frame 派生；Module4 保持 world-only 待 B4b）；绑定期固定 revision + 装配只读背景，每次 /call 前置并计费；换绑/解绑/撤销/过期幂等释放；响应/摘要脱敏（无库 ID/revision/scopeKey/运行 ID）；「带入叙界」入口含宿主就绪守卫与草稿禁用；app 4 例 + handlers 1 例 + 前端 6 例全过、tsc/构建过。正式页面验证实际取材待做——叙界模块资产不在本工作树，需按 `scripts/sync-narraverse-assets.mjs` 以 `NARRAVERSE_SOURCE_DIR` 同步后驱动；与 B3 executable 重放同类缺口，建议专项验收轮补做。**
+- [ ] 沿用既有宿主受控入口绑定新库，iframe 首次请求等待绑定；不下发运行秘密，不改 iframe 信任根或 Module3 引擎；正式页面验证实际取材。**进行中（2026-09-25 08:23，AI1；审查交接见 [B4 段交接](../acceptance/LIBRARY_L3_B4_HANDOFF.md)）：后端+前端已接线并过定向测试（提交 `368a0ec` 后端、`582bb2b` 前端）：bind 新增 library 载体（与 world 互斥；consumer 路由固定、scopeKey 宿主会话+frame 派生；Module4 保持 world-only 待 B4b）；绑定期固定 revision + 装配只读背景，每次 /call 前置并计费；换绑/解绑/撤销/过期幂等释放；响应/摘要脱敏（无库 ID/revision/scopeKey/运行 ID）；「带入叙界」入口含宿主就绪守卫与草稿禁用；app 4 例 + handlers 1 例 + 前端 6 例全过、tsc/构建过。正式页面验证实际取材待做——叙界模块资产不在本工作树，需按 `scripts/sync-narraverse-assets.mjs` 以 `NARRAVERSE_SOURCE_DIR` 同步后驱动；与 B3 executable 重放同类缺口，建议专项验收轮补做。**（**B4 段独立复核（Trae，2026-09-25）= PASS；分支接线无阻断项**，页面验证仍待资产。）
 
 ### B4b · Module4 受控接入（AI2 后端、AI3 页面，AI1 集成；依赖 B0、B1、B3c）
 
-- [ ] 沿用同一受控边界，不改 Adventure 规则、存档真源或模型 Settings；正式页面验证动作成败与背景读取状态独立、切实例不串库。**进行中（2026-09-25 09:12，AI1；审查交接见 [B4 段交接](../acceptance/LIBRARY_L3_B4_HANDOFF.md)）：后端+前端已接线并过定向测试（提交 `7074e7b` 后端、`8219f75` 前端）：module4 库载体走与叙界同一受控边界（Ref 三字段/与 world 互斥/consumer 路由固定/scopeKey 派生/绑定期固定 revision+装配计费/每次 call 前置并计费/幂等释放/摘要脱敏；沙盒模型模块与 Settings 未改）；库预览新增「带入开放沙盒」（经既有 `onOpenModule4` 受控入口）；跨消费者不串库与解除独立性由 app 2 例 + 前端 4 例覆盖。正式页面验证（动作成败与背景读取状态独立、切实例不串库）待做——叙界模块资产不在本工作树，同 B4a 缺口。**
+- [ ] 沿用同一受控边界，不改 Adventure 规则、存档真源或模型 Settings；正式页面验证动作成败与背景读取状态独立、切实例不串库。**进行中（2026-09-25 09:12，AI1；审查交接见 [B4 段交接](../acceptance/LIBRARY_L3_B4_HANDOFF.md)）：后端+前端已接线并过定向测试（提交 `7074e7b` 后端、`8219f75` 前端）：module4 库载体走与叙界同一受控边界（Ref 三字段/与 world 互斥/consumer 路由固定/scopeKey 派生/绑定期固定 revision+装配计费/每次 call 前置并计费/幂等释放/摘要脱敏；沙盒模型模块与 Settings 未改）；库预览新增「带入开放沙盒」（经既有 `onOpenModule4` 受控入口）；跨消费者不串库与解除独立性由 app 2 例 + 前端 4 例覆盖。正式页面验证（动作成败与背景读取状态独立、切实例不串库）待做——叙界模块资产不在本工作树，同 B4a 缺口。**（**B4 段独立复核（Trae，2026-09-25）= PASS；分支接线无阻断项**。）
 
 ### B5 · 四模式统一验收与交付（AI1；依赖 B2c、B3c、B4a、B4b）
 
 - [ ] 先审代码再在隔离 Denova executable/测试库跑写作→游戏→叙界→Module4；确认四个入口都**真正把获准内容送到现有模型链**，无暗中旧背景叠加、无剧情回写 Library、来源变更能阻断新读取。**脚手架就绪（2026-09-25）：统一验收 runbook 见 [B5 Runbook](../acceptance/LIBRARY_L3_B5_RUNBOOK.md)；工具 `denova-src/scripts/library-acceptance/`（假模型端点写作/游戏双模式、drive_writing/drive_game、scan_markers）已用隔离 exe + 假模型冒烟跑通游戏链（证据 `artifacts/b5-harness-smoke/`：回合 200、模型侧取材、48 文件零泄漏扫描 exit 0）。正式验收待叙界模块资产与真实模型额度。**
-  **复审（2026-09-25）= NEED REVISION（仅脚手架，B4 无新阻断项）**：三处可能误报"全绿"已修复——① 端口归属校验（等本进程 stdout 监听地址+存活+特征字段，否则拒绝写入；负例占位服务 0 请求）；② 分链断言（写作/游戏各自的 SSE 完成、工具往返、模型取材；游戏 ledger 须元数据化读取事件）；③ 扫描器遍历错误真正接线（悬空目录负例 exit 1）。提交 `dfbda8c`，证据 `artifacts/harness-review-fixes/`，全绿复跑通过。后续：固定版本叙界资产做 B4a/B4b 页面验收（资产在主工作区，当前会话边界禁止本代理读取，待授权/复制）；B5 四模式真实模型取材。**
+  **复审（2026-09-25）= NEED REVISION（仅脚手架，B4 无新阻断项）**：三处可能误报"全绿"已修复——① 端口归属校验（等本进程 stdout 监听地址+存活+特征字段，否则拒绝写入；负例占位服务 0 请求）；② 分链断言（写作/游戏各自的 SSE 完成、工具往返、模型取材；游戏 ledger 须元数据化读取事件）；③ 扫描器遍历错误真正接线（悬空目录负例 exit 1）。提交 `dfbda8c`，证据 `artifacts/harness-review-fixes/`，全绿复跑通过。**独立复核（Trae，2026-09-25）= PASS（无阻断项）**，后续：固定版本叙界资产做 B4a/B4b 页面验收（资产在主工作区，当前会话边界禁止本代理读取，待授权/复制）；B5 四模式真实模型取材。**
 - [ ] 测试取消/重连/regenerate/切实例/预算/来源故障；对 Session、工具结果、压缩源、run ledger、运行目录做脱敏扫描。分类记录缺口和环境失败，不以 UI 徽章或 HTTP 200 当送模证据。
 - [ ] 产出 L3 验收报告、精确提交 SHA 与部署状态。**完成记录：待填。**
 
