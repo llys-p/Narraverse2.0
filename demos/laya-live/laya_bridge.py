@@ -3100,6 +3100,22 @@ class Handler(BaseHTTPRequestHandler):
                 "note": note,
             }))
 
+        if path == "/core/turn":
+            # ★ Interaction Core（候选 C）：Turn Tick 完整链路
+            #   Interpret（LLM 归一化，fail-closed 降级）→ Facts → Laya Evidence
+            #   → Action Resolver（分级结算 + Fail Forward）→ Canonical Outcome
+            #   → 既有 propose/commit（协议层版本/事务/引擎门禁全继承）→
+            #   Story Agent（Narration Contract 约束，不得改写结果）。
+            #   完整 debug trace 在响应的 trace 字段（§16 审计）。
+            try:
+                from interaction_core import pipeline as _ic_pipeline
+                return self._json(_ic_pipeline.run_core_turn(sys.modules[__name__],
+                                                             payload or {}))
+            except Exception as e:
+                import traceback as _tb
+                return self._json({"ok": False, "error": repr(e),
+                                   "traceback": _tb.format_exc()[-1200:]}, 500)
+
         if path == "/commit":
             # ★ 提交门（Phase3-Task3）：只有这一步才把决策写进 (session, actor) 桶。
             #   语义上＝「上游 Story / Director 真的采纳了这轮行为」。
@@ -3148,6 +3164,13 @@ class Handler(BaseHTTPRequestHandler):
                     hit = ["%s/%s" % s for s in sorted(scopes)]
                 hit_state = reset_actor_state(sid, aid)
                 hit_buckets = reset_history(sid, aid)
+                # ★ Interaction Core（候选 C）：FactBase 与状态同桶清理 ——
+                #   重置后旧物件/声明不能残留（否则会出现"关系清了但库存还在"的拧巴态）。
+                try:
+                    from interaction_core import facts as _ic_facts
+                    _ic_facts.reset_fact_bases(sid, aid)
+                except Exception:
+                    pass
                 cleared = []
                 if sid is None and aid is None:
                     del _HISTORY[:]
