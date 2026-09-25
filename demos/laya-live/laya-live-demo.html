@@ -1040,41 +1040,35 @@ if(Q.has('auto')){
      纪律（§7）：服务端值是唯一权威，禁止本地累加；reference_only 显示
      「仅参考」；刷新可恢复 scope/event_id/analysis_id；epoch 变化提示重置。
   ═══════════════════════════════════════════════════════════════════════ -->
-<section id="p2panel" style="border-top:2px solid var(--line2);margin-top:28px;padding-top:14px">
-  <div class="ch" style="margin:0 0 10px">P2 状态协议面板 <span class="tag" id="p2tag">idle</span></div>
-  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px">
-    <label style="font-size:12px;color:var(--dim)">session_id
-      <input id="p2sid" style="width:140px" placeholder="demo_p2"/>
-    </label>
-    <label style="font-size:12px;color:var(--dim)">actor_id
-      <input id="p2aid" style="width:110px" placeholder="lia"/>
-    </label>
-    <button id="p2load" type="button">读取 /state</button>
-    <button id="p2reset" type="button">重置会话</button>
-    <span style="font-size:11px;color:var(--dim)" id="p2ver">—</span>
+<section id="p2panel" style="border-top:2px solid var(--line2);margin-top:18px;padding-top:10px">
+  <div class="ch" style="margin:0 0 8px;font-size:14px">P2 状态协议面板 <span class="tag" id="p2tag">idle</span>
+    <span style="font-size:11px;color:var(--dim);margin-left:8px" id="p2ver"></span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+    <input id="p2sid" style="width:120px;font-size:12px" placeholder="session"/>
+    <input id="p2aid" style="width:90px;font-size:12px" placeholder="actor"/>
+    <button id="p2load" type="button" style="font-size:12px">读取</button>
+    <button id="p2reset" type="button" style="font-size:12px">重置</button>
+    <input id="p2msg" style="flex:1;min-width:200px;font-size:12px" placeholder="玩家台词 → /analyze"/>
+    <button id="p2go" type="button" style="font-size:12px">Analyze</button>
+    <button id="p2commit" type="button" style="font-size:12px" disabled>Commit</button>
+    <button id="p2reject" type="button" style="font-size:12px" disabled>Reject</button>
+    <button id="p2narrate" type="button" style="font-size:12px" disabled>云端回复</button>
   </div>
-  <div style="display:flex;gap:8px">
-    <input id="p2msg" style="flex:1" placeholder="玩家台词（进入 /analyze）"/>
-    <button id="p2go" type="button">Analyze</button>
-    <button id="p2commit" type="button" disabled>Commit</button>
-    <button id="p2reject" type="button" disabled>Reject</button>
-    <button id="p2narrate" type="button" disabled>云端回复</button>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px">
-    <div style="border:1px solid var(--line2);border-radius:8px;padding:9px">
-      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">① 当前权威值（服务端快照）</div>
-      <div id="p2authority" style="font-size:12px;min-height:60px">—</div>
+  <div style="display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:8px;min-height:150px">
+    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:230px;overflow:auto">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px">① 基准→当前（绿=已变灰=未变 黄=预览中）</div>
+      <div id="p2authority" style="font-size:12px">—</div>
     </div>
-    <div style="border:1px solid var(--line2);border-radius:8px;padding:9px">
-      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">② 待确认预览（未提交）</div>
-      <div id="p2preview" style="font-size:12px;min-height:60px">—</div>
+    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:230px;overflow:auto">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px">② 待确认预览（未提交）</div>
+      <div id="p2preview" style="font-size:12px">—</div>
     </div>
-    <div style="border:1px solid var(--line2);border-radius:8px;padding:9px">
-      <div style="font-size:12px;color:var(--dim);margin-bottom:6px">③ 参考信号（不改状态）</div>
-      <div id="p2ref" style="font-size:12px;min-height:60px">—</div>
+    <div style="border:1px solid var(--line2);border-radius:6px;padding:6px;max-height:230px;overflow:auto">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px">③ 参考信号（不改状态）</div>
+      <div id="p2ref" style="font-size:12px">—</div>
     </div>
   </div>
-  <div id="p2note" style="margin-top:8px;font-size:12px;color:var(--dim)"></div>
+  <div id="p2note" style="margin-top:6px;font-size:12px;color:var(--dim)"></div>
 </section>
 <script>
 (function(){
@@ -1088,7 +1082,10 @@ if(Q.has('auto')){
   var sidEl = $('p2sid'), aidEl = $('p2aid'), msgEl = $('p2msg');
   var tag = $('p2tag'), verEl = $('p2ver'), note = $('p2note');
   var S = { sid: null, aid: null, event_id: null, analysis_id: null, base_ver: null,
-            status: null, can_commit: false };
+            status: null, can_commit: false,
+            baseline: null,        // 基准快照：首次未初始化读取的模板状态
+            pending: {},           // 预览中变化（未提交）：field -> {old,new}
+            applied: {} };         // 刚提交变化（绿）：field -> {old,new}
   function epochOf(v){ return String(v||'').split(':').slice(0,2).join(':'); }
   function err2s(e){ return (e && e.message) ? e.message : String(e); }
   function setTag(t, cls){ tag.textContent = t; tag.style.background = cls || ''; }
@@ -1119,38 +1116,67 @@ if(Q.has('auto')){
     if (S.status === 'reference_only'){ $('p2commit').disabled = true; flash('reference_only：仅参考，不能 Commit'); }
     $('p2narrate').disabled = !(hasId && (S.status === 'committed' || S.status === 'reference_only'));
   }
-  function renderState(cur){
+  function bar(label, base, cur){
+    var max = (label === 'fondness') ? 1 : 100;
+    var b = base===undefined?null:base, c = cur===undefined?null:cur;
+    var bPct = (b===null?0:Math.max(0,Math.min(100,b/max*100)));
+    var cPct = (c===null?0:Math.max(0,Math.min(100,c/max*100)));
+    var d = (b!==null && c!==null) ? (Math.round((c-b)*100)/100) : 0;
+    var dTxt = (d===0) ? '' : (d>0?'+':'')+d;
+    var stateClass = '';
+    var p = S.pending[label], a = S.applied[label];
+    if (p){ stateClass = '#b7791f'; dTxt = ''; }          // 预览中：黄
+    else if (a){ stateClass = '#2f855a'; }                // 已提交变化：绿
+    else if (c !== null && b !== null && c !== b){ stateClass = '#2f855a'; } // 相对基准已变化
+    var barBg = stateClass ? stateClass : '#718096';
+    return '<div style="margin:4px 0"><div style="display:flex;justify-content:space-between;font-size:11px">'
+      + '<span style="color:var(--dim)">'+label+(p?'（预览中）':(a?'（已更新）':''))+'</span>'
+      + '<span style="'+ (stateClass?('color:'+stateClass+';font-weight:bold'):'color:var(--dim)') +'">'
+      + (c===null?'—':c) + (dTxt?('&nbsp;'+dTxt):'') + '</span></div>'
+      + '<div style="position:relative;height:6px;background:var(--line2);border-radius:3px">'
+      + '<div style="position:absolute;left:'+bPct+'%;width:'+Math.max(1,cPct-bPct)+'%;height:6px;background:'+barBg+';border-radius:3px;opacity:'+((cPct>=bPct)?0.85:0.55)+'"></div>'
+      + '</div>'
+      + '<div style="font-size:10px;color:var(--dim2,var(--dim))">基准 '+(b===null?'—':b)+'</div></div>';
+}
+function renderState(cur){
     if (!cur) return;
     S.sid = cur.session_id; S.aid = cur.actor_id;
-    verEl.textContent = 'state_version: ' + cur.state_version
-      + '　' + (cur.initialized ? '已初始化(' + cur.source + ')' : '模板初值');
+    // 基准：首次读取（未初始化=模板）时锁定一份作为参照
+    if (!S.baseline){
+      S.baseline = JSON.parse(JSON.stringify((cur.state)||{}));
+    }
+    verEl.textContent = 'version ' + cur.state_version + ' · '
+      + (cur.initialized ? '已初始化(' + cur.source + ')' : '模板');
     setTag(cur.initialized ? '已提交快照' : '模板', cur.initialized ? '#2f855a' : '#718096');
-    // ① 权威值：信任/怀疑/好感等核心数值（只读服务端）
-    var st = (cur.state || {}).relationship || {};
-    var emo = (cur.state || {}).emotion || {};
+    var st = (cur.state || {}).relationship || {}, emo = (cur.state || {}).emotion || {};
+    var bs = (S.baseline || {}).relationship || {}, be = (S.baseline || {}).emotion || {};
     var rows = [
-      ['trust', st.trust], ['doubt', st.doubt], ['respect', st.respect],
-      ['fondness', emo.fondness]
+      ['trust', bs.trust, st.trust], ['doubt', bs.doubt, st.doubt],
+      ['respect', bs.respect, st.respect], ['fondness', be.fondness, emo.fondness]
     ];
-    $('p2authority').innerHTML = '<table style="border-collapse:collapse"><tr><th style="text-align:left;padding:2px 10px 2px 0">字段</th><th style="text-align:left;padding:2px">值</th></tr>' +
-      rows.map(function(r){ return '<tr><td style="padding:2px 10px 2px 0;color:var(--dim)">'+r[0]+'</td><td style="padding:2px"><b>'+(r[1]===undefined?'—':r[1])+'</b></td></tr>'; }).join('') + '</table>' +
-      '<div style="margin-top:6px;color:#b7791f">提示：当前能力档案只有 <b>doubt_shift（怀疑）</b> 可写（见③）；trust/fondness 等是辅助信号，Commit 后仍不变 —— 这是刻意的（不是没生效）。</div>';
-  }
+    $('p2authority').innerHTML = rows.map(function(r){ return bar(r[0], r[1], r[2]); }).join('') +
+      '<div style="margin-top:4px;font-size:10px;color:#b7791f">当前档案只有 doubt_shift 可写（见③）；trust/fondness 等齐变更属设计。</div>';
+}
   function renderAnalysis(j){
     S.analysis_id = j.analysis_id; S.base_ver = j.base_state_version;
     S.status = j.status; S.can_commit = !!j.can_commit;
+    // 预览中变化：供①栏黄高亮（未提交，不计入基准）
+    S.pending = {}; S.applied = {};
+    (j.state_proposal || {}).writable_delta.forEach(function(d){
+      var key = String(d.target || '').split('.').pop();
+      S.pending[key] = { old: d.old_value, new: d.new_value };
+    });
     setTag(j.status, j.status === 'ready' ? '#2f855a'
             : (j.status === 'reference_only' ? '#b7791f'
                : (j.status === 'committed' ? '#3182ce' : '#718096')));
     // ② 待确认预览
     var wd = (j.state_proposal || {}).writable_delta || [];
-    var pv = (j.state_proposal || {}).preview_state || {};
     var prov = wd.map(function(d){
-      return '<div>'+d.source_signal+' → '+d.target+': <b>'+d.old_value+' → '+d.new_value+'</b>'
+      return '<div style="color:#b7791f">'+d.source_signal+' → '+d.target+': <b>'+d.old_value+' → '+d.new_value+'</b>'
         +'（proposed '+d.proposed_delta+' / applied '+d.applied_delta+'）</div>';
     }).join('');
     $('p2preview').innerHTML = wd.length
-      ? prov + '<div style="margin-top:4px;color:var(--dim)">预览 new_value（未提交）按需展示——服务端尚未变化</div>'
+      ? prov + '<div style="margin-top:4px;color:var(--dim)">未提交——服务端尚未变化</div>'
       : '<span style="color:#b7791f">无 writable 项</span>';
     // ③ 参考信号
     var aux = (j.state_proposal || {}).auxiliary || [];
@@ -1171,7 +1197,13 @@ if(Q.has('auto')){
   }
   function renderReceipt(c){
     setTag('committed', '#3182ce');
-    flash('已提交：' + c.commit_id + '　state_version ' + c.state_version
+    // 刚提交的变化：绿高亮一次（基准保持不变，未变项自动灰）
+    S.pending = {}; S.applied = {};
+    (c.applied_delta || []).forEach(function(d){
+      var key = String(d.target || '').split('.').pop();
+      S.applied[key] = { old: d.old_value, new: d.new_value };
+    });
+    flash('已提交：' + c.commit_id + '　version ' + c.state_version
       + (c.state_changed ? '' : '（本轮数值无变化）'));
   }
   async function loadState(first){
@@ -1224,6 +1256,7 @@ if(Q.has('auto')){
       await api('/reject_analysis', { session_id: S.sid, actor_id: S.aid,
                                       analysis_id: S.analysis_id, reason: 'user_cancelled' });
       S.analysis_id = null; S.event_id = null; S.status = null;
+      S.pending = {}; S.applied = {};
       flash('已拒绝候选，事件关闭（同事件不可再提交）');
       persist(); await loadState(false); buttons();
     }catch(e){ flash('reject 失败：' + err2s(e), true); }
@@ -1250,6 +1283,7 @@ if(Q.has('auto')){
     }catch(_e){}
     S.sid = sidEl.value.trim(); S.aid = aidEl.value.trim();
     S.event_id = null; S.analysis_id = null; S.base_ver = null; S.status = null;
+    S.baseline = null; S.pending = {}; S.applied = {};
     sidEl.value = S.sid || ''; aidEl.value = S.aid || '';
     msgEl.value = ''; verEl.textContent = '—';
     $('p2authority').innerHTML = '—'; $('p2preview').innerHTML = '—'; $('p2ref').innerHTML = '—';
