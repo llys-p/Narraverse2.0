@@ -111,13 +111,21 @@ def build_entity_directory(core, session_id):
         if inter.get("location"):
             locations.setdefault(inter["location"], {"id": inter["location"]})
     world = st["states"][WORLD]["interaction"]
+    # 物品的目录位置用**有效位置**投影（被持有时随持有人当前位置），与服务端 inspect 的
+    # 可见性判定同一口径；否则会出现「目录说钥匙还在旧井、核心却允许在酒馆检查」的自相矛盾。
+    holders = {eid: (s.get("interaction") or {}).get("location")
+               for eid, s in st["states"].items() if eid != WORLD}
     for oid, obj in (world.get("objects") or {}).items():
+        oid_owner = obj.get("owner")
+        eff_loc = holders.get(oid_owner) if oid_owner in holders else None
+        if not eff_loc:
+            eff_loc = obj.get("location")
         objects[oid] = {"id": oid, "name": obj.get("name"), "kind": obj.get("kind"),
-                        "location": obj.get("location"), "owner": obj.get("owner"),
+                        "location": eff_loc, "owner": oid_owner,
                         "mentions": list(OBJECT_ALIASES.get(oid, ()))
                         + ([obj["name"]] if obj.get("name") else [])}
-        if obj.get("location"):
-            locations.setdefault(obj["location"], {"id": obj["location"]})
+        if eff_loc:
+            locations.setdefault(eff_loc, {"id": eff_loc})
     for lid, row in locations.items():
         row["mentions"] = [lid] + list(LOCATION_ALIASES.get(lid, ()))
     directory = {
