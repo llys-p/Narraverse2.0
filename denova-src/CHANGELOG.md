@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Library work in progress / 作品设定库建设中
+- 总资料库译文批量应用现在将保护标记不匹配与真实版本冲突分开显示；用户可先审阅原文和译文，再显式确认风险译文，版本冲突仍不可由该确认绕过。
+- Master Library translation batches now distinguish protected-marker mismatches from revision conflicts. Users can compare source and translation before explicitly accepting a risky translation; this does not bypass revision checks.
 - L3 作品设定库四模式接入与 L4 按需整理方向已合入 GitHub 主线（PR #4）；本次不自动切换现有本机服务或迁移旧资料。
 - L3 Work Library integration across four modes and the optional L4 curation direction are now merged into GitHub main (PR #4); this does not replace a running local service or migrate legacy data.
 - L4 方向收口：旧资料不再需要常规盘点或批量迁移；无指定资料时以零数据变更结束，日后由用户选定单条来源、核对 Agent 草稿并通过现有设定库编辑器保存。C1/C2a 只读实验保留但不自动推进导入。
