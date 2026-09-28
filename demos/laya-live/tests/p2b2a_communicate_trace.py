@@ -203,7 +203,8 @@ def main():
 
     rule("边界：本轮只做 communicate(question/claim/表态) 与 inspect 的**服务端规则链**")
     line("  · 不接受玩家/模型自报难度、delta、outcome（注入即 422）；")
-    line("  · attack 仍硬短路 UNSUPPORTED_OPERATION（六档对抗属 P2-B2b）；")
+    line("  · attack+kind=violence 等伤害性攻击仍硬短路 UNSUPPORTED_OPERATION"
+         "（仅 kind=challenge 非致命角力进六档，属 P2-B2b）；")
     line("  · 不接 Laya、云端语义解释与叙事；解释器与协议/桥/HTTP 未改。")
 
     text = "\n".join(OUT) + "\n"

@@ -12,7 +12,8 @@
   T9  目标不明 → 要求澄清（不暗选）
   T10 物品不明 → 要求澄清
   T11 客户端注入难度 / delta / Outcome → 422
-  T12 仍未实现的 B2b 动作（attack）→ 显式短路 UNSUPPORTED_OPERATION
+  T12 attack 未显式声明 kind=challenge → 显式短路 UNSUPPORTED_OPERATION
+      （P2-B2b 起 attack+kind=challenge 已实现走六档；未声明 kind 不悄悄当角力）
   T13 旧写入口改动被读实体 → 原候选失效
   T14 发布段注入异常 → 无半提交（状态/版本/事件全回退）
   T15 非真实尝试（negated）不计为失败、不产生任何写项
@@ -252,8 +253,9 @@ def test_hard_prerequisites():
         'expected_versions': v, 'actor_id': 'player'}), 'INVALID_REQUEST')
 
     # P2-B1 起 take/move/unlock 已实现；P2-B2a 起 communicate/inspect 也已实现；
-    # 这里继续验证**尚未实现**的 B2b 动作（attack）仍显式硬短路，不放宽反例。
-    expect_error('T12-P2 动作短路', lambda: core.prepare_structured({
+    # P2-B2b 起 attack 仅 kind=challenge（非致命角力）实现。这里继续验证
+    # **未显式声明 kind=challenge** 的 attack 仍显式硬短路，不悄悄转成角力。
+    expect_error('T12-attack 未声明 kind=challenge → 短路', lambda: core.prepare_structured({
         'session_id': sid, 'event_id': 'e7', 'actor_id': 'player',
         'expected_versions': v, 'actions': [{'id': 'a1', 'operation': 'attack',
             'target_ids': ['lia'], 'object_id': None, 'mode': 'attempt'}]}),

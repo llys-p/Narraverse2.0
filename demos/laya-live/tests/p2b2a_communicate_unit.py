@@ -11,7 +11,7 @@
       被阻止 / 跳过 / 非尝试的动作不能借时钟取得可提交资格
   B2  知识位置固定：`interaction.knowledge` 按 actor 私有；世界回合记录只留
       类型/说话者/听者/可见范围，不放私有原话
-  B3  权威边界：客户端注入难度/delta/outcome → 422；`attack` 仍 UNSUPPORTED_OPERATION
+  B3  权威边界：客户端注入难度/delta/outcome → 422；非角力的 attack（kind=violence）仍 UNSUPPORTED_OPERATION
 
 P2-B2a-R1 定向修复的补强反例（A 关口审查）：
   F1–F6 私有知识视图：普通 `state()` 剔除各 actor 的 knowledge，按 actor 的内部读取仍正确，
@@ -484,7 +484,7 @@ def test_clarify_and_schema():
         pv["status"] == "blocked"
         and "inspect_subject_not_observable"
             in pv["outcome"]["resolutions"][0]["check"]["reasons"], "")
-    expect_error("D9-attack 仍硬短路（六档属 P2-B2b）",
+    expect_error("D9-attack+kind=violence 仍硬短路（仅 kind=challenge 进六档公式）",
                  lambda: prepare(core, sid, [{
                      "id": "a1", "operation": "attack", "target_ids": ["lia"],
                      "object_id": None, "mode": "attempt", "kind": "violence"}], "atk"),
