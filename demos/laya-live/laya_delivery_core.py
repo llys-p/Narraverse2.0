@@ -9,7 +9,7 @@ Outcome、原子发布、幂等、回退、旧写入口使候选失效。
   · 自由语言 Interpreter（P1 只用内部可注入的结构化 ActionIntent 做无模型联调）；
   · 真实 Laya 推理（transfer 是服务端规则可独立裁决的动作，显式 `rules_only`，
     回执中 `laya_evidence=[]`，从不声称有 Laya 证据）；
-  · 云端叙事、页面、P2 的 move/take/unlock 玩法（只留扩展点，命中即短路）。
+  · 云端叙事、页面、交流/检查/六档对抗（留待 P2-B2）。
 
 权威链（P0 契约 §2 的最小裁剪）：
     结构化 ActionIntent（内部注入）
@@ -27,8 +27,8 @@ Outcome、原子发布、幂等、回退、旧写入口使候选失效。
     A 候选 `interaction_core/service.py` + `commit_interaction_bundle` 骨架）。
   · Actor State 桶与点路径写入：本树 `laya_bridge.py`（`_ACTOR_STATE`、
     `actor_state_snapshot`、`_set_path`）。
-  · 场景/规则思路参考 A 的 `interaction_core/{scene,rules}.py`；**不整包搬运**，
-    P1 只实现 `transfer` 一条规则，六档 Resolver 与分级玩法留 P2。
+    · 场景/规则思路参考 A 的 `interaction_core/{scene,rules}.py`；**不整包搬运**，
+    P1 `transfer` 与 P2-B1 `move/take/unlock` 均为确定性硬规则，六档 Resolver 留 P2-B2。
 
 唯一真源：物品归属只存在于世界运行态 `interaction.objects.<id>.owner`（即
 `_ACTOR_STATE[(session_id, "ic_world")]`），**不存在**第二份可写 inventory/owner。
@@ -59,15 +59,18 @@ MAX_PENDING = 200
 MAX_ACTIONS = 8
 MAX_INTENT_CHARS = 2000
 
-#: 本轮实现（可独立裁决、无需模型）的动作。
-IMPLEMENTED_OPERATIONS = ("transfer",)
-#: 已声明但**本轮不实现**的动作 —— P2 扩展点。命中即硬短路为
-#: `UNSUPPORTED_OPERATION`，不做「用有限难度惩罚代替拒绝」。
-P2_OPERATIONS = ("take", "move", "unlock", "inspect", "communicate", "attack")
+#: 本轮实现（可独立裁决、无需模型）的动作：P1 `transfer` + P2-B1 `move/take/unlock`。
+IMPLEMENTED_OPERATIONS = ("transfer", "move", "take", "unlock")
+#: 已声明但**本轮不实现**的动作 —— P2-B2 扩展点（交流/检查/六档对抗）。
+#: 命中即硬短路为 `UNSUPPORTED_OPERATION`，不做「用有限难度惩罚代替拒绝」。
+P2_OPERATIONS = ("inspect", "communicate", "attack")
 
 INTENT_FIELDS = {"id", "operation", "target_ids", "object_id", "mode",
-                 "kind", "content", "evidence"}
+                 "kind", "content", "evidence", "depends_on", "when"}
 MODES = ("attempt", "negated", "hypothetical", "quoted")
+#: P2 条件动作：只有带 `depends_on` 时 `if_achieved / if_not_achieved` 才有效，
+#: 无依赖时统一归一为 `always`（与 P2-A 解释器口径一致）。
+WHEN_VALUES = ("always", "if_achieved", "if_not_achieved")
 #: 生产输入绝不允许注入的口子（难度 / delta / Outcome / 成功档位）。
 FORBIDDEN_FIELDS = ("difficulty", "delta", "state_delta", "outcome", "margin",
                     "success", "degree", "success_degree", "writable_delta")
@@ -116,15 +119,24 @@ def scene_templates(B):
                 "turn_tick": 0,
                 "facts": [],
                 "turns": [],          # 正式历史：Commit 才追加
+                # 服务端地点图：唯一移动权威。move 只能到「当前地点可达」的已知地点。
+                "places": {
+                    "tavern": {"reachable": ["old_well"]},
+                    "old_well": {"reachable": ["tavern"]},
+                },
                 "objects": {
                     "badge": {"name": "徽章", "kind": "item", "location": "tavern",
                               "owner": "player", "portable": True},
                     "apple": {"name": "苹果", "kind": "item", "location": "tavern",
                               "owner": "player", "portable": True},
-                    # P2 拾取链的素材，本轮只作为「未持有」反例存在。
+                    # P2-B1 拾取链：钥匙在旧井、无人持有；地窖门在酒馆、上锁。
                     "cellar_key": {"name": "地窖钥匙", "kind": "item",
                                    "location": "old_well", "owner": None,
-                                   "portable": True},
+                                   "portable": True, "opens": "cellar_door"},
+                    "cellar_door": {"name": "地窖门", "kind": "door",
+                                    "location": "tavern", "locked": True,
+                                    "open": False, "portable": False,
+                                    "opens_with": "cellar_key"},
                 },
             },
         },
@@ -236,6 +248,7 @@ class DeliveryCore:
             raise _ProtoError(422, "INVALID_REQUEST",
                               "actions 必须是 1–%d 项的结构化 ActionIntent 数组" % MAX_ACTIONS)
         out = []
+        seen_ids = set()
         for i, it in enumerate(acts):
             where = "actions[%d]" % i
             if not isinstance(it, dict):
@@ -249,6 +262,8 @@ class DeliveryCore:
             aid_ = it.get("id")
             if not isinstance(aid_, str) or not aid_ or len(aid_) > 64:
                 raise _ProtoError(422, "INVALID_REQUEST", "%s.id 必填且 ≤64 字符" % where)
+            if aid_ in seen_ids:
+                raise _ProtoError(422, "INVALID_REQUEST", "%s.id 在本轮重复" % where)
             op = it.get("operation")
             if not isinstance(op, str) or not op:
                 raise _ProtoError(422, "INVALID_REQUEST", "%s.operation 必填" % where)
@@ -276,12 +291,25 @@ class DeliveryCore:
                 if val is not None and (not isinstance(val, str) or len(val) > MAX_INTENT_CHARS):
                     raise _ProtoError(422, "INVALID_REQUEST",
                                       "%s.%s 必须为 ≤%d 字符的字符串" % (where, f, MAX_INTENT_CHARS))
+            dep = it.get("depends_on")
+            if dep is not None and (not isinstance(dep, str) or dep not in seen_ids):
+                raise _ProtoError(422, "INVALID_REQUEST",
+                                  "%s.depends_on 必须指向更早动作" % where)
+            when = it.get("when", "always")
+            if not isinstance(when, str) or when not in WHEN_VALUES:
+                raise _ProtoError(422, "INVALID_REQUEST",
+                                  "%s.when 只允许 %s" % (where, "/".join(WHEN_VALUES)))
+            if dep is None and when != "always":
+                raise _ProtoError(422, "INVALID_REQUEST",
+                                  "%s.when 为条件值时必须提供 depends_on" % where)
             out.append({
                 "id": aid_, "operation": op, "target_ids": [str(t) for t in targets],
                 "object_id": obj, "mode": mode,
                 "kind": it.get("kind") or "", "content": it.get("content") or "",
                 "evidence": it.get("evidence") or "",
+                "depends_on": dep, "when": when,
             })
+            seen_ids.add(aid_)
         return out
 
     # ------------------------------------------------------------------
@@ -332,44 +360,152 @@ class DeliveryCore:
             evidence.append("possession:" + obj_id)
         return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
 
+    def _check_move(self, intent, actor_id, states):
+        world = states[WORLD]["interaction"]
+        src = states[actor_id]["interaction"]
+        targets = intent.get("target_ids") or []
+        reasons, evidence = [], []
+        if len(targets) != 1:
+            reasons.append("move_requires_exactly_one_location")
+        else:
+            dest = targets[0]
+            places = world.get("places") or {}
+            if dest not in places:
+                reasons.append("location_unknown")
+            elif src.get("location") not in places:
+                reasons.append("current_location_unknown")
+            elif dest == src.get("location"):
+                reasons.append("already_at_location")
+            elif dest not in places[src["location"]].get("reachable", []):
+                reasons.append("location_unreachable")
+            else:
+                evidence.append("route:%s>%s" % (src["location"], dest))
+        if src.get("incapacitated"):
+            reasons.append("actor_incapacitated")
+        if src.get("restrained"):
+            reasons.append("actor_restrained")
+        return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
+
+    def _check_take(self, intent, actor_id, states):
+        world = states[WORLD]["interaction"]
+        src = states[actor_id]["interaction"]
+        obj_id = intent.get("object_id")
+        item = world["objects"].get(obj_id) if obj_id else None
+        reasons, evidence = [], []
+        if item is None or item.get("kind") != "item":
+            reasons.append("object_unknown")
+        else:
+            if item.get("owner") is not None:
+                reasons.append("item_not_available")
+            if item.get("location") != src.get("location"):
+                reasons.append("object_not_at_location")
+            if item.get("portable") is not True:
+                reasons.append("item_not_portable")
+            if not reasons:
+                evidence.append("available:%s@%s" % (obj_id, src.get("location")))
+        if src.get("incapacitated"):
+            reasons.append("actor_incapacitated")
+        if src.get("restrained"):
+            reasons.append("actor_restrained")
+        return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
+
+    def _check_unlock(self, intent, actor_id, states):
+        world = states[WORLD]["interaction"]
+        src = states[actor_id]["interaction"]
+        door_id = intent.get("object_id")
+        door = world["objects"].get(door_id) if door_id else None
+        reasons, evidence = [], []
+        if door is None or door.get("kind") != "door":
+            reasons.append("object_unknown")
+        else:
+            if door.get("location") != src.get("location"):
+                reasons.append("door_out_of_reach")
+            if door.get("locked") is not True:
+                reasons.append("door_not_locked")
+            key_id = door.get("opens_with")
+            key = world["objects"].get(key_id) if key_id else None
+            if key is None or key.get("kind") != "item":
+                reasons.append("key_mismatch")
+            elif key.get("owner") != actor_id:
+                reasons.append("key_not_owned")
+            elif key.get("opens") != door_id:
+                reasons.append("key_mismatch")
+            if not reasons:
+                evidence.append("key:%s opens:%s" % (key_id, door_id))
+        if src.get("incapacitated"):
+            reasons.append("actor_incapacitated")
+        if src.get("restrained"):
+            reasons.append("actor_restrained")
+        return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
+
     # ------------------------------------------------------------------
     # 逐动作结算（在副本上顺序模拟；不做 margin，不产生被阻止的物理效果）
     # ------------------------------------------------------------------
     def _resolve_one(self, intent, actor_id, states):
         op = intent["operation"]
         target_id = (intent["target_ids"] or [None])[0]
-        check = self._check_transfer(intent, actor_id, states) if op == "transfer" \
-            else {"allowed": False, "reasons": ["operation_not_implemented"], "evidence": []}
         if intent["mode"] != "attempt":
             return {
                 "action_id": intent["id"], "operation": op, "target_id": target_id,
-                "degree": "skipped", "achieved": "非真实物理尝试（%s），不计为行动失败" % intent["mode"],
+                "execution_status": "skipped", "degree": None,
+                "achieved": "非真实物理尝试（%s），不计为行动失败" % intent["mode"],
                 "check": {"allowed": False, "reasons": ["not_an_attempt"], "evidence": []},
                 "changes": [], "facts": [], "costs": [], "complications": [],
                 "opportunities": [], "evidence": intent["evidence"],
             }
+        check = {"transfer": self._check_transfer, "move": self._check_move,
+                 "take": self._check_take, "unlock": self._check_unlock}[op](
+                     intent, actor_id, states)
         if not check["allowed"]:
             return {
                 "action_id": intent["id"], "operation": op, "target_id": target_id,
-                "degree": "failure",
+                "execution_status": "blocked", "degree": None,
                 "achieved": "未执行：" + "、".join(check["reasons"]),
                 "check": check, "changes": [], "facts": [], "costs": [],
                 "complications": [],
                 "opportunities": ["先满足动作前提，再重新尝试。"],
                 "evidence": intent["evidence"],
             }
-        # transfer 的规则：硬前提全部满足 → 归属一次性转交（无难度、无档位、无惩罚）
-        before = states[WORLD]["interaction"]["objects"][intent["object_id"]]["owner"]
-        changes = [{"entity_id": WORLD, "path": "interaction.objects.%s.owner" % intent["object_id"],
-                    "before": before, "after": target_id, "source": "rule:" + intent["id"]}]
-        facts = [{"kind": "ownership", "object": intent["object_id"], "owner": target_id}]
+        changes, facts = [], []
+        world = states[WORLD]["interaction"]
+        if op == "transfer":
+            before = world["objects"][intent["object_id"]]["owner"]
+            changes.append({"entity_id": WORLD,
+                            "path": "interaction.objects.%s.owner" % intent["object_id"],
+                            "before": before, "after": target_id, "source": "rule:" + intent["id"]})
+            facts.append({"kind": "ownership", "object": intent["object_id"], "owner": target_id})
+            achieved = "%s 由 %s 交给 %s" % (intent["object_id"], actor_id, target_id)
+        elif op == "move":
+            before = states[actor_id]["interaction"]["location"]
+            after = target_id
+            changes.append({"entity_id": actor_id, "path": "interaction.location",
+                            "before": before, "after": after, "source": "rule:" + intent["id"]})
+            facts.append({"kind": "location", "actor": actor_id, "location": after})
+            achieved = "%s 移动到 %s" % (actor_id, after)
+        elif op == "take":
+            obj_id = intent["object_id"]
+            before = world["objects"][obj_id]["owner"]
+            changes.append({"entity_id": WORLD,
+                            "path": "interaction.objects.%s.owner" % obj_id,
+                            "before": before, "after": actor_id, "source": "rule:" + intent["id"]})
+            facts.append({"kind": "ownership", "object": obj_id, "owner": actor_id})
+            achieved = "%s 拾取了 %s" % (actor_id, obj_id)
+        else:  # unlock
+            obj_id = intent["object_id"]
+            door = world["objects"][obj_id]
+            for key, value in (("locked", False), ("open", True)):
+                changes.append({"entity_id": WORLD,
+                                "path": "interaction.objects.%s.%s" % (obj_id, key),
+                                "before": door.get(key), "after": value,
+                                "source": "rule:" + intent["id"]})
+            facts.append({"kind": "door", "object": obj_id, "locked": False, "open": True})
+            achieved = "%s 解锁并打开了 %s" % (actor_id, obj_id)
         return {
             "action_id": intent["id"], "operation": op, "target_id": target_id,
-            "degree": "success",
-            "achieved": "%s 由 %s 交给 %s" % (intent["object_id"], actor_id, target_id),
+            "execution_status": "attempted", "degree": "success", "achieved": achieved,
             "check": check, "changes": changes, "facts": facts, "costs": [],
             "complications": [],
-            "opportunities": ["可继续交付其它已持有物品（P2 扩展）。"],
+            "opportunities": [],
             "evidence": intent["evidence"],
         }
 
@@ -377,9 +513,31 @@ class DeliveryCore:
         """在副本上顺序结算，返回 (outcome, proposal, clarifications)。"""
         work = _copy.deepcopy(states)
         resolutions, changes, facts, clarifications = [], [], [], []
+        by_id = {}
         for intent in intents:
-            r = self._resolve_one(intent, actor_id, work)
-            if intent["mode"] == "attempt":
+            dep = intent.get("depends_on")
+            prior = by_id.get(dep) if dep else None
+            when = intent.get("when", "always")
+            prior_achieved = bool(prior
+                                  and prior["execution_status"] == "attempted"
+                                  and prior.get("degree") in
+                                  ("success", "strong_success", "exceptional_success"))
+            should_run = (not dep or (when == "always")
+                          or (when == "if_achieved" and prior_achieved)
+                          or (when == "if_not_achieved" and not prior_achieved))
+            if not should_run:
+                r = {"action_id": intent["id"], "operation": intent["operation"],
+                     "target_id": (intent["target_ids"] or [None])[0],
+                     "execution_status": "skipped", "degree": None,
+                     "achieved": "依赖条件不成立，未执行",
+                     "check": {"allowed": False, "reasons": ["dependency_condition_not_met"],
+                               "evidence": []},
+                     "changes": [], "facts": [], "costs": [], "complications": [],
+                     "opportunities": [], "evidence": intent["evidence"]}
+            else:
+                r = self._resolve_one(intent, actor_id, work)
+            by_id[intent["id"]] = r
+            if r["execution_status"] == "blocked":
                 for reason in r["check"]["reasons"]:
                     if reason in CLARIFY_REASONS:
                         clarifications.append("%s:%s" % (intent["id"], reason))
@@ -400,12 +558,11 @@ class DeliveryCore:
                                 "before": _copy.deepcopy(old_facts),
                                 "after": _copy.deepcopy(work[WORLD]["interaction"]["facts"]),
                                 "source": "canonical_facts"})
-        degrees = [r["degree"] for r in resolutions if r["degree"] != "skipped"]
-        if not degrees:
-            result, degree = "no_attempt", "skipped"
-        elif all(d == "failure" for d in degrees):
-            result, degree = "blocked", "failure"
-        elif all(d == "success" for d in degrees):
+        attempted = [r for r in resolutions if r["execution_status"] == "attempted"]
+        blocked = [r for r in resolutions if r["execution_status"] == "blocked"]
+        if not attempted:
+            result, degree = ("blocked", None) if blocked else ("no_attempt", None)
+        elif not blocked and len(attempted) == len(resolutions):
             result, degree = "achieved", "success"
         else:
             result, degree = "partial_success", "partial_success"
