@@ -10,7 +10,7 @@ DeepSeek 调用在 `p2a_interpret_trace.py` 里单独做（最多 3 次），本
   S4  模型自报歧义 / 代词无法唯一解析 → needs_clarification
   S5  否定、假设、引用不执行（mode 透传，交 P1 核心记 skipped）
   S6  隐喻威胁只作交流（attack → communicate 强制纠偏）
-  S7  “我已经把钥匙给你了”只是声明，不是 transfer、不改归属
+  S7  “我已经把钥匙给你了”只是声明，不是 transfer、不改归属（B2a 起核心接管为声明事件）
   S8  未知动作显式 unsupported / bad_operation
   S9  伪造实体引用（目录外提及）→ invalid
   S10 模型输出禁字段（difficulty/delta/outcome/degree/confidence…）→ invalid
@@ -317,15 +317,29 @@ def test_modes_threat_and_claim():
         and out3['actions'][0]['operation'] == 'communicate'
         and out3['actions'][0]['kind'] == 'claim', 'communicate/claim')
     req3 = I.to_prepare_request(out3, sid, 'ev_claim', d3['versions'])
-    # communicate 属 P2-B2 接口范围，本树核心未接管 → 明确 UNSUPPORTED，不静默降级成 transfer
-    pending_before = len(core._pending)
-    expect_error('S7-声明不会退化成 transfer（核心明确 unsupported）',
-                 lambda: core.prepare_structured(req3), 'UNSUPPORTED_OPERATION')
-    chk('S7-声明不产生候选项、不写归属',
-        len(core._pending) == pending_before
-        and core.state(sid)['states'][WORLD]['interaction']['objects']['cellar_key']['owner'] is None
-        and not any(a['operation'] == 'transfer' for a in out3['actions']),
-        'pending 未增加；钥匙 owner=None；解释里没有 transfer')
+    # P2-B2a 起核心已接管 communicate：声明必须落成「带说话者/听者的声明事件」，
+    # 既不能退化成 transfer、也不能改归属 —— 比原来「只能 unsupported」的断言更强。
+    pv3 = core.prepare_structured(req3)
+    chk('S7-声明落成交流回合（不是 transfer、写项不含归属/门/位置）',
+        pv3['status'] == 'ready'
+        and [a['operation'] for a in out3['actions']] == ['communicate']
+        and sorted({c['path'] for c in pv3['state_proposal']['changes']})
+        == ['interaction.knowledge', 'interaction.turn_tick'],
+        'state=%s reasons=%s' % (pv3['status'], pv3['reason_codes']))
+    rec3 = core.commit({'session_id': sid, 'event_id': 'ev_claim',
+                        'analysis_id': pv3['analysis_id'],
+                        'expected_versions': pv3['base_versions']})
+    world3 = core.state(sid)['states'][WORLD]['interaction']
+    chk('S7-声明不写归属/客观事实，只在发言者与听者留 asserted_by 的 statement',
+        world3['objects']['cellar_key']['owner'] is None
+        and world3['facts'] == []
+        and rec3['acts'] == [{'type': 'communicate', 'sub_kind': 'statement',
+                              'kind': 'claim', 'speaker': 'player', 'listener': 'lia',
+                              'visibility': 'participants'}]
+        and [e['kind'] for e in core.knowledge(sid, 'player')['entries']] == ['statement']
+        and all(e['asserted_by'] == 'player' and e['objective'] is False
+                for e in core.knowledge(sid, 'lia')['entries'] if e['kind'] == 'statement'),
+        'communicate/claim → 声明事件，钥匙 owner=None')
     return core, P, sid
 
 
@@ -561,6 +575,10 @@ def test_p2_condition_chain_integration():
         and directory['versions'] == core.state(sid)['versions']
         and bool(next_turn['history_used']),
         '下一轮目录钥匙归属/版本更新，且读取提交历史')
+    # R1 补强：目录里被持有的物品用**有效位置**投影（随持有人），与核心 inspect 同一口径。
+    chk('S17-目录位置投影：被带回酒馆的钥匙显示在持有人所在地',
+        directory['objects']['cellar_key']['location'] == 'tavern',
+        '目录 key.location=%s' % directory['objects']['cellar_key']['location'])
 
 
 if __name__ == '__main__':

@@ -12,7 +12,7 @@
   T9  目标不明 → 要求澄清（不暗选）
   T10 物品不明 → 要求澄清
   T11 客户端注入难度 / delta / Outcome → 422
-  T12 P2-B2 动作（communicate 等）→ 显式短路 UNSUPPORTED_OPERATION
+  T12 仍未实现的 B2b 动作（attack）→ 显式短路 UNSUPPORTED_OPERATION
   T13 旧写入口改动被读实体 → 原候选失效
   T14 发布段注入异常 → 无半提交（状态/版本/事件全回退）
   T15 非真实尝试（negated）不计为失败、不产生任何写项
@@ -251,11 +251,12 @@ def test_hard_prerequisites():
         'session_id': sid, 'event_id': 'e11', 'analysis_id': 'x',
         'expected_versions': v, 'actor_id': 'player'}), 'INVALID_REQUEST')
 
-    # P2-B1 起 take/move/unlock 已实现；这里继续验证尚未实现的 B2 动作。
+    # P2-B1 起 take/move/unlock 已实现；P2-B2a 起 communicate/inspect 也已实现；
+    # 这里继续验证**尚未实现**的 B2b 动作（attack）仍显式硬短路，不放宽反例。
     expect_error('T12-P2 动作短路', lambda: core.prepare_structured({
         'session_id': sid, 'event_id': 'e7', 'actor_id': 'player',
-        'expected_versions': v, 'actions': [{'id': 'a1', 'operation': 'communicate',
-            'target_ids': ['lia'], 'object_id': 'cellar_key', 'mode': 'attempt'}]}),
+        'expected_versions': v, 'actions': [{'id': 'a1', 'operation': 'attack',
+            'target_ids': ['lia'], 'object_id': None, 'mode': 'attempt'}]}),
         'UNSUPPORTED_OPERATION')
     expect_error('T12-未声明动作', lambda: core.prepare_structured({
         'session_id': sid, 'event_id': 'e8', 'actor_id': 'player',
@@ -494,8 +495,8 @@ def test_recompute_mismatch_still_invalidates():
         'actor_id': 'player', 'expected_versions': v, 'actions': [transfer_intent()]})
     original = core._calculate
 
-    def tampered(actor_id, intents, states):
-        outcome, proposal, clar = original(actor_id, intents, states)
+    def tampered(actor_id, intents, states, event_id=None):
+        outcome, proposal, clar = original(actor_id, intents, states, event_id)
         proposal = copy.deepcopy(proposal)
         proposal['changes'] = proposal['changes'][:-1]      # 模拟「重算得到不同结果」
         return outcome, proposal, clar

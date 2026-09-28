@@ -6,10 +6,31 @@
 Outcome、原子发布、幂等、回退、旧写入口使候选失效。
 
 本模块**不接**：
-  · 自由语言 Interpreter（P1 只用内部可注入的结构化 ActionIntent 做无模型联调）；
-  · 真实 Laya 推理（transfer 是服务端规则可独立裁决的动作，显式 `rules_only`，
+  · 自由语言 Interpreter（P2-A 在独立模块产出 ActionIntent，本模块只消费结构化意图）；
+  · 真实 Laya 推理（本轮动作用服务端规则可独立裁决，显式 `rules_only`，
     回执中 `laya_evidence=[]`，从不声称有 Laya 证据）；
-  · 云端叙事、页面、交流/检查/六档对抗（留待 P2-B2）。
+  · 云端叙事、页面、六档对抗（`attack` 仍硬短路 `UNSUPPORTED_OPERATION`，留待 P2-B2b）。
+
+P2-B2a 追加（`communicate` / `inspect` 的服务端事实链，仍然无模型）：
+  · **发言不等于事实**：`claim` 与一般声明/表态只落「带说话者、听者与 `asserted_by`
+    的声明条目」，绝不改 `owner`、门、位置或客观 `world.facts`，也不自动提高好感/信任；
+  · **询问与观察只用服务端作者化信息**：询问仅在听话人在场且被指向时，把他/她身上
+    `disclosure=public` 的作者化线索记为**提问者可知**信息；`inspect` 只观察主体所在
+    位置可见的对象/门（在酒馆看不到旧井的钥匙）。模型原话不能创造线索、知识或物品；
+  · **知识按 actor 私有**：`interaction.knowledge` 由 Commit 写进权威 Actor State 桶
+    （`(session_id, actor_id)`）；不进客观 `world.interaction.facts`，世界回合记录也只留
+    类型/说话者/听者/可见范围，不留私有原话；
+  · **真实回合**：通过硬前提的说话/观察即使不产生属性或新知识变化，也带服务端
+    `interaction.turn_tick + 1` 这一真实回合变化；被阻止/跳过的动作不能借时钟取得可提交资格。
+
+P2-B2a-R1 定向修复（A 关口审查后，仍无模型）：
+  · **私有知识不外泄**：普通 `state()` 视图剔除各角色 `interaction.knowledge`；规则计算仍用
+    锁内完整 `_snapshot()`，按 actor 的知识只经 `knowledge(session, actor)` 内部读取；
+  · **持有物用有效位置**：物品被持有时其**有效位置**随持有人当前位置（`take/transfer` 只改
+    `owner`），`inspect` 可见性、观察内容与 P2-A 实体目录位置投影共用同一 `effective_object_location`；
+  · **披露主题与时效**：询问只按结构化 `object_id` 匹配线索（不做原话关键词匹配），无明确对象
+    只披露 `disclosure=general_public` 的线索；披露前再按服务端**当前**归属/地点核对线索，
+    钥匙离开旧井后不再作为**当前**线索披露，复制到提问者的条目带 `as_of_turn` 与 `objective=False`。
 
 权威链（P0 契约 §2 的最小裁剪）：
     结构化 ActionIntent（内部注入）
@@ -59,11 +80,25 @@ MAX_PENDING = 200
 MAX_ACTIONS = 8
 MAX_INTENT_CHARS = 2000
 
-#: 本轮实现（可独立裁决、无需模型）的动作：P1 `transfer` + P2-B1 `move/take/unlock`。
-IMPLEMENTED_OPERATIONS = ("transfer", "move", "take", "unlock")
-#: 已声明但**本轮不实现**的动作 —— P2-B2 扩展点（交流/检查/六档对抗）。
+#: 本轮实现（可独立裁决、无需模型）的动作：
+#: P1 `transfer` + P2-B1 `move/take/unlock` + P2-B2a `communicate/inspect`。
+IMPLEMENTED_OPERATIONS = ("transfer", "move", "take", "unlock", "communicate", "inspect")
+#: 已声明但**本轮仍不实现**的动作 —— 六档对抗属 P2-B2b。
 #: 命中即硬短路为 `UNSUPPORTED_OPERATION`，不做「用有限难度惩罚代替拒绝」。
-P2_OPERATIONS = ("inspect", "communicate", "attack")
+P2_OPERATIONS = ("attack",)
+
+#: `communicate` 的语义子类（`kind` 白名单，闭集；`operation=communicate` 之外的 kind → 422）：
+#:   · `question` 走「询问 → 服务端作者化公开线索」；
+#:   · 其余（声明/表态/威胁/合作等）走「声明事件」——只落私有 knowledge，绝不改客观事实。
+QUESTION_KINDS = ("question",)
+STATEMENT_KINDS = ("claim", "statement", "reveal", "threat", "hostility",
+                   "cooperate", "refuse", "apologize", "acknowledge", "neutral")
+COMMUNICATE_KINDS = QUESTION_KINDS + STATEMENT_KINDS
+
+#: `interaction.knowledge` 的条目类型（按 actor 私有；不存在第二套知识存储）。
+KNOWLEDGE_KINDS = ("clue", "observation", "statement")
+#: 单角色知识条目上限：超限时动作 blocked（`knowledge_capacity`），不静默丢弃旧条目。
+KNOWLEDGE_LIMIT = 64
 
 INTENT_FIELDS = {"id", "operation", "target_ids", "object_id", "mode",
                  "kind", "content", "evidence", "depends_on", "when"}
@@ -91,11 +126,170 @@ def _sha_text(value):
 
 
 # ==========================================================================
+# 知识条目（按 actor 私有；唯一存放位置 = 该 actor 的 interaction.knowledge）
+# ==========================================================================
+#: 服务端作者化线索模板：莉亚知道钥匙在旧井。`disclosure=public` 表示「本人在场
+#: 且被**指向该对象**问到时可以告知提问者」。它既不是客观 `world.facts`，也不是玩家
+#: 原文/模型产物。`about` 同时记下**声称当时**的对象/地点/归属，供披露前做时效核对；
+#: `general_public=False` 表示它不是「无明确对象的一般问题」也能披露的公共线索。
+CLUE_KEY_LOCATION = {
+    "entry_id": "clue:cellar_key_location",
+    "kind": "clue",
+    "content": "地窖钥匙在旧井",
+    "source": "authored",
+    "disclosure": "public",
+    "general_public": False,
+    "asserted_by": None,
+    "objective": True,
+    "about": {"object": "cellar_key", "location": "old_well", "owner": None},
+    "learned_turn": None,
+}
+
+
+def _knowledge_entries(state):
+    """取（并保证存在）某实体 state 的 knowledge 列表。"""
+    inter = state.setdefault("interaction", {})
+    if not isinstance(inter.get("knowledge"), list):
+        inter["knowledge"] = []
+    return inter["knowledge"]
+
+
+def _knowledge_upsert(entries, entry):
+    """按 `entry_id` 去重写入，返回 `(新列表, status)`，status ∈ `added|updated|unchanged`。
+
+    已存在且内容完全一致 → `unchanged`：动作仍算一次真实回合（时钟照走），但
+    不制造虚假 delta 来伪装「又学到了新东西」。`learned_turn` 记的是**首次得知**的回合，
+    重复询问 / 重复观察同一状态不会把它刷成新回合，也不会因此产生写项。
+    """
+    out = [dict(e) for e in entries]
+    for i, e in enumerate(out):
+        if e.get("entry_id") == entry.get("entry_id"):
+            merged = dict(entry)
+            # `learned_turn` / `as_of_turn` 记的是**首次得知**的回合，重复询问 / 重复观察
+            # 同一状态不刷新它，也不因此产生写项（避免伪装「又学到了新东西」）。
+            merged["learned_turn"] = e.get("learned_turn")
+            if "as_of_turn" in e or "as_of_turn" in merged:
+                merged["as_of_turn"] = e.get("as_of_turn")
+            if e == merged:
+                return entries, "unchanged"
+            out[i] = merged
+            return out, "updated"
+    out.append(dict(entry))
+    return out, "added"
+
+
+def _knowledge_overflow(entries, entries_to_add):
+    """写入后是否超出 `KNOWLEDGE_LIMIT`（只计真正新增的 `entry_id`）。"""
+    have = {e.get("entry_id") for e in entries}
+    extra = [e for e in entries_to_add if e.get("entry_id") not in have]
+    return len(entries) + len(extra) > KNOWLEDGE_LIMIT
+
+
+def effective_object_location(obj, states):
+    """物品的**有效位置**：被角色持有时随持有人当前所在地，未持有时才看物品自身 `location`。
+
+    B1 的 `take/transfer` 只改 `owner`，物品 `location` 是落地位置/模板值。可见性、观察内容
+    与 P2-A 实体目录必须用这一**同一**推导，否则会出现「一处说在旧井、一处允许在酒馆检查」
+    的自相矛盾。`states` 是服务端快照（含各实体 `interaction.location`）。
+    """
+    owner = obj.get("owner")
+    if owner and owner != WORLD:
+        holder = (states.get(owner) or {}).get("interaction") or {}
+        loc = holder.get("location")
+        if loc:
+            return loc
+    return obj.get("location")
+
+
+def _clue_is_current(clue, states):
+    """披露前按服务端**当前**事实核对线索是否仍成立（线索时效）。
+
+    `about` 记录的是作者化/得知**当时**的对象、地点与归属；钥匙离开旧井后，该线索不再
+    代表当前真相，不得继续作为**当前**线索披露。无对象锚点的线索不做时效核对。
+    """
+    about = clue.get("about") or {}
+    obj_id = about.get("object")
+    if not obj_id:
+        return True
+    world = (states.get(WORLD) or {}).get("interaction") or {}
+    obj = (world.get("objects") or {}).get(obj_id)
+    if obj is None:
+        return False
+    if "location" in about and effective_object_location(obj, states) != about.get("location"):
+        return False
+    if "owner" in about and obj.get("owner") != about.get("owner"):
+        return False
+    return True
+
+
+def _clue_entry(clue, told_by, tick):
+    """把作者化线索复制成「某角色的可知信息」，附上是从谁那里得知的。
+
+    复制条目 `objective=False` 且带 `as_of_turn`：它记录的是**得知当时**的事态，
+    不暗示永远是当前真相（钥匙可能已被带走）。`about` 保留当时快照，供后续核对。
+    """
+    return {
+        "entry_id": clue["entry_id"], "kind": "clue", "content": clue["content"],
+        "source": clue.get("source") or "authored", "told_by": told_by,
+        "objective": False, "asserted_by": None,
+        "about": _copy.deepcopy(clue.get("about") or {}),
+        "as_of_turn": tick, "learned_turn": tick,
+    }
+
+
+def _observation_entry(subject, obj, tick, location=None):
+    """观察条目：内容由**服务端字段**生成，不采用任何模型措辞。
+
+    `location` 传物品**有效位置**（被持有时随持有人）；不传则退回物品自身落地位置。
+    """
+    effective = location if location is not None else obj.get("location")
+    parts = []
+    if effective:
+        parts.append("位于 %s" % effective)
+    if obj.get("kind") == "door":
+        parts.append("门状态=%s" % ("已上锁" if obj.get("locked") else "未上锁"))
+    parts.append("归属=%s" % (obj.get("owner") or "无人持有"))
+    return {
+        "entry_id": "obs:%s" % subject, "kind": "observation",
+        "content": "%s：%s" % (obj.get("name") or subject, "；".join(parts)),
+        "source": "rule", "subject": subject, "objective": True, "asserted_by": None,
+        "about": {"object": subject, "kind": obj.get("kind"),
+                  "location": effective, "owner": obj.get("owner"),
+                  "locked": obj.get("locked"), "open": obj.get("open"),
+                  "portable": obj.get("portable")},
+        "learned_turn": tick,
+    }
+
+
+def _statement_entry(event_id, action_id, speaker, content, tick):
+    """声明条目：只存**发言者与实际听者**的私有 knowledge，明确 `asserted_by`，
+    `objective=False` —— 声称不等于客观成立，也绝不进 `world.facts`。"""
+    return {
+        "entry_id": "stmt:%s:%s" % (event_id or "na", action_id),
+        "kind": "statement", "content": content, "source": "assertion",
+        "asserted_by": speaker, "objective": False, "about": None,
+        "learned_turn": tick,
+    }
+
+
+def _public_entity_state(state):
+    """普通场景视图下的实体快照：剔除私有 `interaction.knowledge`。
+
+    其它字段（位置、关系、属性…）照常保留；知识只经 `knowledge(session, actor)` 读取。
+    """
+    row = _copy.deepcopy(state)
+    inter = row.get("interaction")
+    if isinstance(inter, dict):
+        inter.pop("knowledge", None)
+    return row
+
+
+# ==========================================================================
 # 服务端场景模板（服务端作者化，绝不从玩家声明推断）
 # ==========================================================================
 def scene_templates(B):
     """返回该场景的实体模板。每次调用重新构造，避免共享可变状态。"""
-    def actor(name, name_en, *, skill, trust=50, relationship_to=None):
+    def actor(name, name_en, *, skill, trust=50, relationship_to=None, knowledge=None):
         st = B._blank_actor_state(B.CFG.get("actor"))
         st.update(name=name, name_en=name_en)
         st.setdefault("relationship", {}).update(trust=trust, doubt=30)
@@ -105,12 +299,16 @@ def scene_templates(B):
                       "defense": 2, "resolve": 2},
             "energy": 10, "incapacitated": False, "restrained": False,
             "relationship_to": relationship_to,
+            # 私有知识：只有 Commit 能写，按 (session_id, actor_id) 落在权威 Actor State
+            # 桶里；不进客观 world.facts，也不进世界回合记录的私有原话字段。
+            "knowledge": _copy.deepcopy(knowledge or []),
         }
         return st
 
     return {
         "player": actor("玩家", "Player", skill=5),
-        "lia": actor("莉亚", "Lia", skill=6, trust=60, relationship_to="player"),
+        "lia": actor("莉亚", "Lia", skill=6, trust=60, relationship_to="player",
+                     knowledge=[CLUE_KEY_LOCATION]),
         WORLD: {
             "name": "铁壶酒馆运行场景",
             "interaction": {
@@ -208,7 +406,12 @@ class DeliveryCore:
         return {"states": states, "versions": versions}
 
     def state(self, session_id):
-        """只读场景视图（含各实体版本）。不初始化场景、不写任何状态。"""
+        """只读场景视图（含各实体版本）。不初始化场景、不写任何状态。
+
+        **私有知识不外泄**：普通视图剔除各角色的 `interaction.knowledge`，按 actor 的
+        知识只经 `knowledge(session, actor)` 内部读取（供受信调用），规则计算仍用锁内
+        完整 `_snapshot()`。这样「按 actor 的 knowledge()」才有隔离意义。
+        """
         sid = str(session_id or "default")
         if not sid or len(sid) > 64:
             raise _ProtoError(422, "INVALID_REQUEST", "session_id 不合法")
@@ -218,7 +421,7 @@ class DeliveryCore:
                 "protocol_version": PROTOCOL_VERSION,
                 "session_id": sid,
                 "versions": snap["versions"],
-                "states": snap["states"],
+                "states": {e: _public_entity_state(st) for e, st in snap["states"].items()},
                 "initialized": {e: (sid, e) in self.B._ACTOR_STATE
                                 for e in self.templates},
             }
@@ -302,6 +505,12 @@ class DeliveryCore:
             if dep is None and when != "always":
                 raise _ProtoError(422, "INVALID_REQUEST",
                                   "%s.when 为条件值时必须提供 depends_on" % where)
+            if op == "communicate":
+                k = (it.get("kind") or "").strip()
+                if k and k not in COMMUNICATE_KINDS:
+                    raise _ProtoError(422, "INVALID_REQUEST",
+                                      "%s.kind=%s 与 operation=communicate 不匹配（闭集）：%s"
+                                      % (where, k, "、".join(COMMUNICATE_KINDS)))
             out.append({
                 "id": aid_, "operation": op, "target_ids": [str(t) for t in targets],
                 "object_id": obj, "mode": mode,
@@ -326,7 +535,7 @@ class DeliveryCore:
     # ------------------------------------------------------------------
     # 硬前提检查（只读服务端事实）
     # ------------------------------------------------------------------
-    def _check_transfer(self, intent, actor_id, states):
+    def _check_transfer(self, intent, actor_id, states, ctx):
         reasons, evidence = [], []
         world = states[WORLD]["interaction"]
         objects = world["objects"]
@@ -360,7 +569,7 @@ class DeliveryCore:
             evidence.append("possession:" + obj_id)
         return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
 
-    def _check_move(self, intent, actor_id, states):
+    def _check_move(self, intent, actor_id, states, ctx):
         world = states[WORLD]["interaction"]
         src = states[actor_id]["interaction"]
         targets = intent.get("target_ids") or []
@@ -386,7 +595,7 @@ class DeliveryCore:
             reasons.append("actor_restrained")
         return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
 
-    def _check_take(self, intent, actor_id, states):
+    def _check_take(self, intent, actor_id, states, ctx):
         world = states[WORLD]["interaction"]
         src = states[actor_id]["interaction"]
         obj_id = intent.get("object_id")
@@ -409,7 +618,7 @@ class DeliveryCore:
             reasons.append("actor_restrained")
         return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
 
-    def _check_unlock(self, intent, actor_id, states):
+    def _check_unlock(self, intent, actor_id, states, ctx):
         world = states[WORLD]["interaction"]
         src = states[actor_id]["interaction"]
         door_id = intent.get("object_id")
@@ -439,9 +648,128 @@ class DeliveryCore:
         return {"allowed": not reasons, "reasons": reasons, "evidence": evidence}
 
     # ------------------------------------------------------------------
+    # P2-B2a：交流与检查的硬前提（只读服务端事实，绝不采信玩家声明）
+    # ------------------------------------------------------------------
+    def _check_communicate(self, intent, actor_id, states, ctx):
+        """交流硬前提：必须有一个**在场**的听者；询问只释放服务端作者化的公开线索。
+
+        「发言不等于事实」：声明/表态一律不改 `owner`、门、位置或客观 `facts`，也不因
+        玩家原话创造线索或知识；规则里没有任何关键词匹配。
+        缺听者 / 听者不唯一 → `target_unresolved`（澄清，不暗选）；听者不在同一地点 →
+        `listener_out_of_reach`（阻止，不产生任何写项，也不给答复）。
+        """
+        src = states[actor_id]["interaction"]
+        targets = intent.get("target_ids") or []
+        kind = (intent.get("kind") or "").strip() or "neutral"
+        content = (intent.get("content") or intent.get("evidence") or "").strip()
+        sub = "question" if kind in QUESTION_KINDS else "statement"
+        reasons, evidence, clues, planned = [], [], [], []
+        listener = None
+        if len(targets) != 1:
+            reasons.append("target_unresolved")
+        else:
+            listener = targets[0]
+            if listener == actor_id:
+                reasons.append("target_is_self")
+            elif listener not in states or listener == WORLD:
+                reasons.append("target_unresolved")
+            else:
+                lst = states[listener]["interaction"]
+                if lst.get("location") != src.get("location"):
+                    reasons.append("listener_out_of_reach")
+                if lst.get("incapacitated"):
+                    reasons.append("listener_unavailable")
+        if sub == "statement" and not content:
+            reasons.append("statement_content_missing")
+        if src.get("incapacitated"):
+            reasons.append("actor_incapacitated")
+        if src.get("restrained"):
+            reasons.append("actor_restrained")
+        if not reasons:
+            if sub == "question":
+                # 服务端作者化规则：听者在场且被**指向对象**问到时，其 `disclosure=public`
+                # 且对象匹配、且**当前仍成立**的线索成为**提问者**可知信息。
+                #   · 按结构化 `object_id` 匹配（问钥匙才给钥匙线索），不做原话关键词匹配；
+                #   · 无明确对象的一般问题只披露 `general_public=True` 的线索（钥匙线索不属此类）；
+                #   · 披露前按服务端当前归属/地点核对（`_clue_is_current`），过期线索不再披露。
+                asked = intent.get("object_id")
+                clues = [e for e in (states[listener]["interaction"].get("knowledge") or [])
+                         if e.get("kind") == "clue" and e.get("disclosure") == "public"
+                         and ((asked and (e.get("about") or {}).get("object") == asked)
+                              or (not asked and e.get("general_public")))
+                         and _clue_is_current(e, states)]
+                clues = [_copy.deepcopy(c) for c in clues]
+                planned = [{"actor_id": actor_id,
+                            "entry": _clue_entry(c, listener, ctx["tick"])} for c in clues]
+            else:
+                entry = _statement_entry(ctx["event_id"], intent["id"], actor_id,
+                                         content, ctx["tick"])
+                planned = [{"actor_id": actor_id, "entry": entry}]
+                if listener and listener != actor_id:
+                    planned.append({"actor_id": listener, "entry": entry})
+            for row in planned:
+                if _knowledge_overflow(_knowledge_entries(states[row["actor_id"]]),
+                                       [row["entry"]]):
+                    reasons.append("knowledge_capacity")
+                    break
+            if reasons:
+                clues, planned = [], []
+            else:
+                evidence.append("listener:%s" % listener)
+        return {"allowed": not reasons, "reasons": reasons, "evidence": evidence,
+                "sub_kind": sub, "kind": kind, "listener": listener, "content": content,
+                "clues": clues, "planned": planned}
+
+    def _check_inspect(self, intent, actor_id, states, ctx):
+        """检查硬前提：只观察**主体所在位置可见的对象/门**。
+
+        可见性用物品**有效位置**（被持有时随持有人当前位置）判定，不能只比物品自身静态
+        `location`：玩家从旧井拿走钥匙返回酒馆后，钥匙随其在酒馆可见；留在旧井的人看不到
+        已被带走的钥匙。观察只写观察者自己的 knowledge；主体无法唯一确定 → 澄清。
+        """
+        world = states[WORLD]["interaction"]
+        src = states[actor_id]["interaction"]
+        targets = intent.get("target_ids") or []
+        subject = intent.get("object_id")
+        reasons, evidence, planned = [], [], []
+        if not subject and len(targets) == 1:
+            subject = targets[0]
+        if not subject:
+            reasons.append("object_unknown")
+        elif subject == actor_id or subject == WORLD:
+            reasons.append("inspect_subject_not_observable")
+        else:
+            obj = world["objects"].get(subject)
+            if obj is None:
+                if subject in states:
+                    # 本轮只观察对象/门；观察人物不在 P2-B2a 范围，明确拒绝而非假装成功
+                    reasons.append("inspect_subject_not_observable")
+                else:
+                    reasons.append("object_unknown")
+            else:
+                effective = effective_object_location(obj, states)
+                if effective != src.get("location"):
+                    reasons.append("object_out_of_sight")
+                else:
+                    entry = _observation_entry(subject, obj, ctx["tick"], effective)
+                    if _knowledge_overflow(_knowledge_entries(states[actor_id]), [entry]):
+                        reasons.append("knowledge_capacity")
+                    else:
+                        evidence.append("visible:%s@%s" % (subject, effective))
+                        planned = [{"actor_id": actor_id, "entry": entry}]
+        if src.get("incapacitated"):
+            reasons.append("actor_incapacitated")
+        if src.get("restrained"):
+            reasons.append("actor_restrained")
+        if reasons:
+            planned = []
+        return {"allowed": not reasons, "reasons": reasons, "evidence": evidence,
+                "subject": subject, "planned": planned}
+
+    # ------------------------------------------------------------------
     # 逐动作结算（在副本上顺序模拟；不做 margin，不产生被阻止的物理效果）
     # ------------------------------------------------------------------
-    def _resolve_one(self, intent, actor_id, states):
+    def _resolve_one(self, intent, actor_id, states, ctx):
         op = intent["operation"]
         target_id = (intent["target_ids"] or [None])[0]
         if intent["mode"] != "attempt":
@@ -452,10 +780,12 @@ class DeliveryCore:
                 "check": {"allowed": False, "reasons": ["not_an_attempt"], "evidence": []},
                 "changes": [], "facts": [], "costs": [], "complications": [],
                 "opportunities": [], "evidence": intent["evidence"],
+                "record": None, "knowledge_gained": [],
             }
         check = {"transfer": self._check_transfer, "move": self._check_move,
-                 "take": self._check_take, "unlock": self._check_unlock}[op](
-                     intent, actor_id, states)
+                 "take": self._check_take, "unlock": self._check_unlock,
+                 "communicate": self._check_communicate,
+                 "inspect": self._check_inspect}[op](intent, actor_id, states, ctx)
         if not check["allowed"]:
             return {
                 "action_id": intent["id"], "operation": op, "target_id": target_id,
@@ -465,8 +795,10 @@ class DeliveryCore:
                 "complications": [],
                 "opportunities": ["先满足动作前提，再重新尝试。"],
                 "evidence": intent["evidence"],
+                "record": None, "knowledge_gained": [],
             }
         changes, facts = [], []
+        gained, record = [], None
         world = states[WORLD]["interaction"]
         if op == "transfer":
             before = world["objects"][intent["object_id"]]["owner"]
@@ -490,6 +822,25 @@ class DeliveryCore:
                             "before": before, "after": actor_id, "source": "rule:" + intent["id"]})
             facts.append({"kind": "ownership", "object": obj_id, "owner": actor_id})
             achieved = "%s 拾取了 %s" % (actor_id, obj_id)
+        elif op == "inspect":
+            subject = check["subject"]
+            gained = self._apply_knowledge(changes, states, check["planned"])
+            record = {"type": "inspect", "observer": actor_id, "subject": subject,
+                      "visibility": "self"}
+            achieved = ("%s 观察到 %s（新信息 %d 条）" % (actor_id, subject, len(gained))
+                        if gained else "%s 观察了 %s（内容已知，无新增信息）" % (actor_id, subject))
+        elif op == "communicate":
+            listener = check["listener"]
+            gained = self._apply_knowledge(changes, states, check["planned"])
+            record = {"type": "communicate", "sub_kind": check["sub_kind"],
+                      "kind": check["kind"], "speaker": actor_id, "listener": listener,
+                      "visibility": "participants"}
+            # 注意：`achieved` 里不放声明原话 —— 私有内容只走 knowledge 与权威回执，
+            # 不进入世界回合记录（见 commit 的 `acts`）。
+            achieved = ("%s 向 %s 询问（新信息 %d 条）" % (actor_id, listener, len(gained))
+                        if check["sub_kind"] == "question"
+                        else "%s 对 %s 作出声明（只记声明事件，不改客观事实与归属）"
+                             % (actor_id, listener))
         else:  # unlock
             obj_id = intent["object_id"]
             door = world["objects"][obj_id]
@@ -507,11 +858,40 @@ class DeliveryCore:
             "complications": [],
             "opportunities": [],
             "evidence": intent["evidence"],
+            "record": record, "knowledge_gained": gained,
         }
 
-    def _calculate(self, actor_id, intents, states):
-        """在副本上顺序结算，返回 (outcome, proposal, clarifications)。"""
+    def _apply_knowledge(self, changes, states, planned):
+        """把 planned 条目按 actor 写进 `interaction.knowledge` 并登记 `state_changes`。
+
+        `before` 取**当前工作副本**的值（同一回合的多个动作可前后链式）；内容完全一致
+        （重复询问已知线索 / 重复观察同一状态）不登记改动，由服务端回合变化承担
+        「这是一次真实回合」。
+        """
+        gained = []
+        for row in planned:
+            who = row["actor_id"]
+            entries = _knowledge_entries(states[who])
+            new_entries, status = _knowledge_upsert(entries, row["entry"])
+            if status == "unchanged":
+                continue
+            changes.append({"entity_id": who, "path": "interaction.knowledge",
+                            "before": _copy.deepcopy(entries),
+                            "after": _copy.deepcopy(new_entries),
+                            "source": "knowledge:" + row["entry"]["entry_id"]})
+            gained.append({"actor_id": who, "entry": _copy.deepcopy(row["entry"]),
+                           "status": status})
+        return gained
+
+    def _calculate(self, actor_id, intents, states, event_id=None):
+        """在副本上顺序结算，返回 (outcome, proposal, clarifications)。
+
+        `event_id` 只用于声明条目的稳定 `entry_id`（`stmt:<event>:<action>`）；Prepare 与
+        Commit 必须传同一个值，否则锁内重算会与预览不一致。
+        """
         work = _copy.deepcopy(states)
+        ctx = {"event_id": event_id,
+               "tick": int((states[WORLD]["interaction"].get("turn_tick") or 0)) + 1}
         resolutions, changes, facts, clarifications = [], [], [], []
         by_id = {}
         for intent in intents:
@@ -533,9 +913,10 @@ class DeliveryCore:
                      "check": {"allowed": False, "reasons": ["dependency_condition_not_met"],
                                "evidence": []},
                      "changes": [], "facts": [], "costs": [], "complications": [],
-                     "opportunities": [], "evidence": intent["evidence"]}
+                     "opportunities": [], "evidence": intent["evidence"],
+                     "record": None, "knowledge_gained": []}
             else:
-                r = self._resolve_one(intent, actor_id, work)
+                r = self._resolve_one(intent, actor_id, work, ctx)
             by_id[intent["id"]] = r
             if r["execution_status"] == "blocked":
                 for reason in r["check"]["reasons"]:
@@ -548,7 +929,12 @@ class DeliveryCore:
                 work[WORLD]["interaction"]["facts"].append(_copy.deepcopy(f))
                 facts.append(f)
             resolutions.append(r)
-        if changes:
+        attempted = [r for r in resolutions if r["execution_status"] == "attempted"]
+        blocked = [r for r in resolutions if r["execution_status"] == "blocked"]
+        # 真实回合：只要有动作通过硬前提被**真实执行**（含说话/观察这类不产生属性变化、
+        # 也可能不产生新知识的尝试），就必须带服务端回合变化。被阻止 / 跳过 / 非尝试的
+        # 动作在这里不产生任何写项，因此不能借时钟取得可提交资格。
+        if attempted:
             tick = work[WORLD]["interaction"]["turn_tick"]
             changes.append({"entity_id": WORLD, "path": "interaction.turn_tick",
                             "before": tick, "after": tick + 1, "source": "turn_clock"})
@@ -558,8 +944,6 @@ class DeliveryCore:
                                 "before": _copy.deepcopy(old_facts),
                                 "after": _copy.deepcopy(work[WORLD]["interaction"]["facts"]),
                                 "source": "canonical_facts"})
-        attempted = [r for r in resolutions if r["execution_status"] == "attempted"]
-        blocked = [r for r in resolutions if r["execution_status"] == "blocked"]
         if not attempted:
             result, degree = ("blocked", None) if blocked else ("no_attempt", None)
         elif not blocked and len(attempted) == len(resolutions):
@@ -662,7 +1046,8 @@ class DeliveryCore:
             if len(self._pending) >= MAX_PENDING:
                 raise _ProtoError(429, "PENDING_CAPACITY",
                                   "候选已达上限（%d），请等待过期" % MAX_PENDING)
-            outcome, proposal, clarifications = self._calculate(aid, intents, snap["states"])
+            outcome, proposal, clarifications = self._calculate(
+                aid, intents, snap["states"], event_id)
             if clarifications:
                 raise _ProtoError(409, "NEEDS_CLARIFICATION",
                                   "必需对象或目标无法确定，请澄清（不暗选）",
@@ -765,7 +1150,7 @@ class DeliveryCore:
                                   "规则指纹已变化，候选失效，请重新 Prepare")
             # ④ 锁内重算并与预览比对（不同 → 409 + 候选失效，绝不静默换结果）
             outcome, proposal, clarifications = self._calculate(
-                aid, c["intents"], snap["states"])
+                aid, c["intents"], snap["states"], event_id)
             outcome["event_id"] = event_id
             proposal["base_versions"] = dict(expected)
             if clarifications or proposal["changes"] != c["proposal"]["changes"] \
@@ -789,11 +1174,27 @@ class DeliveryCore:
                                           "from": ch["before"], "to": ch["after"]})
             commit_id = "dl_" + uuid.uuid4().hex[:12]
             ts = self.now()
+            resolutions = outcome["resolutions"]
+            # 正式回合记录只放**公开描述符**：类型、说话者/观察者、听者、可见范围。
+            # 私有原话（声明内容、线索文本）只存在 actor 自己的 knowledge 与权威回执里，
+            # 绝不落进 `world.interaction.turns`。
+            public_acts = [_copy.deepcopy(r["record"]) for r in resolutions
+                           if r.get("record") and r["execution_status"] == "attempted"]
+            gained_rows = []
+            for r in resolutions:
+                for row in r.get("knowledge_gained") or []:
+                    gained_rows.append({"action_id": r["action_id"],
+                                        "actor_id": row["actor_id"],
+                                        "status": row["status"],
+                                        "entry": _copy.deepcopy(row["entry"])})
+            knowledge_actors = sorted({row["actor_id"] for row in gained_rows})
             new_states[WORLD]["interaction"]["turns"].append({
                 "commit_id": commit_id, "event_id": event_id,
                 "analysis_id": analysis_id, "actor_id": aid,
                 "result": outcome["result"], "degree": outcome["degree"],
                 "owner_changes": _copy.deepcopy(applied_owner),
+                "acts": _copy.deepcopy(public_acts),
+                "knowledge_actors": knowledge_actors,
                 "committed_at": _iso(ts),
             })
             receipt = {
@@ -807,13 +1208,17 @@ class DeliveryCore:
                 "input_sha256": c["input_sha256"], "request_sha256": request_sha,
                 "rules_fingerprint": c["rules_fingerprint"],
                 "owner_changes": _copy.deepcopy(applied_owner),
+                "acts": _copy.deepcopy(public_acts),
+                # 权威回执携带本轮**实际新增/更新**的知识条目（含作者化线索文本）——
+                # 「从回执得到线索」靠这一项；它不写进世界回合记录。
+                "knowledge_gained": _copy.deepcopy(gained_rows),
                 "outcome": _copy.deepcopy(outcome),
             }
             trace = {"t": ts, "kind": "p1_item_delivery",
                      "analysis_id": analysis_id, "event_id": event_id,
                      "session_id": sid, "actor_id": aid,
                      "rules_fingerprint": c["rules_fingerprint"],
-                     "applied_changes": _copy.deepcopy(proposal["changes"])}
+                     "applied_changes": _redact_knowledge(proposal["changes"])}
             result = self.P.commit_multi_entity_bundle(
                 sid, aid, event_id, expected, new_states, trace, receipt)
             c["status"] = "committed"
@@ -832,6 +1237,51 @@ class DeliveryCore:
                     or rec.get("interaction_receipt") is None:
                 raise _ProtoError(404, "RECEIPT_UNKNOWN", "未找到已提交回执")
             return _copy.deepcopy(rec["interaction_receipt"])
+
+    # ------------------------------------------------------------------
+    # 私有知识的按 actor 读取（下一轮内部读取只拿本角色自己的条目）
+    # ------------------------------------------------------------------
+    def knowledge(self, session_id, actor_id):
+        """读某角色的私有知识条目；只读，不初始化场景、不写任何状态。
+
+        知识按 `(session_id, actor_id)` 落在权威 Actor State 桶，**没有**「读别人知道
+        什么」的旁路：跨角色的知识转移只能由服务端规则（如询问）产生条目后再读。
+        """
+        sid = str(session_id or "default")
+        aid = str(actor_id or "")
+        if not _ID_RE.match(aid):
+            raise _ProtoError(422, "INVALID_REQUEST",
+                              "actor_id 必须为 1–64 位 [A-Za-z0-9_-] 且非空")
+        with self.P.lock:
+            scope = (sid, aid)
+            bucket = self.B._ACTOR_STATE.get(scope)
+            inter = (bucket or {}).get("interaction") or {}
+            return {
+                "session_id": sid, "actor_id": aid,
+                "initialized": scope in self.B._ACTOR_STATE,
+                "version": self.P.state_version(scope),
+                "entries": _copy.deepcopy(inter.get("knowledge") or []),
+            }
+
+
+def _redact_knowledge(changes):
+    """把写项里的 `interaction.knowledge` 换成**只含 entry_id/kind** 的审计视图。
+
+    同一份 trace 会被 `commit_multi_entity_bundle` 写进**每个**受影响作用域的
+    `_STATE_TRACE`，其中包含世界作用域；因此「私有原话不外流」必须在入口收口，
+    而不是指望下游不读。
+    """
+    out = []
+    for ch in changes or []:
+        row = _copy.deepcopy(ch)
+        if str(row.get("path", "")).endswith("knowledge"):
+            for key in ("before", "after"):
+                rows = row.get(key)
+                if isinstance(rows, list):
+                    row[key] = [{"entry_id": e.get("entry_id"), "kind": e.get("kind")}
+                                for e in rows if isinstance(e, dict)]
+        out.append(row)
+    return out
 
 
 def _reason_codes(outcome):
