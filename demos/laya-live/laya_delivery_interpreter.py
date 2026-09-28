@@ -409,7 +409,8 @@ def parse_interpretation(raw, message, directory, actor_id="player", history=())
         obj = row.get("object")
         if obj is not None and not isinstance(obj, str):
             return _invalid("bad_object", {"index": i})
-        evidence_text = " ".join(clean)
+        # 下游 ActionIntent 只保留第一段证据，因此目标也必须能从这一段核对。
+        evidence_text = clean[0]
         if any(_is_verbatim_mention(mention, message)
                and not _is_verbatim_mention(mention, evidence_text)
                for mention in list(targets) + ([obj] if obj else [])):
@@ -421,8 +422,8 @@ def parse_interpretation(raw, message, directory, actor_id="player", history=())
                               "why": "隐喻威胁只作交流"})
             operation = "communicate"
 
-        # A reported/claimed transfer is speech, never a physical ownership change.
-        if kind == "claim" and operation == "transfer":
+        # 声称某事已经发生是交流，不能借任何物理动作写入正式状态。
+        if kind == "claim" and operation in ("transfer", "move", "take", "unlock", "attack"):
             return _invalid("kind_operation_mismatch", {"index": i, "kind": kind,
                                                           "operation": operation})
 

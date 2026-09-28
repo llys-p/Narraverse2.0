@@ -20,6 +20,7 @@ DeepSeek 调用在 `p2a_interpret_trace.py` 里单独做（最多 3 次），本
   S14 interpret_turn → prepare_structured → commit 端到端（零模型）
   S15 目录构造要求场景已初始化
   S16 解释阶段零游戏写入
+  S17 P2-A → P2-B1 条件动作真实场景集成
 
 ★ 运行环境：Windows 控制台默认 GBK 编不出 ✅，请用
   `PYTHONIOENCODING=utf-8 python tests/p2a_interpreter_unit.py`
@@ -132,11 +133,7 @@ def test_schema_and_mapping():
 
 # ---------------------------------------------------------------- S2
 def synth_directory_with_door(core, sid):
-    """把 P2 接口规定、但**本树尚未实现**的地窖门补进目录副本（只用于解释层验证）。
-
-    门对象属于 P2-B1 的服务端场景；P2-A 不改 `laya_delivery_core.py`，所以本树目录里
-    没有 `cellar_door`。这里显式标注为「合成目录」，避免把未实现的场景当成已存在。
-    """
+    """为隔离解释层映射构造副本；端到端集成使用真实服务端场景目录。"""
     d = copy.deepcopy(I.build_entity_directory(core, sid))
     d['objects']['cellar_door'] = {'id': 'cellar_door', 'name': '地窖门', 'kind': 'door',
                                    'location': 'tavern', 'owner': None,
@@ -168,15 +165,17 @@ def test_multi_action_conditions():
                  lambda: I.to_prepare_intents(out, p1_projection=True),
                  'conditional_action_needs_p2b1_core')
 
-    # S2b：同一句对**本树真实目录**跑 → 门还不存在，fail-closed 而不是编一个门
+    # S2b：融合后的真实场景目录包含 cellar_door，解释结果应引用目录实体。
     out_b, _ = interp(core, sid, '拿到钥匙就开门', {
         'actions': [
             {'kind': 'take', 'operation': 'take', 'object': '钥匙', 'evidence': ['拿到钥匙']},
             {'kind': 'unlock', 'operation': 'unlock', 'object': '门', 'evidence': ['就开门'],
              'depends_on': 0, 'when': 'if_achieved'}]})
-    chk('S2b-本树无门对象 → invalid（不凭空造实体，待 B1 接入）',
-        out_b['status'] == 'invalid' and out_b['invalid_reason'] == 'entity_not_in_directory'
-        and out_b['invalid_detail']['mention'] == '门', out_b['invalid_detail'])
+    chk('S2b-真实场景目录含地窖门并成功映射',
+        'cellar_door' in I.entity_ids(I.build_entity_directory(core, sid))
+        and out_b['status'] == 'ready'
+        and out_b['actions'][1]['object_id'] == 'cellar_door',
+        str(out_b.get('invalid_detail') or out_b['actions'][1]['object_id']))
 
     # S2c：条件链用本树已存在的实体表达 → 逐字可用
     out_c, d_c = interp(core, sid, '拿到钥匙就把它交给莉亚', {
@@ -190,10 +189,16 @@ def test_multi_action_conditions():
         and out_c['actions'][1]['when'] == 'if_achieved'
         and out_c['actions'][1]['target_ids'] == ['lia'],
         'act2 object=%s' % out_c['actions'][1]['object_id'])
-    expect_error('S2c-条件动作直接送 P1 核心会被白名单拒绝（B1 前的接口缺口）',
-                 lambda: core.prepare_structured(I.to_prepare_request(
-                     out_c, sid, 'ev_cond', d_c['versions'], p1_projection=False)),
-                 'INVALID_REQUEST')
+    cond_before = copy.deepcopy(B._ACTOR_STATE)
+    cond_pv = core.prepare_structured(I.to_prepare_request(
+        out_c, sid, 'ev_cond', d_c['versions'], p1_projection=False))
+    chk('S2c-条件请求进入 B1 核心且 Prepare 零游戏写',
+        cond_pv['status'] == 'blocked'
+        and B._ACTOR_STATE == cond_before
+        and cond_pv['outcome']['resolutions'][0]['execution_status'] == 'blocked'
+        and cond_pv['outcome']['resolutions'][1]['execution_status'] == 'skipped'
+        and cond_pv['outcome']['resolutions'][1]['degree'] is None,
+        repr(cond_pv['outcome']['resolutions']))
     conditional = I.interpret_turn(core, sid, '拿到钥匙就把它交给莉亚', event_id='ev_cond_turn',
                                    caller=fake({'actions': [
                                        {'kind': 'take', 'operation': 'take', 'object': '钥匙',
@@ -378,6 +383,13 @@ def test_rejections():
     chk('S11-evidence 非原话子串 → invalid',
         o['status'] == 'invalid' and o['invalid_reason'] == 'evidence_not_verbatim',
         o['invalid_reason'])
+    first_evidence_missing_target = I.interpret('把徽章交给莉亚', directory=d, caller=fake({
+        'actions': [{'kind': 'give_item', 'operation': 'transfer', 'targets': ['莉亚'],
+                     'object': '徽章', 'evidence': ['把徽章交给你', '交给莉亚']}] }))
+    chk('S11-第一段 evidence 缺目标时拒绝后段补证',
+        first_evidence_missing_target['status'] == 'invalid'
+        and first_evidence_missing_target['invalid_reason'] == 'mention_missing_from_evidence',
+        first_evidence_missing_target.get('invalid_reason'))
     o, _ = interp(core, sid, '把徽章交给莉亚', {
         'actions': [{'kind': 'give_item', 'operation': 'transfer', 'targets': ['莉亚'],
                      'object': '徽章', 'evidence': []}]})
@@ -391,6 +403,13 @@ def test_rejections():
     chk('S7-claim + transfer 语义冲突不能成为物理转移',
         o['status'] == 'invalid' and o['invalid_reason'] == 'kind_operation_mismatch',
         o['invalid_reason'])
+    claim_take = I.interpret('我已经拿到钥匙了', directory=d, caller=fake({
+        'actions': [{'kind': 'claim', 'operation': 'take', 'object': '钥匙',
+                     'evidence': ['我已经拿到钥匙了']}] }))
+    chk('S7-claim + take 声明不能成为物理动作',
+        claim_take['status'] == 'invalid'
+        and claim_take['invalid_reason'] == 'kind_operation_mismatch',
+        claim_take.get('invalid_reason'))
 
     o, _ = interp(core, sid, '拿到钥匙就把它交给莉亚', {
         'actions': [
@@ -479,6 +498,71 @@ def test_end_to_end_and_readonly():
     return core, P, sid
 
 
+def test_p2_condition_chain_integration():
+    """固定解释响应穿过真实目录、B1 Prepare/Commit，并验证下一轮可读。"""
+    core, P, sid = fresh('p2a-b1-chain')
+    message = '先去老井拿钥匙，再去酒馆打开地窖门'
+    response = {'actions': [
+        {'kind': 'move', 'operation': 'move', 'targets': ['老井'],
+         'evidence': ['去老井']},
+        {'kind': 'take', 'operation': 'take', 'object': '钥匙',
+         'evidence': ['拿钥匙'], 'depends_on': 0, 'when': 'if_achieved'},
+        {'kind': 'move', 'operation': 'move', 'targets': ['酒馆'],
+         'evidence': ['去酒馆'], 'depends_on': 1, 'when': 'if_achieved'},
+        {'kind': 'unlock', 'operation': 'unlock', 'object': '地窖门',
+         'evidence': ['打开地窖门'], 'depends_on': 2, 'when': 'if_achieved'},
+    ]}
+    before = copy.deepcopy(B._ACTOR_STATE)
+    interpreted = I.interpret_turn(core, sid, message, event_id='ev_p2_chain',
+                                   caller=fake(response))
+    chk('S17-真实目录解释完整条件链且 Prepare 请求可用',
+        interpreted['interpretation']['status'] == 'ready'
+        and interpreted['prepare_error'] is None
+        and [a['operation'] for a in interpreted['prepare_request']['actions']]
+            == ['move', 'take', 'move', 'unlock']
+        and [a['depends_on'] for a in interpreted['prepare_request']['actions']]
+            == [None, 'act1', 'act2', 'act3'],
+        str(interpreted.get('prepare_error')))
+    chk('S17-Interpret 阶段零游戏写', B._ACTOR_STATE == before,
+        'actor state unchanged')
+
+    pv = core.prepare_structured(interpreted['prepare_request'])
+    rs = pv['outcome']['resolutions']
+    chk('S17-真实条件链 Prepare 可提交且零游戏写',
+        pv['status'] == 'ready' and pv['can_commit']
+        and B._ACTOR_STATE == before
+        and all(r.get('execution_status') == 'attempted'
+                and r.get('degree') == 'success' for r in rs), repr(rs))
+    rec = core.commit({'session_id': sid, 'event_id': 'ev_p2_chain',
+                       'analysis_id': pv['analysis_id'],
+                       'expected_versions': pv['base_versions']})
+    world = core.state(sid)['states'][WORLD]['interaction']
+    chk('S17-Commit 后钥匙归玩家、地窖门开启',
+        rec['status'] == 'committed'
+        and world['objects']['cellar_key']['owner'] == 'player'
+        and world['objects']['cellar_door']['locked'] is False
+        and world['objects']['cellar_door']['open'] is True,
+        str(rec.get('outcome', {}).get('state_changes')))
+
+    replay = core.commit({'session_id': sid, 'event_id': 'ev_p2_chain',
+                          'analysis_id': pv['analysis_id'],
+                          'expected_versions': pv['base_versions']})
+    chk('S17-重复提交幂等', replay.get('replayed') is True
+        and world['turn_tick'] == 1, str(replay.get('replayed')))
+    next_turn = I.interpret_turn(core, sid, '查看手里的钥匙和地窖门',
+                                 event_id='ev_p2_chain_next',
+                                 caller=fake({'actions': [
+                                     {'kind': 'neutral', 'operation': 'communicate',
+                                      'evidence': ['查看手里的钥匙和地窖门']}]}))
+    directory = next_turn['directory']
+    chk('S17-下一轮解释可读到提交后的权威实体状态',
+        directory['objects']['cellar_key']['owner'] == 'player'
+        and 'cellar_door' in I.entity_ids(directory)
+        and directory['versions'] == core.state(sid)['versions']
+        and bool(next_turn['history_used']),
+        '下一轮目录钥匙归属/版本更新，且读取提交历史')
+
+
 if __name__ == '__main__':
     test_schema_and_mapping()
     test_multi_action_conditions()
@@ -486,6 +570,7 @@ if __name__ == '__main__':
     test_modes_threat_and_claim()
     test_rejections()
     test_end_to_end_and_readonly()
+    test_p2_condition_chain_integration()
     print('\nP2-A 解释器定向检查：%d 项，%d 失败' % (N[0], len(FAIL)))
     if FAIL:
         print('失败项：' + '、'.join(FAIL))
