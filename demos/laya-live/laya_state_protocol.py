@@ -979,6 +979,110 @@ class LayaStateProtocol:
             raise _ProtoError(410, "ANALYSIS_INVALIDATED", "候选已失效，无法引用")
 
     # ======================================================================
+    # P1：跨实体单事务原子发布（物品交付纵向切片）
+    #   复用 A（`codex/interaction-core-a`）`commit_interaction_bundle` 的骨架并
+    #   按融合契约适配：同一进程锁、同一不透明版本体系、同一事件身份表、发布段
+    #   带回滚。**不整包搬运**，只保留 P1 需要的最小语义。
+    # ======================================================================
+    def commit_multi_entity_bundle(self, session_id, requester_id, event_id,
+                                   expected_versions, new_states, trace, receipt):
+        """一次事务内发布「角色状态 + 世界运行态 + 正式历史 + 版本 + 回执」。
+
+        与 P0 契约 §4 及 P1 任务卡 3–4 对齐的硬约束：
+          · 所有**被读取**实体的版本必须仍等于 `expected_versions`（任一不符 → 409，
+            候选作废，客户端须重新 Prepare）；
+          · 写入集合必须是读取集合的子集（否则 422 INVALID_WRITE_SET，禁止越界写）；
+          · event 身份按 `(session_id, requester_id)` 去重：已提交的同一事件在
+            **载荷 sha 与基准版本一致**时返回原回执 `replayed=True`（不再次转移、
+            不推进时钟）；载荷或基准版本不同 → 409，杜绝「换内容复用同一 event」；
+          · 发布段任何异常 → 状态/审计/版本/事件记录全回退，不留半提交。
+
+        这不是「任意 delta」写入入口：`new_states` 由调用方（交付核心）在锁内
+        按服务端规则算好后传入，协议层只负责版本、原子性与事件身份。
+        返回 `(receipt, replayed)`；`receipt` 内含本次发布后的 `versions` 与
+        `base_versions`。
+        """
+        B = self.B
+        sid = str(session_id)
+        event_scope = (sid, str(requester_id))
+        exp = _copy.deepcopy(expected_versions or {})
+        with self.lock:
+            events = self._events.get(event_scope, {})
+            prior = events.get(event_id)
+            if prior:
+                if prior.get("interaction_receipt") is None:
+                    raise _ProtoError(409, "EVENT_ALREADY_COMMITTED",
+                                      "该 event 已由其它协议路径提交，禁止重复写",
+                                      {"status": prior.get("status")})
+                if prior.get("base_versions") != exp:
+                    raise _ProtoError(409, "IDEMPOTENCY_CONFLICT",
+                                      "同一 event 已按另一基准版本提交，拒绝混用",
+                                      {"committed_base_versions": prior.get("base_versions")})
+                if prior.get("sha") and receipt.get("request_sha256") \
+                        and prior["sha"] != receipt.get("request_sha256"):
+                    raise _ProtoError(409, "EVENT_PAYLOAD_CONFLICT",
+                                      "同一 event_id 换载荷重放与已提交回执不符")
+                return dict(_copy.deepcopy(prior["interaction_receipt"]), replayed=True)
+            # ① 版本复核：所有被读取实体
+            for entity, expected in exp.items():
+                cur = self.state_version((sid, str(entity)))
+                if cur != expected:
+                    raise _ProtoError(409, "STATE_VERSION_CONFLICT",
+                                      "被读取实体 %s 的版本已变化，候选失效，请重新 Prepare" % entity,
+                                      {"entity": entity, "expected": expected, "current": cur})
+            # ② 写入集合必须是读取集合子集
+            if not set(new_states).issubset(set(exp)):
+                raise _ProtoError(422, "INVALID_WRITE_SET",
+                                  "写入目标未在读取版本集中：%s"
+                                  % ",".join(sorted(set(new_states) - set(exp))))
+            scopes = [(sid, str(entity)) for entity in new_states]
+            # ③ 回滚快照（状态桶 / 审计 / 版本元数据 / 事件表）
+            saved = {scope: (_copy.deepcopy(B._ACTOR_STATE.get(scope)),
+                             _copy.deepcopy(B._STATE_TRACE.get(scope)),
+                             _copy.deepcopy(self._buckets.get(scope))) for scope in scopes}
+            saved_events = _copy.deepcopy(self._events.get(event_scope))
+            had_scope = {scope: (scope in B._ACTOR_STATE) for scope in scopes}
+            try:
+                versions = dict(exp)
+                for entity, state in new_states.items():
+                    scope = (sid, str(entity))
+                    B._ACTOR_STATE[scope] = _copy.deepcopy(state)
+                    versions[entity] = self._bump_revision(scope)
+                    item = dict(_copy.deepcopy(trace),
+                                before_version=exp[entity], after_version=versions[entity],
+                                entity_id=entity)
+                    history = B._STATE_TRACE.setdefault(scope, [])
+                    history.append(item)
+                    del history[:-getattr(B, "_STATE_TRACE_MAX", 30)]
+                result = _copy.deepcopy(receipt)
+                result.update(versions=versions, base_versions=dict(exp), replayed=False)
+                self._events.setdefault(event_scope, {})[event_id] = {
+                    "status": "committed", "sha": receipt.get("request_sha256"),
+                    "base_versions": dict(exp), "versions": dict(versions),
+                    "interaction_receipt": _copy.deepcopy(result)}
+                return result
+            except Exception:
+                for scope, (state, history, meta) in saved.items():
+                    if had_scope[scope]:
+                        B._ACTOR_STATE[scope] = state
+                    else:
+                        B._ACTOR_STATE.pop(scope, None)
+                    if history is None:
+                        B._STATE_TRACE.pop(scope, None)
+                    else:
+                        B._STATE_TRACE[scope] = history
+                    if meta is None:
+                        self._buckets.pop(scope, None)
+                    else:
+                        self._buckets[scope] = meta
+                if saved_events is None:
+                    self._events.pop(event_scope, None)
+                else:
+                    self._events[event_scope] = saved_events
+                raise _ProtoError(500, "INTERNAL_ERROR",
+                                  "多实体发布失败，已全回退（无半提交）：%r" % (sys.exc_info()[1],))
+
+    # ======================================================================
     # 旧路由原子提交（P2-B2，§6.3 / §2.1 / §4.3）
     # ======================================================================
     def commit_legacy_turn(self, turn_id):
