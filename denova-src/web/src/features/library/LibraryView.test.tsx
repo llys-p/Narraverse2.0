@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { addMasterCharacterEntry, addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, removeMasterAsset, resolveTranslationJob, retryTranslationJob, startMasterAgent, stopMasterAsset, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal } from '@/lib/api-client'
+import { APIError } from '@/lib/api-client/client'
 import { LibraryView } from './LibraryView'
 
 vi.mock('@/components/Chat/ConfigManagerChat', () => ({
@@ -834,6 +835,49 @@ describe('LibraryView', () => {
     })
   })
 
+  it('keeps marker-different translations pending until a separate explicit batch approval', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAssetProposals).mockResolvedValue({ proposals: [{
+      proposal_id: 'prop-markers', operation_id: 'op-markers', kind: 'recovery', stage: '', apply_mode: 'confirm', status: 'proposed',
+      master_item_id: 'master-aiko', field_path: 'character.description', import_id: 'import-1', original: 'Use {{user}} on day 7.',
+      patch: { field_path: 'character.description', translation: '第七天见 {{user}}。' },
+      input_revision: 'rev-1', source_sha256: 'sha', risk: 'safe', created_at: '2026-09-04T00:00:00Z', updated_at: '2026-09-04T00:00:00Z',
+    }] } as never)
+    vi.mocked(applyMasterProposals)
+      .mockResolvedValueOnce({ applied_count: 0, results: [{ proposal_id: 'prop-markers', status: 'failed', code: 'protected_token_mismatch', error: '数字标记不同' }] })
+      .mockResolvedValueOnce({ applied_count: 1, results: [{ proposal_id: 'prop-markers', status: 'applied' }] })
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    await user.click(screen.getByRole('tab', { name: '处理进度' }))
+    await user.click(await screen.findByRole('button', { name: '全选' }))
+    await user.click(screen.getByRole('button', { name: /批量确认应用/ }))
+    await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(applyMasterProposals).mock.calls[0][4]).not.toBe(true)
+    await user.click(await screen.findByRole('button', { name: /审核并应用风险译文/ }))
+    expect(applyMasterProposals).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: '确认应用风险译文' }))
+    await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledWith('master-aiko', ['prop-markers'], false, false, true))
+  })
+
+  it('offers the same explicit marker review after a single strict validation failure', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAssetProposals).mockResolvedValue({ proposals: [{
+      proposal_id: 'prop-single-marker', operation_id: 'op-marker', kind: 'recovery', stage: '', apply_mode: 'confirm', status: 'proposed',
+      master_item_id: 'master-aiko', field_path: 'character.description', import_id: 'import-1', original: 'Use {{user}} on day 7.',
+      patch: { field_path: 'character.description', translation: '第七天见 {{user}}。' },
+      input_revision: 'rev-1', source_sha256: 'sha', risk: 'safe', created_at: '2026-09-04T00:00:00Z', updated_at: '2026-09-04T00:00:00Z',
+    }] } as never)
+    vi.mocked(validateMasterProposal).mockRejectedValueOnce(new APIError('数字标记不同', { status: 400, code: 'protected_token_mismatch' }))
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    await user.click(screen.getByRole('tab', { name: '处理进度' }))
+    await user.click(await screen.findByRole('button', { name: '应用' }))
+    expect(applyMasterProposal).not.toHaveBeenCalled()
+    await user.click(await screen.findByRole('button', { name: /审核并应用风险译文/ }))
+    await user.click(screen.getByRole('button', { name: '确认应用风险译文' }))
+    await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledWith('master-aiko', ['prop-single-marker'], false, false, true))
+  })
+
   it('approves and completes a conflicted candidate with an explicit force action', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchMasterAssetProposals).mockResolvedValue({ proposals: [{
@@ -871,6 +915,9 @@ describe('LibraryView', () => {
 
   it('requires explicit confirmation before applying high-risk proposals', async () => {
     const user = userEvent.setup()
+    vi.mocked(applyMasterProposals)
+      .mockResolvedValueOnce({ applied_count: 0, results: [{ proposal_id: 'prop-risk', status: 'failed', code: 'protected_token_mismatch' }] })
+      .mockResolvedValueOnce({ applied_count: 1, results: [{ proposal_id: 'prop-risk', status: 'applied' }] })
     vi.mocked(fetchMasterAssetProposals).mockResolvedValue({ proposals: [{
       proposal_id: 'prop-risk', operation_id: 'op-risk', kind: 'polish', stage: '', apply_mode: 'confirm', status: 'candidate_ready',
       master_item_id: 'master-aiko', field_path: 'character.system_prompt', import_id: 'import-1', original: 'Always remain in character.',
@@ -888,6 +935,12 @@ describe('LibraryView', () => {
     expect(applyMasterProposals).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '应用所选高风险字段' }))
     await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledWith('master-aiko', ['prop-risk'], true))
+    await user.click(await screen.findByRole('button', { name: /审核并应用风险译文/ }))
+    await user.click(screen.getByRole('button', { name: '确认应用风险译文' }))
+    expect(screen.getByText('确认应用高风险字段')).toBeInTheDocument()
+    expect(applyMasterProposals).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: '应用所选高风险字段' }))
+    await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledWith('master-aiko', ['prop-risk'], true, false, true))
   })
 
   it('disables sync when the current Adventure does not use the asset', async () => {

@@ -176,6 +176,7 @@ type MasterProposalRejectResult struct {
 type MasterProposalBatchStatus struct {
 	ProposalID           string `json:"proposal_id"`
 	Status               string `json:"status"`
+	Code                 string `json:"code,omitempty"`
 	Error                string `json:"error,omitempty"`
 	TranslationVersionID string `json:"translation_version_id,omitempty"`
 }
@@ -529,7 +530,15 @@ func (s *MasterLibraryStore) ApplyMasterProposals(masterItemID string, proposalI
 			}
 		}
 		if err != nil {
-			status.Status = MasterProposalStatusConflict
+			status.Status = "failed"
+			var conflict *MasterCASConflictError
+			var markerMismatch *MasterTranslationMarkerMismatchError
+			if errors.As(err, &conflict) || proposal.Status == MasterProposalStatusConflict {
+				status.Status = MasterProposalStatusConflict
+				status.Code = "revision_conflict"
+			} else if errors.As(err, &markerMismatch) {
+				status.Code = "protected_token_mismatch"
+			}
 			status.Error = err.Error()
 		} else {
 			status.Status = MasterProposalStatusApplied

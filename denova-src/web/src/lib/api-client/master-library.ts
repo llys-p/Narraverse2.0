@@ -135,7 +135,7 @@ export function rejectMasterProposal(proposalID: string): Promise<{ proposal: Ma
 
 export interface MasterProposalBatchResult {
   applied_count: number
-  results: Array<{ proposal_id: string; status: string; error?: string; translation_version_id?: string }>
+  results: Array<{ proposal_id: string; status: string; code?: string; error?: string; translation_version_id?: string }>
 }
 
 export function applyMasterProposals(masterItemID: string, proposalIDs: string[], confirmedHighRisk = false, forceConflicts = false, allowProtectedTokenMismatch = false): Promise<MasterProposalBatchResult> {

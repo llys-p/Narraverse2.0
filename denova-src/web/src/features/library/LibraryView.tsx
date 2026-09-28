@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { addMasterCharacterEntry, addMasterLorebookEntry, applyMasterProposal, applyMasterProposals, createLoreItem, createMasterProposal, deleteTranslationJob, fetchMasterAsset, fetchMasterAssetAdventureUsage, fetchMasterAssetPipeline, fetchMasterAssetProposals, fetchMasterAssetTranslations, fetchMasterAssetUsages, fetchMasterTranslationRuntime, instantiateMasterAsset, listMasterAssets, rejectMasterProposal, rejectMasterProposals, removeMasterAsset, resolveTranslationJob, retryTranslationJob, startMasterAgent, stopMasterAsset, syncMasterAssetToAdventure, updateMasterAssetDescription, updateMasterAssetFields, validateMasterProposal, type MasterAssetAdventureUsage, type MasterAssetDetail, type MasterAssetSummary, type MasterPipelineNode, type MasterPipelineStatus, type MasterProposal, type MasterTranslationFieldRuntime, type MasterTranslationRuntime } from '@/lib/api-client'
+import { APIError } from '@/lib/api-client/client'
 import { MasterImportDialog } from './MasterImportDialog'
 
 const PAGE_SIZE = 25
@@ -1278,7 +1279,9 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
   const applyingRowsRef = useRef(new Set<string>())
   const applyingBatchRef = useRef(false)
   const [batchBusy, setBatchBusy] = useState<'retranslate' | 'save' | 'apply' | ''>('')
-  const [riskConfirm, setRiskConfirm] = useState<{ rows: ReviewRow[]; forceConflicts: boolean } | null>(null)
+  const [riskConfirm, setRiskConfirm] = useState<{ rows: ReviewRow[]; forceConflicts: boolean; allowProtectedTokenMismatch: boolean } | null>(null)
+  const [markerConfirm, setMarkerConfirm] = useState<ReviewRow[] | null>(null)
+  const [markerFailedKeys, setMarkerFailedKeys] = useState<string[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<ReviewRow[] | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const rowKeySignature = rows.map((row) => row.key).join('\u0000')
@@ -1306,6 +1309,7 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
   const forceApplicable = selectedRows.filter(canForceConflict)
   const deletable = selectedRows.filter((row) => row.proposal || row.task_id)
   const anyDirty = rows.some((row) => isDirty(row))
+  const markerFailedRows = rows.filter((row) => markerFailedKeys.includes(row.key) && canApply(row) && !isDirty(row))
 
   const progressMessage = (done: number, total: number, succeeded: number, failed: number) => t('library.review.progress', { done, total, succeeded, failed })
 
@@ -1415,19 +1419,22 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
     setDeleteBusy(false)
   }
 
-  const applyRows = async (targets: ReviewRow[], confirmedHighRisk: boolean, forceConflicts = false) => {
+  const applyRows = async (targets: ReviewRow[], confirmedHighRisk: boolean, forceConflicts = false, allowProtectedTokenMismatch = false) => {
     const candidates = targets.filter((row) => isDirty(row) || canApply(row) || (forceConflicts && canForceConflict(row)))
     if (candidates.length === 0 || busyKey || batchBusy || applyingBatchRef.current || applyingRowsRef.current.size > 0) return
     const highRisk = candidates.filter((row) => row.risk === 'high')
-    if (highRisk.length > 0 && !confirmedHighRisk) { setRiskConfirm({ rows: candidates, forceConflicts }); return }
+    if (highRisk.length > 0 && !confirmedHighRisk) { setRiskConfirm({ rows: candidates, forceConflicts, allowProtectedTokenMismatch }); return }
     setRiskConfirm(null)
     applyingBatchRef.current = true
     setBatchBusy('apply')
+    let shouldReload = false
     try {
       const prepared: Array<{ row: ReviewRow; proposal: MasterProposal }> = []
       let failedCount = 0
       for (const row of candidates) {
-        const proposal = isDirty(row) || !row.proposal ? await saveDraft(row) : row.proposal
+        const draftNeeded = isDirty(row) || !row.proposal
+        const proposal = draftNeeded ? await saveDraft(row) : row.proposal
+        if (draftNeeded && proposal) shouldReload = true
         if (!proposal || (!APPLYABLE_PROPOSAL_STATUSES.has(proposal.status) && !(forceConflicts && proposal.status === 'conflict'))) {
           failedCount += 1
           continue
@@ -1435,13 +1442,13 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
         prepared.push({ row, proposal })
       }
 
-      const results: Array<{ proposal_id: string; status: string; error?: string; translation_version_id?: string }> = []
+      const results: Array<{ proposal_id: string; status: string; code?: string; error?: string; translation_version_id?: string }> = []
       let applied = 0
       for (let start = 0; start < prepared.length; start += MASTER_PROPOSAL_BATCH_SIZE) {
         const chunk = prepared.slice(start, start + MASTER_PROPOSAL_BATCH_SIZE)
         const proposalIDs = chunk.map(({ proposal }) => proposal.proposal_id)
-        const result = forceConflicts
-          ? await applyMasterProposals(masterItemID, proposalIDs, confirmedHighRisk, true, true)
+        const result = forceConflicts || allowProtectedTokenMismatch
+          ? await applyMasterProposals(masterItemID, proposalIDs, confirmedHighRisk, forceConflicts, true)
           : await applyMasterProposals(masterItemID, proposalIDs, confirmedHighRisk)
         applied += result.applied_count
         results.push(...result.results)
@@ -1453,7 +1460,11 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
       }))
 
       const conflicted = results.filter((entry) => entry.status === 'conflict').length
+      if (applied > 0 || conflicted > 0) shouldReload = true
       failedCount += results.length - applied - conflicted
+      const markerKeys = results.filter((entry) => entry.code === 'protected_token_mismatch').map((entry) => prepared.find((candidate) => candidate.proposal.proposal_id === entry.proposal_id)?.row.key).filter((key): key is string => Boolean(key))
+      setMarkerFailedKeys((current) => [...new Set([...current.filter((key) => !candidates.some((row) => row.key === key)), ...markerKeys])])
+      if (markerKeys.length > 0) setOpenRows((current) => [...new Set([...current, ...markerKeys])])
       for (const entry of results) {
         if (entry.status !== 'applied') {
           const row = prepared.find((candidate) => candidate.proposal.proposal_id === entry.proposal_id)?.row
@@ -1466,18 +1477,21 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
     } finally {
       applyingBatchRef.current = false
       setBatchBusy('')
-      onChanged()
+      if (shouldReload) onChanged()
     }
   }
 
   const applySingle = async (row: ReviewRow) => {
     const forceConflict = canForceConflict(row)
     if (busyKey || batchBusy || applyingBatchRef.current || applyingRowsRef.current.has(row.key) || (!canApply(row) && !forceConflict)) return
-    if (row.risk === 'high') { setRiskConfirm({ rows: [row], forceConflicts: forceConflict }); return }
+    if (row.risk === 'high') { setRiskConfirm({ rows: [row], forceConflicts: forceConflict, allowProtectedTokenMismatch: false }); return }
     applyingRowsRef.current.add(row.key)
     setBusyKey(row.key)
+    let shouldReload = false
     try {
-      const proposal = isDirty(row) || !row.proposal ? await saveDraft(row) : row.proposal
+      const draftNeeded = isDirty(row) || !row.proposal
+      const proposal = draftNeeded ? await saveDraft(row) : row.proposal
+      if (draftNeeded && proposal) shouldReload = true
       if (!proposal) return
       if (proposal.status === 'proposed') {
         if (forceConflict || isDirty(row)) await validateMasterProposal(proposal.proposal_id, { allowProtectedTokenMismatch: true })
@@ -1485,14 +1499,20 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
       }
       if (forceConflict || isDirty(row) || proposal.protected_token_override) await applyMasterProposal(proposal.proposal_id, true, forceConflict, true)
       else await applyMasterProposal(proposal.proposal_id, true)
+      shouldReload = true
       await resolveAppliedJob(row)
       onMessage(t('library.review.savedApplied'))
     } catch (reason: unknown) {
+      if (reason instanceof APIError && reason.status === 409) shouldReload = true
+      if (reason instanceof APIError && reason.code === 'protected_token_mismatch') {
+        setMarkerFailedKeys((current) => [...new Set([...current, row.key])])
+        setOpenRows((current) => [...new Set([...current, row.key])])
+      }
       setRowErrors((current) => ({ ...current, [row.key]: reason instanceof Error ? reason.message : t('library.proposalUnavailable') }))
     } finally {
       applyingRowsRef.current.delete(row.key)
       setBusyKey('')
-      onChanged()
+      if (shouldReload) onChanged()
     }
   }
 
@@ -1536,11 +1556,21 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
         <p className="mt-1 text-muted-foreground">{t('library.review.highRiskMessage')}</p>
         <ul className="mt-2 list-inside list-disc space-y-1">{riskConfirm.rows.map((row) => <li key={`risk-${row.key}`} className="text-foreground">{row.field_label} <span className="text-muted-foreground">({row.field_path})</span></li>)}</ul>
         <div className="mt-3 flex gap-2">
-          <Button type="button" size="xs" disabled={batchBusy === 'apply'} onClick={() => { const confirmation = riskConfirm; setRiskConfirm(null); void applyRows(confirmation.rows, true, confirmation.forceConflicts) }}>{t('library.review.highRiskConfirm')}</Button>
+          <Button type="button" size="xs" disabled={batchBusy === 'apply'} onClick={() => { const confirmation = riskConfirm; setRiskConfirm(null); void applyRows(confirmation.rows, true, confirmation.forceConflicts, confirmation.allowProtectedTokenMismatch) }}>{t('library.review.highRiskConfirm')}</Button>
           <Button type="button" variant="ghost" size="xs" onClick={() => setRiskConfirm(null)}>{t('common.cancel')}</Button>
         </div>
       </div>
     )}
+    {markerFailedRows.length > 0 && <Button type="button" size="xs" variant="outline" disabled={Boolean(batchBusy) || Boolean(busyKey)} onClick={() => setMarkerConfirm(markerFailedRows)}>{t('library.review.markerReview', { count: markerFailedRows.length })}</Button>}
+    {markerConfirm && <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs" role="alertdialog" aria-label={t('library.review.markerTitle')}>
+      <div className="font-medium">{t('library.review.markerTitle')}</div>
+      <p className="mt-1 text-muted-foreground">{t('library.review.markerWarning')}</p>
+      <ul className="mt-2 list-inside list-disc">{markerConfirm.map((row) => <li key={row.key}>{row.field_label} ({row.field_path})</li>)}</ul>
+      <div className="mt-3 flex gap-2">
+        <Button type="button" size="xs" onClick={() => { const selected = markerConfirm; setMarkerConfirm(null); void applyRows(selected, false, false, true) }}>{t('library.review.markerConfirm')}</Button>
+        <Button type="button" size="xs" variant="ghost" onClick={() => setMarkerConfirm(null)}>{t('common.cancel')}</Button>
+      </div>
+    </div>}
     <div className="space-y-2">
       {rows.map((row) => {
         const dirty = isDirty(row)

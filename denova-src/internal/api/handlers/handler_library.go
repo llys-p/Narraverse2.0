@@ -511,8 +511,13 @@ func writeLibraryReadError(c *app.RequestContext, err error) {
 func writeLibraryMutationError(c *app.RequestContext, err error) {
 	status := consts.StatusBadRequest
 	var conflict *book.MasterCASConflictError
+	var markerMismatch *book.MasterTranslationMarkerMismatchError
 	if errors.As(err, &conflict) {
 		status = consts.StatusConflict
+	}
+	if errors.As(err, &markerMismatch) {
+		writeJSON(c, status, map[string]string{"code": "protected_token_mismatch", "error": err.Error()})
+		return
 	}
 	writeError(c, status, err.Error())
 }

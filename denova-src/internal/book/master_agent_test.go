@@ -291,6 +291,14 @@ func TestApplyMasterProposalsCanForceApplyConflictBatch(t *testing.T) {
 	if _, err := store.ValidateMasterProposal(proposal.ProposalID); err == nil {
 		t.Fatal("批量测试的 Proposal 应先进入 conflict")
 	}
+	strict := store.ApplyMasterProposals(target.MasterItemID, []string{proposal.ProposalID}, true)
+	if strict.AppliedCount != 0 || len(strict.Results) != 1 || strict.Results[0].Status != MasterProposalStatusConflict {
+		t.Fatalf("版本冲突仍须归为 conflict 且不自动应用: %#v", strict)
+	}
+	markerApprovalOnly := store.ApplyMasterProposals(target.MasterItemID, []string{proposal.ProposalID}, true, false, true)
+	if markerApprovalOnly.AppliedCount != 0 || markerApprovalOnly.Results[0].Status != MasterProposalStatusConflict {
+		t.Fatalf("保护标记放宽不得顺带强制覆盖版本冲突: %#v", markerApprovalOnly)
+	}
 	result := store.ApplyMasterProposals(target.MasterItemID, []string{proposal.ProposalID}, true, true)
 	if result.AppliedCount != 1 || len(result.Results) != 1 || result.Results[0].Status != MasterProposalStatusApplied {
 		t.Fatalf("批量批准并完成应应用 conflict Proposal: %#v", result)
@@ -349,5 +357,40 @@ func TestManualProtectedTokenOverrideReportsDetailsAndApplies(t *testing.T) {
 	}
 	if loaded.Fields[target.FieldPath].ActiveText != candidate {
 		t.Fatalf("人工确认后的译文未成为活动内容: %#v", loaded.Fields[target.FieldPath])
+	}
+}
+
+func TestBatchProtectedMarkerMismatchIsNotARevisionConflict(t *testing.T) {
+	store, adventure := masterTestStore(t)
+	input := masterTestItem("lore", "Use {{user}} on day 7")
+	ingested, err := store.Ingest(MasterIngestInput{
+		Filename: "marker-batch.json", Data: []byte("marker-batch-source"), SourceKind: "user_upload",
+		AdventureWorkspace: adventure, Items: []MasterItemInput{input},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := ingested.Transaction.TranslationTargets[0]
+	proposal, err := store.CreateMasterProposal(MasterProposalInput{
+		Kind: MasterProposalRecovery, ApplyMode: MasterProposalConfirm,
+		MasterItemID: target.MasterItemID, FieldPath: target.FieldPath, Translation: "第七天见 {{user}}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	strict := store.ApplyMasterProposals(target.MasterItemID, []string{proposal.ProposalID}, false)
+	if strict.AppliedCount != 0 || len(strict.Results) != 1 || strict.Results[0].Status != "failed" || strict.Results[0].Code != "protected_token_mismatch" {
+		t.Fatalf("marker mismatch must be a reviewable failure, not a CAS conflict: %#v", strict)
+	}
+	pending, err := store.GetMasterProposal(proposal.ProposalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.Status != MasterProposalStatusProposed {
+		t.Fatalf("strict batch changed proposal: %s", pending.Status)
+	}
+	confirmed := store.ApplyMasterProposals(target.MasterItemID, []string{proposal.ProposalID}, false, false, true)
+	if confirmed.AppliedCount != 1 || confirmed.Results[0].Status != MasterProposalStatusApplied {
+		t.Fatalf("explicit protected-marker override should apply without forcing CAS: %#v", confirmed)
 	}
 }
