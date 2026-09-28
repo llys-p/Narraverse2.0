@@ -56,6 +56,10 @@ type RunTraceMetadata struct {
 	BranchID        string `json:"branch_id,omitempty"`
 	TurnID          string `json:"turn_id,omitempty"`
 	MaintenanceTask string `json:"maintenance_task,omitempty"`
+	// LibraryID/LibraryRevision 是 library 模式写入 run ledger 的仅有的库元数据（§8.5），
+	// 由绑定的 libraryruntime.Run 派生，禁止在此结构承载库正文。
+	LibraryID         string `json:"library_id,omitempty"`
+	LibraryRevision   string `json:"library_revision,omitempty"`
 }
 
 type RunTraceMetadataReporter interface {
@@ -326,7 +330,9 @@ func (c *SessionConversation) runtimeContextSources() []agentcontext.Source {
 
 func (c *SessionConversation) splitLeadingRuntimeMessages(messages []*schema.Message) ([]*schema.Message, []*schema.Message) {
 	offset := 0
-	if len(messages) > 0 && isEphemeralWorldContextMessage(messages[0]) {
+	// 临时背景（world 或 library，传输层互斥）只保留在模型上下文头部，
+	// 不进入压缩来源/摘要；二者识别都基于冻结抬头，逐字节精确。
+	if len(messages) > 0 && (isEphemeralWorldContextMessage(messages[0]) || isEphemeralLibraryContextMessage(messages[0])) {
 		offset = 1
 	}
 	stable := c.leadingRuntimeMessages()

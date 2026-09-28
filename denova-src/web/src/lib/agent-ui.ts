@@ -44,6 +44,7 @@ export type AgentDataParts = {
   'agent-tool-result': AgentDataPayload
   'agent-workspace-change': AgentDataPayload
   'world-context-state': AgentDataPayload
+  'library-context-state': AgentDataPayload
 }
 
 export type AgentUIMessage = UIMessage<AgentMessageMetadata, AgentDataParts>
@@ -54,6 +55,17 @@ interface AgentChatRequestBody {
     worldId: string
     expectedWorldRevision: string
     selection: Record<string, unknown>
+  }
+  // B2a/B2b：背景来源声明（legacy|library|none）。不填=按结构推断（旧请求兼容）；
+  // 库背景绑定时由 useAgentChat 显式写 'library'，与 library_context 载体同现。
+  background_source?: 'legacy' | 'library' | 'none'
+  // B2a/B2b：作品设定库背景载体（camelCase，与 L2 preview DTO 一致）。
+  // manualItemIds 只列显式勾选的手动条目；auto 目录由服务端受控按需读取。
+  // 与 UI 无关的内部字段（DO NOT 填写）：consumer、scopeKey、runContextId 等服务端派生身份。
+  library_context?: {
+    libraryId: string
+    expectedRevision: string
+    manualItemIds: string[]
   }
   // 一次性 analysisHandle；reconnect 走 GET /api/chat/stream 无 body，天然不会提交它。
   analysis_handle?: string
@@ -115,6 +127,8 @@ export function buildAgentChatRequestBody(body: AgentChatRequestBody): AgentChat
     teller_id: body.teller_id || undefined,
     review_feedback: reviewFeedback.length ? reviewFeedback : undefined,
     world_context: body.world_context,
+    background_source: body.background_source,
+    library_context: body.library_context,
     analysis_handle: body.analysis_handle || undefined,
   }
 }

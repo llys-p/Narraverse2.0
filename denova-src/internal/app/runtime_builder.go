@@ -12,6 +12,7 @@ import (
 	"denova/internal/agent"
 	"denova/internal/book"
 	"denova/internal/interactive"
+	"denova/internal/libraryruntime"
 	"denova/internal/prompts"
 	"denova/internal/session"
 )
@@ -93,6 +94,29 @@ func buildAgentRunner(ctx context.Context, cfg *config.Config, state *book.State
 	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindIDE, Workspace: cfg.Workspace}), nil
 }
 
+// buildAgentRunnerWithLibrary 构建 library 背景模式的写作 runner（B2a）：
+// lore 工具不挂载（§8.6 通道 2），改挂载持有本次绑定 Run 的库按需读取工具。
+// instruction 是调用方以单源 composition 构建的系统提示（B2a 修正轮缺口②：
+// 与 RunOptions.SystemPromptLog 同一来源）；其余（runner 选项、模型网关、Skill
+// 中间件）与 buildAgentRunner 逐字节一致。
+func buildAgentRunnerWithLibrary(ctx context.Context, cfg *config.Config, state *book.State, teller agent.IDEStoryTeller, instruction string, libRun *libraryruntime.Run) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildWithLibraryBackground(ctx, cfg, state, teller, instruction, libRun)
+	if err != nil {
+		return nil, fmt.Errorf("构建 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindIDE, Workspace: cfg.Workspace}), nil
+}
+
+// buildAgentRunnerWithNoBackground 构建“显式无作品背景”的写作 runner（B2a 修正轮）：
+// 无 lore 工具、无库工具；系统提示由单源 composition 提供（与 SystemPromptLog 同源）。
+func buildAgentRunnerWithNoBackground(ctx context.Context, cfg *config.Config, instruction string) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildWithNoBackground(ctx, cfg, instruction)
+	if err != nil {
+		return nil, fmt.Errorf("构建 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindIDE, Workspace: cfg.Workspace}), nil
+}
+
 func ideStoryTellerForConfig(cfg *config.Config) agent.IDEStoryTeller {
 	if cfg == nil || cfg.DataDir() == "" {
 		return agent.IDEStoryTeller{}
@@ -128,6 +152,27 @@ func ideStoryTellerFromInteractive(teller interactive.Teller, styleRules []agent
 
 func buildInteractiveStoryRunner(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, toolContexts ...agent.InteractiveStoryToolContext) (*adk.Runner, error) {
 	builtAgent, err := agent.BuildInteractiveStory(ctx, cfg, state, teller, toolContexts...)
+	if err != nil {
+		return nil, fmt.Errorf("构建互动故事 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindInteractiveStory, Workspace: cfg.Workspace}), nil
+}
+
+// buildInteractiveStoryRunnerWithLibrary 构建 library 背景模式的游戏回合 Runner（B3a）：
+// instruction 必须来自单源 composition（与 RunOptions.SystemPromptLog 同源），
+// libRun 必须是 bind-before-start 阶段绑定的库运行（提供 read_library_item 工具）。
+func buildInteractiveStoryRunnerWithLibrary(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, instruction string, libRun *libraryruntime.Run, toolContexts ...agent.InteractiveStoryToolContext) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildInteractiveStoryWithLibraryBackground(ctx, cfg, state, teller, instruction, libRun, toolContexts...)
+	if err != nil {
+		return nil, fmt.Errorf("构建互动故事 Agent 失败: %w", err)
+	}
+	return agent.NewRunnerWithOptions(ctx, builtAgent, agent.RunOptions{AgentKind: agent.AgentKindInteractiveStory, Workspace: cfg.Workspace}), nil
+}
+
+// buildInteractiveStoryRunnerWithNoBackground 构建显式无作品背景（background_source=none）
+// 的游戏回合 Runner（B3a）：不挂 lore 工具也不挂库工具。
+func buildInteractiveStoryRunnerWithNoBackground(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, instruction string, toolContexts ...agent.InteractiveStoryToolContext) (*adk.Runner, error) {
+	builtAgent, err := agent.BuildInteractiveStoryWithNoBackground(ctx, cfg, state, teller, instruction, toolContexts...)
 	if err != nil {
 		return nil, fmt.Errorf("构建互动故事 Agent 失败: %w", err)
 	}

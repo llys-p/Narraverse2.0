@@ -32,6 +32,19 @@ const state = {
   currentPresetId: null,      // 当前场景预设 id（presets.js 读写）
 };
 
+// Embedded Narraverse uses the Denova host proxy; only standalone mode needs
+// the iframe's own API settings. Never treat local credentials as a fallback
+// when the trusted host origin is missing.
+function canRequestModel() {
+  if (isDenovaEmbedded) {
+    return window.parent !== window &&
+      typeof window.requestDenovaModel === 'function' &&
+      typeof getDenovaHostOrigin === 'function' &&
+      !!getDenovaHostOrigin();
+  }
+  return !!(state.apiConfig.apiKey && state.apiConfig.endpoint);
+}
+
 /* 失败消息缓存：用于“重试”按钮 */
 let lastFailedMessage = null;
 
@@ -2629,8 +2642,8 @@ async function generateAdventureIntro(advId, force) {
     renderAdventureList();
     return;
   }
-  if (!state.apiConfig.apiKey && !state.apiConfig.endpoint) {
-    adv.aiIntro = adv.aiIntro || { emoji: '📖', color: '#2EA7FF', title: '', intro: '（未配置 API，无法生成介绍）', generatedAt: Date.now() };
+  if (!canRequestModel()) {
+    adv.aiIntro = adv.aiIntro || { emoji: '📖', color: '#2EA7FF', title: '', intro: isDenovaEmbedded ? '（Denova 宿主模型代理不可用）' : '（未配置 API，无法生成介绍）', generatedAt: Date.now() };
     renderAdventureList();
     return;
   }
@@ -5248,7 +5261,7 @@ function sendNextStep() {
   const adv = getCurrentAdventure();
   if (!adv || adv.character.hp <= 0) return;
 
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) {
+  if (!canRequestModel()) {
     showSettings();
     return;
   }
@@ -5336,7 +5349,7 @@ async function sendMessage(text) {
   const content = maybeRollDiceMessage(text || input.value.trim());
   if (!content) return;
 
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) {
+  if (!canRequestModel()) {
     showSettings();
     return;
   }
@@ -5534,7 +5547,7 @@ async function startNewAdventure() {
     opts.profession = { name: lockedProfession, attrs: { 力量:10, 敏捷:10, 智力:10, 魅力:10, 幸运:10 }, skills: [] };
   }
 
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) {
+  if (!canRequestModel()) {
     closeModal('newAdventureModal');
     showSettings();
     return;
@@ -6020,7 +6033,7 @@ function buildStoryProposalMessages() {
 
 async function generateStoryProposals() {
   if (storyProposalGenerating) return;
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) {
+  if (!canRequestModel()) {
     showSettings();
     return;
   }
@@ -6249,7 +6262,7 @@ async function aiFillSetting() {
   const idx = sel ? Number(sel.value) : -1;
   const book = pendingLoadBooks[idx];
   if (!book) { alert('请先选择主设定卡（或先在上一步挂载设定书）'); return; }
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) { showSettings(); return; }
+  if (!canRequestModel()) { showSettings(); return; }
   const original = (book.content || '').substring(0, 8000);
   const current = composeSettingText();
   const user = '【原文】\n' + original + '\n\n【当前字段（仅参考，缺失处可补）】\n' + (current || '（空）') + '\n\n请按以下格式输出（每行一个字段；全部用中文，外文人名/地名请本地化，不要出现英文名）：\n世界背景：\n玩家身份：\n初始目标：\n其他说明：';
@@ -6267,7 +6280,7 @@ async function aiFillSetting() {
 async function aiFillCard(idx) {
   const card = pendingLoadCards[idx];
   if (!card) return;
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) { showSettings(); return; }
+  if (!canRequestModel()) { showSettings(); return; }
   const original = (card.notes || '').substring(0, 6000);
   if (!original) { alert('该角色卡没有备注原文可提取'); return; }
   const user = '【角色卡原文】\n' + original + '\n\n请按以下格式输出（每行一个字段，原文没有的留空；全部用中文，外文人名/地名请本地化，不要出现英文名）：\n外貌：\n性格：\n关系：\n背景：';
@@ -7191,7 +7204,7 @@ function triggerRandomEvent() {
   if (state.isGenerating) return;
   const adv = getCurrentAdventure();
   if (!adv || adv.character.hp <= 0) return;
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) {
+  if (!canRequestModel()) {
     showSettings();
     return;
   }
@@ -8453,7 +8466,7 @@ async function generateNovelChapter(idx) {
   const ch = novelChapters[idx];
   if (!ch) return;
   if (!ch.text) { alert('本章没有可用对话内容'); return; }
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) { showSettings(); return; }
+  if (!canRequestModel()) { showSettings(); return; }
   if (ch.status === 'generating') return;
   ch.status = 'generating';
   renderNovelChapters();
@@ -8490,7 +8503,7 @@ async function generateNovelChapter(idx) {
 function generateNovelOutline() {
   const adv = getCurrentAdventure();
   if (!adv) return;
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) { showSettings(); return; }
+  if (!canRequestModel()) { showSettings(); return; }
   const btn = document.getElementById('novelOutlineBtn');
   if (btn) btn.textContent = '⏳ 生成中…';
   const turns = collectTurns(adv);
@@ -8577,7 +8590,7 @@ function snapshotDiff() {
 
 async function generateAllNovel() {
   if (!novelChapters.length) { alert('还没有可生成的内容'); return; }
-  if (!state.apiConfig.apiKey || !state.apiConfig.endpoint) { showSettings(); return; }
+  if (!canRequestModel()) { showSettings(); return; }
   if (!confirm('将逐卷消费永久对话档案并生成全部 ' + novelChapters.length + ' 章；失败不会覆盖原始实录。确定开始？')) return;
   for (let i = 0; i < novelChapters.length; i++) {
     if (novelChapters[i].status !== 'done') await generateNovelChapter(i);
@@ -8727,7 +8740,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   const migrationNoticeShown = maybeShowEmbeddedMigrationNotice();
 
   /* 如果没有 API 配置，自动弹出设置；迁移提示优先，避免两个弹窗叠加。 */
-  if (!state.apiConfig.apiKey && !migrationNoticeShown) {
+  if (!canRequestModel() && !migrationNoticeShown) {
     setTimeout(showSettings, 300);
   }
 

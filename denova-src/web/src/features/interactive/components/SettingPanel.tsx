@@ -996,16 +996,23 @@ function LoreSettingPanel({
                       variant="page"
                     />
                   ) : activeId === LORE_CONFIG_AGENT_ENTRY_ID ? (
-                    <ConfigManagerChat
-                      workspace={workspace}
-                      origin="lore"
-                      resourceId={LORE_CONFIG_AGENT_ENTRY_ID}
-                      context={{ item_count: String(items.length) }}
-                      onMutated={() => {
-                        void refreshItems()
-                        notifyLoreUpdated()
-                      }}
-                    />
+                    <div className="flex h-full min-h-0 flex-col">
+                      <p role="note" className="shrink-0 border-b border-[var(--nova-border)] bg-[var(--nova-surface)] px-4 py-2 text-xs text-[var(--nova-text-muted)]">
+                        {t('settingPanel.loreAgent.libraryBoundary')}
+                      </p>
+                      <div className="min-h-0 flex-1">
+                        <ConfigManagerChat
+                          workspace={workspace}
+                          origin="lore"
+                          resourceId={LORE_CONFIG_AGENT_ENTRY_ID}
+                          context={{ item_count: String(items.length) }}
+                          onMutated={() => {
+                            void refreshItems()
+                            notifyLoreUpdated()
+                          }}
+                        />
+                      </div>
+                    </div>
                   ) : activeId === CREATOR_ENTRY_ID ? (
                     <CreatorEditor content={creatorContent} setContent={setCreatorContent} onSave={flushActiveAutosave} />
                   ) : activeId === INTERACTIVE_OPENING_PRESET_ENTRY_ID ? (

@@ -334,18 +334,29 @@ func (h *Handlers) HandleInteractiveChat(ctx context.Context, c *app.RequestCont
 	}
 
 	in := novaApp.InteractiveTaskInput{
-		StoryID:      body.StoryID,
-		BranchID:     body.Branch,
-		Message:      body.Message,
-		StyleScenes:  body.StyleScenes,
-		Locale:       requestLocale(c),
-		RewindTurnID: body.RegenerateFromTurn,
+		StoryID:              body.StoryID,
+		BranchID:             body.Branch,
+		Message:              body.Message,
+		StyleScenes:          body.StyleScenes,
+		Locale:               requestLocale(c),
+		RegenerateFromTurnID: body.RegenerateFromTurn,
 		World: novaApp.InteractiveWorldControl{
 			Ref:               runtimeWC.Ref,
 			HasAnalysisHandle: runtimeWC.HasAnalysisHandle,
 			AnalysisHandle:    runtimeWC.AnalysisHandle,
 		},
 	}
+	// B3a：转发 library 控制与裁定后的背景来源/显式标记；consumer/scopeKey/
+	// runContextId 已在传输层拒绝。world 与 library 由传输层互斥（400）。
+	if runtimeWC.LibraryRef != nil {
+		in.Library = novaApp.InteractiveLibraryControl{
+			LibraryID:        runtimeWC.LibraryRef.LibraryID,
+			ExpectedRevision: runtimeWC.LibraryRef.ExpectedRevision,
+			ManualItemIDs:    runtimeWC.LibraryRef.ManualItemIDs,
+		}
+	}
+	in.BackgroundSource = runtimeWC.BackgroundSource
+	in.BackgroundSourceExplicit = runtimeWC.BackgroundSourceExplicit
 	task := h.app.StartInteractiveTaskWithWorld(ctx, in)
 	if task == nil {
 		writeErrorKey(c, consts.StatusConflict, "api.workspace.noWorkspace")

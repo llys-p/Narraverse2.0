@@ -334,6 +334,18 @@ describe('SettingPanel', () => {
     expect(configAgent.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('explains that the legacy Lore assistant cannot read the standalone work library', async () => {
+    const user = userEvent.setup()
+    render(<SettingPanel mode="lore" workspace="/workspace" imagePresets={[]} />)
+
+    await user.click(await screen.findByRole('button', { name: '配置管理 Agent' }))
+
+    expect(screen.getByRole('note')).toHaveTextContent('这里只管理当前书籍的旧 Lore，不读取作品设定库')
+    expect(screen.getByRole('note')).toHaveTextContent('带入游戏')
+    expect(screen.getByTestId('config-manager-chat')).toBeInTheDocument()
+    expect(configManagerChatProps.at(-1)).toMatchObject({ origin: 'lore' })
+  })
+
   it('keeps the workspace close action in the active preset toolbar', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

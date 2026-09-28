@@ -363,6 +363,12 @@ const chat = {
   'chat.worldContext.error.invalid_request': '请求格式有误，请重新带入',
   'chat.worldContext.error.context_ref_mismatch': '世界背景引用不一致，请重新带入',
   'chat.worldContext.error.generic': '未知原因，可重试或清除后重新带入',
+  // B2b：作品设定库写作背景状态条（库模式没有 degraded：绑定期失败直接阻断启动，错误经对话错误呈现）。
+  'chat.libraryContext.bound': '将带入《{{name}}》设定库背景{{rev}}{{count}}（下次发送生效，只读）',
+  'chat.libraryContext.active': '已带入《{{name}}》设定库背景{{rev}}{{count}}（只读，不回写设定库）',
+  'chat.libraryContext.selectedCount': '已选 {{count}} 条',
+  'chat.libraryContext.unnamed': '未命名设定库',
+  'chat.libraryContext.clear': '清除后续新对话的设定库背景',
   'chat.planUsage': '用法: /plan <需求描述>\n\n例如: /plan 给主角增加一个新的技能体系',
   'chat.plan.short': 'Plan',
   'chat.plan.chatShort': 'Chat',

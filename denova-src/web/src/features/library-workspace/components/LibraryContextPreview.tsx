@@ -2,13 +2,35 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { WorkLibrary } from '@/lib/api-client'
+import { useLibraryContextLaunch } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import { useIframeLibraryContextLaunch } from '@/features/library-context-runtime/IframeLibraryContextLaunchProvider'
+import { useWorldContextHost } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { previewWorkLibrary, type LibraryPreview } from '../library-context-api'
+import { LibraryGameLaunchDialog } from './LibraryGameLaunchDialog'
 
-interface Props { library: WorkLibrary; revision: string; dirty: boolean }
+interface Props {
+  library: WorkLibrary
+  revision: string
+  dirty: boolean
+  /** 当前写作侧是否已有打开的书；库与书无关，但带入写作必须落在有书的写作上下文。 */
+  hasWritingBook?: boolean
+  /** 用户显式发起带入写作：写入一次性交接并返回写作模式（由上层完成模式切换）。 */
+  onLaunchWriting?: () => void
+  /** 用户显式发起带入游戏：选择目标故事/分支成功后写入一次性交接并切到游戏模式。 */
+  onLaunchGame?: () => void
+  /** 用户显式发起带入叙界：写入一次性交接并切到叙界模式（宿主受控 iframe）。 */
+  onLaunchNarraverse?: () => void
+  /** 用户显式发起带入开放沙盒：写入一次性交接并在叙界 iframe 内打开 Module4。 */
+  onLaunchModule4?: () => void
+}
 
 /** Session-only read preview. Opening the tab never issues a request. */
-export function LibraryContextPreview({ library, revision, dirty }: Props) {
+export function LibraryContextPreview({ library, revision, dirty, hasWritingBook = false, onLaunchWriting, onLaunchGame, onLaunchNarraverse, onLaunchModule4 }: Props) {
   const { t } = useTranslation()
+  const { launchWritingLibrary } = useLibraryContextLaunch()
+  const iframeLibraryLaunches = useIframeLibraryContextLaunch()
+  const worldContextHost = useWorldContextHost()
+  const [iframeLaunchNotice, setIframeLaunchNotice] = useState<string | null>(null)
   const [manual, setManual] = useState<string[]>([])
   const [auto, setAuto] = useState<string[]>([])
   const [offset, setOffset] = useState(0)
@@ -51,6 +73,67 @@ export function LibraryContextPreview({ library, revision, dirty }: Props) {
   }
   const stale = result !== null && (result.key !== key || dirty)
   const data = result?.data
+  // B2b：用户显式选择库并带入写作。只交接已保存库的 Ref（libraryId+expectedRevision+
+  // manualItemIds）；L2 预览的 autoItemIds 是预览专属选择，不进入运行授权（B0 §8.2）；
+  // 无书时禁用（交接必须落在有书的写作上下文），与生成预览一样拒绝未保存草稿。
+  const launchToWriting = () => {
+    if (dirty || !revision || !hasWritingBook) return
+    launchWritingLibrary({
+      libraryId: library.id,
+      expectedRevision: revision,
+      manualItemIds: manualIDs,
+      libraryName: library.name,
+      revisionLabel: revision,
+      selectedCount: manualIDs.length,
+    })
+    onLaunchWriting?.()
+  }
+  // B3b：带入游戏先显式选择目标故事/分支；确认成功才写一次性交接并切模式，
+  // 取消或失败不写交接（游戏侧当前背景保持不变）。与带入写作共用“已保存库 Ref，
+  // autoItemIds 不进入授权”的边界。
+  const [gameLaunchOpen, setGameLaunchOpen] = useState(false)
+  const gameLaunchPayload = {
+    libraryId: library.id,
+    expectedRevision: revision,
+    manualItemIds: manualIDs,
+    libraryName: library.name,
+    revisionLabel: revision,
+    selectedCount: manualIDs.length,
+  }
+  // B4a：带入叙界（宿主受控 iframe）。与带入写作/游戏同源：只交接已保存库的 Ref
+  // 三字段 + 摘要，autoItemIds 不进入授权；consumer 由宿主受控路由固定，Ref 不落 iframe。
+  // 宿主会话不可用时显式提示（与 world 侧带入同一守卫），不写入交接。
+  const iframeLaunchPayload = () => ({
+    libraryId: library.id,
+    expectedRevision: revision,
+    manualItemIds: manualIDs,
+    libraryName: library.name,
+    revisionLabel: revision,
+    selectedCount: manualIDs.length,
+    launchedAt: Date.now(),
+  })
+  const launchToNarraverse = () => {
+    if (dirty || !revision) return
+    if (worldContextHost.state !== 'ready') {
+      setIframeLaunchNotice(t('workLibrary.preview.launchHostUnavailable'))
+      return
+    }
+    setIframeLaunchNotice(null)
+    iframeLibraryLaunches.launch('narraverse', iframeLaunchPayload())
+    onLaunchNarraverse?.()
+  }
+  // B4b：带入开放沙盒（Module4）。同一受控边界与 Ref 边界；打开走 App 的既有
+  // onOpenModule4（切叙界模式并在 iframe 内打开 Module4），不改沙盒规则与存档真源。
+  const launchToModule4 = () => {
+    if (dirty || !revision) return
+    if (worldContextHost.state !== 'ready') {
+      setIframeLaunchNotice(t('workLibrary.preview.launchHostUnavailable'))
+      return
+    }
+    setIframeLaunchNotice(null)
+    iframeLibraryLaunches.launch('module4', iframeLaunchPayload())
+    onLaunchModule4?.()
+  }
   return (
     <section className="min-h-0 flex-1 overflow-y-auto p-3" aria-label={t('workLibrary.tab.preview')}>
       <p className="mb-3 text-sm text-muted-foreground">{t('workLibrary.preview.hint')}</p>
@@ -75,11 +158,56 @@ export function LibraryContextPreview({ library, revision, dirty }: Props) {
         <Button type="button" disabled={dirty || loading || !revision} onClick={() => void generate()}>
           {loading ? t('workLibrary.loading') : t('workLibrary.preview.generate')}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision || !hasWritingBook}
+          onClick={launchToWriting}
+          title={!hasWritingBook ? t('workLibrary.preview.launchNeedBook') : undefined}
+        >
+          {t('workLibrary.preview.launchWriting')}
+        </Button>
+        {/* B3b：带入游戏。目标故事/分支在对话框内显式选择（§三.1 复用既有流程）。 */}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision}
+          onClick={() => setGameLaunchOpen(true)}
+        >
+          {t('workLibrary.preview.launchGame')}
+        </Button>
+        {/* B4a：带入叙界（宿主受控 iframe，库 Ref 只交给同源宿主页面）。 */}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision}
+          onClick={launchToNarraverse}
+        >
+          {t('workLibrary.preview.launchNarraverse')}
+        </Button>
+        {/* B4b：带入开放沙盒（Module4），沿用既有 onOpenModule4 受控入口。 */}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={dirty || !revision}
+          onClick={launchToModule4}
+        >
+          {t('workLibrary.preview.launchModule4')}
+        </Button>
         <Button type="button" variant="ghost" onClick={() => { setAuto([]); setManual([]); setOffset(0) }}>{t('workLibrary.preview.clear')}</Button>
         {dirty ? <span role="status">{t('workLibrary.preview.saveFirst')}</span> : null}
         {stale ? <span role="status">{t('workLibrary.preview.stale')}</span> : null}
+        {!hasWritingBook ? <span role="status">{t('workLibrary.preview.launchNeedBook')}</span> : null}
+        {iframeLaunchNotice ? <span role="alert">{iframeLaunchNotice}</span> : null}
       </div>
       {error ? <p role="alert" className="mb-3 text-sm">{error}</p> : null}
+      {gameLaunchOpen ? (
+        <LibraryGameLaunchDialog
+          launch={gameLaunchPayload}
+          onClose={() => setGameLaunchOpen(false)}
+          onLaunchGame={onLaunchGame}
+        />
+      ) : null}
       {data ? <div className="space-y-4" aria-busy={loading}>
         <p className="break-all text-xs text-muted-foreground">{data.name} · {data.revision}</p>
         <p className="text-xs">{t('workLibrary.preview.budget', data.budget)}</p>

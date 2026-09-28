@@ -19,6 +19,7 @@ import (
 	"denova/config"
 	agenttools "denova/internal/agent/tools"
 	"denova/internal/book"
+	"denova/internal/libraryruntime"
 	"denova/internal/prompts"
 	"denova/internal/providercompat"
 	novaskills "denova/internal/skills"
@@ -38,6 +39,49 @@ func Build(ctx context.Context, cfg *config.Config, state *book.State, teller ID
 		Instruction:       BuildInstruction(cfg, state, teller),
 		EnableSkills:      true,
 		ExtraToolsFactory: ideToolsFactory(cfg),
+	})
+}
+
+// BuildWithLibraryBackground 构建 library 背景模式的写作 Agent（B2a）。
+// 与 Build 的差异（§8.6 通道 2/3）：不挂载旧 lore 读取工具（防止新旧两套设定叠加），
+// 改挂载持有本次绑定 Run 的 read_library_item 按需读取工具。其余工具集逐字节一致。
+// instruction 必须是调用方以单源 composition 构建的系统提示（B2a 修正轮缺口②：
+// 与 RunOptions.SystemPromptLog 同一来源，保证计费/审计文本 == 模型实际系统提示）；
+// 空串时退回自建 library 提示（防御性兜底，不改变行为语义）。
+// libRun 必须是本次写作任务在 bind-before-start 阶段绑定的运行；nil 时退回 Build。
+func BuildWithLibraryBackground(ctx context.Context, cfg *config.Config, state *book.State, teller IDEStoryTeller, instruction string, libRun *libraryruntime.Run) (adk.Agent, error) {
+	if libRun == nil {
+		return Build(ctx, cfg, state, teller)
+	}
+	if strings.TrimSpace(instruction) == "" {
+		instruction = BuildLibraryBackgroundInstruction(cfg, state, teller)
+	}
+	return buildDeepAgent(ctx, cfg, deepAgentSpec{
+		Kind:              config.AgentKindIDE,
+		Name:              "DenovaAgent",
+		Description:       "AI 小说创作助手",
+		Instruction:       instruction,
+		EnableSkills:      true,
+		ExtraToolsFactory: ideToolsFactoryWithLibrary(cfg, libRun),
+	})
+}
+
+// BuildWithNoBackground 构建“显式无作品背景”（background_source=none）的写作 Agent
+// （B2a 修正轮）：不挂载旧 lore 工具，也不挂载库读取工具；系统提示中的旧 lore
+// 工具指引整段替换为无背景指引。instruction 必须由调用方以单源 composition 提供
+// （与 RunOptions.SystemPromptLog 同一来源）；空串即显式报错——none 模式没有可
+// 回退的自建提示路径。
+func BuildWithNoBackground(ctx context.Context, cfg *config.Config, instruction string) (adk.Agent, error) {
+	if strings.TrimSpace(instruction) == "" {
+		return nil, fmt.Errorf("显式 none 背景模式必须提供单源系统提示")
+	}
+	return buildDeepAgent(ctx, cfg, deepAgentSpec{
+		Kind:              config.AgentKindIDE,
+		Name:              "DenovaAgent",
+		Description:       "AI 小说创作助手",
+		Instruction:       instruction,
+		EnableSkills:      true,
+		ExtraToolsFactory: ideToolsFactoryNoBackground(cfg),
 	})
 }
 
@@ -62,12 +106,83 @@ func BuildInteractiveStory(ctx context.Context, cfg *config.Config, state *book.
 	})
 }
 
+// BuildInteractiveStoryWithLibraryBackground 构建 library 背景模式的游戏回合 Agent
+// （B3a，§8.6 通道 2）：不挂载旧 lore 读写工具（防止新旧两套设定叠加），改挂载持有
+// 本次绑定 Run 的 read_library_item 按需读取工具；历史/状态/回合工具保持一致。
+// instruction 必须是调用方以单源 composition（BuildInteractiveStoryBackgroundInstructionComposition）
+// 构建的系统提示，与 RunOptions.SystemPromptLog 同一来源，保证计费/审计文本 == 模型
+// 实际系统提示；空串即显式报错——library 模式没有可回退的自建提示路径。
+// libRun 必须是本回合在 bind-before-start 阶段绑定的运行；nil 时退回 BuildInteractiveStory。
+func BuildInteractiveStoryWithLibraryBackground(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, instruction string, libRun *libraryruntime.Run, toolContexts ...InteractiveStoryToolContext) (adk.Agent, error) {
+	if libRun == nil {
+		return BuildInteractiveStory(ctx, cfg, state, teller, toolContexts...)
+	}
+	if strings.TrimSpace(instruction) == "" {
+		return nil, fmt.Errorf("library 背景模式必须提供单源系统提示")
+	}
+	handlers := []adk.ChatModelAgentMiddleware{newInteractiveStoryToolMiddleware()}
+	var outputGuard func(context.Context, *adk.RetryContext) *adk.RetryDecision
+	if len(toolContexts) > 0 && toolContexts[0].TurnResultReady != nil {
+		completionTokens, _ := EstimateContextProjectionReserves(cfg, config.AgentKindInteractiveStory, teller.ReplyTargetChars)
+		handlers = append(handlers, newInteractiveTurnProtocolMiddleware(toolContexts[0].TurnResultReady, completionTokens))
+		outputGuard = newInteractiveCompletionGuard(toolContexts[0].TurnResultReady)
+	}
+	return buildDeepAgent(ctx, cfg, deepAgentSpec{
+		Kind:              config.AgentKindInteractiveStory,
+		Name:              "DenovaInteractiveStoryAgent",
+		Description:       "AI 互动故事叙事助手",
+		Instruction:       instruction,
+		EnableSkills:      true,
+		DisableWriteTodos: true,
+		ExtraHandlers:     handlers,
+		ExtraToolsFactory: interactiveStoryToolsFactoryWithLibrary(cfg, libRun, toolContexts...),
+		ModelOutputGuard:  outputGuard,
+	})
+}
+
+// BuildInteractiveStoryWithNoBackground 构建显式无作品背景（background_source=none）
+// 的游戏回合 Agent（B3a）：不挂载旧 lore 工具，也不挂载库读取工具；系统提示旧 lore
+// 指引由单源 composition 替换为无背景指引。空 instruction 显式报错。
+func BuildInteractiveStoryWithNoBackground(ctx context.Context, cfg *config.Config, state *book.State, teller prompts.InteractiveStorySystemInstructionInput, instruction string, toolContexts ...InteractiveStoryToolContext) (adk.Agent, error) {
+	if strings.TrimSpace(instruction) == "" {
+		return nil, fmt.Errorf("显式 none 背景模式必须提供单源系统提示")
+	}
+	handlers := []adk.ChatModelAgentMiddleware{newInteractiveStoryToolMiddleware()}
+	var outputGuard func(context.Context, *adk.RetryContext) *adk.RetryDecision
+	if len(toolContexts) > 0 && toolContexts[0].TurnResultReady != nil {
+		completionTokens, _ := EstimateContextProjectionReserves(cfg, config.AgentKindInteractiveStory, teller.ReplyTargetChars)
+		handlers = append(handlers, newInteractiveTurnProtocolMiddleware(toolContexts[0].TurnResultReady, completionTokens))
+		outputGuard = newInteractiveCompletionGuard(toolContexts[0].TurnResultReady)
+	}
+	return buildDeepAgent(ctx, cfg, deepAgentSpec{
+		Kind:              config.AgentKindInteractiveStory,
+		Name:              "DenovaInteractiveStoryAgent",
+		Description:       "AI 互动故事叙事助手",
+		Instruction:       instruction,
+		EnableSkills:      true,
+		DisableWriteTodos: true,
+		ExtraHandlers:     handlers,
+		ExtraToolsFactory: interactiveStoryToolsFactoryNoBackground(cfg, toolContexts...),
+		ModelOutputGuard:  outputGuard,
+	})
+}
+
 func BuildInteractiveDirector(ctx context.Context, cfg *config.Config, state *book.State, toolContexts ...InteractiveStoryToolContext) (adk.Agent, error) {
+	// B3a（§8.6 通道 4）：library / 显式 none 背景模式下，导演系统提示使用无旧资料
+	// 指引的变体；legacy 模式与基线逐字节一致。
+	directorInstruction := prompts.BuildInteractiveDirectorSystemInstruction()
+	if len(toolContexts) > 0 && toolContexts[0].NoLegacyLore {
+		if toolContexts[0].BackgroundMode == prompts.BackgroundModeNone {
+			directorInstruction = prompts.BuildInteractiveDirectorSystemInstructionWithBackground(prompts.BackgroundModeNone)
+		} else {
+			directorInstruction = prompts.BuildInteractiveDirectorSystemInstructionWithBackground(prompts.BackgroundModeLibrary)
+		}
+	}
 	return buildDeepAgent(ctx, cfg, deepAgentSpec{
 		Kind:              config.AgentKindInteractiveDirector,
 		Name:              "DenovaInteractiveDirectorAgent",
 		Description:       "AI 互动故事后台导演",
-		Instruction:       protectedSystemInstruction(cfg, config.AgentKindInteractiveDirector, prompts.BuildInteractiveDirectorSystemInstruction()),
+		Instruction:       protectedSystemInstruction(cfg, config.AgentKindInteractiveDirector, directorInstruction),
 		EnableSkills:      false,
 		DisableWriteTodos: true,
 		ExtraHandlers:     []adk.ChatModelAgentMiddleware{newInteractiveDirectorPlanFileMiddleware()},
@@ -509,6 +624,42 @@ func ideToolsFactory(cfg *config.Config) func(config.ResolvedAgentToolSettings) 
 	}
 }
 
+// ideToolsFactoryWithLibrary 是 library 背景模式的 IDE 工具工厂（B2a，§8.6 通道 2）：
+// 不挂载旧 lore 工具（新旧设定不得叠加），改挂载持有本次绑定 Run 的库按需读取工具；
+// 插图工具保持不变。libRun 为 nil 时退回旧工厂（防御性，正常由 BuildWithLibraryBackground 挡住）。
+func ideToolsFactoryWithLibrary(cfg *config.Config, libRun *libraryruntime.Run) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		if cfg == nil {
+			return nil, nil
+		}
+		if libRun == nil {
+			return ideToolsFactory(cfg)(config.ResolvedAgentToolSettings{})
+		}
+		libraryTools, err := newLibraryReadTools(libRun)
+		if err != nil {
+			return nil, err
+		}
+		imageTools, err := newIllustrationTools(cfg)
+		if err != nil {
+			return nil, err
+		}
+		tools := append([]tool.BaseTool{}, libraryTools...)
+		tools = append(tools, imageTools...)
+		return tools, nil
+	}
+}
+
+// ideToolsFactoryNoBackground 是显式 none 背景模式的 IDE 工具工厂（B2a 修正轮）：
+// 不挂载旧 lore 工具，也不挂载库读取工具；仅保留插图工具。
+func ideToolsFactoryNoBackground(cfg *config.Config) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		if cfg == nil {
+			return nil, nil
+		}
+		return newIllustrationTools(cfg)
+	}
+}
+
 func imageToolsFactory(cfg *config.Config) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
 	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
 		if cfg == nil {
@@ -549,6 +700,66 @@ func interactiveStoryToolsFactory(cfg *config.Config, toolContexts ...Interactiv
 	}
 }
 
+// interactiveStoryToolsFactoryWithLibrary 是 library 背景模式的游戏回合工具工厂
+// （B3a，§8.6 通道 2）：不挂载旧 lore 读写工具，改挂载持有本次绑定 Run 的
+// read_library_item；历史/状态/回合工具保持一致。libRun 为 nil 时退回旧工厂
+// （防御性，正常由 BuildInteractiveStoryWithLibraryBackground 挡住）。
+func interactiveStoryToolsFactoryWithLibrary(cfg *config.Config, libRun *libraryruntime.Run, toolContexts ...InteractiveStoryToolContext) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		if libRun == nil {
+			return interactiveStoryToolsFactory(cfg, toolContexts...)(config.ResolvedAgentToolSettings{})
+		}
+		libraryTools, err := newLibraryReadTools(libRun)
+		if err != nil {
+			return nil, err
+		}
+		tools := append([]tool.BaseTool{}, libraryTools...)
+		if len(toolContexts) > 0 {
+			historyTools, err := newInteractiveHistoryTools(toolContexts[0])
+			if err != nil {
+				return nil, err
+			}
+			tools = append(tools, historyTools...)
+			stateSchemaTools, err := newInteractiveOpeningStateSchemaTools(toolContexts[0])
+			if err != nil {
+				return nil, err
+			}
+			tools = append(tools, stateSchemaTools...)
+			turnTools, err := newInteractiveTurnTools(toolContexts[0])
+			if err != nil {
+				return nil, err
+			}
+			tools = append(tools, turnTools...)
+		}
+		return tools, nil
+	}
+}
+
+// interactiveStoryToolsFactoryNoBackground 是显式 none 背景模式的游戏回合工具工厂
+// （B3a）：不挂载旧 lore 工具，也不挂载库读取工具；仅保留历史/状态/回合工具。
+func interactiveStoryToolsFactoryNoBackground(cfg *config.Config, toolContexts ...InteractiveStoryToolContext) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+	return func(_ config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
+		if len(toolContexts) == 0 {
+			return nil, nil
+		}
+		historyTools, err := newInteractiveHistoryTools(toolContexts[0])
+		if err != nil {
+			return nil, err
+		}
+		tools := append([]tool.BaseTool{}, historyTools...)
+		stateSchemaTools, err := newInteractiveOpeningStateSchemaTools(toolContexts[0])
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, stateSchemaTools...)
+		turnTools, err := newInteractiveTurnTools(toolContexts[0])
+		if err != nil {
+			return nil, err
+		}
+		return append(tools, turnTools...), nil
+	}
+}
+
 func interactiveDirectorToolsFactory(cfg *config.Config, toolContexts ...InteractiveStoryToolContext) func(config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
 	return func(settings config.ResolvedAgentToolSettings) ([]tool.BaseTool, error) {
 		var tools []tool.BaseTool
@@ -556,7 +767,9 @@ func interactiveDirectorToolsFactory(cfg *config.Config, toolContexts ...Interac
 		if len(toolContexts) > 0 {
 			storyToolContext = toolContexts[0]
 		}
-		if cfg != nil && settings.LoreRead {
+		// B3a（§8.6 通道 4）：library / 显式 none 背景模式下，后台导演不挂载旧
+		// lore 工具——旧资料库不参与本故事，规划只依据注入的规划上下文。
+		if cfg != nil && settings.LoreRead && !storyToolContext.NoLegacyLore {
 			var options []loreToolsOptions
 			switch strings.TrimSpace(storyToolContext.MaintenanceTask) {
 			case "director_plan_update", "opening_plan":

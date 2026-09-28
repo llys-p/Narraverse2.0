@@ -12,6 +12,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"denova/internal/book"
+	"denova/internal/libraryruntime"
 	"denova/internal/observability"
 	"denova/internal/prompts"
 	"denova/internal/session"
@@ -417,13 +418,33 @@ func (r *Runtime) Run(
 	}
 	// 临时只读世界背景只前置到“真正送入模型”的消息副本；history 本身不变，
 	// 因此上面的 ledger / context 日志 / display / 持久化都看不到世界正文。
-	modelHistory := ModelInputMessages(history, options.EphemeralWorldContext)
+	// 库背景（B2a）走同一隔离模式：library 与 world 由传输层互斥，此处不做优先级吞并。
+	modelHistory := ModelInputMessagesWithLibrary(history, options.EphemeralWorldContext, options.EphemeralLibraryContext)
 	if options.EphemeralWorldContext.Present() {
 		runLogger.Info("ephemeral_world_context",
 			slog.Int("model_view_bytes", options.EphemeralWorldContext.ModelViewByteLen()),
 			slog.Int("estimated_tokens", options.EphemeralWorldContext.EstimatedTokens()),
 			slog.Int("history_messages", len(history)),
 			slog.Int("model_messages", len(modelHistory)))
+	}
+	if options.EphemeralLibraryContext.Present() {
+		// §8.5：只记字节数/token 数，绝不记录库正文。
+		runLogger.Info("ephemeral_library_context",
+			slog.Int("leading_bytes", options.EphemeralLibraryContext.ModelViewByteLen()),
+			slog.Int("estimated_tokens", options.EphemeralLibraryContext.EstimatedTokens()),
+			slog.Int("history_messages", len(history)),
+			slog.Int("model_messages", len(modelHistory)))
+	}
+	// §8.3：library 模式在模型送入前把“系统提示 + 已组装历史（含新消息）”经
+	// ChargeExternal 计入累计预算；临时库背景已由绑定期 AssembleInitial 计费，此处不重复计。
+	// 失败以显式 budget_exceeded 终止运行，绝不静默降级为无背景。
+	if options.LibraryRuntimeRun != nil {
+		if err := chargeLibraryRuntimeInputCost(options.LibraryRuntimeRun, options.SystemPromptLog.Instruction(), history); err != nil {
+			runLogger.Error("library_runtime_input_cost_rejected", slog.Any("error", err), slog.String("code", string(libraryruntime.CodeOf(err))))
+			finishRun("error", err.Error(), 0)
+			emit(Event{Type: "error", Data: map[string]string{"message": err.Error()}})
+			return
+		}
 	}
 	events := runner.Run(runCtx, modelHistory, runOptions...)
 	var fullContent strings.Builder
@@ -555,6 +576,13 @@ func (r *Runtime) Run(
 				"name":    mv.Message.ToolName,
 				"content": content,
 			})
+			// §8.5：库按需读取工具结果在此唯一脱敏点改为元数据——SSE wire、display
+			// 存档与 run ledger 共用同一事件，模型经 runner 内部工具循环拿到的仍是全文。
+			if isLibraryReadToolName(mv.Message.ToolName) {
+				notice, readMeta := libraryReadToolEventData(content)
+				data["content"] = notice
+				data["library_read"] = readMeta
+			}
 			if itemIDs, deletedIDs := parseWriteLoreItemsToolResult(mv.Message.ToolName, fullToolContent); len(itemIDs) > 0 || len(deletedIDs) > 0 {
 				data["item_ids"] = itemIDs
 				data["deleted_ids"] = deletedIDs

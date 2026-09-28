@@ -14,9 +14,19 @@ import { useWorkLibraryCreation, useWorkLibraryEditor, useWorkLibraryList, useWo
 interface LibraryWorkspacePageProps {
   onClose: () => void
   onDirtyChange?: (dirty: boolean) => void
+  /** 写作侧是否已有打开的书（B2b 带入写作的可用条件）。 */
+  hasWritingBook?: boolean
+  /** 用户显式发起带入写作：写入一次性交接并切回写作模式。 */
+  onLaunchWriting?: () => void
+  /** B3b：用户显式发起带入游戏：选择目标故事/分支成功后写入一次性交接并切到游戏模式。 */
+  onLaunchGame?: () => void
+  /** B4a：用户显式发起带入叙界：写入一次性交接并切到叙界模式（宿主受控 iframe）。 */
+  onLaunchNarraverse?: () => void
+  /** B4b：用户显式发起带入开放沙盒（Module4，沿用既有受控入口）。 */
+  onLaunchModule4?: () => void
 }
 
-export function LibraryWorkspacePage({ onClose, onDirtyChange }: LibraryWorkspacePageProps) {
+export function LibraryWorkspacePage({ onClose, onDirtyChange, hasWritingBook = false, onLaunchWriting, onLaunchGame, onLaunchNarraverse, onLaunchModule4 }: LibraryWorkspacePageProps) {
   const { t } = useTranslation()
   const [openId, setOpenId] = useState<string | null>(null)
   const [listToken, setListToken] = useState(0)
@@ -43,6 +53,11 @@ export function LibraryWorkspacePage({ onClose, onDirtyChange }: LibraryWorkspac
         <LibraryEditorPanel
           editor={editor}
           vocabulary={vocabulary}
+          hasWritingBook={hasWritingBook}
+          onLaunchWriting={onLaunchWriting}
+          onLaunchGame={onLaunchGame}
+          onLaunchNarraverse={onLaunchNarraverse}
+          onLaunchModule4={onLaunchModule4}
           onDirtyChange={(value) => {
             setDirty(value)
             onDirtyChange?.(value)
