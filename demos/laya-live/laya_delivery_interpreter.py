@@ -37,7 +37,11 @@ if __package__ in (None, ""):
 from laya_delivery_core import WORLD  # noqa: E402
 
 INTERPRETER_VERSION = "p2a-fusion-v1"
-PROMPT_VERSION = "p2a-prompt-v1"
+#: P2-B2b-R1 升版：`kind` 闭集新增 `challenge`（非致命推搡/角力），并改写提示词里 `attack`
+#: 的定义与示例。旧提示词把 attack 一律描述成「身体暴力」，导致固定响应
+#: `{"operation":"attack","kind":"challenge"}` 被本地 schema 判 `bad_kind`，真实玩家入口
+#: 无法进入已实现的非致命规则。
+PROMPT_VERSION = "p2a-prompt-v2"
 
 #: 解释结果只有这四种状态；只有 ready 可送入 Prepare。
 STATUSES = ("ready", "needs_clarification", "unsupported", "invalid")
@@ -47,9 +51,11 @@ STATUSES = ("ready", "needs_clarification", "unsupported", "invalid")
 OPERATIONS = ("transfer", "move", "take", "unlock", "inspect", "communicate", "attack")
 
 #: `kind` 只作语义标注，但必须真正传到规则层；这里固定闭集，越界即 invalid。
-KINDS = ("give_item", "claim", "question", "reveal", "threat", "violence", "hostility",
-         "cooperate", "refuse", "apologize", "move", "take", "unlock", "inspect",
-         "acknowledge", "neutral")
+#: `challenge`（非致命推搡/角力）与 `violence`（伤害性暴力）都是 `attack` 的语义标注：
+#: 只有 `challenge` 能进核心的六档公式，`violence` 由核心如实拒绝为 `UNSUPPORTED_OPERATION`。
+KINDS = ("give_item", "claim", "question", "reveal", "threat", "violence", "challenge",
+         "hostility", "cooperate", "refuse", "apologize", "move", "take", "unlock",
+         "inspect", "acknowledge", "neutral")
 
 MODES = ("attempt", "negated", "hypothetical", "quoted")
 WHEN_VALUES = ("always", "if_achieved", "if_not_achieved")
@@ -252,7 +258,8 @@ def build_interpret_prompt(message, directory, actor_id="player", history=()):
         "可用动作 operation（只允许这些值，其它动词用 other）：\n"
         "  transfer=把物品交/递给某人；move=自己前往某地点；take=拾取无人持有的物品；\n"
         "  unlock=用钥匙开锁着的门；inspect=查看某物或某人；communicate=说话/询问/声明/威胁/表态；\n"
-        "  attack=对身体施加暴力；other=以上都不是（必须另给 other_operation 写玩家原动词）。\n"
+        "  attack=对身体动手，必须同时给 kind：推搡/扭打这类**非致命**对抗用 kind=challenge，\n"
+        "         真的伤害性暴力用 kind=violence；other=以上都不是（必须另给 other_operation 写玩家原动词）。\n"
         "kind（语义标注，必须与动作一致）：" + "、".join(KINDS) + "。\n"
         "mode（默认 attempt）：attempt=真的尝试；negated=否定（我不给/我没拿）；"
         "hypothetical=假设（如果我有钥匙就开门）；quoted=引用别人说的话。\n"
@@ -263,8 +270,10 @@ def build_interpret_prompt(message, directory, actor_id="player", history=()):
         "2. 「拿到钥匙就开门」= 两条动作：先 take 钥匙，后 unlock 门，后者 depends_on 指向前者的下标（0 起），when=if_achieved。\n"
         "3. 代词照抄：玩家说「它/她/他/这东西」就原样写进 targets/object，不要自己换成名字。\n"
         "4. 否定/假设/引用不是真实尝试：分别用 negated / hypothetical / quoted，仍然如实记录动作与目标。\n"
-        "5. 隐喻威胁（「你最好祈祷太阳还升得起来」）是交流，operation=communicate、kind=threat；"
-        "只有真的描述身体暴力才用 attack。\n"
+        "5. 隐喻威胁（「你最好祈祷太阳还升得起来」）是交流，operation=communicate、kind=threat，"
+        "不得写成 attack。真的对身边人出力的动作才用 attack：推搡/角力（「我推搡莉亚」）用"
+        "operation=attack、kind=challenge；伤害性暴力用 operation=attack、kind=violence。"
+        "两种都要按玩家原意如实标注，**不要把 violence 改写成 challenge**。attack 一律不给 object。\n"
         "6. 「我已经把钥匙给你了」只是**声明**：operation=communicate、kind=claim，不是 transfer，不产生归属变化。\n"
         "7. 只给玩家原话里**逐字出现**的片段作 evidence，不要改写、不要翻译、不要编造。\n"
         "8. 只能使用下面目录里出现的人物/物品/地点；不要创造名字，也不要输出任何 ID。\n"

@@ -9,7 +9,7 @@ Outcome、原子发布、幂等、回退、旧写入口使候选失效。
   · 自由语言 Interpreter（P2-A 在独立模块产出 ActionIntent，本模块只消费结构化意图）；
   · 真实 Laya 推理（本轮动作用服务端规则可独立裁决，显式 `rules_only`，
     回执中 `laya_evidence=[]`，从不声称有 Laya 证据）；
-  · 云端叙事、页面、六档对抗（`attack` 仍硬短路 `UNSUPPORTED_OPERATION`，留待 P2-B2b）。
+  · 云端叙事、页面（`communicate`/`inspect` 见 P2-B2a，非致命对抗见 P2-B2b）。
 
 P2-B2a 追加（`communicate` / `inspect` 的服务端事实链，仍然无模型）：
   · **发言不等于事实**：`claim` 与一般声明/表态只落「带说话者、听者与 `asserted_by`
@@ -31,6 +31,19 @@ P2-B2a-R1 定向修复（A 关口审查后，仍无模型）：
   · **披露主题与时效**：询问只按结构化 `object_id` 匹配线索（不做原话关键词匹配），无明确对象
     只披露 `disclosure=general_public` 的线索；披露前再按服务端**当前**归属/地点核对线索，
     钥匙离开旧井后不再作为**当前**线索披露，复制到提问者的条目带 `as_of_turn` 与 `objective=False`。
+
+P2-B2b 追加（单一非致命对抗，`attack` / `kind=challenge`，仍无模型）：
+  · 只在**一个**服务端定义的动作上做六档：推搡/角力。伤害性攻击（`kind=violence` 等）
+    明确 `UNSUPPORTED_OPERATION`，**不悄悄转成角力**；本轮不写生命/伤害系统。
+  · `attack` **不接受** `object_id`：带物品会改变动作语义（持械 vs 徒手），同样显式
+    `UNSUPPORTED_OPERATION`，不静默按徒手结算。
+  · 硬前提全用服务端状态：目标为不同且已初始化的 actor、同位置、均可行动，行动者
+    `energy >= 2`。不满足即 `blocked`、`degree=null` 且**不扣资源**；目标未知/不唯一走
+    `NEEDS_CLARIFICATION`（输入消歧，零扣费），已知但不在场才 `blocked`。
+  · `margin = attack.strength - (target.defense + 固定阻力 3)` → 六档；贡献 trace 列明各项与
+    规则版本，**不读**客户端/模型自报数值。所有已尝试档位扣 2 energy；目标
+    `interaction.balance_pressure`（0–4）按档位递增（截顶，仅表示非致命失衡），
+    critical failure 反噬行动者 +1 作为 complication。Opportunity 只建议下一轮，不自动执行。
 
 权威链（P0 契约 §2 的最小裁剪）：
     结构化 ActionIntent（内部注入）
@@ -81,11 +94,33 @@ MAX_ACTIONS = 8
 MAX_INTENT_CHARS = 2000
 
 #: 本轮实现（可独立裁决、无需模型）的动作：
-#: P1 `transfer` + P2-B1 `move/take/unlock` + P2-B2a `communicate/inspect`。
-IMPLEMENTED_OPERATIONS = ("transfer", "move", "take", "unlock", "communicate", "inspect")
-#: 已声明但**本轮仍不实现**的动作 —— 六档对抗属 P2-B2b。
-#: 命中即硬短路为 `UNSUPPORTED_OPERATION`，不做「用有限难度惩罚代替拒绝」。
-P2_OPERATIONS = ("attack",)
+#: P1 `transfer` + P2-B1 `move/take/unlock` + P2-B2a `communicate/inspect`
+#: + P2-B2b `attack`（仅 kind=challenge 的非致命角力）。
+IMPLEMENTED_OPERATIONS = ("transfer", "move", "take", "unlock", "communicate",
+                          "inspect", "attack")
+#: 已声明但**本轮仍不实现**的动作。命中即硬短路为 `UNSUPPORTED_OPERATION`，
+#: 不做「用有限难度惩罚代替拒绝」。（P2-B2b 后暂无剩余扩展点。）
+P2_OPERATIONS = ()
+
+# --------------------------------------------------------------------------
+# P2-B2b 单一非致命对抗（`attack` / `kind=challenge`）的固定规则与数值口径
+# --------------------------------------------------------------------------
+#: 只有「角力/推搡」这种非致命对抗可进公式；`violence` 等其它攻击语义明确不支持。
+ATTACK_KINDS = ("challenge",)
+#: 固定场景阻力（服务端作者化，非客户端可注入）。
+ATTACK_BASE_RESISTANCE = 3
+#: 每次**已尝试**的对抗消耗行动者 2 点 energy（硬前提要求 ≥ 该值）。
+ATTACK_ENERGY_COST = 2
+#: 目标失衡上限；档位增量截顶，达到上限仍有真实消耗与回合事件。
+BALANCE_PRESSURE_LIMIT = 4
+#: 六档（由低到高）。只有 `attack` 会产生 `success` 以外的档位。
+DEGREE_ORDER = ("critical_failure", "failure", "partial_success",
+                "success", "strong_success", "exceptional_success")
+#: 视为「成功达成」的档位（供条件动作 `if_achieved` 与聚合使用）。
+DEGREE_SUCCESSFUL = ("success", "strong_success", "exceptional_success")
+#: 目标 `balance_pressure` 增量（截顶到 `BALANCE_PRESSURE_LIMIT`）。
+BALANCE_GAIN = {"partial_success": 1, "success": 2, "strong_success": 3,
+                "exceptional_success": 4}
 
 #: `communicate` 的语义子类（`kind` 白名单，闭集；`operation=communicate` 之外的 kind → 422）：
 #:   · `question` 走「询问 → 服务端作者化公开线索」；
@@ -284,6 +319,41 @@ def _public_entity_state(state):
     return row
 
 
+def _degree_for_margin(margin):
+    """整数 margin → 六档（P2-B2b 固定边界）。"""
+    if margin <= -5:
+        return "critical_failure"
+    if margin <= -2:
+        return "failure"
+    if margin <= 0:
+        return "partial_success"
+    if margin <= 3:
+        return "success"
+    if margin <= 5:
+        return "strong_success"
+    return "exceptional_success"
+
+
+def _aggregate_attempted(attempted):
+    """把一轮里**已尝试**动作的档位聚合成 (result, degree)。
+
+    取**最低**档位：从最高档起步逐个下调，等价于对已尝试集合取 min。非对抗动作恒为
+    `success`（最低档位也仍是 `success`），因此对 transfer/move/take/unlock/
+    communicate/inspect 无行为改变；只有 `attack` 才会让一轮整体落到
+    `partial_success` / `failed`，或让单动作轮保留 `strong_success` / `exceptional_success`。
+    """
+    worst = DEGREE_ORDER[-1]
+    for r in attempted:
+        deg = r.get("degree") or "success"
+        if deg in DEGREE_ORDER and DEGREE_ORDER.index(deg) < DEGREE_ORDER.index(worst):
+            worst = deg
+    if worst in DEGREE_SUCCESSFUL:
+        return "achieved", worst
+    if worst == "partial_success":
+        return "partial_success", "partial_success"
+    return "failed", worst
+
+
 # ==========================================================================
 # 服务端场景模板（服务端作者化，绝不从玩家声明推断）
 # ==========================================================================
@@ -298,6 +368,9 @@ def scene_templates(B):
             "stats": {"strength": skill, "perception": skill, "persuasion": skill,
                       "defense": 2, "resolve": 2},
             "energy": 10, "incapacitated": False, "restrained": False,
+            # P2-B2b：非致命失衡计数（初始 0，上限 BALANCE_PRESSURE_LIMIT）。
+            # 只表示被推搡后的重心不稳，**不代表**击倒、受伤或 NPC 自主行动。
+            "balance_pressure": 0,
             "relationship_to": relationship_to,
             # 私有知识：只有 Commit 能写，按 (session_id, actor_id) 落在权威 Actor State
             # 桶里；不进客观 world.facts，也不进世界回合记录的私有原话字段。
@@ -511,6 +584,27 @@ class DeliveryCore:
                     raise _ProtoError(422, "INVALID_REQUEST",
                                       "%s.kind=%s 与 operation=communicate 不匹配（闭集）：%s"
                                       % (where, k, "、".join(COMMUNICATE_KINDS)))
+            if op == "attack":
+                # P2-B2b：只支持非致命角力 `kind=challenge`。其它攻击语义（violence 等）
+                # **明确不支持**，硬短路而不是悄悄转成角力。
+                k = (it.get("kind") or "").strip()
+                if k not in ATTACK_KINDS:
+                    raise _ProtoError(
+                        409, "UNSUPPORTED_OPERATION",
+                        "%s operation=attack 只支持非致命角力 kind=%s；kind=%s 明确不支持"
+                        "（伤害性攻击属未实现范围，不悄悄转成角力）"
+                        % (where, "/".join(ATTACK_KINDS), k or "(空)"),
+                        {"supported_kinds": list(ATTACK_KINDS)})
+                # P2-B2b-R1：`attack` 不接受任何 `object_id`。武器/伤害系统不在首版范围，而
+                # 「带物品」会改变动作语义（持械 vs 徒手），因此**显式拒绝**，不静默结算成
+                # 徒手角力。这与 kind 闭集同一处收口：其它已实现动作里无意义的 `object_id`
+                # 仍按既有约定忽略，唯独这里不能忽略，因为忽略等于替玩家改写意图。
+                if obj is not None:
+                    raise _ProtoError(
+                        409, "UNSUPPORTED_OPERATION",
+                        "%s operation=attack 不接受 object_id=%s：武器/持械语义本轮未实现，"
+                        "不把带物品的动作静默结算成徒手角力" % (where, obj),
+                        {"unsupported_field": "object_id"})
             out.append({
                 "id": aid_, "operation": op, "target_ids": [str(t) for t in targets],
                 "object_id": obj, "mode": mode,
@@ -767,7 +861,71 @@ class DeliveryCore:
                 "subject": subject, "planned": planned}
 
     # ------------------------------------------------------------------
-    # 逐动作结算（在副本上顺序模拟；不做 margin，不产生被阻止的物理效果）
+    # P2-B2b：单一非致命对抗的硬前提与贡献拆解（只读服务端事实）
+    # ------------------------------------------------------------------
+    def _check_attack(self, intent, actor_id, states, ctx):
+        """`attack` / `kind=challenge`（推搡/角力）的硬前提与贡献拆解。
+
+        硬前提全部来自服务端状态：行动者与目标是**不同且已初始化**的 actor、同位置、
+        均可行动（未 incapacitated/restrained）；行动者 `energy >= 2`。任一不满足即
+        `blocked`，`degree=null` 且**不扣资源**。通过后按固定规则算 contribution：
+
+            potency    = actor.interaction.stats.strength
+            difficulty = target.interaction.stats.defense + 固定场景阻力(3)
+            margin     = potency - difficulty            → 六档
+
+        难度、margin 与档位**只**由服务端属性与版本化常量产生，绝不读客户端/模型自报数值。
+        """
+        src = states[actor_id]["interaction"]
+        targets = intent.get("target_ids") or []
+        reasons, evidence = [], []
+        target, contribution = None, None
+        if len(targets) != 1:
+            reasons.append("target_unresolved")
+        else:
+            tid = targets[0]
+            if tid == actor_id:
+                reasons.append("target_is_self")
+            elif tid not in states or tid == WORLD:
+                reasons.append("target_unresolved")
+            else:
+                target = tid
+                tgt = states[tid]["interaction"]
+                if tgt.get("location") != src.get("location"):
+                    reasons.append("target_out_of_reach")
+                if tgt.get("incapacitated"):
+                    reasons.append("target_incapacitated")
+                if tgt.get("restrained"):
+                    reasons.append("target_restrained")
+        if src.get("incapacitated"):
+            reasons.append("actor_incapacitated")
+        if src.get("restrained"):
+            reasons.append("actor_restrained")
+        energy = int(src.get("energy") or 0)
+        if energy < ATTACK_ENERGY_COST:
+            reasons.append("insufficient_energy")
+        if not reasons:
+            strength = int((src.get("stats") or {}).get("strength") or 0)
+            defense = int((states[target]["interaction"].get("stats") or {}).get("defense") or 0)
+            difficulty = defense + ATTACK_BASE_RESISTANCE
+            margin = strength - difficulty
+            contribution = {
+                "formula": "margin = strength - (defense + base_resistance)",
+                "potency_strength": strength,
+                "target_defense": defense,
+                "base_resistance": ATTACK_BASE_RESISTANCE,
+                "difficulty": difficulty,
+                "margin": margin,
+                "degree": _degree_for_margin(margin),
+                "energy_cost": ATTACK_ENERGY_COST,
+                "rule_version": RULESET_ID,
+            }
+            evidence.append("contest:%s>%s margin=%d" % (actor_id, target, margin))
+        return {"allowed": not reasons, "reasons": reasons, "evidence": evidence,
+                "target": target, "contribution": contribution}
+
+    # ------------------------------------------------------------------
+    # 逐动作结算（在副本上顺序模拟；只有 P2-B2b 的 attack 产生 margin/六档）
     # ------------------------------------------------------------------
     def _resolve_one(self, intent, actor_id, states, ctx):
         op = intent["operation"]
@@ -785,7 +943,8 @@ class DeliveryCore:
         check = {"transfer": self._check_transfer, "move": self._check_move,
                  "take": self._check_take, "unlock": self._check_unlock,
                  "communicate": self._check_communicate,
-                 "inspect": self._check_inspect}[op](intent, actor_id, states, ctx)
+                 "inspect": self._check_inspect,
+                 "attack": self._check_attack}[op](intent, actor_id, states, ctx)
         if not check["allowed"]:
             return {
                 "action_id": intent["id"], "operation": op, "target_id": target_id,
@@ -799,6 +958,8 @@ class DeliveryCore:
             }
         changes, facts = [], []
         gained, record = [], None
+        degree = "success"
+        costs, complications, opportunities = [], [], []
         world = states[WORLD]["interaction"]
         if op == "transfer":
             before = world["objects"][intent["object_id"]]["owner"]
@@ -841,6 +1002,53 @@ class DeliveryCore:
                         if check["sub_kind"] == "question"
                         else "%s 对 %s 作出声明（只记声明事件，不改客观事实与归属）"
                              % (actor_id, listener))
+        elif op == "attack":
+            tid = check["target"]
+            c = check["contribution"]
+            degree = c["degree"]
+            atk, tgt = states[actor_id]["interaction"], states[tid]["interaction"]
+            # ① 真实资源消耗：所有**已尝试**档位都扣 2 energy（含失败与严重失败）
+            e_before = int(atk.get("energy") or 0)
+            changes.append({"entity_id": actor_id, "path": "interaction.energy",
+                            "before": e_before, "after": e_before - ATTACK_ENERGY_COST,
+                            "source": "rule:" + intent["id"]})
+            costs.append({"kind": "energy", "actor": actor_id,
+                          "amount": ATTACK_ENERGY_COST})
+            # ② 目标失衡（截顶到上限）：partial/success/strong/exceptional 递增，failure 不动
+            tgt_before = int(tgt.get("balance_pressure") or 0)
+            tgt_after = min(BALANCE_PRESSURE_LIMIT,
+                            tgt_before + BALANCE_GAIN.get(degree, 0))
+            if tgt_after != tgt_before:
+                changes.append({"entity_id": tid, "path": "interaction.balance_pressure",
+                                "before": tgt_before, "after": tgt_after,
+                                "source": "rule:" + intent["id"]})
+            # ③ critical failure 作为实际 complication：行动者自身失衡 +1
+            if degree == "critical_failure":
+                own_before = int(atk.get("balance_pressure") or 0)
+                own_after = min(BALANCE_PRESSURE_LIMIT, own_before + 1)
+                if own_after != own_before:
+                    changes.append({"entity_id": actor_id,
+                                    "path": "interaction.balance_pressure",
+                                    "before": own_before, "after": own_after,
+                                    "source": "rule:" + intent["id"]})
+                complications.append({"kind": "self_off_balance", "actor": actor_id,
+                                      "amount": own_after - own_before})
+            facts.append({"kind": "contest", "actor": actor_id, "target": tid,
+                          "margin": c["margin"], "degree": degree,
+                          "target_balance_pressure": tgt_after,
+                          "energy_spent": ATTACK_ENERGY_COST})
+            # Opportunity 只是「下一轮可尝试的方向」，不自动执行。
+            if degree in DEGREE_SUCCESSFUL or degree == "partial_success":
+                opportunities.append({"kind": "follow_up",
+                                      "suggested": "attack:challenge",
+                                      "note": "目标失衡，下一轮可继续施压"})
+            record = {"type": "attack", "kind": "challenge", "actor": actor_id,
+                      "target": tid, "degree": degree, "visibility": "participants"}
+            achieved = ("%s 对 %s 角力：margin=%d（strength %d −(defense %d + 阻力 %d)），"
+                        "档位 %s；目标失衡 %d，energy −%d"
+                        % (actor_id, tid, c["margin"], c["potency_strength"],
+                           c["target_defense"], c["base_resistance"], degree,
+                           tgt_after, ATTACK_ENERGY_COST))
         else:  # unlock
             obj_id = intent["object_id"]
             door = world["objects"][obj_id]
@@ -853,10 +1061,10 @@ class DeliveryCore:
             achieved = "%s 解锁并打开了 %s" % (actor_id, obj_id)
         return {
             "action_id": intent["id"], "operation": op, "target_id": target_id,
-            "execution_status": "attempted", "degree": "success", "achieved": achieved,
-            "check": check, "changes": changes, "facts": facts, "costs": [],
-            "complications": [],
-            "opportunities": [],
+            "execution_status": "attempted", "degree": degree, "achieved": achieved,
+            "check": check, "changes": changes, "facts": facts, "costs": costs,
+            "complications": complications,
+            "opportunities": opportunities,
             "evidence": intent["evidence"],
             "record": record, "knowledge_gained": gained,
         }
@@ -900,8 +1108,7 @@ class DeliveryCore:
             when = intent.get("when", "always")
             prior_achieved = bool(prior
                                   and prior["execution_status"] == "attempted"
-                                  and prior.get("degree") in
-                                  ("success", "strong_success", "exceptional_success"))
+                                  and prior.get("degree") in DEGREE_SUCCESSFUL)
             should_run = (not dep or (when == "always")
                           or (when == "if_achieved" and prior_achieved)
                           or (when == "if_not_achieved" and not prior_achieved))
@@ -947,7 +1154,8 @@ class DeliveryCore:
         if not attempted:
             result, degree = ("blocked", None) if blocked else ("no_attempt", None)
         elif not blocked and len(attempted) == len(resolutions):
-            result, degree = "achieved", "success"
+            # 全部已尝试：档位取其最低者（旧口径下恒为 achieved/success，只有 attack 会变）。
+            result, degree = _aggregate_attempted(attempted)
         else:
             result, degree = "partial_success", "partial_success"
         outcome = {
