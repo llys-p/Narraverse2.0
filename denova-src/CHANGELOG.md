@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Local integration closeout / 本机集成收口
+- 新增可复用的一键启动入口与阶段总结；18095 的 L3/Kate 集成包改用独立的本机数据目录，避免日常运行依赖临时验收工作树。迁移仅调整新副本中的活动路径，原验收目录保留回退；这不是正式版本标签或四模式同版终验。
+- Add a reusable one-click launcher and stage summary. The local L3/Kate integration on port 18095 now uses a standalone data directory instead of an acceptance worktree. Only active paths in the new copy were adjusted, while the source was retained for rollback; this is not a tagged release or a fresh four-mode acceptance.
+
 ### Library work in progress / 作品设定库建设中
 - 总资料库译文批量应用现在将保护标记不匹配与真实版本冲突分开显示；用户可先审阅原文和译文，再显式确认风险译文，版本冲突仍不可由该确认绕过。
 - Master Library translation batches now distinguish protected-marker mismatches from revision conflicts. Users can compare source and translation before explicitly accepting a risky translation; this does not bypass revision checks.
