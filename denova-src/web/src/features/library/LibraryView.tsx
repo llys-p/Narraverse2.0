@@ -1310,6 +1310,7 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
   const deletable = selectedRows.filter((row) => row.proposal || row.task_id)
   const anyDirty = rows.some((row) => isDirty(row))
   const markerFailedRows = rows.filter((row) => markerFailedKeys.includes(row.key) && canApply(row) && !isDirty(row))
+  const markerReviewRows = [...new Map([...selectedRows.filter((row) => canApply(row) && !isDirty(row)), ...markerFailedRows].map((row) => [row.key, row])).values()]
 
   const progressMessage = (done: number, total: number, succeeded: number, failed: number) => t('library.review.progress', { done, total, succeeded, failed })
 
@@ -1561,7 +1562,7 @@ function ReviewWorkbench({ masterItemID, item, runtime, proposals, t, onChanged,
         </div>
       </div>
     )}
-    {markerFailedRows.length > 0 && <Button type="button" size="xs" variant="outline" disabled={Boolean(batchBusy) || Boolean(busyKey)} onClick={() => setMarkerConfirm(markerFailedRows)}>{t('library.review.markerReview', { count: markerFailedRows.length })}</Button>}
+    {markerReviewRows.length > 0 && <Button type="button" size="xs" variant="outline" disabled={Boolean(batchBusy) || Boolean(busyKey)} onClick={() => { setOpenRows((current) => [...new Set([...current, ...markerReviewRows.map((row) => row.key)])]); setMarkerConfirm(markerReviewRows) }}>{t('library.review.markerReview', { count: markerReviewRows.length })}</Button>}
     {markerConfirm && <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs" role="alertdialog" aria-label={t('library.review.markerTitle')}>
       <div className="font-medium">{t('library.review.markerTitle')}</div>
       <p className="mt-1 text-muted-foreground">{t('library.review.markerWarning')}</p>

@@ -859,6 +859,28 @@ describe('LibraryView', () => {
     await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledWith('master-aiko', ['prop-markers'], false, false, true))
   })
 
+  it('offers an up-front opt-in for selected risky translations without forcing a revision conflict', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchMasterAssetProposals).mockResolvedValue({ proposals: [{
+      proposal_id: 'prop-opt-in', operation_id: 'op-opt-in', kind: 'recovery', stage: '', apply_mode: 'confirm', status: 'proposed',
+      master_item_id: 'master-aiko', field_path: 'character.description', import_id: 'import-1', original: 'Use {{user}} on day 7.',
+      patch: { field_path: 'character.description', translation: '第七天见 {{user}}。' },
+      input_revision: 'rev-1', source_sha256: 'sha', risk: 'safe', created_at: '2026-09-04T00:00:00Z', updated_at: '2026-09-04T00:00:00Z',
+    }] } as never)
+    render(<LibraryView />)
+    await user.click(await screen.findByRole('button', { name: /Aiko/ }))
+    await user.click(screen.getByRole('tab', { name: '处理进度' }))
+    await user.click(await screen.findByRole('button', { name: '全选' }))
+    await user.click(screen.getByRole('button', { name: /审核并应用风险译文/ }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('资料版本冲突仍会拦截')
+    expect(applyMasterProposals).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '取消' }))
+    expect(applyMasterProposals).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /审核并应用风险译文/ }))
+    await user.click(screen.getByRole('button', { name: '确认应用风险译文' }))
+    await waitFor(() => expect(applyMasterProposals).toHaveBeenCalledWith('master-aiko', ['prop-opt-in'], false, false, true))
+  })
+
   it('offers the same explicit marker review after a single strict validation failure', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchMasterAssetProposals).mockResolvedValue({ proposals: [{
