@@ -296,7 +296,7 @@ func contextPreviewViewFromDomain(view *worldcontext.UIView) contextPreviewView 
 // contextPreviewErrorStatus 把稳定领域错误码映射为 HTTP 状态。
 func contextPreviewErrorStatus(code worldcontext.ErrorCode) int {
 	switch code {
-	case worldcontext.ErrInvalidRequest, worldcontext.ErrSelectionInvalid:
+	case worldcontext.ErrInvalidRequest, worldcontext.ErrSelectionInvalid, BackgroundSourceConflictCode:
 		return consts.StatusBadRequest
 	case worldcontext.ErrConsumerNotTrusted:
 		return consts.StatusForbidden

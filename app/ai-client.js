@@ -55,24 +55,12 @@
     var normalizedMessages = Array.isArray(messages) ? messages.map(function (message) {
       return { role: message.role, content: message.content };
     }) : [];
-    var directBare = function () { return jsonRequest('/api/model/chat', {
-      method: 'POST',
-      body: JSON.stringify({
-        module: opts.module || 'narraverse',
-        messages: normalizedMessages,
-        max_tokens: opts.maxTokens,
-        temperature: typeof opts.temperature === 'number' ? opts.temperature : undefined
-      })
-    }).then(function (data) {
-      return String(data && data.content || '');
-    }); };
-    if (typeof root.requestDenovaModel !== 'function') return directBare();
+    if (typeof root.requestDenovaModel !== 'function') {
+      return Promise.reject(new Error('Denova 宿主模型代理不可用'));
+    }
     return root.requestDenovaModel(normalizedMessages, {
       maxTokens: opts.maxTokens,
       temperature: typeof opts.temperature === 'number' ? opts.temperature : undefined
-    }).catch(function (error) {
-      if (error && (error.code === 'host_unavailable' || error.code === 'consumer_not_trusted')) return directBare();
-      throw error;
     });
   };
 }(window));

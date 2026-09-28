@@ -16,6 +16,12 @@ type InteractiveStorySystemInstructionInput struct {
 	StoryTellerSystemPrompt string
 	// StyleRules 是当前叙事风格的文风参考；调用方需先按本轮 # 选择和大小上限过滤分场景规则。
 	StyleRules []StyleRule
+	// BackgroundMode 是游戏回合的背景来源模式（B3a，§8.6 通道 3）：
+	//   - BackgroundModeDefault（缺省/legacy）：保留旧 lore 工具指引与角色落地规则，
+	//     与基线逐字节一致（旧请求兼容）；
+	//   - BackgroundModeLibrary：旧 lore 指引替换为 read_library_item 指引；
+	//   - BackgroundModeNone：显式无作品背景，不提供任何设定资料读取指引。
+	BackgroundMode string
 }
 
 type InteractiveStoryPromptInput struct {
@@ -33,6 +39,9 @@ type InteractiveStoryPromptInput struct {
 	StoryDirectorStrategyPrompt string
 	PreviousTurnsSummary        string
 	LoreContext                 string
+	// BackgroundMode 与 InteractiveStorySystemInstructionInput.BackgroundMode 同义，
+	// 控制运行时上下文“召回说明”的三列替换（B3a）。
+	BackgroundMode string
 }
 
 type InteractiveDirectorPromptInput struct {
@@ -57,11 +66,81 @@ type InteractiveDirectorPromptInput struct {
 	DirectorEventCatalog        string
 	EventOpportunity            string
 	EventRuntime                string
+	// BackgroundMode 按模式门控资料工作集段与 lore-context.md 维护指引（B3a）；
+	// legacy 与基线逐字节一致。
+	BackgroundMode string
 }
 
 const interactiveTrackableActorInstruction = "当一个具名角色或敌对对象首次在正文中实际登场，并且它被资料库标记为主要或重要角色、成为当前关键关系对象或目标、预计反复登场，或拥有需要持续追踪的独立可变状态时，必须在同一次 state_changes 中使用 create 创建独立 Actor；只写入 protagonist/关系或 story/在场角色不能代替 create。若符合条件的角色此前已经登场但仍没有 Actor，本轮继续涉及时必须补建；已有 Actor 只更新，不重复创建。仅被提及、背景人群、或一次性且没有后续承接价值的临时角色不要创建 Actor。"
 
 const interactiveLoreCharacterGroundingInstruction = "当本轮准备让资料库中的具名角色首次在正文中实际登场，或首次确定其身份、外貌、能力、性格或关系事实时，如果该角色的完整资料正文尚未通过 ResidentLore 或当前 LoreContext 注入，必须在写正文前读取完整资料正文；目录名称、标签、摘要、Actor State 或导演简报都不算完整资料正文。已知唯一名称直接调用 read_lore_items；需要查找或消歧时调用 list_lore_items，并用 detail=full 在同次返回正文。资料库没有匹配条目时，才可依据用户输入与已确认上下文创建新角色；不得凭摘要补全设定。读取失败时保守使用已确认事实继续，不要臆造未读取内容。"
+
+// interactiveLibraryCharacterGroundingInstruction 是 library 背景模式（B3a，§8.6 通道 3）
+// 的角色落地规则：替换旧 lore 落地规则，改为按需读取本次绑定的作品设定库。
+const interactiveLibraryCharacterGroundingInstruction = "当本轮准备让设定库中的具名角色首次在正文中实际登场，或首次确定其身份、外貌、能力、性格或关系事实时，如果该角色的完整资料正文尚未通过本次装载的库背景注入，必须在写正文前用 read_library_item 读取完整资料正文；目录名称、标签、摘要、Actor State 或导演简报都不算完整资料正文。设定库没有匹配条目时，才可依据用户输入与已确认上下文创建新角色；不得凭摘要补全设定。读取失败时保守使用已确认事实继续，不要臆造未读取内容。"
+
+// interactiveStoryBackgroundRecallBullets 按背景模式返回"工具化召回流程"段中与
+// 设定资料读取相关的条目（B3a 三列替换表；legacy 与基线逐字节一致）。
+// 第 4 条（历史召回，search_story_history）与后续检定条目不属于替换范围。
+func interactiveStoryBackgroundRecallBullets(backgroundMode string) []string {
+	switch backgroundMode {
+	case BackgroundModeLibrary:
+		return []string{
+			"- 本回合已由系统装载作品设定库背景（库概览、常驻正文与已授权条目的临时上下文）；需要长期设定或角色资料时优先使用已注入的库背景内容。\n",
+			"- 库背景 catalog 之外的条目或需要更多细节时，调用 read_library_item 按条目 ID 逐条读取；不要臆造未读取的库内容，也不要请求任何旧资料库工具。\n",
+			"- " + interactiveLibraryCharacterGroundingInstruction + "\n",
+		}
+	case BackgroundModeNone:
+		return []string{
+			"- 本次运行显式声明无作品背景：没有注入任何作品设定资料，也没有设定资料读取工具；不得读取、检索或引用设定资料，也不要臆造设定库中的内容。\n",
+		}
+	default:
+		return []string{
+			"- 资料库正文和较早历史不会默认整段注入；需要长期设定或角色资料时读取资料库，需要既往线索或已发生事实时检索当前分支 Turn 历史。\n",
+			"- 上下文已提供有界资料名称目录；已知唯一名称时可直接用 read_lore_items 读取正文，无需先 list。需要按语义筛选时可用 list_lore_items，detail=full 能在同一次调用返回筛选结果正文；不要臆造未读取的资料库内容。\n",
+			"- " + interactiveLoreCharacterGroundingInstruction + "\n",
+		}
+	}
+}
+
+// interactiveStoryHistoryRecallBullet 是历史召回条目；其中"资料库是稳定设定"子句
+// 在 library 模式下指作品设定库，在 none 模式下移除（B3a）。
+func interactiveStoryHistoryRecallBullet(backgroundMode string) string {
+	switch backgroundMode {
+	case BackgroundModeLibrary:
+		return "- 历史事实召回使用 search_story_history 检索当前分支已提交 Turn；每条结果都带 turn_id 来源。Turn 是历史事实真源，Actor State 是当前投影，director.md 是未来计划，作品设定库是稳定设定，不得混用。\n"
+	case BackgroundModeNone:
+		return "- 历史事实召回使用 search_story_history 检索当前分支已提交 Turn；每条结果都带 turn_id 来源。Turn 是历史事实真源，Actor State 是当前投影，director.md 是未来计划，不得混用。\n"
+	default:
+		return "- 历史事实召回使用 search_story_history 检索当前分支已提交 Turn；每条结果都带 turn_id 来源。Turn 是历史事实真源，Actor State 是当前投影，director.md 是未来计划，资料库是稳定设定，不得混用。\n"
+	}
+}
+
+// interactiveStoryGroundingInstruction 按背景模式返回回合指令（用户消息）内嵌的
+// 角色落地规则（B3a）：library 用库落地规则，none 无落地规则，legacy 与基线一致。
+func interactiveStoryGroundingInstruction(backgroundMode string) string {
+	switch backgroundMode {
+	case BackgroundModeLibrary:
+		return interactiveLibraryCharacterGroundingInstruction
+	case BackgroundModeNone:
+		return ""
+	default:
+		return interactiveLoreCharacterGroundingInstruction
+	}
+}
+
+// interactiveStoryRoundFlowRecallBullet 是"每轮必须遵循这个流程"条目中的召回子句
+// （B3a）：library 指作品设定库，none 仅保留历史检索，legacy 与基线一致。
+func interactiveStoryRoundFlowRecallClause(backgroundMode string) string {
+	switch backgroundMode {
+	case BackgroundModeLibrary:
+		return "必要时读取作品设定库或检索历史 Turn"
+	case BackgroundModeNone:
+		return "必要时检索历史 Turn"
+	default:
+		return "必要时读取资料库或检索历史 Turn"
+	}
+}
 
 func BuildInteractiveStorySystemInstruction(in InteractiveStorySystemInstructionInput) string {
 	var sb strings.Builder
@@ -108,12 +187,12 @@ func BuildInteractiveStoryFlowInstruction(in InteractiveStorySystemInstructionIn
 	sb.WriteString("- 不要创建或修改 chapters、outline、progress、characters 等文件；你通过 submit_interactive_turn 声明本轮状态变化与行动建议，后端在正文落盘时校验并原子写入。\n")
 	sb.WriteString("- 可以基于已注入的故事上下文、共享设定、当前快照和 system prompt 中的文风参考索引继续剧情；# 只用于选择当前叙事风格中的分场景参考，不再代表文件引用。\n\n")
 	sb.WriteString("## 工具化召回流程\n")
-	sb.WriteString("- 资料库正文和较早历史不会默认整段注入；需要长期设定或角色资料时读取资料库，需要既往线索或已发生事实时检索当前分支 Turn 历史。\n")
-	sb.WriteString("- 上下文已提供有界资料名称目录；已知唯一名称时可直接用 read_lore_items 读取正文，无需先 list。需要按语义筛选时可用 list_lore_items，detail=full 能在同一次调用返回筛选结果正文；不要臆造未读取的资料库内容。\n")
-	sb.WriteString("- " + interactiveLoreCharacterGroundingInstruction + "\n")
-	sb.WriteString("- 历史事实召回使用 search_story_history 检索当前分支已提交 Turn；每条结果都带 turn_id 来源。Turn 是历史事实真源，Actor State 是当前投影，director.md 是未来计划，资料库是稳定设定，不得混用。\n")
+	for _, bullet := range interactiveStoryBackgroundRecallBullets(in.BackgroundMode) {
+		sb.WriteString(bullet)
+	}
+	sb.WriteString(interactiveStoryHistoryRecallBullet(in.BackgroundMode))
 	sb.WriteString("- 正文前的 thinking 只做简短的规划与意图分析：确认本轮目标、约束、必要工具、关键状态事实和场景落点。不要在 thinking 中试写、逐段构思、复述或自检完整正文，也不要预先展开完整工具 JSON；玩家可见正文只在正文通道一次成稿。\n")
-	sb.WriteString("- 每轮必须遵循这个流程：理解用户行动和当前快照 → 必要时读取资料库或检索历史 Turn → 判断是否需要固定检定 → 如需检定，调用 prepare_interactive_turn → 形成正文和一致的状态变化 → 直接输出完整故事正文 → 调用 submit_interactive_turn 提交 state_changes 与 choices → 两个模块都成功后立即结束。\n")
+	sb.WriteString("- 每轮必须遵循这个流程：理解用户行动和当前快照 → " + interactiveStoryRoundFlowRecallClause(in.BackgroundMode) + " → 判断是否需要固定检定 → 如需检定，调用 prepare_interactive_turn → 形成正文和一致的状态变化 → 直接输出完整故事正文 → 调用 submit_interactive_turn 提交 state_changes 与 choices → 两个模块都成功后立即结束。\n")
 	sb.WriteString("- 不是所有用户行动都需要检定。普通观察、对话、小范围移动、低风险试探、顺着既有局势推进且无明确代价的叙事承接，应由你直接裁定并写成故事正文。\n")
 	sb.WriteString("- 只有当行动存在明确风险、资源/关系/数值变化、当前 TRPG 检定配置命中、失败等级、不可逆后果或终局候选，需要固定规则裁定时，才调用 prepare_interactive_turn。\n")
 	sb.WriteString("- prepare_interactive_turn 不替你做语义理解、文学判断或事件编排；你必须先自行判断用户行为、意图、挑战、消耗、当前状态、投前裁定依据、加成/减值来源、难度等级，以及大成功/成功/失败/大失败四档后果，再交给工具掷骰裁定。\n")
@@ -154,7 +233,7 @@ func InteractiveStoryRuntimeContext(in InteractiveStoryPromptInput) string {
 	writeInteractiveReplyTargetInstruction(&sb, in.ReplyTargetChars, false)
 	sb.WriteString(fmt.Sprintf("本故事每个非终局回合必须生成恰好 %d 个不同的 choices。\n", normalizeInteractiveChoiceCount(in.ChoiceCount)))
 	sb.WriteString("\n## 召回说明\n")
-	sb.WriteString("完整常驻资料已作为独立稳定上下文提供，lore-context.md 当前区段的按需正文在下方提供；只有工作集外资料需通过名称目录、list_lore_items 或 read_lore_items 召回。\n")
+	sb.WriteString(interactiveStoryRecallNote(in.BackgroundMode))
 	sb.WriteString("较早历史由有界上下文 checkpoint 承接；若本轮依赖具体旧事实，请通过 search_story_history 检索当前分支 Turn，并以返回的 turn_id 为来源。\n\n")
 	if strings.TrimSpace(in.LoreContext) != "" {
 		writeBlock(&sb, "规则与当前资料工作集（source: rule lore + lore-context.md, bounded）", in.LoreContext)
@@ -194,7 +273,27 @@ func writeInteractiveReplyTargetInstruction(sb *strings.Builder, value int, bull
 	fmt.Fprintf(sb, "%s【最高篇幅约束】当前互动故事的每轮目标字数由 story 级运行参数决定；这是互动剧情正文唯一的内置字数目标，高于 CREATOR.md 的章节篇幅、导演规则和其他 Denova 内置提示中的篇幅倾向。运行时拿到具体目标后必须主动收束内容，优先写聚焦、有推进、可继续互动的一回合，不要依赖输出上限截断。%s", prefix, suffix)
 }
 
+// interactiveStoryRecallNote 按背景模式返回运行时上下文"召回说明"首行（B3a）：
+// legacy 与基线逐字节一致；library 指向 read_library_item；none 显式无资料。
+func interactiveStoryRecallNote(backgroundMode string) string {
+	switch backgroundMode {
+	case BackgroundModeLibrary:
+		return "本回合已装载作品设定库背景（source: bound library snapshot, frozen revision）；库背景 catalog 之外的条目或更多细节通过 read_library_item 按需读取。\n"
+	case BackgroundModeNone:
+		return "本次运行显式声明无作品背景：没有注入任何作品设定资料，也没有设定资料读取工具。\n"
+	default:
+		return "完整常驻资料已作为独立稳定上下文提供，lore-context.md 当前区段的按需正文在下方提供；只有工作集外资料需通过名称目录、list_lore_items 或 read_lore_items 召回。\n"
+	}
+}
+
 func InteractiveStoryTurnInstruction(message, turnContext, runtimeContext string) string {
+	return InteractiveStoryTurnInstructionWithBackground(message, turnContext, runtimeContext, BackgroundModeDefault)
+}
+
+// InteractiveStoryTurnInstructionWithBackground 按背景模式构建回合用户消息（B3a）：
+// 角色落地规则随模式替换（library → read_library_item 落地规则；none → 无落地规则）。
+// legacy 与 InteractiveStoryTurnInstruction 逐字节一致。
+func InteractiveStoryTurnInstructionWithBackground(message, turnContext, runtimeContext, backgroundMode string) string {
 	turnContext = strings.TrimSpace(turnContext)
 	runtimeContext = strings.TrimSpace(runtimeContext)
 	turnBlock := ""
@@ -211,6 +310,7 @@ func InteractiveStoryTurnInstruction(message, turnContext, runtimeContext string
 	if runtimeContext != "" {
 		contextBlock = "\n\n" + runtimeContext
 	}
+	grounding := interactiveStoryGroundingInstruction(backgroundMode)
 	return fmt.Sprintf(`[互动输入]
 用户本回合行动：
 %s
@@ -226,7 +326,7 @@ func InteractiveStoryTurnInstruction(message, turnContext, runtimeContext string
 先直接输出完整正文，再调用 submit_interactive_turn；首次同时提供 state_changes 与 choices。state_changes 使用 replace/delta/create，并填写状态手册中的精确 actor_id、field_id、可选 subpath 或 template_id，不要自行拼接路径字符串；新建 Actor 的 actor_id 与 name 必须完全相同并直接使用故事语言中的角色名称；状态面板 object 记录直接使用稳定、可读的故事语言 map key 作为 ID，不要求重复的内部名称字段。每回合至少 replace actor_id=story、field_id=当前事件，首次初始化或地点变化时同步当前详细地点，不得重复 RuleResolution 已消费的字段。非终局回合 choices 必须给出当前故事配置数量的不同建议；仅 prepare_interactive_turn 返回 terminal_candidate 的终局回合使用空数组。director_update 默认省略，只有本轮已发生事实让目标、阶段、关键关系/势力、重大线索或规划前提发生实质变化时才设置 needed=true。两个模块由后端独立解析和保留；ready=false 时只在同一工具中重交 retry_modules 指定的字段，ready=true 后立即结束，不得重复输出正文。不得把 TurnResult、工具结果或状态 JSON 写进正文。
 如果本轮行动明显依赖既往线索、旧承诺或分支内已发生事实，使用 search_story_history 检索 Turn，并以返回的 turn_id 为来源。
 本回合要让主角作为故事人物正常与环境、物品和其他角色互动，写出行动带来的反馈、代价、发现、阻碍或机会；不要每发生一个小动作就停下等待用户。
-其他角色应依据性格、目标、关系和当前局势主动反应。结尾请停在有意义的选择点、悬念点或决策点，让用户能决定下一步，但不要替用户做出重大选择。%s`, strings.TrimSpace(message), turnBlock, interactiveLoreCharacterGroundingInstruction, interactiveTrackableActorInstruction, contextBlock)
+其他角色应依据性格、目标、关系和当前局势主动反应。结尾请停在有意义的选择点、悬念点或决策点，让用户能决定下一步，但不要替用户做出重大选择。%s`, strings.TrimSpace(message), turnBlock, grounding, interactiveTrackableActorInstruction, contextBlock)
 }
 
 func BuildInteractiveDirectorSystemInstruction() string {
@@ -246,10 +346,43 @@ func BuildInteractiveDirectorSystemInstruction() string {
 	}, "\n")
 }
 
+// BuildInteractiveDirectorSystemInstructionWithBackground 按背景模式构建后台导演系统指令
+// （B3a，§8.6 通道 4）：library / 显式 none 模式下，旧资料库指引与 lore-context.md 维护
+// 职责整段替换为显式边界——不注入资料目录、不挂资料工具、不维护 lore-context.md；
+// legacy 模式与 BuildInteractiveDirectorSystemInstruction 逐字节一致。
+func BuildInteractiveDirectorSystemInstructionWithBackground(backgroundMode string) string {
+	if backgroundMode == BackgroundModeDefault {
+		return BuildInteractiveDirectorSystemInstruction()
+	}
+	backgroundLine := "本故事的回合运行在作品设定库背景模式：正文 Agent 的设定真源是绑定的作品设定库，你没有任何设定资料读取工具。"
+	if backgroundMode == BackgroundModeNone {
+		backgroundLine = "本故事的回合运行在显式无作品背景模式：正文 Agent 没有作品设定背景，你也没有任何设定资料读取工具。"
+	}
+	return strings.Join([]string{
+		"你是 Denova 游戏模式的后台导演 Agent。",
+		"你负责在首个前台互动回合前建立 director.md 与 agent-brief.md，并在后续回合落盘后观察是否需要 keep、patch 或 replan。",
+		"你不负责续写本回合剧情，不能改写本回合正文，也不能替用户选择下一步行动。",
+		"Turn（含 RuleResolution 与 StateDelta）是已发生事实真源，Actor State 是当前投影，director.md 是未来计划。你只能读取已提交的 Actor State，不得写 Actor State 或改写历史 Turn；需要较早证据时使用 search_story_history。",
+		backgroundLine,
+		"规划依据只能是已注入的开局设定、已提交 Turn、Actor State 与用户输入；非必要不要自创核心角色、组织、规则或地点，确需新增时说明与既有事实如何自洽。",
+		"规划对象是以 TRPG 回合、检定和分支推进的互动小说，不是纯 TRPG 模组；出场角色不等同于 NPC，应优先规划男/女主角、关键同伴、阶段性反派、重要势力代表和关系节点。",
+		"剧情节奏要高信息密度、网文式可读：每个可玩回合至少推进一个有效信息点、角色关系变化、压力升级、收益/代价或新悬念，避免连续空转、低信息量氛围描写和无关细节。",
+		"当前导演 Markdown 已作为有来源、有上限的完整快照注入。你不得再用文件工具读写它们；可读取事件卡。",
+		"director.md 只保存后台私密规划；agent-brief.md 只保存正文 Agent 可见事实与裁定边界。不得把隐藏真相、未来答案或幕后动机写入 agent-brief.md。",
+		"lore-context.md 与旧资料库不参与本故事：不要读取、修改或维护 lore-context.md，也不要提交任何资料引用更新。",
+		"使用 submit_director_plan_update 增量提交 Markdown Patch：keep 使用空 updates 并 finalize=true；patch/replan 只提交实际变化的文件与 section。文件会独立 accepted/rejected，后续只重试 retry_documents；finalize 成功后立即结束，不要再输出摘要、JSON、完整 Markdown 或故事正文。",
+	}, "\n")
+}
+
 func InteractiveDirectorInstruction(in InteractiveDirectorPromptInput) string {
+	noLegacyLore := in.BackgroundMode == BackgroundModeLibrary || in.BackgroundMode == BackgroundModeNone
 	var sb strings.Builder
 	if in.OpeningInitialization {
-		sb.WriteString("请在开局正文生成前，根据有明确来源的故事设定、初始状态和资料目录建立当前分支的第一版导演规划与资料工作集。\n\n")
+		if noLegacyLore {
+			sb.WriteString("请在开局正文生成前，根据有明确来源的故事设定与初始状态建立当前分支的第一版导演规划。\n\n")
+		} else {
+			sb.WriteString("请在开局正文生成前，根据有明确来源的故事设定、初始状态和资料目录建立当前分支的第一版导演规划与资料工作集。\n\n")
+		}
 	} else {
 		sb.WriteString("请根据本回合已落盘的审计数据，完成当前分支后台维护。\n\n")
 	}
@@ -275,24 +408,48 @@ func InteractiveDirectorInstruction(in InteractiveDirectorPromptInput) string {
 	sb.WriteString("- 当前导演规划文档快照就是本轮完整基线，不要再调用文件工具读取或编辑。\n")
 	sb.WriteString("- 每个文件快照都给出 base_hash。updates 只提交实际变化的文件，优先用 replace_section；replace_text 必须精确匹配一次，replace_document 只用于开局、显式重建或无法安全局部编辑的真正 replan。\n")
 	sb.WriteString("- 文件独立校验并暂存在本轮草稿；工具返回 accepted、rejected 与 retry_documents。重试只发送失败文件，已经 accepted 的文件不要重传；finalize 成功前不修改工作区，成功后后端原子发布。\n")
-	sb.WriteString("- keep 使用空 updates 与 finalize=true。patch 至少更新一个文件；普通推进默认只 patch agent-brief.md。replan 必须更新 director.md 与 agent-brief.md，lore-context.md 仍然按需。\n")
+	sb.WriteString("- keep 使用空 updates 与 finalize=true。patch 至少更新一个文件；普通推进默认只 patch agent-brief.md。replan 必须更新 director.md 与 agent-brief.md")
+	if noLegacyLore {
+		sb.WriteString("。\n")
+	} else {
+		sb.WriteString("，lore-context.md 仍然按需。\n")
+	}
 	sb.WriteString("- director.md 只承载阶段级后台方向、隐藏信息和选角推理；正常推进不要把它当回合日志。agent-brief.md 承载下一回合正文 Agent 可安全使用的可见事实、行动空间与裁定边界。\n")
-	sb.WriteString("- 只有阶段规划前提失效、阶段结束或重大不可逆偏差时才修改 director.md；只有当前/候场/暂离场资料集合确实变化时才修改 lore-context.md。\n\n")
-	sb.WriteString("## 资料工作集要求\n")
-	sb.WriteString("- lore-context.md 只写资料引用和一句当前用途，不复制资料正文，不重复 director.md 的剧情计划。\n")
-	sb.WriteString("- 每轮都已注入最多 64 KiB 的资料名称目录。先从真实 name 发现候选；目录分页时用 next_offset 继续，按语义缩小时再用 list_lore_items。\n")
-	sb.WriteString("- 已知唯一名称时直接用 read_lore_items；需要筛选并同时读取正文时用 list_lore_items 的 detail=full。新增当前或候场引用前，必须完整读取该资料及必要的关键关联角色，避免凭名称或简介虚构关系。\n")
-	sb.WriteString("- lore-context.md 的二级标题固定为 当前、候场、暂离场；角色、势力、地点、物品等只作为可自由调整的三级标题。当前区段会自动完整加载给正文 Agent，候场和暂离场只供你规划。\n")
-	sb.WriteString("- 玩家或 Game Agent 临时召回了工作集外资料时，判断它应保持临时、进入候场、进入当前或转为暂离场。\n")
-	sb.WriteString("- 资料引用必须使用唯一名称语法 [[资料名称]]；常驻资料已由系统完整加载，不要重复写入 lore-context.md。按需规则与其他按需资料一样，确实需要时可放入当前区段。\n\n")
+	sb.WriteString("- 只有阶段规划前提失效、阶段结束或重大不可逆偏差时才修改 director.md")
+	if noLegacyLore {
+		sb.WriteString("。\n\n")
+		sb.WriteString("## 资料工作集边界\n")
+		if in.BackgroundMode == BackgroundModeNone {
+			sb.WriteString("- 本故事运行在显式无作品背景模式：没有资料名称目录，也没有任何设定资料读取工具；不要读取、修改或维护 lore-context.md，也不要在任何规划文件中新增 [[资料名称]] 引用。\n\n")
+		} else {
+			sb.WriteString("- 本故事运行在作品设定库背景模式：设定真源是正文 Agent 绑定的作品设定库，你没有资料名称目录，也没有任何设定资料读取工具；不要读取、修改或维护 lore-context.md，也不要在任何规划文件中新增 [[资料名称]] 引用。\n\n")
+		}
+	} else {
+		sb.WriteString("；只有当前/候场/暂离场资料集合确实变化时才修改 lore-context.md。\n\n")
+		sb.WriteString("## 资料工作集要求\n")
+		sb.WriteString("- lore-context.md 只写资料引用和一句当前用途，不复制资料正文，不重复 director.md 的剧情计划。\n")
+		sb.WriteString("- 每轮都已注入最多 64 KiB 的资料名称目录。先从真实 name 发现候选；目录分页时用 next_offset 继续，按语义缩小时再用 list_lore_items。\n")
+		sb.WriteString("- 已知唯一名称时直接用 read_lore_items；需要筛选并同时读取正文时用 list_lore_items 的 detail=full。新增当前或候场引用前，必须完整读取该资料及必要的关键关联角色，避免凭名称或简介虚构关系。\n")
+		sb.WriteString("- lore-context.md 的二级标题固定为 当前、候场、暂离场；角色、势力、地点、物品等只作为可自由调整的三级标题。当前区段会自动完整加载给正文 Agent，候场和暂离场只供你规划。\n")
+		sb.WriteString("- 玩家或 Game Agent 临时召回了工作集外资料时，判断它应保持临时、进入候场、进入当前或转为暂离场。\n")
+		sb.WriteString("- 资料引用必须使用唯一名称语法 [[资料名称]]；常驻资料已由系统完整加载，不要重复写入 lore-context.md。按需规则与其他按需资料一样，确实需要时可放入当前区段。\n\n")
+	}
 	sb.WriteString("## 固定标题\n")
 	sb.WriteString("- director.md 必须保留：阶段目标与隐藏钩子；资料库锚点；选角覆盖；核心角色与关系张力；重要势力与阶段阻力；当前场景幕后信息；信息揭示与线索密度；遭遇、检定与代价；爽点、危机与反转；状态连续性；最近分支安排；伏笔与回收。\n")
 	sb.WriteString("- agent-brief.md 必须保留：当前目标与可见钩子；当前场景与行动空间；当前角色与可见关系；已公开信息与可发现线索；遭遇、检定与可见代价；状态连续性；最近分支承接。\n")
-	sb.WriteString("- lore-context.md 必须保留二级标题：当前；候场；暂离场。\n\n")
+	if noLegacyLore {
+		sb.WriteString("\n")
+	} else {
+		sb.WriteString("- lore-context.md 必须保留二级标题：当前；候场；暂离场。\n\n")
+	}
 	sb.WriteString("## 更新原则\n")
 	sb.WriteString("- 你不负责续写本回合剧情、不负责改写正文、不负责替用户选择下一步行动；只维护后台导演规划。\n")
 	sb.WriteString("- 规划要服务后续互动 Agent：通过重要角色、关系张力、势力阻力、信息揭示、遭遇检定、收益代价和状态连续性管理互动流程。\n")
-	sb.WriteString("- 资料库优先：优先复用资料库中的重要角色、势力、规则、地点和既有关系；非必要不要自创核心角色、组织、规则或地点。资料库不足时，新增内容只能作为临时候选，并要说明与既有设定如何自洽。\n")
+	if noLegacyLore {
+		sb.WriteString("- 事实优先：规划只依据已注入的开局设定、已提交 Turn、Actor State 与用户输入；非必要不要自创核心角色、组织、规则或地点，确需新增时说明与既有事实如何自洽。\n")
+	} else {
+		sb.WriteString("- 资料库优先：优先复用资料库中的重要角色、势力、规则、地点和既有关系；非必要不要自创核心角色、组织、规则或地点。资料库不足时，新增内容只能作为临时候选，并要说明与既有设定如何自洽。\n")
+	}
 	sb.WriteString("- 重要角色优先：出场角色不等同于 NPC，应优先安排男/女主角、关键同伴、阶段性反派、重要势力代表和关系节点；普通 NPC 只有承担信息、冲突、选择代价或节奏功能时才出现。\n")
 	sb.WriteString("- 高信息密度：最近安排要让用户每个可玩回合都体验到有效信息、关系变化、压力升级、收益/代价或新悬念，避免连续空转和纯氛围描写。\n")
 	sb.WriteString("- 兼顾用户自由选择：给主线牵引和合理后续安排，但不要锁死唯一解，不要替用户做下一步选择。\n")
@@ -304,7 +461,11 @@ func InteractiveDirectorInstruction(in InteractiveDirectorPromptInput) string {
 	sb.WriteString("- kind=active 时观察当前活跃事件：没有变化就省略 event_decision；有事实证据时可 advance、payoff、resolve 或 abandon。advance/payoff/resolve 必须引用当前分支真实的 evidence_turn_ids。\n")
 	sb.WriteString("- 第一版每个分支最多一个活跃事件；事件运行态由后端写入 metadata.json，不要把它伪造成历史 Turn 或 Actor State。\n")
 	sb.WriteString("- 如果本回合出现终局、重大失败或用户偏离主线，要承接为分支状态和后续代价，而不是强行圆回原主线。\n")
-	sb.WriteString("- 保存后的三份文件必须包含各自全部固定标题，且不超过后端字节和当前资料正文预算。\n\n")
+	if noLegacyLore {
+		sb.WriteString("- 保存后的导演文件必须包含各自全部固定标题，且不超过后端字节预算。\n\n")
+	} else {
+		sb.WriteString("- 保存后的三份文件必须包含各自全部固定标题，且不超过后端字节和当前资料正文预算。\n\n")
+	}
 	writeBlock(&sb, "故事标题", in.Title)
 	writeBlock(&sb, "开局设定", in.Origin)
 	writeBlock(&sb, "本次开局输入（source: first Game Agent request, bounded）", in.OpeningContext)
@@ -316,7 +477,9 @@ func InteractiveDirectorInstruction(in InteractiveDirectorPromptInput) string {
 	}
 	writeBlock(&sb, "当前导演规划文档快照（source: DirectorPlan docs, bounded）", in.DirectorPlanDocs)
 	writeBlock(&sb, "导演规划模板要求（source: StoryDirector.strategy.planning_templates, bounded）", in.PlanningTemplates)
-	writeBlock(&sb, "资料库导演上下文（source: resident lore, revision-bound name roster, lore-context.md and committed recalls）", in.LoreContext)
+	if !noLegacyLore {
+		writeBlock(&sb, "资料库导演上下文（source: resident lore, revision-bound name roster, lore-context.md and committed recalls）", in.LoreContext)
+	}
 	writeBlock(&sb, "本回合 TurnResult / RuleResolution / StateDelta 审计 JSON（source: committed turn, bounded）", in.TurnAuditJSON)
 	writeBlock(&sb, "近期剧情历史（source: current branch turns, bounded）", in.TurnHistory)
 	writeBlock(&sb, "状态系统 Schema（source: story director actor_state, bounded）", in.ActorStateSchema)

@@ -68,7 +68,14 @@ type interactiveRunRecord struct {
 	id           interactiveRunID
 	scopeKey     string
 	runContextID string
-	meta         interactiveRunMeta
+	// library 是该运行的作品设定库背景绑定元数据（B3a）；nil 表示该运行为
+	// legacy/无库背景。只存授权输入，不存库正文。
+	library *interactiveRunLibraryBinding
+	// background 是该运行的背景模式（B3a）：nil 表示未记录（B3a 之前的旧运行，
+	// 缺省视为 legacy）；非 nil 指向 agent 背景模式常量字面值——""（legacy）、
+	// "library"、"none"。regenerate/回连据此区分 none 与 legacy（两者都无库绑定）。
+	background *string
+	meta       interactiveRunMeta
 }
 
 type interactiveRunRegistryConfig struct {
@@ -92,6 +99,44 @@ type interactiveTaskRunBinding struct {
 	branchID string
 	created  bool
 	tracked  bool
+}
+
+// interactiveRunLibraryBinding is the process-local library background binding of
+// an interactive run (B3a). It stores only server-derived authorization inputs
+// (library id, frozen revision, granted manual item ids) so that regenerate /
+// reconnect can re-bind the original background without the client resending
+// library_context. It never copies library content: no item bodies, no catalogs,
+// no assembled model input.
+type interactiveRunLibraryBinding struct {
+	libraryID        string
+	expectedRevision string
+	manualItemIDs    []string
+}
+
+func (b interactiveRunLibraryBinding) normalize() interactiveRunLibraryBinding {
+	normalized := b
+	normalized.libraryID = strings.TrimSpace(b.libraryID)
+	normalized.expectedRevision = strings.TrimSpace(b.expectedRevision)
+	manual := append([]string(nil), b.manualItemIDs...)
+	sort.Strings(manual)
+	normalized.manualItemIDs = manual
+	return normalized
+}
+
+func (b interactiveRunLibraryBinding) present() bool {
+	return b.libraryID != "" && b.expectedRevision != ""
+}
+
+func (b interactiveRunLibraryBinding) same(other interactiveRunLibraryBinding) bool {
+	if b.libraryID != other.libraryID || b.expectedRevision != other.expectedRevision || len(b.manualItemIDs) != len(other.manualItemIDs) {
+		return false
+	}
+	for i, id := range b.manualItemIDs {
+		if other.manualItemIDs[i] != id {
+			return false
+		}
+	}
+	return true
 }
 
 // interactiveRunRegistry contains only process-local relationship indexes.
@@ -191,6 +236,82 @@ func (r *interactiveRunRegistry) bindContext(runID interactiveRunID, runContextI
 	record.runContextID = runContextID
 	record.meta.lastUsedAt = r.cfg.Now()
 	return nil
+}
+
+// bindLibrary 记录该运行的库背景绑定（B3a）：新回合在 bind-before-start 阶段写入；
+// 幂等——重复绑定相同授权输入返回成功；同一运行改绑不同库/版本/manual 集即冲突。
+func (r *interactiveRunRegistry) bindLibrary(runID interactiveRunID, binding interactiveRunLibraryBinding) error {
+	binding = binding.normalize()
+	if !binding.present() {
+		return errInteractiveRunInvalid
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	record, ok := r.runs[runID]
+	if !ok {
+		return errInteractiveRunNotFound
+	}
+	if record.library != nil {
+		if record.library.same(binding) {
+			return nil
+		}
+		return errInteractiveRunConflict
+	}
+	normalized := binding.normalize()
+	record.library = &normalized
+	record.meta.lastUsedAt = r.cfg.Now()
+	return nil
+}
+
+// libraryBinding 返回该运行的库背景绑定元数据（B3a），供 regenerate/reconnect
+// 服务端复用；不存在时第二个返回值为 false。
+func (r *interactiveRunRegistry) libraryBinding(runID interactiveRunID) (interactiveRunLibraryBinding, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	record, ok := r.runs[runID]
+	if !ok || record.library == nil {
+		return interactiveRunLibraryBinding{}, false
+	}
+	return record.library.normalize(), true
+}
+
+// bindBackground 记录该运行的背景模式（B3a）：新回合三种模式都在 bind-before-start
+// 阶段写入（legacy=空串、library、none，取 agent 背景模式常量字面值）。幂等——重复
+// 写同值成功；同一运行改写不同模式即冲突。本层不导入 agent 包，registry 保持零业务
+// 依赖，非法值以 errInteractiveRunInvalid 拒绝。
+func (r *interactiveRunRegistry) bindBackground(runID interactiveRunID, mode string) error {
+	mode = strings.TrimSpace(mode)
+	if mode != "" && mode != "library" && mode != "none" {
+		return errInteractiveRunInvalid
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	record, ok := r.runs[runID]
+	if !ok {
+		return errInteractiveRunNotFound
+	}
+	if record.background != nil {
+		if *record.background == mode {
+			return nil
+		}
+		return errInteractiveRunConflict
+	}
+	background := mode
+	record.background = &background
+	record.meta.lastUsedAt = r.cfg.Now()
+	return nil
+}
+
+// backgroundOf 返回该运行的背景模式（B3a）：未记录的旧运行与不存在的运行缺省
+// 视为 legacy（空串，与基线行为一致）。
+func (r *interactiveRunRegistry) backgroundOf(runID interactiveRunID) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	record, ok := r.runs[runID]
+	if !ok || record.background == nil {
+		return ""
+	}
+	return *record.background
 }
 
 func (r *interactiveRunRegistry) attachTask(runID interactiveRunID, storyID, branchID, taskID string) error {
@@ -455,6 +576,14 @@ func cloneInteractiveRunRecord(record *interactiveRunRecord) *interactiveRunReco
 	copyRecord.meta.taskIDs = cloneStringSet(record.meta.taskIDs)
 	copyRecord.meta.turnIDs = cloneStringSet(record.meta.turnIDs)
 	copyRecord.meta.activeTaskIDs = cloneStringSet(record.meta.activeTaskIDs)
+	if record.library != nil {
+		libraryCopy := record.library.normalize()
+		copyRecord.library = &libraryCopy
+	}
+	if record.background != nil {
+		backgroundCopy := *record.background
+		copyRecord.background = &backgroundCopy
+	}
 	return &copyRecord
 }
 

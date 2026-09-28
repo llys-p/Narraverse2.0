@@ -13,10 +13,14 @@ import { installGlobalRuntimeLoggers, recordRuntimeLog, scheduleWhiteScreenCheck
 import { fetchSettings } from '@/features/settings/api'
 import { applyFontSettings, fontSettingsFromEffective } from '@/features/settings/font-variables'
 import { WorldContextLaunchProvider } from '@/features/world-context-runtime/WorldContextLaunchProvider'
+import { LibraryContextLaunchProvider } from '@/features/library-context-runtime/LibraryContextLaunchProvider'
+import { LibraryContextRunProvider } from '@/features/library-context-runtime/LibraryContextRunProvider'
 import { GameWorldContextLaunchProvider } from '@/features/world-context-runtime/GameWorldContextLaunchProvider'
+import { GameLibraryContextLaunchProvider } from '@/features/library-context-runtime/GameLibraryContextLaunchProvider'
 import { WorldContextRunProvider } from '@/features/world-context-runtime/WorldContextRunProvider'
 import { WorldContextHostProvider } from '@/features/world-context-runtime/WorldContextHostProvider'
 import { IframeWorldContextLaunchProvider } from '@/features/world-context-runtime/IframeWorldContextLaunchProvider'
+import { IframeLibraryContextLaunchProvider } from '@/features/library-context-runtime/IframeLibraryContextLaunchProvider'
 
 function redirectLocalhostToCanonicalLoopback(): boolean {
   if (window.location.hostname.toLowerCase() !== 'localhost') return false
@@ -50,13 +54,21 @@ if (!isRedirectingToCanonicalOrigin) {
             <RuntimeErrorBoundary>
               <WorldContextHostProvider>
                 <IframeWorldContextLaunchProvider>
+                  <IframeLibraryContextLaunchProvider>
                   <WorldContextLaunchProvider>
                     <WorldContextRunProvider>
-                      <GameWorldContextLaunchProvider>
-                        <App />
-                      </GameWorldContextLaunchProvider>
+                      <LibraryContextLaunchProvider>
+                        <LibraryContextRunProvider>
+                          <GameWorldContextLaunchProvider>
+                            <GameLibraryContextLaunchProvider>
+                              <App />
+                            </GameLibraryContextLaunchProvider>
+                          </GameWorldContextLaunchProvider>
+                        </LibraryContextRunProvider>
+                      </LibraryContextLaunchProvider>
                     </WorldContextRunProvider>
                   </WorldContextLaunchProvider>
+                  </IframeLibraryContextLaunchProvider>
                 </IframeWorldContextLaunchProvider>
               </WorldContextHostProvider>
               <Toaster richColors closeButton />

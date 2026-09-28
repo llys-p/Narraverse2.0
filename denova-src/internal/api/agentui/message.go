@@ -25,6 +25,9 @@ const (
 	// DataTypeWorldContextState 是 Phase 3.2-A6 写作运行在模型内容前下发的一次性世界背景状态事件，
 	// 只携带稳定状态与脱敏摘要，绝不含 runContextId/scopeKey/fingerprint/handle/正文。
 	DataTypeWorldContextState = "data-world-context-state"
+	// DataTypeLibraryContextState 是 B2a library 模式写作运行在模型内容前下发的一次性库背景状态事件，
+	// 只携带 libraryName/revisionLabel/selectedCount/errorCode 类脱敏摘要，绝不进持久化历史。
+	DataTypeLibraryContextState = "data-library-context-state"
 )
 
 // Message is the backend JSON shape for AI SDK UI messages used by the web app.

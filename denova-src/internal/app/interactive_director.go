@@ -234,6 +234,10 @@ func runInteractiveDirectorMaintenance(ctx context.Context, cfg *config.Config, 
 		StableContext:         stableContext.Content,
 		StableContextMaxBytes: stableContext.MaxBytes,
 		DisplayConversation:   conversation,
+		// B3a：导演侧随回合背景模式门控——NoLegacyLore 时不挂旧 lore 工具且导演
+		// 系统提示切换到对应变体；legacy 保持基线工具集与提示。
+		NoLegacyLore: conversation.noLegacyLore(),
+		BackgroundMode: conversation.backgroundMode,
 		OnLoreItemsRead: func(ids []string) {
 			planSubmissionMu.Lock()
 			defer planSubmissionMu.Unlock()

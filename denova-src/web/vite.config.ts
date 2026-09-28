@@ -2,11 +2,26 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { assertSafeLocalLibraryAsset } from '../scripts/check-narraverse-local-library.mjs'
 
 const backendPort = process.env.DENOVA_BACKEND_PORT || process.env.NOVA_BACKEND_PORT || '8080'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'narraverse-local-library-build-guard',
+      apply: 'build',
+      async buildStart() {
+        const setting = process.env.NARRAVERSE_INCLUDE_LOCAL_LIBRARY || ''
+        if (setting !== '' && setting !== '0' && setting !== '1') {
+          throw new Error('NARRAVERSE_INCLUDE_LOCAL_LIBRARY 只接受 0 或 1')
+        }
+        await assertSafeLocalLibraryAsset(path.resolve(__dirname, 'public'), setting === '1')
+      },
+    },
+  ],
   test: {
     environment: 'jsdom',
     // 与运行时保持一致：应用会在 localhost 上重定向到规范回环地址 127.0.0.1

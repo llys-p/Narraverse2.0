@@ -227,6 +227,53 @@ func (s *State) CompactContext() string {
 	return FormatCompactContextParts(s.CompactContextParts())
 }
 
+// StableContextPartsExcludingLore 返回不含旧资料库片段的稳定上下文片段（B2a 修正轮：
+// library / 显式 none 写作模式不得叠加旧 Lore 注入；L3 计划 §8.6 通道 1）。
+func (s *State) StableContextPartsExcludingLore() []CompactContextPart {
+	return excludeCompactContextParts(s.StableContextParts(), "lore")
+}
+
+// StableContextExcludingLore 渲染排除旧资料库片段后的稳定上下文。
+func (s *State) StableContextExcludingLore() string {
+	return FormatCompactContextParts(s.StableContextPartsExcludingLore())
+}
+
+// CompactContextPartsExcludingLore 返回排除旧资料库片段后的完整紧凑上下文片段。
+func (s *State) CompactContextPartsExcludingLore() []CompactContextPart {
+	stable := s.StableContextPartsExcludingLore()
+	dynamic := s.DynamicContextParts()
+	parts := make([]CompactContextPart, 0, len(stable)+len(dynamic))
+	parts = append(parts, stable...)
+	parts = append(parts, dynamic...)
+	return parts
+}
+
+// CompactContextExcludingLore 渲染排除旧资料库片段后的紧凑上下文。
+func (s *State) CompactContextExcludingLore() string {
+	return FormatCompactContextParts(s.CompactContextPartsExcludingLore())
+}
+
+// excludeCompactContextParts 过滤掉 ID 命中排除集的上下文片段（保序）。
+func excludeCompactContextParts(parts []CompactContextPart, excludedIDs ...string) []CompactContextPart {
+	if len(excludedIDs) == 0 {
+		return parts
+	}
+	out := make([]CompactContextPart, 0, len(parts))
+	for _, part := range parts {
+		dropped := false
+		for _, id := range excludedIDs {
+			if part.ID == id {
+				dropped = true
+				break
+			}
+		}
+		if !dropped {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // FormatCompactContextParts renders compact context parts in their current order.
 func FormatCompactContextParts(parts []CompactContextPart) string {
 	var sb strings.Builder

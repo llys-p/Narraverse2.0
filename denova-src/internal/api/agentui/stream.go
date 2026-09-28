@@ -80,6 +80,13 @@ func (e *StreamEncoder) WriteEvent(ev agent.Event) error {
 			return err
 		}
 		return e.writeData(DataTypeWorldContextState, "world-context-state", data)
+	case "library_context_state":
+		// 一次性库背景状态（B2a）：同样必须排在任何模型 chunk 之前；只做展示传输，
+		// 只携带 libraryName/revisionLabel/selectedCount/errorCode 类脱敏摘要，不进持久化历史。
+		if err := e.closeOpenContent(); err != nil {
+			return err
+		}
+		return e.writeData(DataTypeLibraryContextState, "library-context-state", data)
 	case "workspace_change":
 		if err := e.closeOpenContent(); err != nil {
 			return err

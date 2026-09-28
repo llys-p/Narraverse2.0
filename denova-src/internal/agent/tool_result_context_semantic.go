@@ -40,6 +40,12 @@ func retainToolContextAcrossTurns(toolName string, policy ToolResultContextPolic
 	case "list_lore_items", "search_story_history":
 		return false
 	default:
+		// §8.5：库按需读取工具结果绝不跨轮持久化进 Session 上下文。
+		// 下一轮是新的绑定运行，旧运行的读取结果对它没有复用价值；
+		// 需要时应通过新运行自己的 catalog 重新按需读取。
+		if isLibraryReadToolName(name) {
+			return false
+		}
 		return true
 	}
 }

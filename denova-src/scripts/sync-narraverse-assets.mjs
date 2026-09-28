@@ -17,7 +17,6 @@ const runtimeEntries = [
   'migration.html',
   'origin-migration.js',
   'game_engine.js',
-  'local_library.js',
   'presets.js',
   'redesign.css',
   'stickman.js',
@@ -33,11 +32,18 @@ if (!process.env.NARRAVERSE_SOURCE_DIR && !process.argv[2]) {
   process.exit(1)
 }
 
+const localLibraryOption = process.env.NARRAVERSE_INCLUDE_LOCAL_LIBRARY || ''
+if (localLibraryOption !== '' && localLibraryOption !== '0' && localLibraryOption !== '1') {
+  throw new Error('NARRAVERSE_INCLUDE_LOCAL_LIBRARY 只接受 0 或 1')
+}
+const includeLocalLibrary = localLibraryOption === '1'
+
 if (path.dirname(targetDirectory) !== publicDirectory || path.basename(targetDirectory) !== 'narraverse') {
   throw new Error(`拒绝同步到意外目录：${targetDirectory}`)
 }
 
 await stat(path.join(sourceDirectory, 'index.html'))
+if (includeLocalLibrary) await stat(path.join(sourceDirectory, 'local_library.js'))
 await rm(stagingDirectory, { recursive: true, force: true })
 await mkdir(stagingDirectory, { recursive: true })
 
@@ -50,6 +56,17 @@ for (const entry of runtimeEntries) {
   copied.push(entry)
 }
 
+if (includeLocalLibrary) {
+  await cp(path.join(sourceDirectory, 'local_library.js'), path.join(stagingDirectory, 'local_library.js'))
+} else {
+  await writeFile(
+    path.join(stagingDirectory, 'local_library.js'),
+    'window.LOCAL_LIBRARY = { books: [], cards: [] };\n',
+    'utf8',
+  )
+}
+copied.push('local_library.js')
+
 const indexHtml = await readFile(path.join(stagingDirectory, 'index.html'), 'utf8')
 if (!indexHtml.includes('app.js') || !indexHtml.includes('bridge.js')) {
   throw new Error('叙界 index.html 缺少必要运行时脚本引用。')
@@ -59,6 +76,7 @@ await writeFile(path.join(stagingDirectory, 'narraverse-build.json'), `${JSON.st
   source: 'Narraverse app runtime snapshot',
   syncedAt: new Date().toISOString(),
   files: copied,
+  localLibraryMode: includeLocalLibrary ? 'private' : 'empty',
 }, null, 2)}\n`, 'utf8')
 
 await rm(targetDirectory, { recursive: true, force: true })
