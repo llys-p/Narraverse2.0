@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Library work in progress / 作品设定库建设中
+- L3 作品设定库四模式接入与 L4 按需整理方向已合入 GitHub 主线（PR #4）；本次不自动切换现有本机服务或迁移旧资料。
+- L3 Work Library integration across four modes and the optional L4 curation direction are now merged into GitHub main (PR #4); this does not replace a running local service or migrate legacy data.
 - L4 方向收口：旧资料不再需要常规盘点或批量迁移；无指定资料时以零数据变更结束，日后由用户选定单条来源、核对 Agent 草稿并通过现有设定库编辑器保存。C1/C2a 只读实验保留但不自动推进导入。
 - L4 direction closeout: legacy material no longer requires routine inventory or bulk migration. With no selected source, it ends without data changes; future items are curated one at a time through a user-reviewed Agent draft and the existing library editor. The C1/C2a read-only experiments remain optional and do not authorize import.
 - 本机 18095 体验实例已切换到新版正式静态包：游戏发送前可见待带入的作品设定库，旧 Lore 助手明确区分两套资料；原库、书籍和故事保留。该本机切换不代表 GitHub 发布或真实模型生成验收。

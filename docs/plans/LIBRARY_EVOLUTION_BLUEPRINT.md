@@ -1,7 +1,7 @@
 # 作品设定库 L2–L4 总骨架与接手入口
 
 更新：2026-09-28。历史基线说明见 Git；接手时必须重查当前 HEAD、工作树和验收证据。
-状态：L1/L2 已实现；L3 四模式工程验收见 `docs/acceptance/LIBRARY_L3_B5_FINAL_ACCEPTANCE.md`，当前 `library-b2a` 与用户运行版本/主线是否同步须分别核对。**L3 是新 Library 产品主闭环；L4 是按需整理旧资料，不是前置条件。**
+状态：L1/L2 已实现；L3 四模式工程验收见 `docs/acceptance/LIBRARY_L3_B5_FINAL_ACCEPTANCE.md`，L3 已通过 PR #4 合入 GitHub `main`（`81e201c`），但用户正在运行的实例是否使用该版本须单独核对。**L3 是新 Library 产品主闭环；L4 是按需整理旧资料，不是前置条件。**
 
 ## 1. 为什么这样分层
 
