@@ -85,8 +85,12 @@ def commit(core, sid, pv, ev="ev1"):
 
 def real_result(*, engine="laya", matched=True, fresh=True, delta=3.0, status="active",
                 role="state_shift", target="relationship.doubt", may_write=True,
-                checkpoint="typed-decisions", profile_id="fp_t"):
-    """构造 fake analyze_core 返回结构（含逐项核对所需字段）。"""
+                checkpoint="typed-decisions", profile_id="fp_t", auxiliaries=None):
+    """构造 fake analyze_core 返回结构（含逐项核对所需字段）。
+
+    `auxiliaries`：auxiliary 条目列表（P3-C 用），如
+    `[{"source_signal": "trust_shift", "role": "state_shift", "delta_if_enabled": 0.7}]`。
+    """
     proposal = {
         "profile": {"checkpoint": checkpoint, "profile_id": profile_id,
                     "matched": matched, "fresh": fresh,
@@ -94,15 +98,23 @@ def real_result(*, engine="laya", matched=True, fresh=True, delta=3.0, status="a
         "delta": ([{"source_signal": "doubt_shift", "status": status, "role": role,
                     "target": target, "delta": delta, "checkpoint": checkpoint,
                     "profile_id": profile_id}] if status == "active" else []),
-        "auxiliary": ([{"source_signal": "doubt_shift", "status": "auxiliary",
-                        "delta_if_enabled": delta}]
-                      if status == "auxiliary" else []),
+        "auxiliary": list(auxiliaries or []),
         "ignored_signals": [],
     }
     state_writable = ["doubt_shift"] if may_write else []
     return {"engine": engine, "state_proposal": proposal,
             "capability_summary": {"state_writable": state_writable},
             "signal_values": {"doubt": 0.6}}
+
+
+def _ev(result, cand):
+    """取 `_evidence_from_real_result` 的 evidence 列表（P3-C 起该函数返回 dict）。"""
+    return EV._evidence_from_real_result(result, cand)["evidence"]
+
+
+def _absent(result, cand):
+    """取 `_evidence_from_real_result` 的缺席原因。"""
+    return EV._evidence_from_real_result(result, cand)["absent_reason"]
 
 
 # ------------------------------------------------------------------ B1 翻译
@@ -118,32 +130,30 @@ def test_translation_lookup():
 # ------------------------------------------------------------------ B2/B3 门禁与逐项核对提取
 def test_evidence_from_real_result_gates():
     cand = {"action_id": "a1", "listener": "lia"}
-    ev = EV._evidence_from_real_result(real_result(delta=3.0), cand)
+    ev = _ev(real_result(delta=3.0), cand)
     chk("B3-① 正常 laya+active 提取一条 doubt_shift Evidence",
         len(ev) == 1 and ev[0]["source"] == EV.SOURCE_REAL
         and ev[0]["signals"][0]["delta"] == 3.0, str(ev))
     chk("B2-① engine=fallback → 无可写 Evidence",
-        EV._evidence_from_real_result(real_result(engine="fallback"), cand) == [], "")
+        _ev(real_result(engine="fallback"), cand) == [], "")
     chk("B2-② 档案不 fresh → 无可写 Evidence",
-        EV._evidence_from_real_result(real_result(fresh=False), cand) == [], "")
+        _ev(real_result(fresh=False), cand) == [], "")
     chk("B2-③ 档案不 matched（错误检查点）→ 无可写 Evidence",
-        EV._evidence_from_real_result(real_result(matched=False), cand) == [], "")
+        _ev(real_result(matched=False), cand) == [], "")
     # 逐项核对：错 role / 错 target / 错 checkpoint / may_write 非 true
     chk("B3-② 错 role（非 state_shift）→ 不写",
-        EV._evidence_from_real_result(real_result(role="behavior_tendency"), cand) == [], "")
+        _ev(real_result(role="behavior_tendency"), cand) == [], "")
     chk("B3-③ 错 target（非 relationship.doubt）→ 不写",
-        EV._evidence_from_real_result(real_result(target="relationship.trust"), cand) == [], "")
+        _ev(real_result(target="relationship.trust"), cand) == [], "")
     # delta.checkpoint 与 profile.checkpoint 不一致 → 不写
     r = real_result(checkpoint="typed-decisions")
     r["state_proposal"]["delta"][0]["checkpoint"] = "other-checkpoint"   # 篡改为不一致
-    chk("B3-④ 错 checkpoint（delta 与 profile 不一致）→ 不写",
-        EV._evidence_from_real_result(r, cand) == [], "")
+    chk("B3-④ 错 checkpoint（delta 与 profile 不一致）→ 不写", _ev(r, cand) == [], "")
     # may_write_state 非 true（doubt_shift 不在 state_writable）
-    chk("B3-⑤ may_write_state 非 true → 不写",
-        EV._evidence_from_real_result(real_result(may_write=False), cand) == [], "")
-    # auxiliary：delta 为空（auxiliary 在 proposal.auxiliary，不进 delta）
-    chk("B3-⑥ auxiliary 不写（status 非 active → delta 为空）",
-        EV._evidence_from_real_result(real_result(status="auxiliary"), cand) == [], "")
+    chk("B3-⑤ may_write_state 非 true → 不写", _ev(real_result(may_write=False), cand) == [], "")
+    # P3-C：status 非 active 的 doubt_shift 不进 delta，且无 auxiliary → evidence 空
+    chk("B3-⑥ status 非 active 且无 auxiliary → evidence 空",
+        _ev(real_result(status="auxiliary"), cand) == [], "")
 
 
 # ------------------------------------------------------------------ B4 隔离规则修正 + frozen_state 参数

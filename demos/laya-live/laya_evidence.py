@@ -30,6 +30,19 @@ SOURCE_FIXTURE = "test_fixture"
 #: 真实 Laya 推理产出的 Evidence 来源（区别于 fixture，绝不冒充）。
 SOURCE_REAL = "laya"
 
+#: `rules_only=true` 时 Evidence **缺席原因**（P3-C）：取值对应实际发生的阶段，便于区分
+#: 「未调用 Laya」「调用失败回落」「档案不可用」「有信号但无 active 可写」等不同情形。
+ABSENT_LAYA_NOT_INVOKED = "laya_not_invoked"             # 未接入 Laya Provider（根本没调用 Laya）
+ABSENT_NO_EVALUABLE_ACTION = "no_evaluable_action"        # 本轮无可评估的 communicate/question
+ABSENT_TRANSLATION_MISSING = "translation_missing"        # 冻结译文缺失，未调用 Laya
+ABSENT_ENGINE_FALLBACK = "engine_fallback"                # Laya 引擎回落 fallback（未取得真实模型信号）
+ABSENT_CAPABILITY_UNAVAILABLE = "capability_unavailable"  # 能力档案不可用/不新鲜
+ABSENT_NO_ACTIVE_WRITABLE = "no_active_writable_signal"   # 有信号但无 active 可写（可有 auxiliary）
+#: 缺席原因取值全集（供断言/白名单核对）。
+ABSENT_REASONS = (ABSENT_LAYA_NOT_INVOKED, ABSENT_NO_EVALUABLE_ACTION,
+                  ABSENT_TRANSLATION_MISSING, ABSENT_ENGINE_FALLBACK,
+                  ABSENT_CAPABILITY_UNAVAILABLE, ABSENT_NO_ACTIVE_WRITABLE)
+
 #: 第一切片唯一允许写入的有向关系（NPC → 玩家）；方向核对在 make_provider_input / entries_to_changes。
 ALLOWED_NPC_TO_PLAYER = frozenset({"lia"})
 
@@ -318,28 +331,29 @@ def default_real_infer(zh, en, npc_state, listener, session_id):
 
 
 def _evidence_from_real_result(result, cand):
-    """从真实 analyze_core 结果提取可写 Evidence（**逐项核对，不自行填 role/status/may_write**）。
+    """从真实 analyze_core 结果提取 Evidence（可写 + auxiliary 参考），并给出**缺席原因**。
 
-    门禁（任一不满足 → 空，绝不产出可写 Evidence）：
-      · engine == "laya"（fallback 引擎结果不算真实模型信号）；
-      · profile.matched 且 profile.fresh（档案不符/不新鲜 → 不写）；
-      · 对每条 delta：source_signal == doubt_shift 且 role == state_shift 且
-        status == active 且 target == relationship.doubt 且 checkpoint/profile_id 与
-        profile 一致，且 doubt_shift ∈ capability_summary.state_writable（may_write_state=true）。
+    返回 `{"evidence": [...], "absent_reason": str|None}`：
+      · active `doubt_shift`（逐项核对 role/status/target/checkpoint/profile_id/may_write_state
+        一致）进 evidence，`may_write_state=true`；
+      · 其余 `*_shift` **auxiliary** 进 evidence 作为**精简参考**（`may_write_state=false`，
+        仅 signal/role/status/delta，绝不进 State Transition 写项）；
+      · engine != laya（fallback）→ 空 evidence + `engine_fallback`；
+      · 档案不 matched/不 fresh → 空 evidence + `capability_unavailable`；
+      · 有信号但无 active 可写 → evidence 可有 auxiliary + `no_active_writable_signal`。
     以上字段全部来自真实结果，缺失或错配即拒绝，绝不默认填上。
     """
-    if not isinstance(result, dict):
-        return []
-    if result.get("engine") != "laya":
-        return []
+    if not isinstance(result, dict) or result.get("engine") != "laya":
+        return {"evidence": [], "absent_reason": ABSENT_ENGINE_FALLBACK}
     proposal = result.get("state_proposal") or {}
     profile = proposal.get("profile") or {}
     if not profile.get("matched") or not profile.get("fresh"):
-        return []
+        return {"evidence": [], "absent_reason": ABSENT_CAPABILITY_UNAVAILABLE}
     checkpoint = profile.get("checkpoint")
     profile_id = profile.get("profile_id")
     state_writable = set((result.get("capability_summary") or {}).get("state_writable") or [])
     signals = []
+    has_active = False
     for d in proposal.get("delta") or []:
         if d.get("source_signal") != STATE_SHIFT_SIGNAL:
             continue
@@ -363,19 +377,38 @@ def _evidence_from_real_result(result, cand):
             "may_write_state": True,
             "delta": d.get("delta"),
         })
+        has_active = True
+    # auxiliary：精简参考信息（不写状态，逐项只保留白名单字段）。
+    for a in proposal.get("auxiliary") or []:
+        sig = a.get("source_signal")
+        if not sig:
+            continue
+        signals.append({
+            "signal": sig,
+            "role": a.get("role"),
+            "status": "auxiliary",
+            "may_write_state": False,
+            "delta": a.get("delta_if_enabled"),
+        })
     if not signals:
-        return []
-    return [{
-        "source": SOURCE_REAL,
-        "action_id": cand["action_id"],
-        "target_npc": cand["listener"],
-        "signals": signals,
-    }]
+        # 模型未产出任何可读信号（既无 active 也无 auxiliary）
+        return {"evidence": [], "absent_reason": ABSENT_NO_ACTIVE_WRITABLE}
+    return {
+        "evidence": [{
+            "source": SOURCE_REAL,
+            "action_id": cand["action_id"],
+            "target_npc": cand["listener"],
+            "signals": signals,
+        }],
+        "absent_reason": None if has_active else ABSENT_NO_ACTIVE_WRITABLE,
+    }
 
 
 def make_real_evidence_provider(infer=None, xlate_lookup=None):
-    """构造真实 Laya Evidence Provider（符合 P3-A 的 `provider(provider_input)` 接口）。
+    """构造真实 Laya Evidence Provider。
 
+    返回 `provider(provider_input) -> {"evidence": [...], "absent_reason": str|None}` 的 callable
+    （P3-C 起带**缺席原因**；core 兼容 provider 返回 list 或 dict 两种形态）。
     参数（供零推理检查注入替换）：
       · infer：可替换推理函数，签名 infer(zh, en, npc_state, listener, session_id) -> dict；
         默认 `default_real_infer`（真实 analyze_core，apply_adjudication=False）。
@@ -387,12 +420,13 @@ def make_real_evidence_provider(infer=None, xlate_lookup=None):
 
     def provider(provider_input):
         if not provider_input or not provider_input.get("candidates"):
-            return []
+            return {"evidence": [], "absent_reason": ABSENT_NO_EVALUABLE_ACTION}
         cand = provider_input["candidates"][0]
         zh = cand.get("content") or cand.get("evidence_text") or ""
         en = xlate_lookup(zh)
         if en is None:
-            return []   # 翻译缺失即停（fail-closed，不写 Evidence，规则动作仍独立成立）
+            # 冻结译文缺失 → fail-closed，**未调用 Laya**；规则动作仍独立成立。
+            return {"evidence": [], "absent_reason": ABSENT_TRANSLATION_MISSING}
         npc_state = (provider_input.get("npc_state") or {}).get(cand["listener"]) or {}
         result = infer(zh, en, npc_state, cand["listener"],
                        provider_input.get("session_id"))
