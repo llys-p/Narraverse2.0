@@ -1146,7 +1146,7 @@ class DeliveryCore:
         return gained
 
     def _calculate(self, actor_id, intents, states, event_id=None,
-                   evidence_entries=None):
+                   evidence_entries=None, evidence_absent=None):
         """在副本上顺序结算，返回 (outcome, proposal, clarifications)。
 
         `event_id` 只用于声明条目的稳定 `entry_id`（`stmt:<event>:<action>`）；Prepare 与
@@ -1155,6 +1155,11 @@ class DeliveryCore:
         P3-A：`evidence_entries`（可选）为**已固化的 Evidence 条目**（Prepare 锁外调 Provider
         一次得到、存进候选）。非空时用 `entries_to_changes` 基于当前快照重算可写关系写项
         （**不二次调用 Provider**），与规则写项一起原子发布。None 时为纯规则结果。
+
+        P3-C：`evidence_absent`（可选）为【Evidence 缺席原因】；无 Laya 状态写项时写进
+        `outcome["evidence_absent_reason"]`，供回执区分「未调 Laya / 译文缺失 / 引擎
+        fallback / 档案不可用 / 无 active 可写」。active Evidence 被死区归零时 Evidence
+        仍存在，故此字段为 None；具体原因由信号的 transition.deadzone 表示。
         """
         work = _copy.deepcopy(states)
         ctx = {"event_id": event_id,
@@ -1233,6 +1238,8 @@ class DeliveryCore:
             "resolutions": resolutions, "facts_created": facts,
             "state_changes": changes, "rules_only": rules_only,
             "laya_evidence": evidence_entries or [],
+            # P3-C：仅在 rules_only 时给缺席原因；有真实写项时恒 None（不误导为「有 Evidence 却缺席」）。
+            "evidence_absent_reason": (evidence_absent if rules_only else None),
         }
         proposal = {"base_versions": None, "changes": changes}
         return outcome, proposal, clarifications
@@ -1264,6 +1271,7 @@ class DeliveryCore:
             "source": SOURCE,
             "rules_only": c["outcome"].get("rules_only", True),
             "laya_evidence": _copy.deepcopy(c["outcome"].get("laya_evidence") or []),
+            "evidence_absent_reason": c["outcome"].get("evidence_absent_reason"),
             "rules_fingerprint": c["rules_fingerprint"],
             "outcome": _copy.deepcopy(c["outcome"]),
             "state_proposal": _copy.deepcopy(c["proposal"]),
@@ -1366,10 +1374,20 @@ class DeliveryCore:
                 raise
 
         # ── 第二段（锁外）：耗时 Provider 调用。不持全局锁、不写任何状态。──
+        # P3-C：Evidence 缺席原因。区分「未接入 Laya」「无可评估动作」「译文缺失」等阶段；
+        # Provider 可返回 list（无诊断）或 {"evidence": [...], "absent_reason": ...}（带诊断）。
         evidence_entries = []
+        evidence_absent = None
+        if self._evidence_provider is None:
+            evidence_absent = _evidence.ABSENT_LAYA_NOT_INVOKED
+        elif provider_input is None:
+            evidence_absent = _evidence.ABSENT_NO_EVALUABLE_ACTION
         try:
             if self._evidence_provider is not None and provider_input is not None:
                 raw = self._evidence_provider(provider_input)
+                if isinstance(raw, dict):
+                    evidence_absent = raw.get("absent_reason")
+                    raw = raw.get("evidence") or []
                 evidence_entries = _evidence.normalize_evidence(raw, provider_input)
         except Exception as exc:
             # Provider 异常 → 释放 in-flight 占用（允许后续重新 Prepare），并明确报错。
@@ -1404,7 +1422,8 @@ class DeliveryCore:
                                       "Prepare 期间规则指纹已变化，请重新 Prepare")
                 outcome, proposal, clarifications = self._calculate(
                     aid, intents, snap2["states"], event_id,
-                    evidence_entries=_copy.deepcopy(evidence_entries))
+                    evidence_entries=_copy.deepcopy(evidence_entries),
+                    evidence_absent=evidence_absent)
                 if clarifications:
                     raise _ProtoError(409, "NEEDS_CLARIFICATION",
                                       "必需对象或目标无法确定，请澄清（不暗选）",
@@ -1420,6 +1439,8 @@ class DeliveryCore:
                     "outcome": outcome, "proposal": proposal,
                     # P3-A：固化 Evidence 条目，供 Commit 锁内重算（不二次调 Provider）。
                     "evidence_entries": _copy.deepcopy(evidence_entries),
+                    # P3-C：固化 Evidence 缺席原因，供 Commit 锁内重算出一致的 outcome。
+                    "evidence_absent": evidence_absent,
                     # P3-A-R1：固化服务端档案/检查点身份，供 Commit 锁内重验。
                     "capability_identity": _copy.deepcopy(capability_identity),
                     "rules_fingerprint": rules_fp_pre,
@@ -1525,7 +1546,8 @@ class DeliveryCore:
             # P3-A：用候选里已固化的 Evidence 条目重算关系写项（**不二次调用 Provider**）。
             outcome, proposal, clarifications = self._calculate(
                 aid, c["intents"], snap["states"], event_id,
-                evidence_entries=_copy.deepcopy(c.get("evidence_entries") or []))
+                evidence_entries=_copy.deepcopy(c.get("evidence_entries") or []),
+                evidence_absent=c.get("evidence_absent"))
             outcome["event_id"] = event_id
             proposal["base_versions"] = dict(expected)
             if clarifications or proposal["changes"] != c["proposal"]["changes"] \
@@ -1582,6 +1604,7 @@ class DeliveryCore:
                 "source": SOURCE,
                 "rules_only": outcome.get("rules_only", True),
                 "laya_evidence": _copy.deepcopy(outcome.get("laya_evidence") or []),
+                "evidence_absent_reason": outcome.get("evidence_absent_reason"),
                 "input_sha256": c["input_sha256"], "request_sha256": request_sha,
                 "rules_fingerprint": c["rules_fingerprint"],
                 "owner_changes": _copy.deepcopy(applied_owner),
