@@ -5,11 +5,44 @@
 指定 NPC。本模块只验证协议骨架本身 —— 版本、候选、逐动作结果、Canonical
 Outcome、原子发布、幂等、回退、旧写入口使候选失效。
 
-本模块**不接**：
+  本模块**不接**：
   · 自由语言 Interpreter（P2-A 在独立模块产出 ActionIntent，本模块只消费结构化意图）；
   · 真实 Laya 推理（本轮动作用服务端规则可独立裁决，显式 `rules_only`，
     回执中 `laya_evidence=[]`，从不声称有 Laya 证据）；
   · 云端叙事、页面（`communicate`/`inspect` 见 P2-B2a，非致命对抗见 P2-B2b）。
+
+P3-A 追加（服务端内部 Evidence 候选接线，仍零真实模型）：
+  · 新增可注入的 `evidence_provider`（服务端内部，默认 None = 纯规则）；只有注入的
+    Provider 才产生 `laya_evidence`，固定 fixture 显式 `source=test_fixture`，不冒充真实 Laya。
+  · 先有事实再取证据：只对 `execution_status=attempted` 且听者在场的 `communicate`，
+    且听者 `relationship_to == actor_id`（第一切片限 `lia → player`）才可能产出可写 Evidence。
+  · 可写信号仅 `role=state_shift` 且 `status=active` 的 `doubt_shift`，经 `B.state_transition`
+    校验后写 `lia.relationship.doubt`；其余信号最多作辅助 Evidence，不产生写项。
+  · Evidence 在 Prepare 时算一次并存进候选；Commit 锁内用候选里的 Evidence 重算并比对，
+    **不二次调用 Provider**。关系写项与规则写项经原有多实体事务一次发布、一次回滚。
+
+P3-A-R1 复审修复追加（仍零真实模型）：
+  · **档案身份重验**：新增可注入的服务端身份源 `capability_identity`（callable）；Prepare 锁内
+    读一次固化进候选，Commit 锁内重读比较，变化 → 409 `CAPABILITY_CHANGED`、零写入、不调模型。
+    身份来自服务端身份源，**不采信 Provider 自报**。
+  · **Provider 可见数据最小化**：`make_provider_input` 不传玩家完整 actor_state，目标 NPC 状态
+    剔除 `interaction.knowledge`；回执 Evidence 只保留协议白名单字段。
+  · **同轮写项口径**：同 NPC 同路径多条可写 Evidence 先累加 delta、再对整轮应用一次 transition。
+  · **锁边界**：Prepare 三段式——锁内（快照/事件占用/规则结算/身份固化）→ 锁外（耗时 Provider）
+    → 重新锁内（版本/事件复核）再存候选；锁外窗口状态变化 → 409，不发布旧候选。
+
+P3-A-R2 追加（同事件并发单飞，仍零真实模型）：
+  · 新增以 **(session_id, event_id)** 为键的 in-flight 占用表 `_inflight`（dict）。Prepare 第一段
+    离开锁前原子登记；同事件并发只允许一次 Provider 调用，同载荷 → 409 `PREPARE_IN_PROGRESS`，
+    不同载荷 → 409 `EVENT_PAYLOAD_CONFLICT`，不生成两个可提交候选。
+  · Provider 异常、版本冲突、正常结束均释放占用；重新入锁发布候选前复核占用归属、事件、版本，
+    以及锁外期间变化的档案身份（`CAPABILITY_CHANGED`）与规则指纹（`RULESET_CHANGED`）。
+
+P3-A-R3 追加（in-flight 异常释放与容量预留，仍零真实模型）：
+  · 第一段登记 in-flight 后，规则结算/身份源/规则指纹/Provider 输入构造任一抛异常，都经
+    try/except 释放占用再透出；身份源短暂异常后同一事件可重新 Prepare，不永久占用。
+  · 容量检查计入已占用的 in-flight 并预留本次请求（`len(_pending) + len(_inflight) + 1`），
+    并发 Prepare 不会把 Pending 撑过 `MAX_PENDING`。
 
 P2-B2a 追加（`communicate` / `inspect` 的服务端事实链，仍然无模型）：
   · **发言不等于事实**：`claim` 与一般声明/表态只落「带说话者、听者与 `asserted_by`
@@ -80,6 +113,7 @@ if __package__ in (None, ""):  # 允许以脚本/测试方式从 demos/laya-live
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from laya_state_protocol import _ProtoError  # noqa: E402  （错误协议与 P2 共用）
+import laya_evidence as _evidence  # noqa: E402  （P3-A Evidence Provider 接线）
 
 WORLD = "ic_world"
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -417,13 +451,33 @@ def scene_templates(B):
 class DeliveryCore:
     """P1 物品交付核心。所有写入口只有 `commit`；`prepare_structured` 零游戏写入。"""
 
-    def __init__(self, B, protocol=None, now=None):
+    def __init__(self, B, protocol=None, now=None, evidence_provider=None,
+                 capability_identity=None):
         self.B = B
         self.P = protocol if protocol is not None else B.PROTOCOL
         self.now = now or time.time
         self.templates = scene_templates(B)
         self._pending = {}      # analysis_id -> 候选（进程内，非正式历史）
-        self._inflight = set()  # (session, actor, event_id) single-flight
+        # P3-A-R2：in-flight 单飞占用表，键为 **(session_id, event_id)**（不是 actor 桶）。
+        # 值 = {"input_sha256", "actor_id", "started_at"}。登记/复核/释放都在 P.lock 内。
+        self._inflight = {}
+        # P3-A：服务端内部 Evidence Provider（可注入）。默认 None = 纯规则，回执
+        # 恒 `rules_only=true, laya_evidence=[]`。注入的固定 fixture 必须显式
+        # `source=test_fixture`，见 laya_evidence.py。
+        self._evidence_provider = evidence_provider
+        # P3-A-R1：服务端档案/检查点身份源（可注入 callable，无参返回 dict）。
+        # 这是「服务端取得的身份」，与 Provider 自报的字符串无关；Prepare 锁内读一次
+        # 固化进候选，Commit 锁内重读比较，变化即失效候选。P3-A 用可变的固定身份源
+        # 做反例；P3-B 接 load_capability_profile() 的 (profile_id, checkpoint)。
+        self._capability_identity = capability_identity
+
+    def _capability_identity_value(self):
+        """读取当前服务端档案/检查点身份（深拷贝，避免调用方改动身份源返回的引用）。"""
+        if callable(self._capability_identity):
+            val = self._capability_identity()
+        else:
+            val = None
+        return _copy.deepcopy(val) if val is not None else None
 
     # ------------------------------------------------------------------
     # 场景初始化（服务端完成，与 Prepare 分离）
@@ -1091,11 +1145,16 @@ class DeliveryCore:
                            "status": status})
         return gained
 
-    def _calculate(self, actor_id, intents, states, event_id=None):
+    def _calculate(self, actor_id, intents, states, event_id=None,
+                   evidence_entries=None):
         """在副本上顺序结算，返回 (outcome, proposal, clarifications)。
 
         `event_id` 只用于声明条目的稳定 `entry_id`（`stmt:<event>:<action>`）；Prepare 与
         Commit 必须传同一个值，否则锁内重算会与预览不一致。
+
+        P3-A：`evidence_entries`（可选）为**已固化的 Evidence 条目**（Prepare 锁外调 Provider
+        一次得到、存进候选）。非空时用 `entries_to_changes` 基于当前快照重算可写关系写项
+        （**不二次调用 Provider**），与规则写项一起原子发布。None 时为纯规则结果。
         """
         work = _copy.deepcopy(states)
         ctx = {"event_id": event_id,
@@ -1158,10 +1217,22 @@ class DeliveryCore:
             result, degree = _aggregate_attempted(attempted)
         else:
             result, degree = "partial_success", "partial_success"
+
+        # P3-A：Evidence（规则结果确定后，用同一副本 work 上的最终状态重算可写关系写项）。
+        if evidence_entries:
+            evidence_changes = _evidence.entries_to_changes(
+                self, work, actor_id, evidence_entries)
+        else:
+            evidence_changes = []
+        for ch in evidence_changes:
+            self.B._set_path(work[ch["entity_id"]], ch["path"], ch["after"])
+            changes.append(ch)
+        rules_only = not bool(evidence_changes)
         outcome = {
             "event_id": None, "status": "resolved", "result": result, "degree": degree,
             "resolutions": resolutions, "facts_created": facts,
-            "state_changes": changes, "rules_only": True, "laya_evidence": [],
+            "state_changes": changes, "rules_only": rules_only,
+            "laya_evidence": evidence_entries or [],
         }
         proposal = {"base_versions": None, "changes": changes}
         return outcome, proposal, clarifications
@@ -1190,7 +1261,9 @@ class DeliveryCore:
             "can_commit": ready,
             "base_versions": _copy.deepcopy(c["base_versions"]),
             "expires_at": _iso(c["expires_at"]),
-            "source": SOURCE, "rules_only": True, "laya_evidence": [],
+            "source": SOURCE,
+            "rules_only": c["outcome"].get("rules_only", True),
+            "laya_evidence": _copy.deepcopy(c["outcome"].get("laya_evidence") or []),
             "rules_fingerprint": c["rules_fingerprint"],
             "outcome": _copy.deepcopy(c["outcome"]),
             "state_proposal": _copy.deepcopy(c["proposal"]),
@@ -1210,6 +1283,10 @@ class DeliveryCore:
         intents = self._check_actions(req)
         input_sha = _sha_text({"session_id": sid, "actor_id": aid, "event_id": event_id,
                                "actions": intents})
+        inflight_key = (sid, event_id)  # 事件身份键，**不是** actor 桶
+
+        # ── 第一段（锁内）：快照 + 事件占用 + in-flight 单飞登记 + 规则结算 + 身份固化。──
+        # 只做确定性、无 IO 的操作；**不在锁内调用耗时 Provider**（P3-A-R1 锁边界）。
         with P.lock:
             self._cleanup()
             self._require_initialized(sid)          # 未初始化 → 明确错误，不产生 Pending
@@ -1249,34 +1326,111 @@ class DeliveryCore:
                 old = self._pending[other_id]
                 old["status"] = "invalidated"
                 old["terminal_at"] = self.now()
-            if len(self._pending) >= MAX_PENDING:
+            # ★ P3-A-R2/R3：in-flight 单飞——先做并发冲突检查（同事件，键=(session_id,event_id)）。
+            existing = self._inflight.get(inflight_key)
+            if existing is not None:
+                if existing["input_sha256"] != input_sha:
+                    raise _ProtoError(409, "EVENT_PAYLOAD_CONFLICT",
+                                      "同一 (session_id,event_id) 正被另一载荷 Prepare，拒绝并发",
+                                      {"existing_actor_id": existing.get("actor_id")})
+                raise _ProtoError(409, "PREPARE_IN_PROGRESS",
+                                  "同一 (session_id,event_id) 正在 Prepare，请稍后复用结果")
+            # ★ P3-A-R3：容量检查计入已占用的 in-flight，并预留本次请求（+1）。
+            #   否则并发 Prepare 会把 Pending 撑过 MAX_PENDING（A 复现 199→201）。
+            if len(self._pending) + len(self._inflight) + 1 > MAX_PENDING:
                 self._cleanup()
-            if len(self._pending) >= MAX_PENDING:
+            if len(self._pending) + len(self._inflight) + 1 > MAX_PENDING:
                 raise _ProtoError(429, "PENDING_CAPACITY",
-                                  "候选已达上限（%d），请等待过期" % MAX_PENDING)
-            outcome, proposal, clarifications = self._calculate(
-                aid, intents, snap["states"], event_id)
-            if clarifications:
-                raise _ProtoError(409, "NEEDS_CLARIFICATION",
-                                  "必需对象或目标无法确定，请澄清（不暗选）",
-                                  {"clarifications": sorted(set(clarifications))})
-            outcome["event_id"] = event_id
-            proposal["base_versions"] = dict(expected)
-            analysis_id = uuid.uuid4().hex
-            self._pending[analysis_id] = {
-                "analysis_id": analysis_id,
-                "session_id": sid, "actor_id": aid, "event_id": event_id,
-                "base_versions": dict(expected), "input_sha256": input_sha,
-                "intents": _copy.deepcopy(intents),
-                "snapshot": _copy.deepcopy(snap["states"]),
-                "outcome": outcome, "proposal": proposal,
-                "rules_fingerprint": self.rules_fingerprint(),
-                "source": SOURCE,
-                "status": "ready" if proposal["changes"] else "blocked",
-                "created_at": self.now(), "expires_at": self.now() + READY_TTL_S,
-                "terminal_at": None, "receipt": None,
-            }
-            return self._preview(self._pending[analysis_id])
+                                  "候选与进行中 Prepare 已达上限（%d），请等待过期" % MAX_PENDING)
+            # 原子登记 in-flight 占用。
+            self._inflight[inflight_key] = {"input_sha256": input_sha,
+                                            "actor_id": aid, "started_at": self.now()}
+            try:
+                # 规则结算（锁内，纯规则、无 Provider），只为拿到 resolutions 构造 Provider 输入。
+                outcome_rules, _proposal_rules, clarifications = self._calculate(
+                    aid, intents, snap["states"], event_id)
+                if clarifications:
+                    raise _ProtoError(409, "NEEDS_CLARIFICATION",
+                                      "必需对象或目标无法确定，请澄清（不暗选）",
+                                      {"clarifications": sorted(set(clarifications))})
+                # 服务端档案/检查点身份与规则指纹：锁内读一次，供第三段复核。
+                capability_identity = self._capability_identity_value()
+                rules_fp_pre = self.rules_fingerprint()
+                provider_input = _evidence.make_provider_input(
+                    snap["states"], aid, outcome_rules["resolutions"], event_id)
+                analysis_id = uuid.uuid4().hex
+            except Exception:
+                # 第一段登记后任何异常（规则/身份源/规则指纹/输入构造）都释放占用，不残留。
+                self._inflight.pop(inflight_key, None)
+                raise
+
+        # ── 第二段（锁外）：耗时 Provider 调用。不持全局锁、不写任何状态。──
+        evidence_entries = []
+        try:
+            if self._evidence_provider is not None and provider_input is not None:
+                raw = self._evidence_provider(provider_input)
+                evidence_entries = _evidence.normalize_evidence(raw, provider_input)
+        except Exception as exc:
+            # Provider 异常 → 释放 in-flight 占用（允许后续重新 Prepare），并明确报错。
+            with P.lock:
+                self._inflight.pop(inflight_key, None)
+            raise _ProtoError(500, "INTERNAL_ERROR",
+                              "Evidence Provider 失败，已释放事件占用：%s" % type(exc).__name__)
+
+        # ── 第三段（重新锁内）：复核占用归属/事件/版本/档案身份/规则指纹，用 evidence_entries 重算并存候选。──
+        with P.lock:
+            try:
+                # 复核占用归属：仍应是自己持有、载荷一致（单飞保证，防御性再确认）。
+                occ = self._inflight.get(inflight_key)
+                if occ is None or occ["input_sha256"] != input_sha:
+                    raise _ProtoError(409, "EVENT_PAYLOAD_CONFLICT",
+                                      "Prepare 期间该 event 占用已被改写，拒绝发布")
+                snap2 = self._snapshot(sid)
+                if snap2["versions"] != expected:
+                    raise _ProtoError(409, "STATE_VERSION_CONFLICT",
+                                      "Prepare 期间状态已变化，请重新读取场景再 Prepare",
+                                      {"current_versions": snap2["versions"]})
+                _rec_aid2, rec2 = self._find_event(sid, event_id)
+                if rec2 and rec2.get("status") == "committed":
+                    raise _ProtoError(409, "EVENT_ALREADY_COMMITTED",
+                                      "Prepare 期间该 event 已被提交，禁止重复写")
+                # 锁外期间档案/检查点身份与规则指纹是否变化
+                if self._capability_identity_value() != capability_identity:
+                    raise _ProtoError(409, "CAPABILITY_CHANGED",
+                                      "Prepare 期间服务端档案/检查点身份已变化，请重新 Prepare")
+                if self.rules_fingerprint() != rules_fp_pre:
+                    raise _ProtoError(409, "RULESET_CHANGED",
+                                      "Prepare 期间规则指纹已变化，请重新 Prepare")
+                outcome, proposal, clarifications = self._calculate(
+                    aid, intents, snap2["states"], event_id,
+                    evidence_entries=_copy.deepcopy(evidence_entries))
+                if clarifications:
+                    raise _ProtoError(409, "NEEDS_CLARIFICATION",
+                                      "必需对象或目标无法确定，请澄清（不暗选）",
+                                      {"clarifications": sorted(set(clarifications))})
+                outcome["event_id"] = event_id
+                proposal["base_versions"] = dict(expected)
+                self._pending[analysis_id] = {
+                    "analysis_id": analysis_id,
+                    "session_id": sid, "actor_id": aid, "event_id": event_id,
+                    "base_versions": dict(expected), "input_sha256": input_sha,
+                    "intents": _copy.deepcopy(intents),
+                    "snapshot": _copy.deepcopy(snap2["states"]),
+                    "outcome": outcome, "proposal": proposal,
+                    # P3-A：固化 Evidence 条目，供 Commit 锁内重算（不二次调 Provider）。
+                    "evidence_entries": _copy.deepcopy(evidence_entries),
+                    # P3-A-R1：固化服务端档案/检查点身份，供 Commit 锁内重验。
+                    "capability_identity": _copy.deepcopy(capability_identity),
+                    "rules_fingerprint": rules_fp_pre,
+                    "source": SOURCE,
+                    "status": "ready" if proposal["changes"] else "blocked",
+                    "created_at": self.now(), "expires_at": self.now() + READY_TTL_S,
+                    "terminal_at": None, "receipt": None,
+                }
+                return self._preview(self._pending[analysis_id])
+            finally:
+                # 无论成功/异常/冲突，都释放 in-flight 占用（正常结束也要释放）。
+                self._inflight.pop(inflight_key, None)
 
     def _check_session_id(self, req):
         v = req.get("session_id")
@@ -1356,9 +1510,21 @@ class DeliveryCore:
                 c["terminal_at"] = self.now()
                 raise _ProtoError(409, "RULESET_CHANGED",
                                   "规则指纹已变化，候选失效，请重新 Prepare")
+            # ③b 服务端档案/检查点身份重验（P3-A-R1）：锁内重读当前身份并与候选固化值比较；
+            #     变化即失效候选、不调模型、不提交。身份来自服务端身份源，非 Provider 自报。
+            cur_cap = self._capability_identity_value()
+            if cur_cap != c.get("capability_identity"):
+                c["status"] = "invalidated"
+                c["terminal_at"] = self.now()
+                raise _ProtoError(409, "CAPABILITY_CHANGED",
+                                  "服务端档案/检查点身份已变化，候选失效，请重新 Prepare",
+                                  {"current_identity": cur_cap,
+                                   "candidate_identity": c.get("capability_identity")})
             # ④ 锁内重算并与预览比对（不同 → 409 + 候选失效，绝不静默换结果）
+            # P3-A：用候选里已固化的 Evidence 条目重算关系写项（**不二次调用 Provider**）。
             outcome, proposal, clarifications = self._calculate(
-                aid, c["intents"], snap["states"], event_id)
+                aid, c["intents"], snap["states"], event_id,
+                evidence_entries=_copy.deepcopy(c.get("evidence_entries") or []))
             outcome["event_id"] = event_id
             proposal["base_versions"] = dict(expected)
             if clarifications or proposal["changes"] != c["proposal"]["changes"] \
@@ -1412,7 +1578,9 @@ class DeliveryCore:
                 "session_id": sid, "actor_id": aid, "event_id": event_id,
                 "base_versions": dict(expected),
                 "committed_at": _iso(ts),
-                "source": SOURCE, "rules_only": True, "laya_evidence": [],
+                "source": SOURCE,
+                "rules_only": outcome.get("rules_only", True),
+                "laya_evidence": _copy.deepcopy(outcome.get("laya_evidence") or []),
                 "input_sha256": c["input_sha256"], "request_sha256": request_sha,
                 "rules_fingerprint": c["rules_fingerprint"],
                 "owner_changes": _copy.deepcopy(applied_owner),

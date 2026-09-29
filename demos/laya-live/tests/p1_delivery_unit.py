@@ -497,8 +497,9 @@ def test_recompute_mismatch_still_invalidates():
         'actor_id': 'player', 'expected_versions': v, 'actions': [transfer_intent()]})
     original = core._calculate
 
-    def tampered(actor_id, intents, states, event_id=None):
-        outcome, proposal, clar = original(actor_id, intents, states, event_id)
+    def tampered(actor_id, intents, states, event_id=None, evidence_entries=None):
+        outcome, proposal, clar = original(actor_id, intents, states, event_id,
+                                           evidence_entries=evidence_entries)
         proposal = copy.deepcopy(proposal)
         proposal['changes'] = proposal['changes'][:-1]      # 模拟「重算得到不同结果」
         return outcome, proposal, clar
