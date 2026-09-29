@@ -275,13 +275,34 @@ def build_runtime_translate():
     return lookup
 
 
+def make_cloud_narrate_caller():
+    """生产叙事生成器（P3-D3b）：把 D3 已构造的 sys_p/user_p 经 `llm_chat_raw`
+    发往云端，返回原始 content（`<line>` 提取由 handle_post_narrate 统一做）。
+
+    不建行为提案、不调旧 /narrate 的隐式 decide、不回落台词池；传输失败/空内容
+    → 抛错（上层 502 NARRATION_FAILED，已提交状态与回执不变）。原始响应、推理
+    内容与 Prompt 不回流、不进日志。
+    """
+    mods = _mods()
+
+    def caller(facts, sys_p, user_p):
+        content, err = mods["B"].llm_chat_raw(sys_p, user_p)
+        if err:
+            raise RuntimeError("cloud_narrate_%s" % err)
+        return content
+    return caller
+
+
 def configure_real():
     """生产启动配置（`laya_bridge.main()` 在 `serve_forever` 前调用一次）。
 
     在**任何** GET/scene/prepare 可创建单例之前，把生产 Core 固定为：
       · `make_real_evidence_provider(xlate_lookup=运行翻译)`（真实 Evidence Provider，
         运行翻译与冻结资产分离）；
-      · `real_capability_identity`（服务端档案/检查点身份源，Commit 时重读）。
+      · `real_capability_identity`（服务端档案/检查点身份源，Commit 时重读）；
+      · P3-D3b：叙事生成器——**配置了云端凭据**才注入 `make_cloud_narrate_caller()`
+        （发送 D3 提示词、不隐式 decide、不回落台词池）；未配置凭据保持 None →
+        `/interaction/narrate` 明确 503 `NARRATOR_UNAVAILABLE`。
     测试注入的桩与生产配置分明：若单例已被测试创建则不覆盖；HTTP body 不能选 Provider。
     """
     mods = _mods()
@@ -295,6 +316,11 @@ def configure_real():
                 mods["B"], protocol=mods["B"].PROTOCOL,
                 evidence_provider=provider,
                 capability_identity=mods["E"].real_capability_identity)
+            import os as _os
+            if _os.environ.get("DEEPSEEK_API_KEY") or _os.environ.get("LLM_API_KEY"):
+                _SINGLETON["narrate_caller"] = make_cloud_narrate_caller()
+            else:
+                _SINGLETON["narrate_caller"] = None   # 未配置凭据 → 503 明确不可用
         except Exception as e:
             # 配置失败记录原因：后续无参 get_core() 会 fail-closed（500），绝不静默降级
             # 成 rules-only 单例。
@@ -683,12 +709,19 @@ def build_narrate_facts(rec, player_message):
 def build_narrate_prompt(facts):
     """叙事提示词：复用现有叙事规则语言与 <line> 格式；顺序即事实。
 
-    ★ 顺序硬约束**由已提交 steps 的实际顺序生成**：只有当该轮确实先交流后移动
-    时才表达「回答发生在移动之前」；先移动后交流的回合则表达相反顺序，
-    绝不无条件断言、绝不倒置事实。
+    ★ 顺序与事实措辞由 `_ordering_note` 按已提交 steps 的实际发生情况生成
+      （attempted 只证「询问发生」，线索按本轮 knowledge_gained、blocked 明确
+      「没有回答」，不臆造事实）。
+    ★ 角色身份与静态人设取**服务端配置**（`laya_bridge.CFG["actor"]`）；回合事实
+      只取已提交回执与服务端绑定的玩家原话，不接受客户端补报。
     ★ 语气信号只校准语气；不得改写物品归属、位置、门状态、关系值或泄露
-    未披露的私有知识（沿用现有 analysis/legacy 提示词的同类规则）。
+      未披露的私有知识（沿用现有 analysis/legacy 提示词的同类规则）。
     """
+    mods = _mods()
+    actor = mods["B"].CFG.get("actor") or {}
+    persona = json.dumps({k: actor.get(k) for k in ("personality", "traits",
+                                                    "situation", "goals")},
+                         ensure_ascii=False)
     steps_txt = []
     for s in facts.get("steps") or []:
         line = "第 %d 步（按发生顺序）：%s" % (s.get("n"),
@@ -705,6 +738,8 @@ def build_narrate_prompt(facts):
                 % json.dumps(facts.get("tone_signals") or [], ensure_ascii=False))
     sys_p = (
         "你在为文字冒险游戏写本回合的叙事台词。\n"
+        "角色：%s，%s。\n"
+        "人物与场景补充：%s\n"
         "玩家原话（服务端保存的原始输入）：%s\n"
         "本回合事实（按发生顺序）：\n%s\n"
         "%s\n"
@@ -718,7 +753,8 @@ def build_narrate_prompt(facts):
         "4) 不替玩家说话、不替玩家做决定。\n"
         "格式（必须遵守）：把最终台词原文放进 <line> 与 </line> 之间，"
         "这两个标签之外一个字符都不要写。"
-    ) % (facts.get("player_message") or "",
+    ) % (actor.get("name", "NPC"), actor.get("identity", ""), persona,
+         facts.get("player_message") or "",
          "\n".join(steps_txt) or "（无动作）",
          order_note, kg_note, sig_note)
     user_p = "请写出本回合的叙事台词。"
