@@ -1357,7 +1357,8 @@ class DeliveryCore:
                 capability_identity = self._capability_identity_value()
                 rules_fp_pre = self.rules_fingerprint()
                 provider_input = _evidence.make_provider_input(
-                    snap["states"], aid, outcome_rules["resolutions"], event_id)
+                    snap["states"], aid, outcome_rules["resolutions"], event_id,
+                    session_id=sid)
                 analysis_id = uuid.uuid4().hex
             except Exception:
                 # 第一段登记后任何异常（规则/身份源/规则指纹/输入构造）都释放占用，不残留。

@@ -2251,12 +2251,17 @@ def reset_history(session_id=None, actor_id=None):
     return hit
 
 
-def analyze_core(payload, turn_id=None, frozen_state=None):
+def analyze_core(payload, turn_id=None, frozen_state=None, apply_adjudication=True):
     """运行 Laya 判断并生成 Proposal；只读 Actor State，不提交任何状态变化。
 
     ★ P2-B1（2026-09-25）：`frozen_state` 由协议层在锁内捕获（服务器内部，不接受
       客户端快照伪装）。提供时跳过读桶，直接用冻结快照合并进本轮 actor 与校验，
       保证「分析用的状态」与「对外承诺的基础版本」是同一份。
+
+    ★ P3-B（2026-09-29）：`apply_adjudication`（默认 True，保持旧调用方行为）。
+      传 False 时**跳过** `apply_rule_adjudication()`，让 `state_proposal["delta"]` 只含
+      「模型原始信号经能力档案过滤」的结果，不含结构化/关键词规则修正。真实 Laya
+      Evidence 适配器必须用 False，以区分「模型信号」与「规则修正」。
     """
     actor = payload.get("actor") or CFG["actor"]
     history = payload.get("history") or []
@@ -2424,7 +2429,9 @@ def analyze_core(payload, turn_id=None, frozen_state=None):
     # ★ 规则层事件裁决（2026-09-25）：独立于 Laya 输出的启发式修正。
     #   口径：Laya 识别倾向，数值公式与裁决由规则层独立设计（见 apply_rule_adjudication）。
     #   安全边界：只作用于 doubt_shift；无命中时与旧版逐字节一致。
-    state_proposal = apply_rule_adjudication(state_proposal, signal_values, player_input)
+    #   P3-B：`apply_adjudication=False` 时跳过，把「模型信号」与「规则修正」分开。
+    if apply_adjudication:
+        state_proposal = apply_rule_adjudication(state_proposal, signal_values, player_input)
 
     # ★ 信号总表（Task9/Task10 的展示接口）：把 role / status / grade 直接挂到每个信号上。
     #   为什么不让前端自己按名字 join 三份数据 —— 前端 join 一定会和后端漂，
@@ -4256,7 +4263,20 @@ def _checkpoint_fingerprint(model):
 
 
 def _config_fingerprint():
-    return {"path": str(CFG_PATH), "sha": _sha256_file(CFG_PATH)}
+    """narra_config.json 指纹：raw sha + 仅 CRLF→LF 后的 sha_lf。
+
+    ★ P3-B（2026-09-29，A 授权）：config freshness 增加「仅 CRLF→LF 后 sha 精确等于
+      档案 sha」的兼容核对。.gitattributes 对 JSON 标 `text`，Windows 检出会把工作区
+      变成 CRLF，raw 哈希随之改变但配置内容一个字节没变。归一化只此一种（CRLF→LF），
+      去空白/重排序/读 Git HEAD 一律不做；真实内容改动会使两个哈希同时失配，照样拒绝。
+    """
+    out = {"path": str(CFG_PATH), "sha": _sha256_file(CFG_PATH), "sha_lf": None}
+    try:
+        b = Path(CFG_PATH).read_bytes()
+        out["sha_lf"] = hashlib.sha256(b.replace(b"\r\n", b"\n")).hexdigest()
+    except Exception:
+        pass
+    return out
 
 
 def _case_texts():
@@ -4829,8 +4849,12 @@ def load_capability_profiles(force=False):
         return None
 
 
-def load_capability_profile(model=None):
+def load_capability_profile(model=None, force=False):
     """运行时取当前检查点的能力档案 → (profile, check)。
+
+    ★ P3-B：`force=True` 时绕过 `_CAP_PROFILE_CACHE` 的 mtime 缓存、重读档案文件内容，
+      使「同 mtime 替换档案内容」也能被识别（身份变化 → fresh 变化 / profile_id 变化）。
+      real_capability_identity 用它做 Commit 身份重验，不能只依赖 mtime 缓存。
 
     check 里是「为什么可用 / 不可用」，decide() 会原样透出给上游：
       matched          —— 档案里的 checkpoint 与当前运行的是同一个
@@ -4843,7 +4867,7 @@ def load_capability_profile(model=None):
       而不是退回「所有 signal 都可用」—— 未知能力当全能力用，是最危险的默认值。
     """
     name = model or DEFAULT_MODEL_NAME
-    blob = load_capability_profiles()
+    blob = load_capability_profiles(force=force)
     check = {"checkpoint": name, "profile_file": str(CAPABILITY_PATH),
              "file_exists": CAPABILITY_PATH.exists(),
              "matched": False, "fresh": False, "problems": [], "code_changed": False,
@@ -4879,9 +4903,18 @@ def load_capability_profile(model=None):
             check["problems"].append(
                 "用例集已变（dataset sha 不符，且 CRLF→LF 兼容核对也不匹配）"
                 "→ 等级是在另一批输入上算的")
-    cfg_now = _config_fingerprint().get("sha")
-    if (ev.get("config") or {}).get("sha") != cfg_now:
-        check["problems"].append("narra_config.json 已变（config sha 不符）→ signal 定义可能已变")
+    cfg_now = _config_fingerprint()
+    cfg_arch = (ev.get("config") or {}).get("sha")
+    if cfg_arch != cfg_now.get("sha"):
+        # P3-B（A 授权）：仅 CRLF→LF 后 sha 精确等于档案 sha → 行尾兼容放行并记录；
+        # 真实内容改动 / 文件缺失 / 其他不匹配仍 fail-closed（两个 sha 同时失配）。
+        if cfg_arch and cfg_arch == cfg_now.get("sha_lf"):
+            check["config_line_ending_compat"] = {
+                "matched_via": "CRLF→LF（工作区行尾不同，配置内容与档案完全一致）",
+                "raw_sha": cfg_now.get("sha"), "lf_sha": cfg_now.get("sha_lf"),
+            }
+        else:
+            check["problems"].append("narra_config.json 已变（config sha 不符）→ signal 定义可能已变")
     ck_now = _checkpoint_fingerprint(name).get("id")
     if (ev.get("checkpoint") or {}).get("id") != ck_now:
         check["problems"].append("检查点本体已变（checkpoint id 不符）→ 必须重新验证")
