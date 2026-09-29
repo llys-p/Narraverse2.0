@@ -2812,12 +2812,38 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- routes ----
     def do_OPTIONS(self):
+        # ★ P3-D1：/interaction/* 的 OPTIONS 与真实请求同源口径一致（共用守卫：
+        #   带 Origin 且非同源 / 受信 origin 未配置 → 拒绝，不静默放行）。
+        path = self.path.split("?")[0]
+        if path.startswith("/interaction/"):
+            try:
+                import laya_interaction_http as _ih
+                reject = _ih._reject_foreign_origin(self.headers,
+                                                    getattr(self.server, "origin", None))
+                if reject:
+                    return self._json(reject[1], reject[0])
+            except Exception:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": "internal error", "details": None}}, 500)
         self.send_response(204)
         self._cors()
         self.end_headers()
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        # ★ P3-D1：/interaction/* 同源路由（在旧端点之前分发，语义独立）。
+        if path.startswith("/interaction/"):
+            try:
+                import laya_interaction_http as _ih
+                code, body = _ih.handle_get(
+                    path, self.path.split("?", 1)[1] if "?" in self.path else "",
+                    self.headers, getattr(self.server, "origin", None))
+                return self._json(body, code)
+            except Exception as e:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": "internal error", "details": None}}, 500)
         if path in ("/health", "/"):
             return self._json({
                 "ok": True,
@@ -2945,6 +2971,36 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+
+        # ★ P3-D1：/interaction/* 同源路由（协议端点，用 _read_protocol 严格读 body）。
+        if path.startswith("/interaction/"):
+            try:
+                payload = self._read_protocol()
+            except _ProtoError as e:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": e.code, "message": e.message,
+                                             "details": e.details}}, e.http)
+            try:
+                import laya_interaction_http as _ih
+                if path == "/interaction/scene":
+                    code, body = _ih.handle_post_scene(payload, self.headers,
+                                                       getattr(self.server, "origin", None))
+                elif path == "/interaction/prepare":
+                    code, body = _ih.handle_post_prepare(payload, self.headers,
+                                                         getattr(self.server, "origin", None))
+                elif path == "/interaction/commit":
+                    code, body = _ih.handle_post_commit(payload, self.headers,
+                                                        getattr(self.server, "origin", None))
+                else:
+                    code, body = 404, {"protocol_version": "laya-delivery-v1",
+                                       "error": {"code": "NOT_FOUND",
+                                                 "message": "未知 /interaction 路由",
+                                                 "details": None}}
+                return self._json(body, code)
+            except Exception:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": "internal error", "details": None}}, 500)
 
         # ★ P2-B1：协议端点（错误统一按 §8；响应带 protocol_version）。
         #   必须用 _read_protocol 单独读 body —— do_POST 开头的 _read()
@@ -6973,6 +7029,14 @@ def main():
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
+    # ★ P3-D1-R1：用真实监听地址/端口固定受信 origin，/interaction/* 的跨源拒绝才实际生效；
+    #   生产 Provider / 档案身份源 / 运行翻译在任何请求可创建 Core 前配置一次。
+    srv.origin = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        import laya_interaction_http as _ih
+        _ih.configure_real()
+    except Exception as e:
+        sys.stderr.write("（/interaction 生产配置失败：%r；/interaction/* 将 fail-closed）\n" % e)
     url = "http://127.0.0.1:%d" % PORT
     print("\n桥已启动：%s" % url)
     print("  GET  /health    体检（引擎 / Laya API 形状 / 已装预设）")
