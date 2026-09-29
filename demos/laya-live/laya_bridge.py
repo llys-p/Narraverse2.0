@@ -3006,6 +3006,10 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/interaction/commit":
                     code, body = _ih.handle_post_commit(payload, self.headers,
                                                         getattr(self.server, "origin", None))
+                elif path == "/interaction/narrate":
+                    # ★ P3-D3：叙事薄链（只消费已提交回合；不调旧 /narrate 的 decide 路径）。
+                    code, body = _ih.handle_post_narrate(payload, self.headers,
+                                                         getattr(self.server, "origin", None))
                 else:
                     code, body = 404, {"protocol_version": "laya-delivery-v1",
                                        "error": {"code": "NOT_FOUND",
