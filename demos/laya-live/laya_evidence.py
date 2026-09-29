@@ -27,6 +27,8 @@ from collections import OrderedDict
 
 #: Evidence 的 `source` 只能是 `test_fixture`（P3-B 起为真实来源）；fixture 必须显式标注。
 SOURCE_FIXTURE = "test_fixture"
+#: 真实 Laya 推理产出的 Evidence 来源（区别于 fixture，绝不冒充）。
+SOURCE_REAL = "laya"
 
 #: 第一切片唯一允许写入的有向关系（NPC → 玩家）；方向核对在 make_provider_input / entries_to_changes。
 ALLOWED_NPC_TO_PLAYER = frozenset({"lia"})
@@ -55,11 +57,12 @@ def _project_npc_state(state):
     return row
 
 
-def make_provider_input(states, actor_id, resolutions, event_id):
+def make_provider_input(states, actor_id, resolutions, event_id, session_id=None):
     """从服务端快照 + 已校验动作结果构造 Provider 输入（**只读**、纯函数）。
 
     返回 None 表示「没有可评估 Evidence 的目标动作」。输入不含任何客户端自报字段，也不含
     玩家完整 actor_state（只带 actor_id）；NPC 状态经 `_project_npc_state` 投影、剔除 knowledge。
+    `session_id`（可选）供真实 Provider 做历史/状态隔离，缺省时用 event_id 派生。
     """
     candidates = []
     for r in resolutions:
@@ -97,6 +100,7 @@ def make_provider_input(states, actor_id, resolutions, event_id):
     return {
         "event_id": event_id,
         "actor_id": actor_id,
+        "session_id": session_id or ("sess-" + str(event_id)),
         "candidates": candidates,
         "npc_state": {lid: _project_npc_state(states[lid])
                       for lid in sorted({c["listener"] for c in candidates})},
@@ -260,3 +264,163 @@ def fixture_provider_multi(deltas):
             })
         return out
     return _provider
+
+
+# ==========================================================================
+# P3-B：真实 Laya Evidence Provider（只取真实模型信号，隔离旧规则修正）
+# ==========================================================================
+#: 冻结译文资产路径（只读；缺失即停，不在线补译）。
+_XLATE_ASSETS_PATH = None
+_XLATE_ASSETS = None
+
+
+def _translation_assets():
+    """懒加载 tests/assets/translation_cache.json（中文原文 → 英文译文）。"""
+    global _XLATE_ASSETS, _XLATE_ASSETS_PATH
+    if _XLATE_ASSETS is None:
+        import json as _json
+        from pathlib import Path
+        here = Path(__file__).resolve().parent
+        path = here / "tests" / "assets" / "translation_cache.json"
+        _XLATE_ASSETS_PATH = path
+        try:
+            _XLATE_ASSETS = _json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            _XLATE_ASSETS = {}
+    return _XLATE_ASSETS
+
+
+def translation_cache_lookup(text):
+    """从冻结译文资产只读查英文译文；缺失返回 None（调用方应 fail-closed，不在线补译）。"""
+    if not text:
+        return None
+    return _translation_assets().get(text)
+
+
+def default_real_infer(zh, en, npc_state, listener, session_id):
+    """真实推理：调 `laya_bridge.analyze_core(apply_adjudication=False, frozen_state=npc_state)`。
+
+    这是「只取真实模型信号」的入口：`apply_adjudication=False` 使 `state_proposal["delta"]`
+    不含结构化/关键词规则修正（`apply_rule_adjudication`）。英文由调用方从冻结译文资产
+    读入（`player_input_en`），不触发在线翻译；服务端 NPC 快照经 **`frozen_state=` 函数
+    参数**传给 analyze_core（不放 payload），使 analyze_core 跳过回读 Actor State 桶、
+    用与 Prepare 一致的快照合并 relationship/emotion/goals。
+    """
+    import laya_bridge as _B
+    payload = {
+        "actor": _B.CFG.get("actor"),
+        "actor_id": listener,
+        "session_id": session_id,
+        "player_input": zh,
+        "player_input_en": en,
+    }
+    return _B.analyze_core(payload, frozen_state=npc_state, apply_adjudication=False)
+
+
+def _evidence_from_real_result(result, cand):
+    """从真实 analyze_core 结果提取可写 Evidence（**逐项核对，不自行填 role/status/may_write**）。
+
+    门禁（任一不满足 → 空，绝不产出可写 Evidence）：
+      · engine == "laya"（fallback 引擎结果不算真实模型信号）；
+      · profile.matched 且 profile.fresh（档案不符/不新鲜 → 不写）；
+      · 对每条 delta：source_signal == doubt_shift 且 role == state_shift 且
+        status == active 且 target == relationship.doubt 且 checkpoint/profile_id 与
+        profile 一致，且 doubt_shift ∈ capability_summary.state_writable（may_write_state=true）。
+    以上字段全部来自真实结果，缺失或错配即拒绝，绝不默认填上。
+    """
+    if not isinstance(result, dict):
+        return []
+    if result.get("engine") != "laya":
+        return []
+    proposal = result.get("state_proposal") or {}
+    profile = proposal.get("profile") or {}
+    if not profile.get("matched") or not profile.get("fresh"):
+        return []
+    checkpoint = profile.get("checkpoint")
+    profile_id = profile.get("profile_id")
+    state_writable = set((result.get("capability_summary") or {}).get("state_writable") or [])
+    signals = []
+    for d in proposal.get("delta") or []:
+        if d.get("source_signal") != STATE_SHIFT_SIGNAL:
+            continue
+        # 逐项核对（缺一项即拒绝），不从 status 反推 role / may_write_state。
+        if d.get("role") != "state_shift":
+            continue
+        if d.get("status") != "active":
+            continue
+        if d.get("target") != "relationship.doubt":
+            continue
+        if d.get("checkpoint") != checkpoint:
+            continue
+        if d.get("profile_id") != profile_id:
+            continue
+        if STATE_SHIFT_SIGNAL not in state_writable:
+            continue  # may_write_state != true
+        signals.append({
+            "signal": STATE_SHIFT_SIGNAL,
+            "role": d.get("role"),
+            "status": d.get("status"),
+            "may_write_state": True,
+            "delta": d.get("delta"),
+        })
+    if not signals:
+        return []
+    return [{
+        "source": SOURCE_REAL,
+        "action_id": cand["action_id"],
+        "target_npc": cand["listener"],
+        "signals": signals,
+    }]
+
+
+def make_real_evidence_provider(infer=None, xlate_lookup=None):
+    """构造真实 Laya Evidence Provider（符合 P3-A 的 `provider(provider_input)` 接口）。
+
+    参数（供零推理检查注入替换）：
+      · infer：可替换推理函数，签名 infer(zh, en, npc_state, listener, session_id) -> dict；
+        默认 `default_real_infer`（真实 analyze_core，apply_adjudication=False）。
+      · xlate_lookup：可替换翻译查询，签名 xlate_lookup(zh) -> en|None；
+        默认 `translation_cache_lookup`（只读冻结译文资产）。
+    """
+    infer = infer or default_real_infer
+    xlate_lookup = xlate_lookup or translation_cache_lookup
+
+    def provider(provider_input):
+        if not provider_input or not provider_input.get("candidates"):
+            return []
+        cand = provider_input["candidates"][0]
+        zh = cand.get("content") or cand.get("evidence_text") or ""
+        en = xlate_lookup(zh)
+        if en is None:
+            return []   # 翻译缺失即停（fail-closed，不写 Evidence，规则动作仍独立成立）
+        npc_state = (provider_input.get("npc_state") or {}).get(cand["listener"]) or {}
+        result = infer(zh, en, npc_state, cand["listener"],
+                       provider_input.get("session_id"))
+        return _evidence_from_real_result(result, cand)
+    return provider
+
+
+def real_capability_identity(model=None):
+    """服务端真实档案/检查点身份源（callable，无参调用，供 core 的 capability_identity 注入）。
+
+    身份 = `checkpoint` / `profile_id` / `matched` / `fresh` / **能力档案文件内容 SHA256** /
+    **ENGINE 当前实际 model_name**。前三项在「同 mtime 替换档案内容、保留 profile_id」时
+    不会变（例如把 `doubt_shift.may_write_state` 改掉），故必须绑定档案内容 SHA，才能让
+    Commit 识别变化；绑定 ENGINE 实际 `model_name` 使「实际模型名改变」也使旧候选失效。
+    档案不可读 → **fail-closed**（抛错，不返回可用身份）。用 `force=True` 绕过 mtime 缓存重读。
+    """
+    import laya_bridge as _B
+    profile_sha = _B._sha256_file(_B.CAPABILITY_PATH)
+    if not profile_sha:
+        # 档案不可读 → 不返回可用身份；Prepare/Commit 调用处据此 fail-closed（拒绝）。
+        raise RuntimeError("能力档案不可读，无法确定服务端档案身份（fail-closed）")
+    _prof, check = _B.load_capability_profile(model, force=True)
+    engine_model = getattr(_B.ENGINE, "model_name", None) or _B.DEFAULT_MODEL_NAME
+    return {
+        "checkpoint": check.get("checkpoint"),
+        "profile_id": check.get("profile_id"),
+        "matched": bool(check.get("matched")),
+        "fresh": bool(check.get("fresh")),
+        "profile_sha256": profile_sha,
+        "engine_model": engine_model,
+    }
