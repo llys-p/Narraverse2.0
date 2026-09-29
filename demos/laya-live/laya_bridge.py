@@ -91,6 +91,8 @@ from laya_state_protocol import LayaStateProtocol, _ProtoError, MAX_BODY_BYTES
 HERE = Path(__file__).resolve().parent
 CFG_PATH = HERE / "narra_config.json"
 DEMO_HTML = HERE / "laya-live-demo.html"
+# ★ P3-D2b：Interaction Demo 页面（只消费 /interaction/* 五端点，独立于旧 /demo）。
+INTERACTION_DEMO_HTML = HERE / "laya_interaction_demo.html"
 ENV_PATH = HERE / ".env"
 # 这些是密钥：以 .env 为准，不让系统环境变量覆盖。
 # 理由：本机用户级环境变量里存着一个**已失效**的 DEEPSEEK_API_KEY（尾号 d4f0），
@@ -2832,6 +2834,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        # ★ P3-D2b：同源 Interaction Demo 页面。必须在 /interaction/* API 分发之前：
+        #   页面加载是普通导航（不做 Origin 门禁），API 调用仍走下方 handle_get 守卫。
+        if path == "/interaction/demo":
+            if not INTERACTION_DEMO_HTML.exists():
+                return self._json({"error": "缺少 %s" % INTERACTION_DEMO_HTML.name}, 404)
+            body = INTERACTION_DEMO_HTML.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self._cors()
+            self.end_headers()
+            return self.wfile.write(body)
         # ★ P3-D1：/interaction/* 同源路由（在旧端点之前分发，语义独立）。
         if path.startswith("/interaction/"):
             try:
@@ -7042,6 +7057,7 @@ def main():
     print("  GET  /health    体检（引擎 / Laya API 形状 / 已装预设）")
     print("  GET  /config    读取 narra_config.json")
     print("  GET  /demo      打开演示页（?auto=N 可自动问第 N 句，便于无人值守截图）")
+    print("  GET  /interaction/demo  Interaction 演示页（输入→候选→确认提交，只走 /interaction/*）")
     print("  POST /decide    单轮 NPC Tick：决策信号 → Policy Resolver → 行为候选")
     print("  POST /narrate   按选中的行为生成台词（LLM 或台词池；不传 behavior 会自动先 decide）")
     print("  POST /world     独立 World Tick（低频世界事件，不再混进 /decide）")

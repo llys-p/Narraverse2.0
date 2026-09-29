@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Narraverse · Interaction 演示（/interaction/*）</title>
+<style>
+  :root{
+    --bg:#0a0c11; --panel:#11141c; --panel2:#161a24; --panel3:#1b2030;
+    --line:#232937; --line2:#2e3648;
+    --txt:#e8ebf2; --dim:#8b93a6; --dim2:#5d667a;
+    --laya:#a78bfa; --laya-d:#6d4aff;
+    --story:#22d3ee; --ok:#34d399; --bad:#f87171; --warn:#fbbf24;
+    --fs:"Segoe UI",system-ui,-apple-system,"Microsoft YaHei","PingFang SC",sans-serif;
+    --fm:"JetBrains Mono","Cascadia Code",Consolas,"SF Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 700px at 15% -10%,#1a1430 0%,transparent 60%),
+               radial-gradient(900px 600px at 100% 0%,#0d2830 0%,transparent 55%),var(--bg);
+    color:var(--txt);font-family:var(--fs);font-size:13.5px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2a3145;border-radius:9px;border:2px solid transparent;background-clip:padding-box}
+  .mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+  button{font-family:inherit;font-size:12.5px;color:var(--txt);background:var(--panel2);
+    border:1px solid var(--line2);border-radius:8px;padding:6px 12px;cursor:pointer;transition:.16s;white-space:nowrap}
+  button:hover{background:var(--panel3);border-color:#3d4763}
+  button:active{transform:translateY(1px)}
+  button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  button.primary{background:linear-gradient(150deg,rgba(124,92,255,.34),rgba(34,211,238,.18));border-color:#5b46c9}
+  button.primary:hover{background:linear-gradient(150deg,rgba(124,92,255,.48),rgba(34,211,238,.26))}
+  button.ok{background:linear-gradient(150deg,rgba(52,211,153,.22),rgba(34,211,238,.14));border-color:#1f7a55}
+  textarea{font-family:inherit;font-size:13.5px;color:var(--txt);background:#0d1017;
+    border:1px solid var(--line2);border-radius:8px;padding:9px 11px;outline:none;transition:.16s;width:100%;resize:vertical}
+  textarea:focus{border-color:#5b46c9;box-shadow:0 0 0 3px rgba(124,92,255,.13)}
+
+  header{position:sticky;top:0;z-index:50;background:rgba(10,12,17,.84);backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);padding:13px 22px 11px}
+  .hrow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .logo{width:30px;height:30px;border-radius:9px;flex:none;display:grid;place-items:center;font-weight:800;
+    font-size:15px;color:#0a0c11;background:linear-gradient(140deg,var(--laya-d),#22d3ee);box-shadow:0 0 22px rgba(124,92,255,.45)}
+  h1{font-size:15.5px;font-weight:650;white-space:nowrap}
+  h1 span{color:var(--laya)}
+  .sub{font-size:11.5px;color:var(--dim2)}
+  .spacer{flex:1}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:5px 10px;border-radius:7px;
+    background:var(--panel2);border:1px solid var(--line2);color:var(--dim);white-space:nowrap}
+  .badge b{color:var(--txt);font-weight:600}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px currentColor;flex:none}
+  .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)} .dot.off{background:var(--dim2)}
+
+  .wrap{display:grid;grid-template-columns:300px minmax(430px,1fr) 360px;gap:14px;padding:14px 22px 22px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+  .card h2{font-size:12px;color:var(--dim);letter-spacing:.12em;margin-bottom:9px;display:flex;align-items:center;gap:8px}
+  .card h2 .spacer{flex:1}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12px;align-items:baseline}
+  .kv .k{color:var(--dim2);white-space:nowrap}
+  .kv .v{color:var(--txt);font-family:var(--fm);font-size:11.5px;word-break:break-all}
+  .hint{font-size:11.5px;color:var(--dim2)}
+
+  /* 阶段横幅 */
+  .phase{border-radius:9px;padding:9px 12px;font-size:12.5px;border:1px solid var(--line2);background:var(--panel2);display:flex;gap:9px;align-items:flex-start}
+  .phase .p-dot{margin-top:5px}
+  .phase.preview{border-color:#5b46c9}
+  .phase.committed{border-color:#1f7a55}
+  .phase.error{border-color:#7a3b3b}
+  .phase b{font-weight:650}
+  .phase .why{color:var(--dim);font-size:11.5px;margin-top:2px}
+
+  /* 预览条目 */
+  .row{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:8px 10px;margin-bottom:7px}
+  .row:last-child{margin-bottom:0}
+  .row .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row .nm{font-weight:650;font-size:12.5px}
+  .row .d{font-size:11.5px;color:var(--dim)}
+  .pill{display:inline-flex;align-items:center;font-family:var(--fm);font-size:10px;padding:2px 7px;border-radius:6px;border:1px solid var(--line2);color:var(--dim);white-space:nowrap}
+  .pill.laya{color:var(--laya);border-color:#4a3a8a;background:rgba(124,92,255,.08)}
+  .pill.ok{color:var(--ok);border-color:#1f4a38}
+  .pill.bad{color:var(--bad);border-color:#5a2f2f}
+  .pill.warn{color:var(--warn);border-color:#5a4a1f}
+  .chg{font-size:11.5px;color:var(--dim);font-family:var(--fm);margin-top:4px;word-break:break-all}
+  .chg b{color:var(--txt);font-weight:600}
+  .clue{border-left:2px solid var(--story);padding-left:9px;margin-top:7px;font-size:12px}
+  .clue .src{color:var(--dim2);font-size:10.5px}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--dim);font-size:11.5px;user-select:none}
+  details[open] summary{margin-bottom:6px}
+  .empty{color:var(--dim2);font-size:12px;padding:6px 2px}
+  .err{color:var(--bad);font-size:12px;margin-top:6px;word-break:break-all}
+  .ok-txt{color:var(--ok);font-size:12px;margin-top:6px}
+  .actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .ver{margin-top:8px;border-top:1px dashed var(--line);padding-top:7px}
+  .ver summary{font-size:11px}
+  .ver .kv{margin-top:5px}
+  footer{margin-top:2px;font-size:10.5px;color:var(--dim2);padding:0 22px 18px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="logo">I</div>
+    <h1>Narraverse · <span>Interaction 演示</span></h1>
+    <div class="sub">输入原话 → 查看候选 → 确认后提交（只消费 /interaction/* 五端点）</div>
+    <div class="spacer"></div>
+    <div class="badge" id="phaseBadge"><span class="dot off" id="phaseDot"></span>阶段：<b id="phaseName">初始化</b></div>
+    <div class="badge">会话：<b class="mono" id="sessionBadge" data-session-id="">—</b></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- 左列：输入与提示 -->
+  <div class="col">
+    <div class="card">
+      <h2>本轮原话</h2>
+      <textarea id="msgInput" rows="3" maxlength="4000"
+        placeholder="例如：我先问莉亚地窖钥匙在哪里，然后去旧井"></textarea>
+      <div class="actions">
+        <button class="primary" id="prepareBtn" disabled>准备候选</button>
+        <button id="newEventBtn" disabled>换新事件重输</button>
+      </div>
+      <div class="hint" id="inputHint">正在初始化会话…</div>
+    </div>
+
+    <div class="card">
+      <h2>状态与错误</h2>
+      <div id="noticeBox"><div class="empty">暂无</div></div>
+    </div>
+
+    <div class="card">
+      <h2>会话</h2>
+      <div class="kv">
+        <span class="k">session_id</span><span class="v" id="sidText">—</span>
+        <span class="k">event_id</span><span class="v" id="eidText">—</span>
+        <span class="k">阶段</span><span class="v" id="phaseText">初始化</span>
+      </div>
+      <div class="actions">
+        <button id="refreshBtn" disabled>刷新权威状态</button>
+      </div>
+      <details class="ver">
+        <summary>expected_versions（完整版本映射）</summary>
+        <div class="kv" id="verList"></div>
+      </details>
+    </div>
+  </div>
+
+  <!-- 中列：候选预览 -->
+  <div class="col">
+    <div class="card">
+      <h2>候选预览<span class="spacer"></span><span class="pill" id="previewStatePill">—</span></h2>
+      <div id="phaseBanner"><div class="phase"><span class="dot off p-dot"></span><span>尚未准备候选。输入原话并点击「准备候选」。</span></div></div>
+      <div id="previewBody"></div>
+      <div class="actions" id="commitArea" hidden>
+        <button class="ok" id="commitBtn">确认本轮（提交）</button>
+        <button id="replayBtn" hidden>重放完全相同的提交</button>
+        <button id="requeryBtn" hidden>重新查询回执</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右列：权威状态与回执 -->
+  <div class="col">
+    <div class="card">
+      <h2>权威状态（GET /interaction/state）</h2>
+      <div id="worldView"><div class="empty">尚未读取</div></div>
+    </div>
+    <div class="card">
+      <h2>最近回执（GET /interaction/receipt）</h2>
+      <div id="receiptView"><div class="empty">尚未提交</div></div>
+    </div>
+  </div>
+</div>
+
+<footer>本页只呈现 /interaction/* 玩家视角白名单；候选在确认前不会写入游戏状态；此阶段不生成角色台词。</footer>
+
+<script>
+"use strict";
+// 页面状态机（仅供测试观测，不参与渲染逻辑）
+window.__P3D2B__ = {
+  phase: "init",
+  sessionId: null,
+  versions: null,
+  eventId: null,
+  analysisId: null,
+  baseVersions: null,
+  lastCommitPayload: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function setPhase(name) {
+  const dot = $("phaseDot"), nm = $("phaseName"), pt = $("phaseText");
+  window.__P3D2B__.phase = name;
+  const map = {
+    init: ["off", "初始化"], preparing: ["warn", "准备中"], preview: ["warn", "候选预览（未提交）"],
+    committing: ["warn", "提交中"], committed: ["ok", "已提交"], error: ["bad", "错误"],
+  };
+  const [cls, label] = map[name] || ["off", name];
+  dot.className = "dot " + cls;
+  nm.textContent = label;
+  pt.textContent = label;
+}
+
+function setNotice(html) { $("noticeBox").replaceChildren(html); }
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { data = null; }
+  return { status: res.status, data };
+}
+
+function makeSessionId() {
+  const old = sessionStorage.getItem("p3d2b_session");
+  if (old && /^[A-Za-z0-9_-]{1,64}$/.test(old)) return old;
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let s = "d2b-";
+  for (let i = 0; i < 8; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  sessionStorage.setItem("p3d2b_session", s);
+  return s;
+}
+
+const OP_ZH = { communicate: "交流", move: "移动", take: "拾取", unlock: "解锁",
+                transfer: "转交", inspect: "观察", attack: "对抗" };
+const KIND_ZH = { question: "询问", claim: "声称", threat: "威胁", challenge: "角力",
+                  violence: "暴力", statement: "陈述" };
+const DEG_ZH = { success: "成功", partial_success: "部分成功", strong_success: "大成功",
+                 exceptional_success: "卓越成功", failure: "失败", critical_failure: "严重失败" };
+const PATH_ZH = [["interaction.location", "位置"], ["interaction.energy", "体力"],
+                 ["interaction.turn_tick", "回合"], ["interaction.facts", "事实"],
+                 ["relationship.doubt", "怀疑"], ["relationship.trust", "信任"],
+                 ["interaction.balance_pressure", "失衡"], ["interaction.objects", "场景物件"]];
+function zhPath(p) {
+  for (const [k, v] of PATH_ZH) if (String(p).includes(k)) return v + "（" + p + "）";
+  return p;
+}
+const ABSENT_ZH = {
+  laya_not_invoked: "本地判断未接入（纯规则结果）",
+  no_evaluable_action: "本轮没有可评估的动作",
+  translation_missing: "译文缺失，未运行本地判断",
+  engine_fallback: "本地引擎回退，未运行本地判断",
+  capability_unavailable: "能力档案不可用，未运行本地判断",
+  no_active_writable_signal: "本地判断无可写信号",
+};
+
+function fmtReason(code) {
+  const map = { NEEDS_CLARIFICATION: "表述不够明确，需要补充信息", UNSUPPORTED_OPERATION: "该操作暂不支持",
+    STATE_VERSION_CONFLICT: "状态已变化（版本冲突）", SCENE_NOT_INITIALIZED: "场景尚未初始化",
+    EVENT_PAYLOAD_CONFLICT: "同一事件已有不同载荷", PREPARE_IN_PROGRESS: "同一事件正在准备中",
+    INTERPRETATION_INVALID: "解释结果不合法", INTERPRETER_UNAVAILABLE: "云端解释暂不可用",
+    ANALYSIS_NOT_FOUND: "候选不存在或已清理", ANALYSIS_EXPIRED: "候选已过期", ANALYSIS_INVALIDATED: "候选已失效",
+    CAPABILITY_CHANGED: "能力档案已变化", RULESET_CHANGED: "规则已变化", PENDING_CAPACITY: "候选容量已满",
+    INVALID_REQUEST: "请求不合法", RECEIPT_UNKNOWN: "未找到已提交回执", EVENT_ALREADY_COMMITTED: "该事件已提交",
+    IDEMPOTENCY_CONFLICT: "重放基准版本与已提交回执不符" };
+  return map[code] || code;
+}
+
+// ---------------- 初始化 ----------------
+async function ensureScene() {
+  const sid = makeSessionId();
+  window.__P3D2B__.sessionId = sid;
+  $("sessionBadge").textContent = sid;
+  $("sessionBadge").dataset.sessionId = sid;
+  $("sidText").textContent = sid;
+  const r = await api("POST", "/interaction/scene", { session_id: sid });
+  if (r.status !== 200) {
+    setPhase("error");
+    setNotice(el("div", "err", "场景初始化失败：" + fmtReason(r.data && r.data.error && r.data.error.code)));
+    return false;
+  }
+  return await refreshState();
+}
+
+async function refreshState() {
+  const sid = window.__P3D2B__.sessionId;
+  const r = await api("GET", "/interaction/state?session_id=" + encodeURIComponent(sid));
+  if (r.status !== 200) {
+    setPhase("error");
+    setNotice(el("div", "err", "读取权威状态失败：" + fmtReason(r.data && r.data.error && r.data.error.code)));
+    return false;
+  }
+  window.__P3D2B__.versions = r.data.versions;
+  renderVersions(r.data.versions);
+  renderWorld(r.data.states);
+  return true;
+}
+
+function renderVersions(v) {
+  const box = $("verList");
+  box.replaceChildren();
+  for (const [k, val] of Object.entries(v || {})) {
+    box.appendChild(el("span", "k", k));
+    box.appendChild(el("span", "v", val));
+  }
+}
+
+function renderWorld(states) {
+  const box = $("worldView");
+  box.replaceChildren();
+  if (!states) { box.appendChild(el("div", "empty", "尚未读取")); return; }
+  const p = states.player && states.player.interaction || {};
+  const l = states.lia && states.lia.interaction || {};
+  const w = states.ic_world && states.ic_world.interaction || {};
+  const rel = (states.lia && states.lia.relationship) || {};
+  const grid = el("div", "kv");
+  const add = (k, v) => { grid.appendChild(el("span", "k", k)); grid.appendChild(el("span", "v", v)); };
+  add("玩家位置", p.location || "—");
+  add("玩家体力", String(p.energy == null ? "—" : p.energy));
+  add("莉亚·怀疑", String(rel.doubt == null ? "—" : rel.doubt));
+  add("莉亚·信任", String(rel.trust == null ? "—" : rel.trust));
+  add("回合数", String(w.turn_tick == null ? "—" : w.turn_tick));
+  const facts = w.facts || [];
+  add("事实数", String(facts.length));
+  box.appendChild(grid);
+  if (facts.length) {
+    const d = el("details");
+    const s = el("summary", null, "最近事实（权威）");
+    d.appendChild(s);
+    for (const f of facts.slice(-4)) d.appendChild(el("div", "chg", JSON.stringify(f)));
+    box.appendChild(d);
+  }
+}
+
+// ---------------- Prepare ----------------
+let busy = false;
+let lastMessage = null;   // 同一表述的重试沿用同一 event；新表述 = 新一轮（新 event）
+
+function newEventId() {
+  const s = "ev-" + Date.now().toString(36);
+  return s;
+}
+
+async function onPrepare() {
+  if (busy) return;
+  const msg = $("msgInput").value.trim();
+  if (!msg) { setNotice(el("div", "err", "请输入原话")); return; }
+  if (!window.__P3D2B__.versions) { setNotice(el("div", "err", "权威状态未就绪，请先刷新")); return; }
+  busy = true;
+  const sid = window.__P3D2B__.sessionId;
+  // 同一表述的重试沿用同一 event（不因一次网络失败暗中换 event ID）；
+  // 换了表述就是新一轮，必须换新 event，否则会被同事件载荷冲突拒绝。
+  if (!window.__P3D2B__.eventId || msg !== lastMessage) {
+    window.__P3D2B__.eventId = newEventId();
+    $("eidText").textContent = window.__P3D2B__.eventId;
+  }
+  lastMessage = msg;
+  const eid = window.__P3D2B__.eventId;
+  $("prepareBtn").disabled = true;
+  $("newEventBtn").disabled = true;
+  setPhase("preparing");
+  setNotice(el("div", "hint", "正在解释与结算…（同事件重试不会重复计费）"));
+  $("previewStatePill").textContent = "准备中";
+
+  let r;
+  try {
+    r = await api("POST", "/interaction/prepare", {
+      session_id: sid, event_id: eid, message: msg,
+      expected_versions: window.__P3D2B__.versions,
+    });
+  } catch (e) {
+    setPhase("error");
+    $("previewStatePill").textContent = "网络失败";
+    setNotice(el("div", "err", "网络失败，未换事件。可直接重试（同一 event_id，服务端不会重复计费）。"));
+    busy = false;
+    $("prepareBtn").disabled = false;
+    return;
+  }
+
+  busy = false;
+  $("prepareBtn").disabled = false;
+  if (r.status !== 200) {
+    const code = r.data && r.data.error && r.data.error.code;
+    setPhase("error");
+    $("previewStatePill").textContent = "失败";
+    $("phaseBanner").replaceChildren(phaseBox("bad", "准备失败：" + (code || r.status), fmtReason(code)));
+    $("previewBody").replaceChildren();
+    $("commitArea").hidden = true;
+    if (code === "STATE_VERSION_CONFLICT") {
+      await refreshState();
+      setNotice(el("div", "err", "版本冲突：已刷新权威状态，请点击「换新事件重输」后重新输入。"));
+      $("newEventBtn").disabled = false;
+    } else {
+      setNotice(el("div", "err", "准备失败：" + fmtReason(code)));
+    }
+    return;
+  }
+
+  window.__P3D2B__.analysisId = r.data.analysis_id;
+  window.__P3D2B__.baseVersions = r.data.base_versions;
+  renderPreview(r.data);
+  setNotice(el("div", "ok-txt", "候选已生成。此阶段没有任何游戏写入，确认后才提交。"));
+}
+
+function phaseBox(cls, title, why) {
+  const box = el("div", "phase " + (cls === "bad" ? "error" : "preview"));
+  box.appendChild(el("span", "dot " + cls + " p-dot"));
+  const txt = el("span");
+  txt.appendChild(el("b", null, title));
+  if (why) txt.appendChild(el("div", "why", why));
+  box.appendChild(txt);
+  return box;
+}
+
+function renderPreview(pv) {
+  const body = $("previewBody");
+  body.replaceChildren();
+  const can = !!pv.can_commit;
+  setPhase("preview");
+  $("previewStatePill").textContent = can ? "候选就绪" : "不可提交";
+  $("phaseBanner").replaceChildren(phaseBox(
+    can ? "warn" : "bad",
+    can ? "候选预览（未提交）—— 状态将在你确认后写入" : "候选不可提交",
+    can ? "点击「确认本轮」以使用 analysis_id + base_versions 提交" : "原因见下方，本轮不会提交"));
+
+  // 逐动作结果
+  const resRows = pv.resolutions || [];
+  if (resRows.length) {
+    for (const r of resRows) {
+      const row = el("div", "row");
+      const top = el("div", "top");
+      top.appendChild(el("span", "nm", (OP_ZH[r.operation] || r.operation) + (r.kind ? "·" + (KIND_ZH[r.kind] || r.kind) : "")));
+      const st = r.execution_status === "attempted" ? "ok" : (r.execution_status === "blocked" ? "bad" : "warn");
+      top.appendChild(el("span", "pill " + st, r.execution_status === "attempted" ? "已尝试" : (r.execution_status || "—")));
+      if (r.degree) top.appendChild(el("span", "pill", DEG_ZH[r.degree] || r.degree));
+      if (r.target_id) top.appendChild(el("span", "pill", "目标 " + r.target_id));
+      row.appendChild(top);
+      body.appendChild(row);
+    }
+  }
+
+  // 可见变更（折叠）
+  const chg = pv.changes || [];
+  if (chg.length) {
+    const d = el("details");
+    d.appendChild(el("summary", null, "可见状态变更（" + chg.length + " 项，提交后生效）"));
+    for (const c of chg) {
+      const line = el("div", "chg");
+      line.appendChild(el("b", null, zhPath(c.path)));
+      line.appendChild(document.createTextNode("  " + JSON.stringify(c.before) + " → " + JSON.stringify(c.after)));
+      d.appendChild(line);
+    }
+    body.appendChild(d);
+  }
+
+  // 玩家线索
+  const kg = pv.knowledge_gained || [];
+  if (kg.length) {
+    const d = el("details");
+    d.open = true;
+    d.appendChild(el("summary", null, "玩家本轮获得的线索（" + kg.length + " 条）"));
+    for (const row of kg) {
+      const e = row.entry || {};
+      const line = el("div", "clue");
+      line.appendChild(el("div", null, e.content || e.entry_id));
+      const src = el("div", "src", "来源：" + (e.told_by ? e.told_by + " 告知" : (e.source || "—")));
+      line.appendChild(src);
+      d.appendChild(line);
+    }
+    body.appendChild(d);
+  }
+
+  // Laya 参考信号 + rules_only 说明（折叠）
+  const ev = pv.laya_evidence || [];
+  const d2 = el("details");
+  d2.appendChild(el("summary", null, "本地判断信号（" + ev.length + " 组）与 rules_only 说明"));
+  const sigs = [];
+  for (const e of ev) {
+    for (const s of (e.signals || [])) {
+      sigs.push({
+        target: e.target_npc, signal: s.signal, status: s.status,
+        may_write: !!s.may_write_state, delta: s.delta,
+      });
+    }
+  }
+  for (const s of sigs) {
+    const line = el("div", "chg");
+    if (s.status === "active" && s.may_write) {
+      // 只标「资格」，不预告发布：是否真写以 rules_only 与预览 changes 为准
+      line.appendChild(el("b", null, "可写信号 " + s.signal + "（具备可写资格，原始 delta=" + s.delta + "）"));
+    } else {
+      line.appendChild(el("b", null, "参考信号（不写状态）" + s.signal + "：" + s.delta));
+    }
+    d2.appendChild(line);
+  }
+  if (pv.rules_only === false) {
+    d2.appendChild(el("div", "chg", "本轮包含真实关系写项（确认后发布）。"));
+  } else if (pv.evidence_absent_reason) {
+    d2.appendChild(el("div", "chg", ABSENT_ZH[pv.evidence_absent_reason] || pv.evidence_absent_reason));
+  } else if (ev.length) {
+    // 无关系写项时不猜测原因（HTTP 响应没有 transition 明细，不能断言一定是死区归零）
+    d2.appendChild(el("div", "chg", "收到判断（具备可写资格），本轮关系值未变化；以提交后的权威状态为准。"));
+  } else {
+    d2.appendChild(el("div", "chg", "纯规则结果（未调用本地判断）。"));
+  }
+  body.appendChild(d2);
+
+  if (!can) {
+    const rc = (pv.reason_codes || []).join("、");
+    body.appendChild(el("div", "err", "不可提交原因：" + (rc || "无写项")));
+    $("commitArea").hidden = true;
+  } else {
+    $("commitArea").hidden = false;
+    $("commitBtn").disabled = false;
+    $("commitBtn").hidden = false;
+    $("replayBtn").hidden = true;
+    $("requeryBtn").hidden = true;
+  }
+}
+
+// ---------------- Commit ----------------
+function buildCommitPayload() {
+  return {
+    session_id: window.__P3D2B__.sessionId,
+    event_id: window.__P3D2B__.eventId,
+    analysis_id: window.__P3D2B__.analysisId,
+    expected_versions: window.__P3D2B__.baseVersions,
+  };
+}
+
+function receiptUrl(payload) {
+  return "/interaction/receipt?session_id=" + encodeURIComponent(payload.session_id)
+       + "&event_id=" + encodeURIComponent(payload.event_id);
+}
+
+async function onCommit() {
+  if (busy) return;
+  const payload = buildCommitPayload();
+  window.__P3D2B__.lastCommitPayload = payload;   // 首次提交的完整 payload 固定保存
+  busy = true;
+  $("prepareBtn").disabled = true;
+  $("commitBtn").disabled = true;
+  setPhase("committing");
+  setNotice(el("div", "hint", "正在提交…"));
+
+  let r;
+  try {
+    r = await api("POST", "/interaction/commit", payload);
+  } catch (e) {
+    return await resolveUnclearCommit(payload, "提交响应中断");
+  }
+
+  if (r.status !== 200) {
+    busy = false;
+    const code = r.data && r.data.error && r.data.error.code;
+    setPhase("error");
+    setNotice(el("div", "err", "提交失败：" + fmtReason(code)));
+    $("commitArea").hidden = false;
+    $("commitBtn").hidden = false;
+    $("replayBtn").hidden = true;
+    $("requeryBtn").hidden = true;
+    if (code === "STATE_VERSION_CONFLICT" || code === "ANALYSIS_EXPIRED" || code === "ANALYSIS_INVALIDATED") {
+      $("commitBtn").disabled = true;
+      await refreshState();
+      setNotice(el("div", "err", "版本冲突/候选失效：已刷新权威状态，请点击「换新事件重输」后重新输入。"));
+      $("newEventBtn").disabled = false;
+    } else {
+      $("commitBtn").disabled = false;
+      $("prepareBtn").disabled = false;
+    }
+    return;
+  }
+  await onCommitted(r.data);
+}
+
+// 结果不明状态机：优先查 receipt；明确 404 才开放同请求重放；
+// receipt 查询也断网 → 可恢复的「仍无法确认」（保留同事件，可重新查询），
+// 绝不把网络故障误当 404，也不重新解释或生成新 event。
+async function resolveUnclearCommit(payload, why) {
+  let rr;
+  try {
+    rr = await api("GET", receiptUrl(payload));
+  } catch (e) {
+    busy = false;
+    setPhase("error");
+    setNotice(el("div", "err", why + "，且回执查询也断网：仍无法确认。已保留同一事件，可重新查询回执（不会重新解释或更换事件）。"));
+    $("commitArea").hidden = false;
+    $("commitBtn").hidden = true;
+    $("replayBtn").hidden = true;
+    $("requeryBtn").hidden = false;
+    return;
+  }
+  if (rr.status === 200) {
+    if (await onCommitted(rr.data)) {
+      setNotice(el("div", "ok-txt", why + "，但回执显示已提交（以权威回执为准）。"));
+    }
+    return;
+  }
+  busy = false;
+  if (rr.status === 404) {
+    // 明确 404：未提交过 → 才开放完全相同请求的重放
+    setPhase("error");
+    setNotice(el("div", "err", "提交结果不明且回执明确不存在（404）。可重放完全相同的提交（不会二次记账）。"));
+    $("commitArea").hidden = false;
+    $("commitBtn").hidden = true;
+    $("replayBtn").hidden = false;
+    $("requeryBtn").hidden = true;
+    return;
+  }
+  // 其它错误（5xx/422 等）：不当作 404，可重新查询
+  const code = rr.data && rr.data.error && rr.data.error.code;
+  setPhase("error");
+  setNotice(el("div", "err", "回执查询失败（" + (code || rr.status) + "）：仍无法确认。可重新查询回执。"));
+  $("commitArea").hidden = false;
+  $("commitBtn").hidden = true;
+  $("replayBtn").hidden = true;
+  $("requeryBtn").hidden = false;
+}
+
+async function onRequeryReceipt() {
+  if (busy) return;
+  const payload = window.__P3D2B__.lastCommitPayload;
+  if (!payload) return;
+  busy = true;
+  setNotice(el("div", "hint", "正在重新查询回执…"));
+  return await resolveUnclearCommit(payload, "提交结果仍不明");
+}
+
+async function onReplay() {
+  if (busy) return;
+  const payload = window.__P3D2B__.lastCommitPayload;   // 与首次提交逐字一致
+  if (!payload) return;
+  busy = true;
+  setPhase("committing");
+  setNotice(el("div", "hint", "正在重放完全相同的提交…"));
+  let r;
+  try {
+    r = await api("POST", "/interaction/commit", payload);
+  } catch (e) {
+    return await resolveUnclearCommit(payload, "重放响应中断");
+  }
+  if (r.status !== 200) {
+    busy = false;
+    const code = r.data && r.data.error && r.data.error.code;
+    setPhase("error");
+    setNotice(el("div", "err", "重放失败：" + fmtReason(code)));
+    $("commitArea").hidden = false;
+    $("commitBtn").hidden = true;
+    $("replayBtn").hidden = false;
+    $("requeryBtn").hidden = true;
+    if (code === "STATE_VERSION_CONFLICT" || code === "ANALYSIS_EXPIRED" || code === "ANALYSIS_INVALIDATED") {
+      await refreshState();
+      setNotice(el("div", "err", "版本冲突/候选失效：已刷新权威状态，请点击「换新事件重输」后重新输入。"));
+      $("newEventBtn").disabled = false;
+    }
+    return;
+  }
+  await onCommitted(r.data);
+}
+
+async function onCommitted(rec) {
+  setPhase("committed");
+  $("commitArea").hidden = true;
+  $("previewStatePill").textContent = "已提交";
+  $("phaseBanner").replaceChildren(phaseBox("ok",
+    "已提交（" + (rec.replayed ? "幂等重放" : "本轮发布") + "）commit_id=" + rec.commit_id, ""));
+  let stateOk = false, receiptOk = false;
+  try { stateOk = await refreshState(); } catch (e) { /* 提交已成功，允许稍后刷新 */ }
+  const sid = window.__P3D2B__.sessionId;
+  try {
+    const rr = await api("GET", "/interaction/receipt?session_id=" + encodeURIComponent(sid)
+                         + "&event_id=" + encodeURIComponent(rec.event_id || window.__P3D2B__.eventId));
+    if (rr.status === 200) { renderReceipt(rr.data); receiptOk = true; }
+  } catch (e) { /* 已有 Commit 回执，读取可稍后重试 */ }
+  if (!receiptOk) renderReceipt(rec);  // Commit/receipt 的成功响应本身也是权威回执
+  setPhase("committed");
+  setNotice(el("div", stateOk && receiptOk ? "ok-txt" : "err",
+    stateOk && receiptOk ? "提交成功。右侧权威状态与回执已更新。"
+                         : "提交已成功，但状态或回执刷新暂失败；当前显示提交响应中的权威回执，请稍后刷新权威状态。"));
+  window.__P3D2B__.eventId = null;
+  window.__P3D2B__.analysisId = null;
+  window.__P3D2B__.baseVersions = null;
+  window.__P3D2B__.lastCommitPayload = null;   // 成功后清理暂存 payload
+  lastMessage = null;
+  $("eidText").textContent = "—";
+  $("newEventBtn").disabled = false;
+  $("prepareBtn").disabled = false;
+  busy = false;
+  return stateOk && receiptOk;
+}
+
+function renderReceipt(rec) {
+  const box = $("receiptView");
+  box.replaceChildren();
+  const grid = el("div", "kv");
+  const add = (k, v) => { grid.appendChild(el("span", "k", k)); grid.appendChild(el("span", "v", v)); };
+  add("commit_id", rec.commit_id || "—");
+  add("event_id", rec.event_id || "—");
+  add("replayed", rec.replayed ? "true（幂等重放）" : "false");
+  add("rules_only", String(rec.rules_only));
+  if (rec.evidence_absent_reason) add("缺席原因", ABSENT_ZH[rec.evidence_absent_reason] || rec.evidence_absent_reason);
+  box.appendChild(grid);
+  const kg = rec.knowledge_gained || [];
+  if (kg.length) {
+    const d = el("details");
+    d.open = true;
+    d.appendChild(el("summary", null, "玩家本轮获得的线索（" + kg.length + " 条）"));
+    for (const row of kg) {
+      const e = row.entry || {};
+      const line = el("div", "clue");
+      line.appendChild(el("div", null, e.content || e.entry_id));
+      line.appendChild(el("div", "src", "来源：" + (e.told_by ? e.told_by + " 告知" : (e.source || "—"))));
+      d.appendChild(line);
+    }
+    box.appendChild(d);
+  }
+  const oc = rec.owner_changes || [];
+  if (oc.length) {
+    const d = el("details");
+    d.appendChild(el("summary", null, "归属变化（" + oc.length + " 项）"));
+    for (const c of oc) d.appendChild(el("div", "chg", JSON.stringify(c)));
+    box.appendChild(d);
+  }
+}
+
+function onNewEvent() {
+  window.__P3D2B__.eventId = null;
+  window.__P3D2B__.analysisId = null;
+  lastMessage = null;
+  $("eidText").textContent = "—";
+  $("newEventBtn").disabled = true;
+  $("prepareBtn").disabled = false;
+  $("previewStatePill").textContent = "—";
+  $("previewBody").replaceChildren();
+  $("phaseBanner").replaceChildren(phaseBox("warn", "等待新输入（将使用新的 event_id）", ""));
+  setPhase("preview");
+  setNotice(el("div", "hint", "已重置事件：重新输入后将以新事件准备。"));
+}
+
+// ---------------- 绑定 ----------------
+$("prepareBtn").addEventListener("click", onPrepare);
+$("commitBtn").addEventListener("click", onCommit);
+$("replayBtn").addEventListener("click", onReplay);
+$("requeryBtn").addEventListener("click", onRequeryReceipt);
+$("refreshBtn").addEventListener("click", async () => { await refreshState(); setNotice(el("div", "ok-txt", "已刷新权威状态。")); });
+$("newEventBtn").addEventListener("click", onNewEvent);
+$("msgInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onPrepare(); }
+});
+
+(async function init() {
+  const ok = await ensureScene();
+  if (ok) {
+    setPhase("init");
+    $("prepareBtn").disabled = false;
+    $("refreshBtn").disabled = false;
+    $("inputHint").textContent = "输入原话后点击「准备候选」。候选确认前不会写入游戏状态。";
+    setNotice(el("div", "hint", "场景已初始化，权威状态已读取。"));
+  }
+})();
+</script>
+</body>
+</html>
