@@ -1256,11 +1256,15 @@ class DeliveryCore:
                                 "source": "canonical_facts"})
         if not attempted:
             result, degree = ("blocked", None) if blocked else ("no_attempt", None)
-        elif not blocked and len(attempted) == len(resolutions):
-            # 全部已尝试：档位取其最低者（旧口径下恒为 achieved/success，只有 attack 会变）。
-            result, degree = _aggregate_attempted(attempted)
-        else:
+        elif blocked:
+            # ★ ZCode-R1（F1）：attempted 与 blocked 并存才是「部分成功」。skipped
+            # （否定/假设/引用/依赖未满足）既不是尝试也不是失败，不参与聚合、不拉低整轮
+            # —— 旧口径 `len(attempted) == len(resolutions)` 把 skipped 也计进去，
+            # 「交付成功 + 一句 negated 声明」会被错误记成 partial_success。
             result, degree = "partial_success", "partial_success"
+        else:
+            # 全部为已尝试（无 blocked）：档位只取已尝试集合的最低者（只有 attack 会变）。
+            result, degree = _aggregate_attempted(attempted)
 
         # P3-A：Evidence（规则结果确定后，用同一副本 work 上的最终状态重算可写关系写项）。
         if evidence_entries:
@@ -1294,6 +1298,8 @@ class DeliveryCore:
                 if c.get("expires_at") and now >= c["expires_at"]]
         for aid in drop:
             self._pending.pop(aid, None)
+            # ZCode-R1a：过期候选被回收 → 会话级登记成对释放（owner 校验防误清）。
+            self._release_claim(aid)
         return len(drop)
 
     def _preview(self, c):
@@ -1373,15 +1379,36 @@ class DeliveryCore:
                 old = self._pending[other_id]
                 old["status"] = "invalidated"
                 old["terminal_at"] = self.now()
+                # ZCode-R1a：被取代候选转终态 → 其会话级登记按 owner 成对释放。
+                self._release_claim(old["analysis_id"])
             # ★ P3-A-R2/R3：in-flight 单飞——先做并发冲突检查（同事件，键=(session_id,event_id)）。
             existing = self._inflight.get(inflight_key)
             if existing is not None:
                 if existing["input_sha256"] != input_sha:
                     raise _ProtoError(409, "EVENT_PAYLOAD_CONFLICT",
-                                      "同一 (session_id,event_id) 正被另一载荷 Prepare，拒绝并发",
+                                      "同一 (session_id,event_id) 已由另一 actor 或另一组动作占用",
                                       {"existing_actor_id": existing.get("actor_id")})
                 raise _ProtoError(409, "PREPARE_IN_PROGRESS",
                                   "同一 (session_id,event_id) 正在 Prepare，请稍后复用结果")
+            # ★ ZCode-R1a：会话级登记覆盖 in-flight 与 Ready/Pending 全生命周期。
+            #   protocol 侧登记先经 event_claim 惰性校验（终态/过期/基准失效自动剪除）；
+            #   delivery 侧登记按自身 Pending 校验（status=ready 且未过期才算存活）。
+            #   存活登记一律 409（同路径幂等复用/同 sha 换版本重做已在上方分支先行处理，
+            #   同 sha 同版本的 in-flight 单飞也已在上方以 PREPARE_IN_PROGRESS 拒绝）。
+            claim = self.P.event_claim(sid, event_id)
+            if claim is not None and claim.get("path") == "delivery":
+                cand = self._pending.get(claim.get("owner"))
+                if not cand or cand.get("status") != "ready" \
+                        or self.now() >= (cand.get("expires_at") or 0):
+                    self.P._event_busy.pop(inflight_key, None)
+                    claim = None
+            if claim is not None:
+                raise _ProtoError(
+                    409, "EVENT_PAYLOAD_CONFLICT",
+                    "同一 (session_id,event_id) 已存在未决候选/占用（%s@%s）"
+                    % (claim.get("path"), (claim.get("scope") or (None, None))[1]),
+                    {"occupied_by": claim.get("path"),
+                     "existing_actor_id": (claim.get("scope") or (None, None))[1]})
             # ★ P3-A-R3：容量检查计入已占用的 in-flight，并预留本次请求（+1）。
             #   否则并发 Prepare 会把 Pending 撑过 MAX_PENDING（A 复现 199→201）。
             if len(self._pending) + len(self._inflight) + 1 > MAX_PENDING:
@@ -1392,6 +1419,14 @@ class DeliveryCore:
             # 原子登记 in-flight 占用。
             self._inflight[inflight_key] = {"input_sha256": input_sha,
                                             "actor_id": aid, "started_at": self.now()}
+            # ZCode-R1（P-F1）：会话级占用登记（协议实例持有，交付与旧协议共用可见）；
+            # 释放与上方 _inflight 同点成对进行。
+            # ZCode-R1b：固化 base_versions —— 协议层 event_claim 据此惰性识别
+            # 「基准已失效但 Pending 仍标 ready」的交付候选并释放登记（R1b 修复2）。
+            self.P._event_busy[inflight_key] = {
+                "path": "delivery", "owner": "%s@%s" % (input_sha[:12], self.now()),
+                "scope": (sid, aid), "sha": input_sha,
+                "base_versions": dict(expected), "since": self.now()}
             try:
                 # 规则结算（锁内，纯规则、无 Provider），只为拿到 resolutions 构造 Provider 输入。
                 outcome_rules, _proposal_rules, clarifications = self._calculate(
@@ -1410,6 +1445,7 @@ class DeliveryCore:
             except Exception:
                 # 第一段登记后任何异常（规则/身份源/规则指纹/输入构造）都释放占用，不残留。
                 self._inflight.pop(inflight_key, None)
+                self.P._event_busy.pop(inflight_key, None)
                 raise
 
         # ── 第二段（锁外）：耗时 Provider 调用。不持全局锁、不写任何状态。──
@@ -1432,10 +1468,12 @@ class DeliveryCore:
             # Provider 异常 → 释放 in-flight 占用（允许后续重新 Prepare），并明确报错。
             with P.lock:
                 self._inflight.pop(inflight_key, None)
+                self.P._event_busy.pop(inflight_key, None)
             raise _ProtoError(500, "INTERNAL_ERROR",
                               "Evidence Provider 失败，已释放事件占用：%s" % type(exc).__name__)
 
         # ── 第三段（重新锁内）：复核占用归属/事件/版本/档案身份/规则指纹，用 evidence_entries 重算并存候选。──
+        published = False   # ZCode-R1a：成功发布候选后会话级登记保留到终态，不随 finally 释放。
         with P.lock:
             try:
                 # 复核占用归属：仍应是自己持有、载荷一致（单飞保证，防御性再确认）。
@@ -1488,10 +1526,30 @@ class DeliveryCore:
                     "created_at": self.now(), "expires_at": self.now() + READY_TTL_S,
                     "terminal_at": None, "receipt": None,
                 }
+                # ★ ZCode-R1a：候选发布后会话级登记**保留**到终态（owner 换绑为
+                #   analysis_id，供守卫惰性校验与终态成对释放）；blocked 候选不可提交，
+                #   不持登记（跨路径可立即为该 event 另建候选）。
+                claim = self.P._event_busy.get(inflight_key)
+                if claim is not None and claim.get("path") == "delivery":
+                    if self._pending[analysis_id]["status"] == "ready":
+                        claim["owner"] = analysis_id
+                        claim["expires_at"] = self._pending[analysis_id]["expires_at"]
+                    else:
+                        self.P._event_busy.pop(inflight_key, None)
+                published = True
                 return self._preview(self._pending[analysis_id])
             finally:
-                # 无论成功/异常/冲突，都释放 in-flight 占用（正常结束也要释放）。
+                # 异常/冲突出口释放 in-flight 与登记；成功发布（Ready）则保留登记
+                # 由终态（提交/失效/过期/被取代）释放。
                 self._inflight.pop(inflight_key, None)
+                if not published:
+                    self.P._event_busy.pop(inflight_key, None)
+
+    def _release_claim(self, analysis_id):
+        """按 owner 释放会话级事件登记（ZCode-R1a；候选终态时成对调用，防误清他人登记）。"""
+        for key, claim in list(self.P._event_busy.items()):
+            if claim.get("path") == "delivery" and claim.get("owner") == analysis_id:
+                self.P._event_busy.pop(key, None)
 
     def _check_session_id(self, req):
         v = req.get("session_id")
@@ -1532,16 +1590,19 @@ class DeliveryCore:
             # ① 幂等：同 (session,event) 已提交 → 原回执 replayed=True，不二次转移/不推进时钟
             rec = self._find_event(sid, event_id)[1]
             if rec and rec.get("status") == "committed":
+                # ★ ZCode-R1（P-F1）：无 interaction_receipt 的已提交墓碑来自其它协议路径
+                # （旧 commit_state），先于载荷比对判定 —— 反向顺序（旧协议先提交、交付后
+                # 提交）得到明确的 EVENT_ALREADY_COMMITTED，而不是笼统的载荷冲突。
+                prior = rec.get("interaction_receipt")
+                if prior is None:
+                    raise _ProtoError(409, "EVENT_ALREADY_COMMITTED",
+                                      "该 event 已由其它协议路径提交")
                 if rec.get("sha") != request_sha:
                     raise _ProtoError(409, "EVENT_PAYLOAD_CONFLICT",
                                       "同一 event_id 用不同 analysis 载荷重放，拒绝")
                 if rec.get("base_versions") != expected:
                     raise _ProtoError(409, "IDEMPOTENCY_CONFLICT",
                                       "重放所用基准版本与已提交回执不符")
-                prior = rec.get("interaction_receipt")
-                if prior is None:
-                    raise _ProtoError(409, "EVENT_ALREADY_COMMITTED",
-                                      "该 event 已由其它协议路径提交")
                 return dict(_copy.deepcopy(prior), replayed=True)
             c = self._pending.get(analysis_id)
             if not c or c["session_id"] != sid or c["event_id"] != event_id:
@@ -1551,6 +1612,8 @@ class DeliveryCore:
                 raise _ProtoError(410, "ANALYSIS_INVALIDATED", "候选已失效，请重新 Prepare")
             if self.now() >= c["expires_at"]:
                 c["status"] = "expired"
+                # ZCode-R1a：候选终态（expired）→ 会话级登记成对释放。
+                self._release_claim(analysis_id)
                 raise _ProtoError(410, "ANALYSIS_EXPIRED", "候选已过期（TTL %ds）" % READY_TTL_S)
             if c["status"] == "blocked" or not c["proposal"]["changes"]:
                 raise _ProtoError(409, "ANALYSIS_NOT_COMMITTABLE",
@@ -1562,6 +1625,8 @@ class DeliveryCore:
             if expected != cur or expected != c["base_versions"]:
                 c["status"] = "invalidated"
                 c["terminal_at"] = self.now()
+                # ZCode-R1a：候选终态（invalidated）→ 会话级登记成对释放。
+                self._release_claim(analysis_id)
                 raise _ProtoError(409, "STATE_VERSION_CONFLICT",
                                   "提交基准版本与当前版本不一致，候选失效，请重新 Prepare",
                                   {"current_versions": cur})
@@ -1569,6 +1634,7 @@ class DeliveryCore:
             if self.rules_fingerprint() != c["rules_fingerprint"]:
                 c["status"] = "invalidated"
                 c["terminal_at"] = self.now()
+                self._release_claim(analysis_id)
                 raise _ProtoError(409, "RULESET_CHANGED",
                                   "规则指纹已变化，候选失效，请重新 Prepare")
             # ③b 服务端档案/检查点身份重验（P3-A-R1）：锁内重读当前身份并与候选固化值比较；
@@ -1577,6 +1643,7 @@ class DeliveryCore:
             if cur_cap != c.get("capability_identity"):
                 c["status"] = "invalidated"
                 c["terminal_at"] = self.now()
+                self._release_claim(analysis_id)
                 raise _ProtoError(409, "CAPABILITY_CHANGED",
                                   "服务端档案/检查点身份已变化，候选失效，请重新 Prepare",
                                   {"current_identity": cur_cap,
@@ -1593,6 +1660,7 @@ class DeliveryCore:
                     or outcome != c["outcome"]:
                 c["status"] = "invalidated"
                 c["terminal_at"] = self.now()
+                self._release_claim(analysis_id)
                 raise _ProtoError(409, "PROPOSAL_MISMATCH",
                                   "锁内重算与预览不一致，候选失效，请重新 Prepare")
             # ⑤ 构造写入集合（仅受影响实体）与正式历史
@@ -1603,6 +1671,7 @@ class DeliveryCore:
                 ok = self.B._set_path(new_states[ch["entity_id"]], ch["path"], ch["after"])
                 if not ok:
                     c["status"] = "invalidated"
+                    self._release_claim(analysis_id)
                     raise _ProtoError(422, "INVALID_WRITE_PATH",
                                       "点路径不存在，拒绝静默造字段：%s" % ch["path"])
                 if ch["path"].endswith(".owner"):
@@ -1666,6 +1735,8 @@ class DeliveryCore:
             # 已提交候选立即释放 Pending 容量：权威回执由协议事件表长期提供，
             # 幂等重放走 `_find_event`，不再依赖进程内候选。
             self._pending.pop(analysis_id, None)
+            # ZCode-R1a：候选终态（committed）→ 会话级登记成对释放。
+            self._release_claim(analysis_id)
             return result
 
     def get_receipt(self, session_id, event_id):

@@ -74,6 +74,14 @@ class LayaStateProtocol:
         self._analyses = {}     # analysis_id -> record
         self._events = {}       # (session, actor) -> {event_id: {"sha","status",...}}
         self._inflight = {}     # (scope, event_id, base) -> analysis_id
+        # ★ ZCode-R1/R1a：会话级事件登记，键 (session_id, event_id)。交付（DeliveryCore）
+        #   与旧协议（analyze/commit_state）共用同一协议实例，事件身份必须跨 actor、跨 API
+        #   唯一。R1a 起登记覆盖 **in-flight 与 Ready/Pending 的整个生命周期**（此前只在
+        #   in-flight 期间存在，Ready 落地即释放，导致两路各持一个可提交候选）：候选发布后
+        #   登记保留（owner 换绑/确认为 analysis_id），直到终态（提交/拒绝/失效/过期/被取代/
+        #   Reset）才按 owner 成对释放。值 = {"path": "protocol"|"delivery",
+        #   "owner": <analysis_id>, "scope": (sid, actor_id), "sha": <该路径输入 sha>}。
+        self._event_busy = {}
 
     # ======================================================================
     # 版本
@@ -125,6 +133,14 @@ class LayaStateProtocol:
             for k in list(self._inflight):
                 if k[0] == scope:
                     self._inflight.pop(k, None)
+            # ZCode-R1b：只释放**属于被 Reset 作用域**的登记（其 owner 候选确因本次
+            # Reset 失效：同作用域 protocol 候选已被上方标 invalidated，delivery 候选的
+            # 基准版本含本作用域 token、提交必被拒）。其他角色存活候选的登记必须保留，
+            # 否则其跨入口唯一性被无关 Reset 击穿（A 复现：lia ready 候选被
+            # reset_scope((sid,"player")) 剥离登记后，交付可建第二个候选）。
+            for k in list(self._event_busy):
+                if self._event_busy[k].get("scope") == scope:
+                    self._event_busy.pop(k, None)
             return self.state_version(scope)
 
     def capture_legacy_scope(self, session_id, actor_id, actor=None):
@@ -283,6 +299,9 @@ class LayaStateProtocol:
             if cur != a.get("base_state_version"):
                 a["status"] = "stale"
                 a["terminal_at"] = self.now()
+                # ZCode-R1a：候选转终态（stale）→ 会话级登记按 owner 成对释放。
+                self._release_event_claim(a["session_id"], a["event_id"],
+                                          a["analysis_id"])
         return a
 
     def _cleanup_expired(self):
@@ -300,6 +319,17 @@ class LayaStateProtocol:
             if a["status"] in ("ready", "reference_only") and now >= a.get("expires_at", 0):
                 a["status"] = "expired"
                 a["terminal_at"] = a.get("expires_at") or now
+                # ZCode-R1a：候选转终态（expired）→ 会话级登记按 owner 成对释放。
+                self._release_event_claim(a["session_id"], a["event_id"],
+                                          a["analysis_id"])
+        # 1b) ZCode-R1a：清扫无主/已终态的 protocol 登记（防遗漏释放的登记长存）。
+        for key in list(self._event_busy):
+            claim = self._event_busy[key]
+            if claim.get("path") != "protocol":
+                continue
+            a = self._analyses.get(claim.get("owner"))
+            if a is None or a.get("status") not in ("in_flight", "ready", "reference_only"):
+                self._event_busy.pop(key, None)
         # 2) 回收终态保留期
         drop = []
         for aid, a in self._analyses.items():
@@ -402,6 +432,23 @@ class LayaStateProtocol:
                 if rec.get("sha") != input_sha:
                     raise _ProtoError(409, "EVENT_PAYLOAD_CONFLICT",
                                       "同一 event_id 换 message/context 内容冲突")
+            # ★ ZCode-R1（P-F1）：事件身份按 (session_id,event_id) 会话级唯一 ——
+            #   交付路径（DeliveryCore）或另一 actor 桶已登记/提交同一事件时，本作用域
+            #   不得再建候选。此前只查本 (sid,actor) 桶，换 actor/换 API 即可绕过并二次提交。
+            other_aid, other_rec = self._find_event_across_session(sid, event_id)
+            if other_rec is not None and other_aid != aid:
+                if other_rec.get("status") == "committed":
+                    raise _ProtoError(
+                        409, "EVENT_ALREADY_COMMITTED",
+                        "该 event 已在会话内提交（作用域 %s），禁止重复写" % other_aid,
+                        {"existing_actor_id": other_aid})
+                if other_rec.get("status") == "rejected":
+                    raise _ProtoError(409, "EVENT_REJECTED", "该 event 已被拒绝/关闭")
+                raise _ProtoError(
+                    409, "EVENT_PAYLOAD_CONFLICT",
+                    "同一 (session_id,event_id) 已由另一作用域占用（含交付路径/未决候选）",
+                    {"existing_actor_id": other_aid,
+                     "existing_status": other_rec.get("status")})
             reused = self._reuse_candidate(scope, event_id, expected)
             if reused is not None:
                 return self._analysis_response(reused)
@@ -409,6 +456,18 @@ class LayaStateProtocol:
             if ik in self._inflight:
                 raise _ProtoError(409, "ANALYSIS_IN_PROGRESS",
                                   "同 event 同基准版本正在分析中", {"retry_after_ms": 500})
+            # ★ ZCode-R1a：登记覆盖 in-flight 与 Ready/Pending 全生命周期。同路径同作用域
+            #   的幂等复用（reuse 分支已先行返回）与按新版本重做保持原契约；其余任何存活
+            #   登记 —— 跨路径（含**同 actor** 的交付占用，R1 漏洞）、跨作用域 —— 一律拒绝。
+            claim = self.event_claim(sid, event_id)
+            if claim is not None and (claim.get("path") != "protocol"
+                                      or claim.get("scope") != scope):
+                raise _ProtoError(
+                    409, "EVENT_PAYLOAD_CONFLICT",
+                    "同一 (session_id,event_id) 已存在未决候选/占用（%s@%s）"
+                    % (claim.get("path"), (claim.get("scope") or (None, None))[1]),
+                    {"occupied_by": claim.get("path"),
+                     "existing_actor_id": (claim.get("scope") or (None, None))[1]})
             # 容量（§4.2）：先尝试回收过期终态，仍满则 429
             if len(self._analyses) >= MAX_ANALYSES:
                 self._cleanup_expired()
@@ -423,6 +482,11 @@ class LayaStateProtocol:
             rules = self.rules_fingerprint(model, force=True)
             analysis_id = uuid.uuid4().hex
             self._inflight[ik] = analysis_id
+            # ZCode-R1（P-F1）：登记会话级占用，交付路径与其它 actor 均可见；
+            # 释放统一走 _release_inflight（owner 校验，防误清他人占用）。
+            self._event_busy[(sid, event_id)] = {
+                "path": "protocol", "owner": analysis_id, "scope": scope,
+                "sha": input_sha, "since": self.now()}
             self._analyses[analysis_id] = {
                 "analysis_id": analysis_id, "session_id": sid, "actor_id": aid,
                 "event_id": event_id, "status": "in_flight",
@@ -435,162 +499,175 @@ class LayaStateProtocol:
                 "xlate_source_hint": xlate_src, "model": model,
             }
 
-        # ---- 锁外：翻译 + 推理（模型/网络调用不放锁内；§5）----
-        en = None
+        # ★ ZCode-R1（P-F2）：从占位登记到发布的**所有**异常出口都必须释放本次占用与
+        #   未发布候选 —— 此前锁外校验/组装段（validate_state_delta/_build_signals 等）
+        #   无任何保护，未预期异常会把 (scope,event,base) 占位永久泄漏（同事件 409
+        #   直至重启，_cleanup_expired 不回收 in_flight）。_release_inflight 幂等，
+        #   finally 统一兜底；下方已知失败路径的显式释放成为无害冗余，协议错误码
+        #   与根因透传语义不变。
         try:
-            cache = {}
+            # ---- 锁外：翻译 + 推理（模型/网络调用不放锁内；§5）----
+            en = None
             try:
-                cache = json.loads(B._XLATE_DISK.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-            en = B._cached_translate(message, cache)
-            if xlate_src is None:
-                if frozen is not None and message in frozen:
-                    xlate_src = "frozen"
-                elif message in cache:
-                    xlate_src = "runtime"
-                else:
-                    xlate_src = "online"
-        except B.TranslationFailure:
-            with self.lock:
-                self._release_inflight(scope, event_id, expected)
-            raise _ProtoError(502, "TRANSLATION_FAILED", "基准译文缺失或翻译失败（fail-closed）")
-        if en is None:
-            with self.lock:
-                self._release_inflight(scope, event_id, expected)
-            raise _ProtoError(502, "TRANSLATION_FAILED",
-                              "无法取得英文输入（基准缺冻结译文或翻译失败）",
-                              {"source": xlate_src})
+                cache = {}
+                try:
+                    cache = json.loads(B._XLATE_DISK.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+                en = B._cached_translate(message, cache)
+                if xlate_src is None:
+                    if frozen is not None and message in frozen:
+                        xlate_src = "frozen"
+                    elif message in cache:
+                        xlate_src = "runtime"
+                    else:
+                        xlate_src = "online"
+            except B.TranslationFailure:
+                with self.lock:
+                    self._release_inflight(scope, event_id, expected)
+                raise _ProtoError(502, "TRANSLATION_FAILED", "基准译文缺失或翻译失败（fail-closed）")
+            if en is None:
+                with self.lock:
+                    self._release_inflight(scope, event_id, expected)
+                raise _ProtoError(502, "TRANSLATION_FAILED",
+                                  "无法取得英文输入（基准缺冻结译文或翻译失败）",
+                                  {"source": xlate_src})
 
-        payload = {
-            "session_id": sid, "actor_id": aid,
-            "player_input": message, "player_input_en": en,
-            "history": context.get("history") or [],
-        }
-        if context.get("scene"):
-            payload["scene"] = context["scene"]
-        core = None
-        try:
-            core = B.analyze_core(payload, turn_id=analysis_id, frozen_state=snapshot)
-        except Exception as e:
-            with self.lock:
-                self._release_inflight(scope, event_id, expected)
-            raise _ProtoError(502, "MODEL_INFERENCE_FAILED",
-                              "Laya 推理失败：%r" % (e,))
-        if core.get("ok") is False:
-            with self.lock:
-                self._release_inflight(scope, event_id, expected)
-            raise _ProtoError(502, "MODEL_INFERENCE_FAILED",
-                              core.get("note") or core.get("invalid_reason") or "分析核心失败")
-        # ★ C3（2026-09-25）：推理**结果**回落 fallback 也必须拒绝。
-        #   开始时的 _assert_engine 只保证「进入时引擎就绪」；若 predict 中途抛异常，
-        #   analyze_core 会回落 fallback 引擎并**正常返回候选**。这里对返回结果
-        #   做后置引擎校验 —— fallback 结果不得进入可提交候选。
-        if core.get("engine") != B.ENGINE_MODE_LAYA:
-            with self.lock:
-                self._release_inflight(scope, event_id, expected)
-            raise _ProtoError(503, "MODEL_UNAVAILABLE",
-                              "该轮实际推理回落到 fallback（启发式），拒绝产生可提交候选",
-                              {"engine_used": core.get("engine")})
+            payload = {
+                "session_id": sid, "actor_id": aid,
+                "player_input": message, "player_input_en": en,
+                "history": context.get("history") or [],
+            }
+            if context.get("scene"):
+                payload["scene"] = context["scene"]
+            core = None
+            try:
+                core = B.analyze_core(payload, turn_id=analysis_id, frozen_state=snapshot)
+            except Exception as e:
+                with self.lock:
+                    self._release_inflight(scope, event_id, expected)
+                raise _ProtoError(502, "MODEL_INFERENCE_FAILED",
+                                  "Laya 推理失败：%r" % (e,))
+            if core.get("ok") is False:
+                with self.lock:
+                    self._release_inflight(scope, event_id, expected)
+                raise _ProtoError(502, "MODEL_INFERENCE_FAILED",
+                                  core.get("note") or core.get("invalid_reason") or "分析核心失败")
+            # ★ C3（2026-09-25）：推理**结果**回落 fallback 也必须拒绝。
+            #   开始时的 _assert_engine 只保证「进入时引擎就绪」；若 predict 中途抛异常，
+            #   analyze_core 会回落 fallback 引擎并**正常返回候选**。这里对返回结果
+            #   做后置引擎校验 —— fallback 结果不得进入可提交候选。
+            if core.get("engine") != B.ENGINE_MODE_LAYA:
+                with self.lock:
+                    self._release_inflight(scope, event_id, expected)
+                raise _ProtoError(503, "MODEL_UNAVAILABLE",
+                                  "该轮实际推理回落到 fallback（启发式），拒绝产生可提交候选",
+                                  {"engine_used": core.get("engine")})
 
-        # ---- judgment 语义校验（§6.2：不需要 NPC 行为）----
-        judgment = {"behavior_is_null": False, "awaiting_upstream": False,
-                    "source": "judgment", "turn_id": analysis_id}
-        validated, skipped, preview = B.validate_state_delta(
-            sid, aid, core.get("state_proposal") or {}, judgment,
-            actor=B.CFG.get("actor"), frozen_state=snapshot)
-        proposal_core = core.get("state_proposal") or {}
-        delta_out = proposal_core.get("delta") or []
-        aux_core = proposal_core.get("auxiliary") or []
-        ignored_core = proposal_core.get("ignored_signals") or []
+            # ---- judgment 语义校验（§6.2：不需要 NPC 行为）----
+            judgment = {"behavior_is_null": False, "awaiting_upstream": False,
+                        "source": "judgment", "turn_id": analysis_id}
+            validated, skipped, preview = B.validate_state_delta(
+                sid, aid, core.get("state_proposal") or {}, judgment,
+                actor=B.CFG.get("actor"), frozen_state=snapshot)
+            proposal_core = core.get("state_proposal") or {}
+            delta_out = proposal_core.get("delta") or []
+            aux_core = proposal_core.get("auxiliary") or []
+            ignored_core = proposal_core.get("ignored_signals") or []
 
-        signals = self._build_signals(core, proposal_core)
-        writable = []
-        by_signal = {}
-        for d in delta_out:
-            by_signal[d.get("source_signal")] = d
-        for r in validated:
-            d = by_signal.get(r.get("signal")) or {}
-            writable.append({
-                "source_signal": d.get("source_signal") or r.get("signal"),
-                "target": r.get("target"),
-                "proposed_delta": d.get("delta") or r.get("proposal"),
-                "applied_delta": r.get("final_delta"),
-                "old_value": r.get("old"), "new_value": r.get("new_value"),
-                # ★ TI v1：裁决标记与来源透传（供前端/debug 复核）
-                "rule_adjudicated": d.get("rule_adjudicated") or r.get("rule_adjudicated"),
-                "adjudication_source": d.get("adjudication_source") or r.get("adjudication_source"),
-            })
-            if d.get("ti_basis") or r.get("ti_basis"):
-                writable[-1]["ti_basis"] = d.get("ti_basis") or r.get("ti_basis")
-        aux_out = [{
-            "source_signal": a.get("source_signal"),
-            "proposed_delta": a.get("delta_if_enabled") if a.get("delta_if_enabled") is not None
-                              else a.get("delta"),
-            "reason_codes": ["CAPABILITY_NOT_ACTIVE"],
-        } for a in aux_core]
-        skipped_out = []
-        for d in delta_out:
-            if d.get("source_signal") in by_signal and not writable:
-                pass
-        for r in skipped:
-            sig = r.get("signal") or r.get("source_signal")
-            if sig:
-                skipped_out.append({"source_signal": sig,
-                                    "reason_codes": _skip_reason_codes(r)})
-        for ig in ignored_core:
-            skipped_out.append({"source_signal": ig.get("source_signal"),
-                                "reason_codes": ["ROLE_NOT_WRITABLE"] if ig.get("role") != "state_shift"
-                                                else ["CAPABILITY_NOT_ACTIVE"]})
+            signals = self._build_signals(core, proposal_core)
+            writable = []
+            by_signal = {}
+            for d in delta_out:
+                by_signal[d.get("source_signal")] = d
+            for r in validated:
+                d = by_signal.get(r.get("signal")) or {}
+                writable.append({
+                    "source_signal": d.get("source_signal") or r.get("signal"),
+                    "target": r.get("target"),
+                    "proposed_delta": d.get("delta") or r.get("proposal"),
+                    "applied_delta": r.get("final_delta"),
+                    "old_value": r.get("old"), "new_value": r.get("new_value"),
+                    # ★ TI v1：裁决标记与来源透传（供前端/debug 复核）
+                    "rule_adjudicated": d.get("rule_adjudicated") or r.get("rule_adjudicated"),
+                    "adjudication_source": d.get("adjudication_source") or r.get("adjudication_source"),
+                })
+                if d.get("ti_basis") or r.get("ti_basis"):
+                    writable[-1]["ti_basis"] = d.get("ti_basis") or r.get("ti_basis")
+            aux_out = [{
+                "source_signal": a.get("source_signal"),
+                "proposed_delta": a.get("delta_if_enabled") if a.get("delta_if_enabled") is not None
+                                  else a.get("delta"),
+                "reason_codes": ["CAPABILITY_NOT_ACTIVE"],
+            } for a in aux_core]
+            skipped_out = []
+            for d in delta_out:
+                if d.get("source_signal") in by_signal and not writable:
+                    pass
+            for r in skipped:
+                sig = r.get("signal") or r.get("source_signal")
+                if sig:
+                    skipped_out.append({"source_signal": sig,
+                                        "reason_codes": _skip_reason_codes(r)})
+            for ig in ignored_core:
+                skipped_out.append({"source_signal": ig.get("source_signal"),
+                                    "reason_codes": ["ROLE_NOT_WRITABLE"] if ig.get("role") != "state_shift"
+                                                    else ["CAPABILITY_NOT_ACTIVE"]})
 
-        status = "ready" if writable else "reference_only"
-        can_commit = bool(writable)
-        reason_codes = [] if writable else self._reference_reason_codes(
-            core, proposal_core, writable, skipped, ignored_core)
-        profile = core.get("checkpoint_profile") or {}
-        check = {"matched": profile.get("matched"), "fresh": profile.get("fresh"),
-                 "code_changed": profile.get("code_changed"),
-                 "checkpoint": profile.get("checkpoint"),
-                 "profile_id": profile.get("profile_id")}
-        capability = self._build_capability(core, profile, check, writable, aux_out)
-        evidence = {
-            "input_sha256": input_sha,
-            "base_state_sha256": base_state_sha,
-            "rules_fingerprint": rules,
-            "translation": {"source": xlate_src, "input_en_sha256": _sha256_text(en)},
-        }
-        state_proposal_out = {
-            "writable_delta": writable,
-            "auxiliary": aux_out,
-            "skipped": skipped_out,
-            "preview_state": preview.get("state"),
-        }
-
-        # ---- 锁内复核并发布（版本/generation/规则未变才发布候选）----
-        with self.lock:
-            cur = self.state_version(scope)
-            if cur != expected:
-                self._release_inflight(scope, event_id, expected)
-                raise _ProtoError(409, "STATE_VERSION_CONFLICT",
-                                  "分析期间版本已变化，候选未发布",
-                                  {"current_state_version": cur})
-            rules2 = self.rules_fingerprint(model, force=True)
-            if rules2 != rules:
-                self._release_inflight(scope, event_id, expected)
-                raise _ProtoError(409, "RULESET_CHANGED",
-                                  "分析期间规则指纹变化（配置/档案/检查点/基线），请重分析")
-            a = self._analyses[analysis_id]
-            a.update({
-                "status": status, "expires_at": self.now() + READY_TTL_S,
-                "signals": signals, "state_proposal": state_proposal_out,
-                "capability": capability, "evidence": evidence,
-                "xlate_src": xlate_src, "en": en, "judgment": judgment,
-                "proposal_core": proposal_core, "snapshot": snapshot,
+            status = "ready" if writable else "reference_only"
+            can_commit = bool(writable)
+            reason_codes = [] if writable else self._reference_reason_codes(
+                core, proposal_core, writable, skipped, ignored_core)
+            profile = core.get("checkpoint_profile") or {}
+            check = {"matched": profile.get("matched"), "fresh": profile.get("fresh"),
+                     "code_changed": profile.get("code_changed"),
+                     "checkpoint": profile.get("checkpoint"),
+                     "profile_id": profile.get("profile_id")}
+            capability = self._build_capability(core, profile, check, writable, aux_out)
+            evidence = {
+                "input_sha256": input_sha,
+                "base_state_sha256": base_state_sha,
+                "rules_fingerprint": rules,
+                "translation": {"source": xlate_src, "input_en_sha256": _sha256_text(en)},
+            }
+            state_proposal_out = {
+                "writable_delta": writable,
+                "auxiliary": aux_out,
+                "skipped": skipped_out,
                 "preview_state": preview.get("state"),
-            })
-            self._inflight.pop((scope, event_id, expected), None)
-            ev[event_id] = {"sha": input_sha, "status": "analyzed"}
-            return self._analysis_response(self._analyses[analysis_id])
+            }
+
+            # ---- 锁内复核并发布（版本/generation/规则未变才发布候选）----
+            with self.lock:
+                cur = self.state_version(scope)
+                if cur != expected:
+                    self._release_inflight(scope, event_id, expected)
+                    raise _ProtoError(409, "STATE_VERSION_CONFLICT",
+                                      "分析期间版本已变化，候选未发布",
+                                      {"current_state_version": cur})
+                rules2 = self.rules_fingerprint(model, force=True)
+                if rules2 != rules:
+                    self._release_inflight(scope, event_id, expected)
+                    raise _ProtoError(409, "RULESET_CHANGED",
+                                      "分析期间规则指纹变化（配置/档案/检查点/基线），请重分析")
+                a = self._analyses[analysis_id]
+                a.update({
+                    "status": status, "expires_at": self.now() + READY_TTL_S,
+                    "signals": signals, "state_proposal": state_proposal_out,
+                    "capability": capability, "evidence": evidence,
+                    "xlate_src": xlate_src, "en": en, "judgment": judgment,
+                    "proposal_core": proposal_core, "snapshot": snapshot,
+                    "preview_state": preview.get("state"),
+                })
+                # ZCode-R1a：发布 Ready 候选后会话级登记**保留**（owner=analysis_id），
+                # 直到候选终态（提交/拒绝/失效/过期/Reset）才释放；in-flight 键照常清。
+                self._inflight.pop((scope, event_id, expected), None)
+                ev[event_id] = {"sha": input_sha, "status": "analyzed"}
+                return self._analysis_response(self._analyses[analysis_id])
+        finally:
+            # 兜底释放（成功路径上为无害空操作）。
+            with self.lock:
+                self._release_inflight(scope, event_id, expected)
 
     def _release_inflight(self, scope, event_id, expected):
         ik = (scope, event_id, expected)
@@ -599,6 +676,74 @@ class LayaStateProtocol:
             a = self._analyses.get(aid)
             if a and a.get("status") == "in_flight":
                 self._analyses.pop(aid, None)
+        # ZCode-R1/P-F2：in-flight 失败路径随占位一并释放会话级登记（仅限本登记持有的
+        # owner）。R1a 起成功发布的候选**不**经此处释放登记（登记保留到终态），因此
+        # owner 必须精确匹配，防止后到的 finally 误清新登记。
+        busy = self._event_busy.get((scope[0], event_id))
+        if busy is not None and aid is not None and busy.get("owner") == aid \
+                and busy.get("scope") == scope:
+            self._event_busy.pop((scope[0], event_id), None)
+
+    def event_claim(self, session_id, event_id):
+        """返回 (session_id,event_id) 的**存活**会话级事件登记（无则 None）。ZCode-R1a/R1b。
+
+        protocol 侧登记在此惰性校验：owner 分析已终态/被回收，或 ready 候选已过期/
+        基准版本已失效（提交必被拒，不再是可提交候选）→ 剪除并视为无登记。
+        delivery 侧登记（R1b）按登记内固化的 `base_versions` 惰性校验基准失效：任一
+        被读实体 token 变化（版本推进/Reset/重置 generation）→ 该候选已不可能提交，
+        登记惰性释放（候选本体由交付侧在提交/同事件重做时转终态，Commit 仍明确拒绝）。
+        调用方需已持 self.lock。
+        """
+        key = (str(session_id), str(event_id))
+        claim = self._event_busy.get(key)
+        if claim is None:
+            return None
+        if claim.get("path") == "delivery":
+            expires_at = claim.get("expires_at")
+            if expires_at is not None and self.now() >= expires_at:
+                self._event_busy.pop(key, None)
+                return None
+            base = claim.get("base_versions")
+            if isinstance(base, dict) and base:
+                for ent, tok in base.items():
+                    if self.state_version((key[0], str(ent))) != tok:
+                        self._event_busy.pop(key, None)
+                        return None
+            return claim
+        a = self._analyses.get(claim.get("owner"))
+        if a is None or a.get("status") not in ("in_flight", "ready", "reference_only"):
+            self._event_busy.pop(key, None)
+            return None
+        if a.get("status") in ("ready", "reference_only"):
+            self._maybe_expire(a)
+            self._maybe_stale(a)
+            if a["status"] not in ("ready", "reference_only"):
+                self._event_busy.pop(key, None)
+                return None
+        return claim
+
+    def _release_event_claim(self, session_id, event_id, owner):
+        """按 owner 释放会话级事件登记（R1a：候选终态时的成对释放，防误清他人登记）。"""
+        key = (str(session_id), str(event_id))
+        claim = self._event_busy.get(key)
+        if claim is not None and claim.get("owner") == owner:
+            self._event_busy.pop(key, None)
+
+    def _find_event_across_session(self, session_id, event_id):
+        """会话内跨 actor 查找事件墓碑（ZCode-R1 P-F1）。
+
+        交付路径的事件唯一性按 (session_id, event_id) 会话级判定
+        （DeliveryCore._find_event 跨桶扫描）；旧协议此前只查本 (sid,actor) 桶，
+        换 actor/换 API 即可绕过。本 helper 是会话级判定的协议侧实现，调用方需已持锁。
+        返回 (actor_id, 墓碑) 或 (None, None)。
+        """
+        for (s, a), bucket in self._events.items():
+            if s != str(session_id):
+                continue
+            rec = bucket.get(event_id)
+            if rec is not None:
+                return a, rec
+        return None, None
 
     def _build_signals(self, core, proposal_core):
         signals = {}
@@ -727,6 +872,16 @@ class LayaStateProtocol:
             a = self._analyses.get(analysis_id)
             if not a or (a["session_id"], a["actor_id"]) != scope:
                 raise _ProtoError(404, "ANALYSIS_NOT_FOUND", "未知/已清理/scope 不符的 analysis_id")
+            # ★ ZCode-R1（P-F1）：提交前的会话级事件唯一兜底 —— 同一 (session_id,event_id)
+            #   若已在另一作用域提交（交付路径或旧协议的另一 actor），此处拒绝。
+            #   analyze 守卫之后、发布之前的窗口与任何绕过路径都收口到这一把锁内。
+            other_aid, other_rec = self._find_event_across_session(sid, a["event_id"])
+            if other_rec is not None and other_aid != aid \
+                    and other_rec.get("status") == "committed":
+                raise _ProtoError(
+                    409, "EVENT_ALREADY_COMMITTED",
+                    "该 event 已在会话内提交（作用域 %s），禁止重复写" % other_aid,
+                    {"existing_actor_id": other_aid})
             # 精确重试：同 ID、同 scope、同 expected → 原回执（回执保留期内）
             if a["status"] == "committed":
                 if expected == a.get("base_state_version") and a.get("commit_receipt"):
@@ -841,9 +996,16 @@ class LayaStateProtocol:
                     ev[a["event_id"]] = prev_ev
                 else:
                     ev.pop(a["event_id"], None)
+                # ZCode-R1（H-F2）：客户端只收固定 INTERNAL_ERROR 文案；内部诊断（repr
+                # 可能含路径/字段值等私有数据）只进本地日志与异常链，不进 message/details。
+                _exc = sys.exc_info()[1]
+                sys.stderr.write("[protocol] commit_state publish failed, rolled back: %r\n"
+                                 % (_exc,))
                 raise _ProtoError(500, "INTERNAL_ERROR",
-                                  "提交发布失败已回滚（无部分写入）：%r" % (sys.exc_info()[1],))
+                                  "提交发布失败已回滚（无部分写入）") from _exc
             a.update({"status": "committed", "terminal_at": ts, "commit_receipt": receipt})
+            # ZCode-R1a：候选终态（committed）→ 会话级登记按 owner 成对释放。
+            self._release_event_claim(sid, a["event_id"], analysis_id)
             return self._commit_reply(a, replayed=False)
 
     def _assert_preview_matches(self, a, commits):
@@ -919,6 +1081,8 @@ class LayaStateProtocol:
                         and other["status"] in ("ready", "reference_only"):
                     other["status"] = "rejected"
                     other["terminal_at"] = self.now()
+            # ZCode-R1a：候选终态（rejected）→ 会话级登记按 owner 成对释放。
+            self._release_event_claim(sid, a["event_id"], analysis_id)
             return {"protocol_version": PROTOCOL_VERSION, "status": "rejected",
                     "replayed": False, "analysis_id": analysis_id,
                     "session_id": sid, "actor_id": aid, "reason": reason}
@@ -1079,8 +1243,13 @@ class LayaStateProtocol:
                     self._events.pop(event_scope, None)
                 else:
                     self._events[event_scope] = saved_events
+                # ZCode-R1（H-F2）：客户端只收固定 INTERNAL_ERROR 文案；内部诊断（repr
+                # 可能含路径/字段值等私有数据）只进本地日志与异常链，不进 message/details。
+                _exc = sys.exc_info()[1]
+                sys.stderr.write("[protocol] multi-entity publish failed, rolled back: %r\n"
+                                 % (_exc,))
                 raise _ProtoError(500, "INTERNAL_ERROR",
-                                  "多实体发布失败，已全回退（无半提交）：%r" % (sys.exc_info()[1],))
+                                  "多实体发布失败，已全回退（无半提交）") from _exc
 
     # ======================================================================
     # 旧路由原子提交（P2-B2，§6.3 / §2.1 / §4.3）
