@@ -768,15 +768,20 @@ async function onCommitted(rec) {
     stateOk && receiptOk ? "提交成功。右侧权威状态与回执已更新。"
                          : "提交已成功，但状态或回执刷新暂失败；当前显示提交响应中的权威回执，请稍后刷新权威状态。"));
   // P3-D4：Commit 明确成功后才登记对话轮并请求叙事（身份取服务端回执，非客户端自报）。
-  // 权威线索（逐字）取自已提交回执的 knowledge_gained，与文学台词分离呈现。
+  // 线索与场景观察分别展示；玩家自己的声明不冒充权威事实。
   const clues = ((rec.knowledge_gained || [])
-    .map((row) => row && row.entry && row.entry.content)
+    .filter((row) => row && row.entry && row.entry.kind === "clue")
+    .map((row) => row.entry.content)
+    .filter((c) => typeof c === "string" && c));
+  const observations = ((rec.knowledge_gained || [])
+    .filter((row) => row && row.entry && row.entry.kind === "observation")
+    .map((row) => row.entry.content)
     .filter((c) => typeof c === "string" && c));
   const round = {
     event_id: rec.event_id || window.__P3D2B__.eventId,
     commit_id: rec.commit_id,
     message: lastMessage || "",
-    clues: clues,
+    clues, observations,
     status: "pending", line: null, mode: null, reused: false,
     error: null, retryable: false,
   };
@@ -811,7 +816,7 @@ function renderReceipt(rec) {
   if (kg.length) {
     const d = el("details");
     d.open = true;
-    d.appendChild(el("summary", null, "玩家本轮获得的线索（" + kg.length + " 条）"));
+    d.appendChild(el("summary", null, "玩家本轮记录的信息（" + kg.length + " 条）"));
     for (const row of kg) {
       const e = row.entry || {};
       const line = el("div", "clue");
@@ -863,6 +868,12 @@ function renderDialog() {
         cb.appendChild(el("b", null, "权威线索（逐字·事实）："));
         cb.appendChild(document.createTextNode(r.clues.join("；")));
         turn.appendChild(cb);
+      }
+      if ((r.observations || []).length) {
+        const ob = el("div", "clue-auth");
+        ob.appendChild(el("b", null, "观察所得（权威场景）："));
+        ob.appendChild(document.createTextNode(r.observations.join("；")));
+        turn.appendChild(ob);
       }
       const nl = el("div", "n-line " + (isChar ? "who" : "scene"));
       let shown = r.line;

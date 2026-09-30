@@ -919,10 +919,15 @@ def build_narrate_prompt(facts):
     # ★ P3-D4-R3：线索只给**逐字权威原文**（content），并明确具体事实只能照抄，
     #   云端可写态度/语气，但不得补出线索未给出的藏匿点/容器/数量/操作提示。
     kg_entries = facts.get("player_knowledge_gained") or []
-    kg_verbatim = [str(e.get("content")) for e in kg_entries if e.get("content")]
+    kg_verbatim = [str(e.get("content")) for e in kg_entries
+                   if e.get("kind") == "clue" and e.get("content")]
+    observations = [str(e.get("content")) for e in kg_entries
+                    if e.get("kind") == "observation" and e.get("content")]
     kg_note = ("玩家已获知线索（**逐字权威原文**；涉及具体位置/藏匿点/容器/数量/操作步骤的事实，"
                "只能照抄这些句子，线索没说的绝不补出）：%s"
                % json.dumps(kg_verbatim, ensure_ascii=False))
+    kg_note += "\n玩家本轮观察所得（服务端场景快照，不含玩家声明）：%s" % json.dumps(
+        observations, ensure_ascii=False)
     sig_note = ("Laya 信号（只校准语气，不是已发生事实，不得据此改写数值）：%s"
                 % json.dumps(facts.get("tone_signals") or [], ensure_ascii=False))
     history_note = _dialog_history_note(facts.get("dialog_history") or [])
@@ -954,10 +959,10 @@ def build_narrate_prompt(facts):
         "规则：\n"
         "%s\n"
         "2) 只能依据上述事实：不得改写物品归属、位置、门状态或关系值；\n"
-        "   不得把未披露的私有知识写进台词（只可使用「玩家已获知线索」里的内容）；\n"
+         "   不得把未披露的私有知识写进台词（只可使用已获知线索与本轮观察所得）；\n"
         "   上下文里的往轮台词同样不是事实来源。\n"
         "3) 线索纪律（重要）：凡涉及**具体位置、藏匿点、容器、数量、操作步骤**的内容，"
-        "只能逐字采用「玩家已获知线索」的原文；线索没有给出的具体细节一律不得补出。"
+         "只能逐字采用「玩家已获知线索」或「玩家本轮观察所得」的原文；两者没有给出的具体细节一律不得补出。"
         "例如线索只说「钥匙在旧井」，就**不得**写成「井沿第三块石砖下」「挂在铁环上」"
         "「装在木盒里」这类原文没有的藏匿点/容器/数量。你可以描写角色的态度、语气、"
         "神情、动作姿态与对玩家的回应，但文学表达不得新增任何具体事实。\n"

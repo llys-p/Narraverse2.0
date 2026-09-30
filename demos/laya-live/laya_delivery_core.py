@@ -330,6 +330,27 @@ def _observation_entry(subject, obj, tick, location=None):
     }
 
 
+def _scene_observation_entry(location, states, observer, tick):
+    """只用当前权威快照列出在场人物与可见物品，不生成环境设定。"""
+    world = states[WORLD]["interaction"]
+    people = sorted((states[eid].get("name") or eid) for eid in states
+                    if eid not in (observer, WORLD)
+                    and (states[eid].get("interaction") or {}).get("location") == location)
+    objects = sorted((obj.get("name") or oid) for oid, obj in world["objects"].items()
+                     if effective_object_location(obj, states) == location
+                     and obj.get("owner") in (None, observer))
+    return {
+        "entry_id": "obs:scene:%s" % location, "kind": "observation",
+        "content": "所在地点 %s；可见人物：%s；可见物品：%s" % (
+            location, "、".join(people) or "无", "、".join(objects) or "无"),
+        "source": "rule", "subject": location, "objective": True,
+        "asserted_by": None,
+        "about": {"location": location, "visible_actors": people,
+                  "visible_objects": objects},
+        "learned_turn": tick,
+    }
+
+
 def _statement_entry(event_id, action_id, speaker, content, tick):
     """声明条目：只存**发言者与实际听者**的私有 knowledge，明确 `asserted_by`，
     `objective=False` —— 声称不等于客观成立，也绝不进 `world.facts`。"""
@@ -813,10 +834,20 @@ class DeliveryCore:
         sub = "question" if kind in QUESTION_KINDS else "statement"
         reasons, evidence, clues, planned = [], [], [], []
         listener = None
-        if len(targets) != 1:
-            reasons.append("target_unresolved")
-        else:
+        if not targets:
+            # 自然发言可指向唯一在场听者；零人或多人时仍需玩家澄清。
+            present = [eid for eid, state in states.items()
+                       if eid not in (actor_id, WORLD)
+                       and (state.get("interaction") or {}).get("location") == src.get("location")]
+            if len(present) == 1:
+                listener = present[0]
+            else:
+                reasons.append("target_unresolved")
+        elif len(targets) == 1:
             listener = targets[0]
+        else:
+            reasons.append("target_unresolved")
+        if listener is not None:
             if listener == actor_id:
                 reasons.append("target_is_self")
             elif listener not in states or listener == WORLD:
@@ -869,7 +900,7 @@ class DeliveryCore:
                 "clues": clues, "planned": planned}
 
     def _check_inspect(self, intent, actor_id, states, ctx):
-        """检查硬前提：只观察**主体所在位置可见的对象/门**。
+        """检查硬前提：观察当前位置，或当前位置可见的对象/门。
 
         可见性用物品**有效位置**（被持有时随持有人当前位置）判定，不能只比物品自身静态
         `location`：玩家从旧井拿走钥匙返回酒馆后，钥匙随其在酒馆可见；留在旧井的人看不到
@@ -883,9 +914,15 @@ class DeliveryCore:
         if not subject and len(targets) == 1:
             subject = targets[0]
         if not subject:
-            reasons.append("object_unknown")
-        elif subject == actor_id or subject == WORLD:
+            subject = src.get("location")  # 无具体对象的「观察周围」指向当前场景
+        entry = None
+        if subject == actor_id or subject == WORLD:
             reasons.append("inspect_subject_not_observable")
+        elif subject in world["places"]:
+            if subject != src.get("location"):
+                reasons.append("object_out_of_sight")
+            else:
+                entry = _scene_observation_entry(subject, states, actor_id, ctx["tick"])
         else:
             obj = world["objects"].get(subject)
             if obj is None:
@@ -900,11 +937,12 @@ class DeliveryCore:
                     reasons.append("object_out_of_sight")
                 else:
                     entry = _observation_entry(subject, obj, ctx["tick"], effective)
-                    if _knowledge_overflow(_knowledge_entries(states[actor_id]), [entry]):
-                        reasons.append("knowledge_capacity")
-                    else:
-                        evidence.append("visible:%s@%s" % (subject, effective))
-                        planned = [{"actor_id": actor_id, "entry": entry}]
+        if entry is not None:
+            if _knowledge_overflow(_knowledge_entries(states[actor_id]), [entry]):
+                reasons.append("knowledge_capacity")
+            else:
+                evidence.append("visible:%s@%s" % (subject, src.get("location")))
+                planned = [{"actor_id": actor_id, "entry": entry}]
         if src.get("incapacitated"):
             reasons.append("actor_incapacitated")
         if src.get("restrained"):
@@ -1046,6 +1084,7 @@ class DeliveryCore:
                         if gained else "%s 观察了 %s（内容已知，无新增信息）" % (actor_id, subject))
         elif op == "communicate":
             listener = check["listener"]
+            target_id = listener
             gained = self._apply_knowledge(changes, states, check["planned"])
             record = {"type": "communicate", "sub_kind": check["sub_kind"],
                       "kind": check["kind"], "speaker": actor_id, "listener": listener,

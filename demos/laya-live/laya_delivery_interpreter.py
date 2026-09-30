@@ -41,7 +41,7 @@ INTERPRETER_VERSION = "p2a-fusion-v1"
 #: 的定义与示例。旧提示词把 attack 一律描述成「身体暴力」，导致固定响应
 #: `{"operation":"attack","kind":"challenge"}` 被本地 schema 判 `bad_kind`，真实玩家入口
 #: 无法进入已实现的非致命规则。
-PROMPT_VERSION = "p2a-prompt-v2"
+PROMPT_VERSION = "p2a-prompt-v3"
 
 #: 解释结果只有这四种状态；只有 ready 可送入 Prepare。
 STATUSES = ("ready", "needs_clarification", "unsupported", "invalid")
@@ -83,6 +83,9 @@ OBJECT_ALIASES = {"badge": ("徽章", "勋章"), "apple": ("苹果",),
                   "cellar_key": ("地窖钥匙", "钥匙"), "cellar_door": ("地窖门", "门")}
 LOCATION_ALIASES = {"tavern": ("酒馆", "铁壶酒馆", "酒馆里"),
                     "old_well": ("老井", "旧井", "水井")}
+# 指向行动者当前地点的明确场景指代；不从任意动词猜测目标。
+CURRENT_SCENE_ALIASES = ("周围", "周围情况", "周围的情况", "四周", "附近",
+                         "这里", "此处", "眼前", "这个地方", "环境")
 
 
 def _norm(text):
@@ -98,7 +101,7 @@ class InterpretError(ValueError):
 # ==========================================================================
 # 服务端实体目录（ID 的唯一来源）
 # ==========================================================================
-def build_entity_directory(core, session_id):
+def build_entity_directory(core, session_id, actor_id="player"):
     """从服务端快照构造实体目录。要求场景已由 `ensure_scene` 初始化。"""
     st = core.state(session_id)
     if not all(st["initialized"].values()):
@@ -132,8 +135,11 @@ def build_entity_directory(core, session_id):
                         + ([obj["name"]] if obj.get("name") else [])}
         if eff_loc:
             locations.setdefault(eff_loc, {"id": eff_loc})
+    current_location = (actors.get(actor_id) or {}).get("location")
     for lid, row in locations.items():
         row["mentions"] = [lid] + list(LOCATION_ALIASES.get(lid, ()))
+        if lid == current_location:
+            row["mentions"] += list(CURRENT_SCENE_ALIASES)
     directory = {
         "actors": actors, "objects": objects, "locations": locations,
         "versions": dict(st["versions"]),
@@ -284,6 +290,12 @@ def build_interpret_prompt(message, directory, actor_id="player", history=()):
         "9. 禁止输出任何数值、结果或能力声明（difficulty / delta / outcome / degree / confidence 等），"
         "也不要写「发生了什么」；你只描述尝试。\n"
         "10. 若目标或物品确实无法确定，把它的提及原样留下即可，本地会返回澄清；不要替玩家选一个。\n"
+        "11. 「观察周围情况」「环顾四周」是 inspect 当前场景；没有具体对象时 targets=[]、object=null。"
+        "不要把‘周围情况’编造成物品。\n"
+        "12. 「（说了一些对接的口令）」这类括号内动作描写是实际尝试说话，"
+        "用 communicate、mode=attempt；没逐字给出口令就不得补出内容或宣称口令被认可。"
+        "没有点名听者时 targets=[]、object=null，由服务端仅在唯一在场听者时确定；"
+        "‘口令’不是已知物品，不要凭空补名字。\n"
         "\n"
         "输出格式（严格 JSON，一个对象，无 markdown 代码块、无多余文字）：\n"
         '{"actions":[{"kind":"<枚举>","operation":"<枚举>","other_operation":null,'
@@ -594,7 +606,7 @@ def interpret_turn(core, session_id, message, *, actor_id="player", event_id="tu
     返回 {"interpretation":…, "prepare_request":…|None, "prepare_error":…|None,
           "directory":…, "history_used":…}；只有 ready 才附 prepare_request。
     """
-    directory = build_entity_directory(core, session_id)
+    directory = build_entity_directory(core, session_id, actor_id=actor_id)
     if history is None:
         state = core.state(session_id)
         history = (state["states"][WORLD]["interaction"] or {}).get("turns") or []
