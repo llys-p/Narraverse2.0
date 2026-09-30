@@ -245,6 +245,55 @@ def _player_view_preview(pv):
     }
 
 
+# ★ P3-D4-R3 · 解释失败诊断只允许这些**代码内固定**的 invalid_reason；任何不在集合内的
+#   值（含模型可能影响的字符串）一律归为 "unrecognized_reason"，绝不原样输出。
+FIXED_INVALID_REASONS = frozenset({
+    "empty_message", "message_too_long", "json_parse", "not_object",
+    "actions_not_list", "too_many_actions", "action_not_object",
+    "forbidden_field", "unknown_field", "bad_kind", "missing_other_operation",
+    "bad_operation", "bad_mode", "evidence_not_verbatim", "bad_targets",
+    "bad_object", "mention_missing_from_evidence", "kind_operation_mismatch",
+    "bad_when", "bad_dependency", "entity_not_mentioned",
+    "entity_not_in_directory", "scene_not_initialized",
+})
+
+
+def _safe_action_index(detail):
+    """只取**合法整数动作索引**（非负、非 bool）；其余一律 None。绝不输出模型字符串。"""
+    if not isinstance(detail, dict):
+        return None
+    idx = detail.get("index")
+    if isinstance(idx, int) and not isinstance(idx, bool) and idx >= 0:
+        return idx
+    return None
+
+
+def _diag_categories(interp_body):
+    """解释失败的**本地安全诊断**（收紧版）。
+
+    只输出三类内容：① 代码内固定集合的 `invalid_reason`（不在集合 → "unrecognized_reason"）；
+    ② 合法整数动作索引 `action_index`（0 起）与代码常量 `max_actions`；③ 计数
+    （`n_actions`/`partial_actions`）。**绝不输出模型提供的任意字符串**——kind / operation /
+    fields / mention / depends_on 等一律丢弃，即使截断也不行，因为它们可能携带玩家私密
+    原话片段。日志与 HTTP details 共用本函数，保证两处都不含原文。
+    """
+    if not isinstance(interp_body, dict):
+        interp_body = {}
+    reason = interp_body.get("invalid_reason")
+    detail = interp_body.get("invalid_detail")
+    out = {
+        "invalid_reason": reason if reason in FIXED_INVALID_REASONS else "unrecognized_reason",
+        "action_index": _safe_action_index(detail),
+        "n_actions": len(interp_body.get("actions") or []),
+        "partial_actions": len(interp_body.get("partial_actions") or []),
+    }
+    if isinstance(detail, dict):
+        mx = detail.get("max")
+        if isinstance(mx, int) and not isinstance(mx, bool) and mx >= 0:
+            out["max_actions"] = mx     # 代码常量（MAX_ACTIONS），非模型字符串
+    return out
+
+
 def _error_body(code, message, details=None, http=400):
     return http, {"protocol_version": DELIVERY_PROTOCOL_VERSION,
                   "error": {"code": code, "message": message, "details": details}}
@@ -535,9 +584,17 @@ def handle_post_prepare(payload, headers, actual_origin):
             _SINGLETON["inflight"].pop(key, None)
         return _error_body("UNSUPPORTED_OPERATION", "不支持的操作", None, 409)
     if status != "ready":
+        # P3-D4-R3 · 解释失败**本地安全诊断**（收紧）：日志与 HTTP details 只输出代码内
+        # 固定集合的 invalid_reason、合法整数动作索引与计数；绝不输出模型提供的任意字符串
+        # （kind/operation/fields/mention 等，即使截断也不行），不回显密钥/完整云端响应/原话。
+        interp_body = interp.get("interpretation") or {}
+        diag = _diag_categories(interp_body)
+        print("[interaction] interpret_invalid categories=%s"
+              % json.dumps(diag, ensure_ascii=False), flush=True)
         with _SINGLETON["lock"]:
             _SINGLETON["inflight"].pop(key, None)
-        return _error_body("INTERPRETATION_INVALID", "解释结果无效", None, 422)
+        return _error_body("INTERPRETATION_INVALID", "解释结果无效（类别见 details）",
+                           diag, 422)
 
     if not interp.get("prepare_request"):
         with _SINGLETON["lock"]:
@@ -644,6 +701,30 @@ def _evict_oldest_cache():
 # ==========================================================================
 # P3-D3 · 叙事薄链：POST /interaction/narrate（只消费已提交回合）
 # ==========================================================================
+# ★ P3-D4：历史上下文只取最近少量轮；在场判断只看已提交步骤 + 角色身份。
+_NARRATE_HISTORY_ROUNDS = 3
+
+
+def _actor_entity_ids(core):
+    """按**角色身份**（服务端配置 `CFG["actor"]` 的 name/name_en）在场景模板里
+    找到该叙事角色对应的实体 ID（如 `lia`）。
+
+    只用于在场判断：其他 NPC 的交流**不能**触发本角色台词。找不到匹配实体时返回
+    空集（fail-closed：角色一律不可开口，退为场景叙述），绝不放宽匹配。
+    """
+    mods = _mods()
+    actor = mods["B"].CFG.get("actor") or {}
+    name, name_en = actor.get("name"), actor.get("name_en")
+    world_id = getattr(mods["C"], "WORLD", "ic_world")
+    ids = set()
+    for entity, tpl in (getattr(core, "templates", None) or {}).items():
+        if entity == "player" or entity == world_id:
+            continue
+        if (name and tpl.get("name") == name) or (name_en and tpl.get("name_en") == name_en):
+            ids.add(entity)
+    return ids
+
+
 def build_narrate_facts(rec, player_message):
     """把已提交回执组织成叙事事实块（**只读**，不改任何状态）。
 
@@ -657,6 +738,7 @@ def build_narrate_facts(rec, player_message):
     steps = []
     for i, r in enumerate(resolutions):
         record = r.get("record") or {}
+        check = r.get("check") or {}
         changes = []
         for ch in r.get("changes") or []:
             if ".knowledge" in str(ch.get("path")):
@@ -674,8 +756,10 @@ def build_narrate_facts(rec, player_message):
             "execution_status": r.get("execution_status"),
             "degree": r.get("degree"),
             "achieved": r.get("achieved"),
-            "listener": record.get("listener"),
+            # 被阻止的动作没有 record：listener 取自 check（在场判断只认 attempted）
+            "listener": record.get("listener") or check.get("listener"),
             "speaker": record.get("speaker"),
+            "check_reasons": [str(x) for x in (check.get("reasons") or [])],
             "changes": changes,
             "player_knowledge": kg_rows,
         })
@@ -706,12 +790,112 @@ def build_narrate_facts(rec, player_message):
     }
 
 
+def _npc_participates(steps, npc_ids):
+    """P3-D4 · 交流参与判断（只看**已提交步骤** + **角色身份**，不写任何状态）。
+
+    只有本回合确有「实际发生」的交流（`execution_status=attempted`）且听者正是
+    本角色（listener ∈ npc_ids，按服务端角色身份解析）时，角色才可开口。
+    其他 NPC 的交流、纯移动/拾取/观察/解锁、或交流被阻止，都不触发角色台词。
+    注意：这只说明「本回合没有与角色的交流」，**绝不推断角色是否在现场**。
+    """
+    for s in steps or []:
+        if s.get("operation") == "communicate" \
+                and s.get("execution_status") == "attempted" \
+                and s.get("listener") in (npc_ids or ()):
+            return True
+    return False
+
+
+def _committed_rounds(core, sid):
+    """枚举某会话**已提交**的回合（事件表墓碑里 status=committed 且带权威回执）。
+
+    历史以这个集合为**唯一来源**：未提交候选绝不进入历史。返回按 `committed_at`
+    升序的 [{event_id, commit_id, committed_at}]（锁内深拷贝，只读）。
+    """
+    mods = _mods()
+    rows = []
+    with mods["B"].PROTOCOL.lock:
+        for (s, _aid), bucket in mods["B"].PROTOCOL._events.items():
+            if s != str(sid) or not isinstance(bucket, dict):
+                continue
+            for event_id, entry in bucket.items():
+                if not isinstance(entry, dict) or entry.get("status") != "committed":
+                    continue
+                rec = entry.get("interaction_receipt")
+                if not isinstance(rec, dict) or not rec.get("commit_id"):
+                    continue
+                rows.append({"event_id": event_id,
+                             "commit_id": rec.get("commit_id"),
+                             "committed_at": rec.get("committed_at") or ""})
+    rows.sort(key=lambda r: r["committed_at"])
+    return rows
+
+
+def _collect_dialog_history(core, sid, current_event, limit=_NARRATE_HISTORY_ROUNDS):
+    """P3-D4 · 最近少量轮的对话上下文。
+
+    集合来源 = **已提交回合**（`_committed_rounds`，未提交候选绝不进入）；再附上
+    服务端已保存的两份数据：Prepare 绑定的玩家原话（`narrate_ctx`）与成功生成的
+    台词（`narrate_cache`，且 commit_id 必须与该轮权威回执一致才采用）。
+    已提交但叙事失败/未生成的回合保留位置、明确标「该轮没有台词」；客户端没有
+    任何自报历史入口。返回按提交顺序升序的最近 `limit` 轮。
+    """
+    rounds = _committed_rounds(core, sid)
+    if current_event is not None:
+        rounds = [r for r in rounds if r["event_id"] != current_event]
+    rounds = rounds[-limit:] if limit and len(rounds) > limit else rounds
+    out = []
+    with _SINGLETON["lock"]:
+        for r in rounds:
+            key = (sid, r["event_id"])
+            ctx = _SINGLETON["narrate_ctx"].get(key)
+            cache = _SINGLETON["narrate_cache"].get(key)
+            line = cache.get("line") if cache and cache.get("commit_id") == r["commit_id"] else None
+            out.append({
+                "message": (ctx or {}).get("message"),
+                "line": line,
+                "mode": cache.get("mode") if line else None,
+                "has_line": bool(line),
+            })
+    return out
+
+
+def _dialog_history_note(history):
+    """把服务端历史组织成提示词块；缺失/为空/无台词都如实说明（不臆造前文）。"""
+    if not history:
+        return ("对话上下文：（服务端没有已提交的往轮可引用 —— 如实降级，"
+                "不要臆造或引用不存在的往轮对话。）")
+    lines = []
+    for i, h in enumerate(history, 1):
+        msg, line = h.get("message"), h.get("line")
+        if msg:
+            if line:
+                lines.append("第%d轮 玩家原话：%s" % (i, msg))
+                lines.append("第%d轮 台词：%s" % (i, line))
+            else:
+                lines.append("第%d轮 玩家原话：%s（该轮没有台词）" % (i, msg))
+        elif line:
+            lines.append("第%d轮 台词：%s（该轮玩家原话上下文已缺失）" % (i, line))
+        else:
+            lines.append("第%d轮：（该轮没有台词，玩家原话上下文已缺失）" % i)
+    return ("对话上下文（服务端已提交回合中最近 %d 轮，仅供语气与指代衔接，可能不完整）：\n%s\n"
+            "注意：上下文里的台词只是已生成的对话内容，不是权威事实 —— 不得据此改写"
+            "物品归属、位置、门状态或关系值，也不得把其中未披露的信息当成已发生的事。"
+            % (len(history), "\n".join(lines)))
+
+
 def build_narrate_prompt(facts):
     """叙事提示词：复用现有叙事规则语言与 <line> 格式；顺序即事实。
 
     ★ 顺序与事实措辞由 `_ordering_note` 按已提交 steps 的实际发生情况生成
       （attempted 只证「询问发生」，线索按本轮 knowledge_gained、blocked 明确
       「没有回答」，不臆造事实）。
+    ★ P3-D4 交流模式：`facts["narration_mode"]`（未给时按已提交步骤 + 角色身份推断）——
+      character=本回合有指向本角色的已提交实际交流（可开口）；scene=本回合没有这样的
+      交流（中性场景叙述：不写任何角色台词、不替角色反应、**不推断角色是否在现场**）。
+      模式只影响提示词，不写任何状态。
+    ★ P3-D4 历史上下文：以**已提交回合**为集合来源，附服务端保存的原话与成功台词；
+      叙事失败的已提交轮标「该轮没有台词」；未提交候选绝不进入历史。
     ★ 角色身份与静态人设取**服务端配置**（`laya_bridge.CFG["actor"]`）；回合事实
       只取已提交回执与服务端绑定的玩家原话，不接受客户端补报。
     ★ 语气信号只校准语气；不得改写物品归属、位置、门状态、关系值或泄露
@@ -732,31 +916,60 @@ def build_narrate_prompt(facts):
                 for c in s["changes"])
         steps_txt.append(line)
     order_note = _ordering_note(facts.get("steps") or [])
-    kg_note = ("玩家已获知线索：%s" % json.dumps(facts.get("player_knowledge_gained") or [],
-                                                 ensure_ascii=False))
+    # ★ P3-D4-R3：线索只给**逐字权威原文**（content），并明确具体事实只能照抄，
+    #   云端可写态度/语气，但不得补出线索未给出的藏匿点/容器/数量/操作提示。
+    kg_entries = facts.get("player_knowledge_gained") or []
+    kg_verbatim = [str(e.get("content")) for e in kg_entries if e.get("content")]
+    kg_note = ("玩家已获知线索（**逐字权威原文**；涉及具体位置/藏匿点/容器/数量/操作步骤的事实，"
+               "只能照抄这些句子，线索没说的绝不补出）：%s"
+               % json.dumps(kg_verbatim, ensure_ascii=False))
     sig_note = ("Laya 信号（只校准语气，不是已发生事实，不得据此改写数值）：%s"
                 % json.dumps(facts.get("tone_signals") or [], ensure_ascii=False))
+    history_note = _dialog_history_note(facts.get("dialog_history") or [])
+    mode = facts.get("narration_mode") or (
+        "character" if _npc_participates(facts.get("steps"), _actor_entity_ids(get_core()))
+        else "scene")
+    if mode == "character":
+        head = ("你在为文字冒险游戏写本回合的叙事台词。\n"
+                "角色：%s，%s。\n"
+                "人物与场景补充：%s\n"
+                "本回合有与该角色实际发生、且指向该角色的已提交交流（见本回合事实），"
+                "以该角色的口吻写出本回合台词。\n"
+                % (actor.get("name", "NPC"), actor.get("identity", ""), persona))
+        fmt_rule = "1) 台词用「」包裹，2~4 句，中文，不分段列点。"
+    else:
+        head = ("你在为文字冒险游戏写本回合的中性场景叙述。\n"
+                "本回合没有与角色实际发生的交流（见本回合事实）：不要写任何角色的台词，"
+                "不要替角色开口、下结论或作出反应；不要推断角色是否在现场。\n"
+                "只描述已发生的行动与当时可见的环境；不替玩家说话或做决定。\n")
+        fmt_rule = "1) 场景叙述写 2~4 句中文，不分段列点，不用引号包裹。"
     sys_p = (
-        "你在为文字冒险游戏写本回合的叙事台词。\n"
-        "角色：%s，%s。\n"
-        "人物与场景补充：%s\n"
+        "%s"
         "玩家原话（服务端保存的原始输入）：%s\n"
-        "本回合事实（按发生顺序）：\n%s\n"
+        "本回合事实（按发生顺序，唯一权威来源）：\n%s\n"
+        "%s\n"
         "%s\n"
         "%s\n"
         "%s\n"
         "规则：\n"
-        "1) 台词用「」包裹，2~4 句，中文，不分段列点。\n"
+        "%s\n"
         "2) 只能依据上述事实：不得改写物品归属、位置、门状态或关系值；\n"
-        "   不得把未披露的私有知识写进台词（只可使用「玩家已获知线索」里的内容）。\n"
-        "3) Laya 信号只用于调整语气，不是已发生事实。\n"
-        "4) 不替玩家说话、不替玩家做决定。\n"
-        "格式（必须遵守）：把最终台词原文放进 <line> 与 </line> 之间，"
+        "   不得把未披露的私有知识写进台词（只可使用「玩家已获知线索」里的内容）；\n"
+        "   上下文里的往轮台词同样不是事实来源。\n"
+        "3) 线索纪律（重要）：凡涉及**具体位置、藏匿点、容器、数量、操作步骤**的内容，"
+        "只能逐字采用「玩家已获知线索」的原文；线索没有给出的具体细节一律不得补出。"
+        "例如线索只说「钥匙在旧井」，就**不得**写成「井沿第三块石砖下」「挂在铁环上」"
+        "「装在木盒里」这类原文没有的藏匿点/容器/数量。你可以描写角色的态度、语气、"
+        "神情、动作姿态与对玩家的回应，但文学表达不得新增任何具体事实。\n"
+        "4) Laya 信号只用于调整语气，不是已发生事实。\n"
+        "5) 不替玩家说话、不替玩家做决定、不生成新的游戏动作或状态变化。\n"
+        "格式（必须遵守）：把最终文本原文放进 <line> 与 </line> 之间，"
         "这两个标签之外一个字符都不要写。"
-    ) % (actor.get("name", "NPC"), actor.get("identity", ""), persona,
+    ) % (head,
          facts.get("player_message") or "",
          "\n".join(steps_txt) or "（无动作）",
-         order_note, kg_note, sig_note)
+         order_note, kg_note, sig_note, history_note,
+         fmt_rule)
     user_p = "请写出本回合的叙事台词。"
     return sys_p, user_p
 
@@ -817,6 +1030,10 @@ def handle_post_narrate(payload, headers, actual_origin):
     · 同 (session,event,commit) 并发单飞：生成器在锁外运行，第二个同时到达的
       相同请求得 409 NARRATE_IN_PROGRESS；失败/提取失败都释放占位可重试。
     · 生成失败 502，权威状态/时钟/版本/回执均不变，不重新 Prepare/Commit。
+    · P3-D4：响应带 `mode`（character=角色参与了本回合交流；scene=本回合没有
+      与该角色的实际交流，采用中性场景叙述，不推断是否在场）；提示词带服务端
+      保存的最近少量轮对话上下文（原话+台词，
+      只作上下文不作事实），上下文缺失如实降级。
     """
     mods = _mods()
     reject = _reject_foreign_origin(headers, actual_origin)
@@ -854,7 +1071,8 @@ def handle_post_narrate(payload, headers, actual_origin):
         if cached and cached.get("commit_id") == commit_id:
             return 200, {"protocol_version": DELIVERY_PROTOCOL_VERSION,
                          "session_id": sid, "event_id": event_id,
-                         "commit_id": commit_id, "line": cached["line"], "reused": True}
+                         "commit_id": commit_id, "line": cached["line"],
+                         "mode": cached.get("mode") or "character", "reused": True}
         ctx = _SINGLETON["narrate_ctx"].get((sid, event_id))
         if ctx and ctx.get("analysis_id") == rec.get("analysis_id"):
             message = ctx.get("message")
@@ -867,6 +1085,11 @@ def handle_post_narrate(payload, headers, actual_origin):
                            None, 409)
 
     facts = build_narrate_facts(rec, message)
+    # P3-D4：模式只按已提交步骤 + 服务端角色身份判断（不采信客户端任何字段）；
+    # 历史上下文以已提交回合为集合来源，只附服务端保存的原话与成功台词。
+    mode = "character" if _npc_participates(facts["steps"], _actor_entity_ids(core)) else "scene"
+    facts["narration_mode"] = mode
+    facts["dialog_history"] = _collect_dialog_history(core, sid, event_id)
     sys_p, user_p = build_narrate_prompt(facts)
     caller = _SINGLETON["narrate_caller"]
     if caller is None:
@@ -913,10 +1136,10 @@ def handle_post_narrate(payload, headers, actual_origin):
         if len(_SINGLETON["narrate_cache"]) >= _NARRATE_CACHE_MAX:
             _evict_oldest(_SINGLETON["narrate_cache"], "saved_at")
         _SINGLETON["narrate_cache"][(sid, event_id)] = {
-            "commit_id": commit_id, "line": line, "saved_at": time.time()}
+            "commit_id": commit_id, "line": line, "mode": mode, "saved_at": time.time()}
     return 200, {"protocol_version": DELIVERY_PROTOCOL_VERSION,
                  "session_id": sid, "event_id": event_id,
-                 "commit_id": commit_id, "line": line, "reused": False}
+                 "commit_id": commit_id, "line": line, "mode": mode, "reused": False}
 
 
 def _query(query_string):

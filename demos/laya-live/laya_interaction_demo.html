@@ -98,6 +98,24 @@
   .ver summary{font-size:11px}
   .ver .kv{margin-top:5px}
   footer{margin-top:2px;font-size:10.5px;color:var(--dim2);padding:0 22px 18px}
+
+  /* P3-D4 · 对话与叙事 */
+  .dlog{display:flex;flex-direction:column;gap:9px}
+  .turn{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:9px 11px}
+  .turn .t-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px}
+  .turn .t-no{font-weight:700;font-size:12px;color:var(--story)}
+  .turn .t-meta{font-family:var(--fm);font-size:10px;color:var(--dim2);word-break:break-all}
+  .turn .p-msg{font-size:13px;margin:2px 0}
+  .turn .p-msg b{color:var(--dim)}
+  .turn .clue-auth{font-size:12px;margin:4px 0;padding:5px 9px;border-left:2px solid var(--story);
+    background:rgba(34,211,238,.07);border-radius:0 6px 6px 0;color:var(--txt)}
+  .turn .clue-auth b{color:var(--story);font-weight:650}
+  .turn .n-line{font-size:13.5px;margin:3px 0 2px;line-height:1.7}
+  .turn .n-line.who{color:var(--laya)}
+  .turn .n-line.scene{color:var(--story)}
+  .turn .n-state{font-size:11px;color:var(--dim2);margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .turn .n-state.bad{color:var(--bad)}
+  .turn .n-state.ok{color:var(--ok)}
 </style>
 </head>
 <body>
@@ -105,7 +123,7 @@
   <div class="hrow">
     <div class="logo">I</div>
     <h1>Narraverse · <span>Interaction 演示</span></h1>
-    <div class="sub">输入原话 → 查看候选 → 确认后提交（只消费 /interaction/* 五端点）</div>
+    <div class="sub">输入原话 → 查看候选 → 确认提交 → 权威叙事（/interaction/* 六端点）</div>
     <div class="spacer"></div>
     <div class="badge" id="phaseBadge"><span class="dot off" id="phaseDot"></span>阶段：<b id="phaseName">初始化</b></div>
     <div class="badge">会话：<b class="mono" id="sessionBadge" data-session-id="">—</b></div>
@@ -148,8 +166,13 @@
     </div>
   </div>
 
-  <!-- 中列：候选预览 -->
+  <!-- 中列：对话与叙事 + 候选预览 -->
   <div class="col">
+    <div class="card">
+      <h2>对话与叙事<span class="spacer"></span><span class="pill" id="dialogPill">—</span></h2>
+      <div id="dialogBody" class="dlog"><div class="empty">尚未开始。提交回合后会在这里生成叙事。</div></div>
+      <div class="err" id="dialogNote" hidden></div>
+    </div>
     <div class="card">
       <h2>候选预览<span class="spacer"></span><span class="pill" id="previewStatePill">—</span></h2>
       <div id="phaseBanner"><div class="phase"><span class="dot off p-dot"></span><span>尚未准备候选。输入原话并点击「准备候选」。</span></div></div>
@@ -175,7 +198,7 @@
   </div>
 </div>
 
-<footer>本页只呈现 /interaction/* 玩家视角白名单；候选在确认前不会写入游戏状态；此阶段不生成角色台词。</footer>
+<footer>候选在确认前不会写入游戏状态；台词只由服务端按已提交回执生成（不可叙事时如实说明，不伪造）；状态变化以右侧权威面板为准。</footer>
 
 <script>
 "use strict";
@@ -188,7 +211,49 @@ window.__P3D2B__ = {
   analysisId: null,
   baseVersions: null,
   lastCommitPayload: null,
+  // P3-D4 · 对话区数据：[{event_id, commit_id, message, line, mode, status, reused, error, retryable}]
+  // status: pending=叙事进行中 ok=有台词 failed=可重试失败 unavailable=明确无法恢复
+  dialog: [],
+  narrateRequests: [],   // 测试观测：每次 narrate 请求的字段清单（不含值）
 };
+
+// 对话记录与 **session 绑定**：只存本会话的提交身份（event_id/commit_id）与自己的输入
+// 原话，供刷新后向服务端**复用**已生成台词；服务端从不接受客户端自报的历史内容。
+// 存储形如 {session_id, rows}：刷新同一 session 才恢复；session 不一致（换会话/陈旧
+// 记录）一律视为空——不显示、也不请求上一会话的回合。
+const DIALOG_KEY = "p3d4_dialog";
+
+function loadDialog() {
+  const sid = window.__P3D2B__.sessionId;
+  window.__P3D2B__.dialog = [];
+  try {
+    const blob = JSON.parse(sessionStorage.getItem(DIALOG_KEY) || "null");
+    if (!blob || blob.session_id !== sid || !Array.isArray(blob.rows)) {
+      return;   // 换 session 或无记录：不显示上一会话回合
+    }
+    window.__P3D2B__.dialog = blob.rows
+      .filter((r) => r && typeof r.event_id === "string"
+        && typeof r.commit_id === "string" && typeof r.message === "string")
+      .map((r) => {
+        if (r.status === "ok" && r.line) return r;
+        // 刷新时叙事未完成/曾失败：如实标记，可手动重试同一提交身份（不自动重新生成）
+        return Object.assign({}, r, {
+          status: "failed", line: null, mode: null, reused: false, retryable: true,
+          error: r.status === "pending" ? "页面刷新时叙事未完成（尚未生成台词）"
+                                        : (r.error || "尚未生成台词"),
+        });
+      });
+  } catch (e) { /* 损坏则视为空，不伪造 */ }
+}
+
+function saveDialog() {
+  try {
+    sessionStorage.setItem(DIALOG_KEY, JSON.stringify({
+      session_id: window.__P3D2B__.sessionId,
+      rows: window.__P3D2B__.dialog.slice(-30),
+    }));
+  } catch (e) { /* 存不下就只在内存里 */ }
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -266,8 +331,27 @@ function fmtReason(code) {
     ANALYSIS_NOT_FOUND: "候选不存在或已清理", ANALYSIS_EXPIRED: "候选已过期", ANALYSIS_INVALIDATED: "候选已失效",
     CAPABILITY_CHANGED: "能力档案已变化", RULESET_CHANGED: "规则已变化", PENDING_CAPACITY: "候选容量已满",
     INVALID_REQUEST: "请求不合法", RECEIPT_UNKNOWN: "未找到已提交回执", EVENT_ALREADY_COMMITTED: "该事件已提交",
-    IDEMPOTENCY_CONFLICT: "重放基准版本与已提交回执不符" };
+    IDEMPOTENCY_CONFLICT: "重放基准版本与已提交回执不符",
+    NARRATION_FAILED: "叙事生成失败（已提交回合不受影响）", NARRATOR_UNAVAILABLE: "叙事生成器未配置",
+    NARRATE_CONTEXT_MISSING: "服务端绑定上下文缺失，无法叙事（不猜测原话）",
+    NARRATE_COMMIT_MISMATCH: "提交身份与回执不一致", NARRATE_IN_PROGRESS: "同一回合正在生成叙事",
+    NARRATE_CAPACITY: "叙事占位已满" };
   return map[code] || code;
+}
+
+// 解释失败的**本地安全诊断**展示：服务端 details 已收紧为「固定集 invalid_reason +
+// 合法整数 action_index + 计数」，不含任何模型字符串。页面把 0 起索引显示为「第 N 个动作」，
+// 绝不回显玩家原话或原始模型内容。
+function diagText(err) {
+  if (!err || err.code !== "INTERPRETATION_INVALID") return "";
+  const d = err.details || {};
+  const parts = [];
+  if (typeof d.invalid_reason === "string") parts.push("类别 " + d.invalid_reason);
+  if (typeof d.action_index === "number") parts.push("第 " + (d.action_index + 1) + " 个动作");
+  if (typeof d.max_actions === "number") parts.push("动作上限 " + d.max_actions);
+  if (typeof d.n_actions === "number") parts.push("就绪动作 " + d.n_actions);
+  if (typeof d.partial_actions === "number") parts.push("部分动作 " + d.partial_actions);
+  return parts.length ? "（" + parts.join("，") + "）" : "";
 }
 
 // ---------------- 初始化 ----------------
@@ -385,9 +469,11 @@ async function onPrepare() {
   $("prepareBtn").disabled = false;
   if (r.status !== 200) {
     const code = r.data && r.data.error && r.data.error.code;
+    const diag = diagText(r.data && r.data.error);   // 仅服务端已净化的类别信息
     setPhase("error");
     $("previewStatePill").textContent = "失败";
-    $("phaseBanner").replaceChildren(phaseBox("bad", "准备失败：" + (code || r.status), fmtReason(code)));
+    $("phaseBanner").replaceChildren(phaseBox("bad", "准备失败：" + (code || r.status),
+                                              fmtReason(code) + diag));
     $("previewBody").replaceChildren();
     $("commitArea").hidden = true;
     if (code === "STATE_VERSION_CONFLICT") {
@@ -395,7 +481,7 @@ async function onPrepare() {
       setNotice(el("div", "err", "版本冲突：已刷新权威状态，请点击「换新事件重输」后重新输入。"));
       $("newEventBtn").disabled = false;
     } else {
-      setNotice(el("div", "err", "准备失败：" + fmtReason(code)));
+      setNotice(el("div", "err", "准备失败：" + fmtReason(code) + diag));
     }
     return;
   }
@@ -681,6 +767,23 @@ async function onCommitted(rec) {
   setNotice(el("div", stateOk && receiptOk ? "ok-txt" : "err",
     stateOk && receiptOk ? "提交成功。右侧权威状态与回执已更新。"
                          : "提交已成功，但状态或回执刷新暂失败；当前显示提交响应中的权威回执，请稍后刷新权威状态。"));
+  // P3-D4：Commit 明确成功后才登记对话轮并请求叙事（身份取服务端回执，非客户端自报）。
+  // 权威线索（逐字）取自已提交回执的 knowledge_gained，与文学台词分离呈现。
+  const clues = ((rec.knowledge_gained || [])
+    .map((row) => row && row.entry && row.entry.content)
+    .filter((c) => typeof c === "string" && c));
+  const round = {
+    event_id: rec.event_id || window.__P3D2B__.eventId,
+    commit_id: rec.commit_id,
+    message: lastMessage || "",
+    clues: clues,
+    status: "pending", line: null, mode: null, reused: false,
+    error: null, retryable: false,
+  };
+  window.__P3D2B__.dialog.push(round);
+  saveDialog();
+  renderDialog();
+  requestNarrate(round);          // 异步生成；失败时对话区保留已提交回合与重试入口
   window.__P3D2B__.eventId = null;
   window.__P3D2B__.analysisId = null;
   window.__P3D2B__.baseVersions = null;
@@ -727,6 +830,146 @@ function renderReceipt(rec) {
   }
 }
 
+// ---------------- P3-D4 · 对话与叙事 ----------------
+// 只在 Commit 明确成功后，用服务端回执身份（session/event/commit）请求 /interaction/narrate；
+// 失败保留已提交回合，可重试同一提交身份；刷新后向服务端复用已生成台词，取不回就如实说明。
+const MODE_ZH = { character: "莉亚", scene: "场景叙述" };
+
+function renderDialog() {
+  const box = $("dialogBody");
+  box.replaceChildren();
+  const rows = window.__P3D2B__.dialog;
+  $("dialogPill").textContent = rows.length ? ("共 " + rows.length + " 轮") : "—";
+  if (!rows.length) {
+    box.appendChild(el("div", "empty", "尚未开始。提交回合后会在这里生成叙事。"));
+    return;
+  }
+  rows.forEach((r, i) => {
+    const turn = el("div", "turn");
+    const head = el("div", "t-head");
+    head.appendChild(el("span", "t-no", "第 " + (i + 1) + " 回合"));
+    turn.appendChild(head);
+    turn.appendChild(el("div", "p-msg", "")); // 占位，下面手动组装
+    const pm = turn.lastChild;
+    pm.appendChild(el("b", null, "你："));
+    pm.appendChild(document.createTextNode(r.message || "（原话未记录）"));
+
+    if (r.status === "ok" && r.line) {
+      const isChar = r.mode !== "scene";
+      // ★ 权威线索（逐字）与文学表达**分离呈现**：线索来自已提交回执的 knowledge_gained，
+      //   是事实；台词是文学表达，不得新增线索未给出的具体事实。两者 visually 区分。
+      if ((r.clues || []).length) {
+        const cb = el("div", "clue-auth");
+        cb.appendChild(el("b", null, "权威线索（逐字·事实）："));
+        cb.appendChild(document.createTextNode(r.clues.join("；")));
+        turn.appendChild(cb);
+      }
+      const nl = el("div", "n-line " + (isChar ? "who" : "scene"));
+      let shown = r.line;
+      // 模型偶发把引号写进 <line>（如整句以「…」包裹）：外侧成对引号剥离，避免双重引号；
+      // 不成对则原样显示（忠实呈现，不伪造）。
+      if (shown.length >= 2 && shown.startsWith("「") && shown.endsWith("」")) {
+        shown = shown.slice(1, -1).trim();
+      }
+      nl.appendChild(el("b", null, (isChar ? "莉亚" : "场景叙述") + "（文学表达）："));
+      nl.appendChild(document.createTextNode(isChar ? "「" + shown + "」" : shown));
+      turn.appendChild(nl);
+      const st = el("div", "n-state ok");
+      st.appendChild(el("span", "t-meta", "commit_id=" + r.commit_id
+        + (r.reused ? " · 复用已生成台词" : " · 新生成")));
+      turn.appendChild(st);
+    } else if (r.status === "pending") {
+      const st = el("div", "n-state");
+      st.textContent = "正在生成叙事…";
+      turn.appendChild(st);
+    } else {
+      const st = el("div", "n-state bad");
+      const failed = r.status === "failed";
+      st.textContent = (failed ? "叙事生成失败：" : "该轮台词未能恢复：") + (r.error || "原因不明")
+        + "。已提交回合与权威状态不受影响；不伪造回复。";
+      turn.appendChild(st);
+      if (failed && r.retryable) {
+        const btn = el("button", null, "重试叙事（同一提交身份）");
+        btn.dataset.round = String(i);
+        turn.appendChild(btn);
+      }
+    }
+    box.appendChild(turn);
+  });
+}
+
+function narratePayload(round) {
+  return {
+    session_id: window.__P3D2B__.sessionId,
+    event_id: round.event_id,
+    commit_id: round.commit_id,
+  };
+}
+
+async function requestNarrate(round) {
+  const payload = narratePayload(round);
+  window.__P3D2B__.narrateRequests.push(Object.keys(payload));
+  round.status = "pending";
+  round.error = null;
+  renderDialog();
+  saveDialog();
+  let r;
+  try {
+    r = await api("POST", "/interaction/narrate", payload);
+  } catch (e) {
+    round.status = "failed";
+    round.retryable = true;
+    round.error = "网络失败（可重试同一提交身份）";
+    renderDialog();
+    saveDialog();
+    return;
+  }
+  if (r.status === 200 && r.data && r.data.line) {
+    round.status = "ok";
+    round.line = String(r.data.line);
+    round.mode = r.data.mode === "scene" ? "scene" : "character";
+    round.reused = !!r.data.reused;
+    round.error = null;
+  } else {
+    const code = r.data && r.data.error && r.data.error.code;
+    round.error = fmtReason(code) || ("HTTP " + r.status);
+    if (code === "NARRATE_CONTEXT_MISSING" || code === "RECEIPT_UNKNOWN"
+        || code === "NARRATE_COMMIT_MISMATCH") {
+      round.status = "unavailable";   // 明确无法恢复：不伪造，保留已提交回合
+      round.retryable = false;
+    } else {
+      round.status = "failed";        // 502/409 进行中/容量等：同一提交身份可重试
+      round.retryable = true;
+    }
+  }
+  renderDialog();
+  saveDialog();
+}
+
+$("dialogBody").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-round]");
+  if (!btn || busy) return;
+  const round = window.__P3D2B__.dialog[Number(btn.dataset.round)];
+  if (round && round.status !== "ok") requestNarrate(round);
+});
+
+// 刷新恢复：只对**已有台词**的回合向服务端复用（reused=true，零生成成本）；
+// 没有台词的回合保持原状并如实显示原因，绝不自动重新生成。
+async function recoverDialog() {
+  const rows = window.__P3D2B__.dialog;
+  if (!rows.length) return;
+  setNotice(el("div", "hint", "正在向服务端复用已生成台词…"));
+  let recovered = 0, missed = 0;
+  for (const r of rows) {
+    if (r.status !== "ok" || !r.line) { missed += 1; continue; }
+    await requestNarrate(r);
+    if (r.status === "ok") recovered += 1; else missed += 1;
+  }
+  setNotice(el("div", recovered ? "ok-txt" : "err",
+    "刷新恢复：复用台词 " + recovered + " 轮" + (missed ? ("；未能复用 " + missed + " 轮（原因见对话区）") : "")
+    + "。"));
+}
+
 function onNewEvent() {
   window.__P3D2B__.eventId = null;
   window.__P3D2B__.analysisId = null;
@@ -753,13 +996,16 @@ $("msgInput").addEventListener("keydown", (e) => {
 });
 
 (async function init() {
-  const ok = await ensureScene();
+  const ok = await ensureScene();   // 先确定 session_id（对话记录据此绑定）
   if (ok) {
+    loadDialog();                   // session 一致才恢复；换会话视为空
     setPhase("init");
     $("prepareBtn").disabled = false;
     $("refreshBtn").disabled = false;
     $("inputHint").textContent = "输入原话后点击「准备候选」。候选确认前不会写入游戏状态。";
     setNotice(el("div", "hint", "场景已初始化，权威状态已读取。"));
+    renderDialog();
+    await recoverDialog();   // 刷新后向服务端复用已有台词（不自动重新生成）
   }
 })();
 </script>

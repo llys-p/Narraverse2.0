@@ -215,7 +215,7 @@ def main():
     sys_p = TRANSPORT["sys"] or ""
     user_p = TRANSPORT["user"] or ""
     c13 = {
-        "本回合事实": "本回合事实（按发生顺序）" in sys_p,
+        "本回合事实": "本回合事实（按发生顺序，唯一权威来源）" in sys_p,
         "时间顺序": "时间顺序：" in sys_p,
         "玩家已获知线索": "玩家已获知线索" in sys_p,
         "Laya信号": "Laya 信号（只校准语气" in sys_p,
@@ -243,7 +243,7 @@ def main():
         TRANSPORT["calls"] == 1, "calls=%d" % TRANSPORT["calls"])
     chk("C7-① 200 响应只含白名单字段（无 Prompt/原始响应）",
         set(body.keys()) == {"protocol_version", "session_id", "event_id",
-                             "commit_id", "line", "reused"}
+                             "commit_id", "line", "mode", "reused"}
         and "本回合事实" not in json.dumps(body, ensure_ascii=False), "")
 
     # ---- C4/C5：失败与空内容：状态/时钟/版本/回执不变 ----
