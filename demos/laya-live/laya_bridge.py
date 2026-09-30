@@ -69,6 +69,7 @@ Laya 是「非自回归类型化决策引擎」：单次前向传播、约 33ms�
     .incomplete 哨兵、.locks/*.lock 和 tempfile 目录，正好撞上本机的删除配额守卫。
 """
 import json
+import copy as _copy
 import os
 import re
 import sys
@@ -84,15 +85,26 @@ import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# ★ P2-B1：Analyze/Commit 状态协议 v1 的存储与编排（独立小模块，不复制推理引擎）。
+from laya_state_protocol import LayaStateProtocol, _ProtoError, MAX_BODY_BYTES
+
 HERE = Path(__file__).resolve().parent
 CFG_PATH = HERE / "narra_config.json"
 DEMO_HTML = HERE / "laya-live-demo.html"
+# ★ P3-D2b：Interaction Demo 页面（只消费 /interaction/* 五端点，独立于旧 /demo）。
+INTERACTION_DEMO_HTML = HERE / "laya_interaction_demo.html"
 ENV_PATH = HERE / ".env"
 # 这些是密钥：以 .env 为准，不让系统环境变量覆盖。
 # 理由：本机用户级环境变量里存着一个**已失效**的 DEEPSEEK_API_KEY（尾号 d4f0），
 # 若让系统优先，.env 里的有效 key 会被静默屏蔽，表现为 401 且报错只显示 d4f0，极难定位。
 ENV_AUTHORITATIVE = ("DEEPSEEK_API_KEY", "LLM_API_KEY")
 PORT = int(os.environ.get("LAYA_BRIDGE_PORT", "8130"))
+
+# ★ Qoder 审查 M-1（2026-09-25）：引擎标识的**单一权威**字面量。
+#   旧路由 legacy 门禁（engine_used）与 /decide、/world 的取值得共用这份常量，
+#   避免「黑名单只挡一个拼写、改名即静默失效」的自证缺口。
+ENGINE_MODE_LAYA = "laya"
+ENGINE_MODE_FALLBACK = "fallback"
 
 
 def load_env_file(path=ENV_PATH):
@@ -162,9 +174,25 @@ CFG = json.loads(CFG_PATH.read_text(encoding="utf-8"))
 #    就直接用本地目录，完全不碰 huggingface_hub（见 _fetch_laya.py 的说明：
 #    hf 下载过程中的临时目录/锁文件删除会撞上本机的删除配额守卫）。
 # ==========================================================================
-MODELS_DIR = HERE / "_models"
+# ★ P1（2026-09-24）：模型目录可配置。worktree/新 checkout 默认没有 _models/，
+#   本机模型可能放在别处（如外部运行副本的 _models）。LAYA_MODELS_DIR 显式指定后，
+#   推理（find_local_models）与 checkpoint 校验（_checkpoint_fingerprint）用的是
+#   **同一个**有效目录 —— 两处读不同目录 = 校验的是 A、跑的是 B，必须杜绝。
+#   优先级与 LAYA_MODEL 一致：系统环境变量 > .env（见 load_env_file）。
+MODELS_DIR = Path(os.environ.get("LAYA_MODELS_DIR") or (HERE / "_models"))
 MODEL_NAMES = ("typed-decisions", "english", "multilingual")
 DEFAULT_MODEL_NAME = os.environ.get("LAYA_MODEL", "typed-decisions")
+
+
+def _checkpoint_candidates(model):
+    """一个检查点的两种目录布局：`laya-<名>/` 或裸 `<名>/`。
+
+    ★ 加载（find_local_models）与校验（_checkpoint_fingerprint）**必须共用**这份
+      候选列表 —— 之前两者各写一份（加载器接受裸目录、指纹只查 laya- 前缀），
+      造成「能加载但指纹报 exists=False」的永久失效组合（P1 审查 P2 项）。
+      候选顺序即为优先级：laya-<名>/ 优先，与既有资产布局保持一致。
+    """
+    return (Path(MODELS_DIR) / ("laya-" + model), Path(MODELS_DIR) / model)
 
 
 def find_local_models():
@@ -173,7 +201,7 @@ def find_local_models():
     if not MODELS_DIR.is_dir():
         return out
     for n in MODEL_NAMES:
-        for cand in (MODELS_DIR / ("laya-" + n), MODELS_DIR / n):
+        for cand in _checkpoint_candidates(n):
             if (cand / "model.safetensors").exists() and (cand / "rl_agent_config.json").exists():
                 out[n] = str(cand)
                 break
@@ -331,12 +359,26 @@ class LayaEngine:
 
         self.local_models = find_local_models()
         want = os.environ.get("LAYA_MODEL", DEFAULT_MODEL_NAME)
+        # ★★ P1 fail-closed（2026-09-24）：不再「退到已经有的那个」。
+        #   旧逻辑在本地缺用户指定检查点时，会静默换成 sorted(local)[0] 继续跑 ——
+        #   而能力档案是**按检查点**生成的（typed-decisions 可写 doubt_shift、
+        #   english 可写 fondness_shift）。静默换检查点 = 拿另一套可写信号集
+        #   冒充用户选择，状态层会按错误的档案写状态。宁可起不来，也不能装对。
+        if want not in MODEL_NAMES:
+            self.last_error = ("未知检查点名 %r（可选：%s）。拒绝加载任何检查点 —— "
+                               "不能以默认检查点冒充用户选择。"
+                               % (want, "、".join(MODEL_NAMES)))
+            self.detail = "LAYA_MODEL 无效，fail-closed 不加载"
+            self.load_ms = int((time.time() - t0) * 1000)
+            return
+        self.model_name = want
         if self.local_models and want not in self.local_models:
-            # 想要的检查点没下到本地，退到已经有的那个（避免又去联网下载）
-            self.model_name = sorted(self.local_models)[0]
-            self.last_error = "本机没有 %r 检查点，已退到 %r" % (want, self.model_name)
-        else:
-            self.model_name = want
+            self.last_error = ("模型目录 %s 里没有 %r 检查点（本地有：%s）。"
+                               "可用 LAYA_MODELS_DIR 指定模型目录；拒绝退到其它检查点冒充。"
+                               % (MODELS_DIR, want, "、".join(sorted(self.local_models)) or "无"))
+            self.detail = "请求的检查点在模型目录缺失，fail-closed 不加载"
+            self.load_ms = int((time.time() - t0) * 1000)
+            return
 
         device = os.environ.get("LAYA_DEVICE")
         preload = os.environ.get("LAYA_PRELOAD", "1") == "1"
@@ -368,7 +410,10 @@ class LayaEngine:
             cands = []
             if self.model_name in self.local_models:
                 cands.append((self.local_models[self.model_name], None))
-            cands += [("convaiinnovations/laya", "typed-decisions"), ("convaiinnovations/laya", None)]
+            # ★ P1：兜底只加载**用户指定的**检查点。旧代码会退到硬编码的
+            #   typed-decisions 或 repo 默认（english）—— 又一处「冒充用户选择」。
+            #   指定名不合法时让 HF 明确报错，不换名重试。
+            cands.append(("convaiinnovations/laya", self.model_name))
             for repo, sub in cands:
                 try:
                     self.obj = laya.load(repo, subfolder=sub) if sub else laya.load(repo)
@@ -458,6 +503,27 @@ class LayaEngine:
 
 
 ENGINE = LayaEngine()
+
+# ★ P2-B1：协议实例（注入 bridge 模块引用；锁/版本/候选/事件都在协议模块内）。
+PROTOCOL = LayaStateProtocol(sys.modules[__name__])
+
+
+def _finite_number(v):
+    """JSON 数值须有限且非布尔（禁止 NaN/Infinity，布尔不当数字）。"""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v \
+        and v not in (float("inf"), float("-inf"))
+
+
+def _engine_identity():
+    """协议引擎身份门禁用的只读身份：实际引擎是否就绪 + 实际加载的 checkpoint 名。
+
+    ★ P1 审查（2026-09-25）：Analyze/Commit 都要求「引擎就绪且加载的检查点与
+      所选档案一致」，不满足时协议层返回 503 MODEL_UNAVAILABLE。这是**身份门禁**，
+      用于杜绝「Laya 未加载/降级到 fallback 时仍把启发式结果冒充真实判断提交」。
+    """
+    return {"ready": bool(getattr(ENGINE, "ready", False)),
+            "model_name": getattr(ENGINE, "model_name", None),
+            "detail": getattr(ENGINE, "detail", "")}
 
 # ==========================================================================
 # 2. 回退引擎
@@ -733,7 +799,14 @@ def build_deltas(answers, questions, actor):
 
     deltas = []
     for qid, spec in paths.items():
-        if qid not in answers or answers[qid].get("_value") is None:
+        if qid not in answers:
+            continue
+        v = answers[qid].get("_value")
+        # ★ P1 审查（2026-09-25）：非有限数值（NaN/Infinity/布尔）在**映射前**就拒绝。
+        #   旧行为会把 NaN 送进 _lerp_table：NaN 与所有阈值比较都为 False → 落入
+        #   else 分支当「最大档」映射，产出一条看起来正常、实则由异常值驱动的
+        #   最大增量提案 —— 这类值绝不能成为状态数值。布尔同样不当数字。
+        if v is None or not _finite_number(v):
             continue
         mapping = questions.get(qid, {}).get("mapping")
         raw = _lerp_table(mapping, answers[qid]["_value"])
@@ -759,6 +832,25 @@ def _dig(obj, path, default=None):
             return default
         cur = cur[part]
     return cur
+
+
+def _set_path(obj, path, value):
+    """按 "relationship.trust" 这种点路径写值。中间层不存在则返回 False。
+
+    ★ 刻意**不**自动造中间层：target 指向一个 Actor State 里本来没有的字段，
+      是配置和状态结构对不上（该报出来），而不是该被静默补齐的东西。
+      静默造字段会让「这个 signal 到底有没有接上」变得看不出来。
+    """
+    parts = path.split(".")
+    cur = obj
+    for part in parts[:-1]:
+        if not isinstance(cur, dict) or part not in cur:
+            return False
+        cur = cur[part]
+    if not isinstance(cur, dict) or parts[-1] not in cur:
+        return False
+    cur[parts[-1]] = value
+    return True
 
 
 def apply_gates(answers, choice_id):
@@ -1093,12 +1185,72 @@ def extract_line(text):
     return text, False
 
 
-def _build_narrate_prompt(actor, behavior, player_input, history, state_line, strict=False):
+def _build_narrate_prompt(actor, behavior, player_input, history, state_line, strict=False,
+                          proactive=False, signals_block=None, scene=None):
+    """构造叙事提示词。
+
+    ★ P3-A：`proactive=True` 时进入**分析模式规则分支**（允许自然追问/表态/有限线索/
+      话题转换，但不强制每轮提问，且不把信号当已发生事实）；legacy 分支（proactive
+      默认 False）的规则与旧语义完全不变。`signals_block`/`scene` 是 analysis 模式的
+      分块注入（参考信号 + 场景提示），供 DeepSeek 校准语气而非改写数值。
+    """
+    if proactive:
+        # ---- P3-A analysis 模式规则分支 ----
+        state_note = ("当前已提交数值（权威，只用于校准语气，不要在文本里念数字）：%s"
+                      % state_line)
+        scene_note = ("场景提示（本轮参考，不是已发生的场景切换）：%s" % scene) if scene else ""
+        sig_note = (signals_block
+                    + "\n（以上仅供调整语气与试探策略：这些信号是「角色此刻的感受倾向」"
+                      "参考，**不是**已发生的事实；不得据此泄露秘密、修改数值或替玩家做决定。）"
+                    if signals_block else "")
+        sys_p = (
+            "你在为一款文字冒险游戏写 NPC 的回应（分析模式）。\n"
+            "角色：%s，%s。\n"
+            "人物与场景补充：%s\n"
+            "%s\n"
+            "%s\n"
+            "%s\n"
+            "规则：\n"
+            "1) 台词用「」包裹，配少量动作或环境描写，2~4 句，不要分段列点。\n"
+            "2) 只写外部可见的言行。\n"
+            "3) 你可以自然追问、表达立场、透露有限线索或转换话题；"
+            "**不要求每轮都提问**，也不要强行推进剧情。\n"
+            "4) 你只调整语气与试探策略：状态数值和参考信号是「角色此刻的感受倾向」，"
+            "**不是已发生的事实**；不得据此泄露秘密、修改数值或替玩家决定。\n"
+            "5) 用中文。\n"
+            "格式（必须遵守）：把最终回应原文放进 <line> 与 </line> 之间。\n"
+            "这两个标签之外**一个字符都不要写**。"
+        ) % (actor.get("name", "NPC"), actor.get("identity", ""),
+             json.dumps({k: actor.get(k) for k in ("personality", "traits", "situation", "goals")},
+                        ensure_ascii=False),
+             state_note, scene_note, sig_note)
+        convo = "\n".join(
+            "%s：%s" % ("玩家" if h.get("role") in ("player", "user")
+                       else actor.get("name", "NPC"),
+                       h.get("content") if h.get("content") is not None else h.get("text", ""))
+            for h in (history or [])[-8:])
+        user_p = (convo + "\n玩家：%s\n\n请写出她此刻的回应。" % player_input).strip()
+        return sys_p, user_p
+
+    behavior_note = (
+        "本轮她决定做出的行为是「%s」（%s）。\n表现要求：%s"
+        % (behavior["name"], behavior["desc"], behavior.get("instr", ""))
+        if behavior else
+        "Laya 本轮判断不明确，没有选定行为。请由你根据人物设定、对话历史和玩家原话，"
+        "选择合适的回应方式并自然续写。不要把不确定判断当成事实，不强行透露秘密或推进重大剧情。"
+        "你只生成角色回应，不修改或宣称已提交任何属性数值。\n人物与场景补充："
+        + json.dumps({k: actor.get(k) for k in ("personality", "traits", "situation", "goals")},
+                     ensure_ascii=False)
+    )
+    # ★ legacy 分支同样消费 signals_block（旧流档位注入）：只校准语气，不改语义。
+    #   P3-B 检查发现：analysis 分支（proactive=True）会消费它，legacy 分支此前
+    #   参数传了但没进 prompt —— 旧流叙事永远「试探阶段」。
+    stage_note = ("\n关系档位（参考，只校准语气，不念数字）：%s" % signals_block
+                  if signals_block else "")
     sys_p = (
         "你在为一款文字冒险游戏写 NPC 的回应。\n"
         "角色：%s，%s。\n"
-        "本轮她决定做出的行为是「%s」（%s）。\n"
-        "表现要求：%s\n"
+        "%s\n"
         "当前关系与情绪：%s\n"
         "规则：\n"
         "1) 台词用「」包裹，配少量动作或环境描写，2~4 句，不要分段列点。\n"
@@ -1108,10 +1260,12 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
         "格式（必须遵守）：把最终回应原文放进 <line> 与 </line> 之间。\n"
         "这两个标签之外**一个字符都不要写** —— 不要复述上面的规则、不要写你的思路或提纲、"
         "不要解释你为什么这么写。直接开始写她的言行。"
-    ) % (actor.get("name", "NPC"), actor.get("identity", ""), behavior["name"], behavior["desc"],
-         behavior.get("instr", ""), state_line)
+    ) % (actor.get("name", "NPC"), actor.get("identity", ""),
+         behavior_note + stage_note, state_line)
     convo = "\n".join(
-        "%s：%s" % ("玩家" if h.get("role") == "player" else actor.get("name", "NPC"), h.get("text", ""))
+        "%s：%s" % ("玩家" if h.get("role") in ("player", "user")
+                   else actor.get("name", "NPC"),
+                   h.get("content") if h.get("content") is not None else h.get("text", ""))
         for h in (history or [])[-8:]
     )
     user_p = (convo + "\n玩家：%s\n\n请写出她此刻的回应。" % player_input).strip()
@@ -1125,8 +1279,10 @@ def _build_narrate_prompt(actor, behavior, player_input, history, state_line, st
     return sys_p, user_p
 
 
-def llm_narrate(actor, behavior, player_input, history, state_line, include_reasoning=False):
+def llm_narrate(actor, behavior, player_input, history, state_line, include_reasoning=False,
+                proactive=False, signals_block=None, scene=None):
     """调用 LLM 生成台词。
+    ★ P3-A：proactive/signals_block/scene 透传给 _build_narrate_prompt（analysis 模式）。
     实测要点（DeepSeek-V4.1-Flash）：
       - 模型 id 是 deepseek-flash，不是显示名 DeepSeek-V4.1-Flash
       - 输出里 reasoning_tokens 常占 60~80%，max_tokens 给太小会把推理吃光、content 变空字符串
@@ -1148,7 +1304,9 @@ def llm_narrate(actor, behavior, player_input, history, state_line, include_reas
 
     def once(strict):
         sys_p, user_p = _build_narrate_prompt(actor, behavior, player_input, history,
-                                              state_line, strict=strict)
+                                              state_line, strict=strict,
+                                              proactive=proactive,
+                                              signals_block=signals_block, scene=scene)
         payload = {
             "model": model,
             "messages": [{"role": "system", "content": sys_p}, {"role": "user", "content": user_p}],
@@ -1230,6 +1388,55 @@ def pool_line(behavior, player_input):
     return {"line": pool[idx], "source": "pool"}
 
 
+def llm_chat_raw(system, user, timeout=120):
+    """纯云端聊天传输：把**给定**的 system/user 消息发往聊天接口，返回 (content|None, err|None)。
+
+    ★ P3-D3b：/interaction/narrate 的云端叙事薄链复用此传输。它只负责发送：
+      不建提示词、不重试、不回落台词池、不调 decide。密钥/端点/模型/effort/max_tokens
+      全部取自配置源环境（与 llm_narrate 同口径）。无凭据 → ("no_api_key")。
+      原始响应与推理内容不出此函数（调用方只拿 content）。
+    """
+    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
+    if not key:
+        return None, "no_api_key"
+    base = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+    model = os.environ.get("LLM_MODEL", "deepseek-flash")
+    effort = os.environ.get("LLM_EFFORT", "low")
+    try:
+        max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1600"))
+    except Exception:
+        max_tokens = 1600
+    payload = {
+        "model": model,
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
+        "temperature": 0.35, "max_tokens": max_tokens, "stream": False,
+    }
+    if effort:
+        payload["effort"] = effort
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        base + "/chat/completions", data=body,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return None, "http_%s" % e.code
+    except Exception as e:
+        return None, "exc_%s" % type(e).__name__
+    try:
+        msg = data["choices"][0]["message"]
+    except Exception:
+        return None, "bad_response_shape"
+    content = (msg.get("content") or "").strip()
+    if not content:
+        return None, "empty_content"
+    return content, None
+
+
 # ==========================================================================
 # 6. state 文档：原则 3 —— 只送压缩后的决策状态，不送角色卡与剧情
 #
@@ -1244,41 +1451,112 @@ LANG = CFG.get("laya_language", "en")
 
 _XLATE_CACHE = {}
 
+# ★★ fail-closed 开关（2026-09-24，用户明确要求）。
+#   历史行为是「翻译失败 → **原样返回中文** → 标 src='none' 继续跑」。那是一个
+#   **静默**失效：中文进的是英文校准的 ModernBERT（README 基准：非拉丁脚本
+#   0.952 置信 / 0.000 准确）→ 高置信 + 零准确，API 返回里毫无迹象。
+#   实测 2026-09-24 撞到过：key 失效时表现为「首次调用成功、随后失败」，
+#   随机且间歇，看起来像「模型今天不稳定」，实际输入早已是中文。
+#   ⇒ 默认改为 **fail-closed**：拿不到英文就明确报失败，由调用方**停在这一轮**，
+#     绝不用中文冒充英文继续算。
+#   为什么留开关而不是直接删掉旧行为：旧路径是 §16 / §19 那批历史实验的**执行条件**，
+#   重跑旧实验需要能复现它。开关默认关闭 fail-open，**只用于复现实验，不用于正常玩**。
+XLATE_FAIL_CLOSED = os.environ.get("LAYA_XLATE_FAIL_OPEN", "0") not in ("1", "true", "yes")
+
+
+class TranslationFailure(Exception):
+    """翻译失败。调用方**必须**据此中止本轮，不得回退中文原文。"""
+
+    def __init__(self, reason, text=""):
+        self.reason = reason
+        self.text = text
+        super().__init__("translation failed: %s" % reason)
+
 
 def translate_to_en(text):
-    """把玩家台词翻成英文。返回 (英文, 来源)。失败则原样返回并标 none。"""
+    """把玩家台词翻成英文。返回 (英文, 来源)。
+
+    ★ 失败时**抛 TranslationFailure**（fail-closed），不再返回中文原文。
+      返回 (None, "none") 这种「带毒的成功」是本案的原始 bug，已移除。
+      如果确实要复现历史实验条件，显式设 `LAYA_XLATE_FAIL_OPEN=1`。
+
+    ★ 2026-09-25（P3-B 体验回归）：max_tokens 1600→8000。
+      实测（deepseek-flash，P2 面板 /analyze）：翻译请求的推理 token 高达
+      r=6553，finish=length、content 空 → fail-closed 502。这与 2026-09-24
+      的「reasoning 吃光预算」同源（当时 600→1600）；当前模型推理更重，
+      预算必须留足。这是对真实可复现缺陷的配置修复，不是凑参数。
+    """
     if not text:
         return "", "empty"
     if text in _XLATE_CACHE:
         return _XLATE_CACHE[text], "cache"
     key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
     if not key:
+        if XLATE_FAIL_CLOSED:
+            raise TranslationFailure("no_api_key", text)
         return text, "none"
     base = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
     payload = {
         "model": os.environ.get("LLM_MODEL", "deepseek-flash"),
         "messages": [
-            {"role": "system", "content": "Translate the user's game-dialogue line into English. "
-                                          "Keep the tone and intent exactly. Output only the translation, "
-                                          "no quotes, no explanation."},
+            # ★★ 2026-09-24 修：提示词必须**明确禁止解释**，且 max_tokens 要留出推理余量。
+            #   实测踩到：`灰鸦手上有块旧疤，是从左边脸颊一直划到下巴的。` 这句
+            #   原文本身自相矛盾（「手上」的疤却「从脸颊划到下巴」），模型于是
+            #   在 **reasoning_content** 里反复纠结这个矛盾，reasoning 吃掉 1896 token、
+            #   `finish_reason=length`、**content 为空串** → 表现为翻译失败。
+            #   而旧提示词只说 "Output only the translation"，没禁止「先想再答」，
+            #   600 token 的预算对「会引发纠结的句子」根本不够。
+            #   两个修法缺一不可：
+            #     ① 提示词显式要求「原文矛盾也照译，不要解释」→ 减少无谓推理；
+            #     ② max_tokens 600 → 1600 → 给推理留余量，而不是和输出抢 token。
+            #   注意这**不是**「调参凑测试过」：它修的是一个真实的、可复现的
+            #   「长句/怪句必失败」缺陷 —— 修复前 263 条里有 2 条**稳定**失败，
+            #   且失败与句子长度/矛盾程度相关，与内容好坏无关。
+            #   ★★ 2026-09-25：推理进一步加重（r=6553），1600 仍会被吃光 → 8000。
+            {"role": "system", "content": "You are a translation engine. Translate the user's "
+                                          "Chinese game-dialogue line into English. Output ONLY "
+                                          "the English translation, nothing else. Do not explain, "
+                                          "do not comment, do not add notes, even if the source "
+                                          "line seems contradictory or odd - just translate it literally. "
+                                          "Do not think out loud; answer directly."},
             {"role": "user", "content": text},
         ],
-        "temperature": 0.0, "max_tokens": 600, "stream": False, "effort": "low",
+        "temperature": 0.0, "max_tokens": 8000, "stream": False, "effort": "low",
     }
+    err = "empty_response"
     try:
         req = urllib.request.Request(
             base + "/chat/completions", data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key}, method="POST")
         with urllib.request.urlopen(req, timeout=60) as r:
             j = json.loads(r.read().decode("utf-8"))
-        out = (j["choices"][0]["message"].get("content") or "").strip()
+        _ch = (j.get("choices") or [{}])[0]
+        _msg = _ch.get("message") or {}
+        out = (_msg.get("content") or "").strip()
         if out:
             if len(_XLATE_CACHE) > 300:
                 _XLATE_CACHE.clear()
             _XLATE_CACHE[text] = out
             return out, "llm"
-    except Exception:
-        pass
+        # ★★ 空 content 要**区分原因**，不能都记成 "empty_response"：
+        #   `finish_reason=length` 表示 token 预算被 reasoning 吃光（可修：调大 max_tokens
+        #   或收紧提示词）；`finish_reason=stop` 才是真的「模型什么都没说」。
+        #   不区分的话，一个**可复现的配置 bug** 会伪装成「偶发性空响应」，
+        #   于是被当成网络抖动放过去 —— 2026-09-24 就是这个坑，
+        #   2 条台词稳定失败了很多轮才被定位到 finish_reason。
+        _fr = _ch.get("finish_reason")
+        _rc_len = len(_msg.get("reasoning_content") or "")
+        err = ("length_budget_exhausted(r=%d)" % _rc_len) if _fr == "length" else \
+              ("empty_response(finish=%s,r=%d)" % (_fr, _rc_len))
+    except urllib.error.HTTPError as e:
+        # ★ 只记状态码，**不记** key/尾号/响应体（凭证不进日志、不进提交）
+        err = "http_%s" % getattr(e, "code", "?")
+    except Exception as e:
+        err = "exc_%s" % type(e).__name__
+    if XLATE_FAIL_CLOSED:
+        if os.environ.get("LAYA_TRACE"):
+            sys.stderr.write("[xlate-trace] translate_to_en fail-closed err=%s\n" % err)
+        raise TranslationFailure(err, text)
     return text, "none"
 
 
@@ -1602,6 +1880,13 @@ def bucket_key(session_id, actor_id):
     return (str(session_id or "default"), str(actor_id or "default"))
 
 
+def _legacy_scope(session_id, actor_id, actor=None):
+    """归一 legacy (session, actor)，并返回 (scope, actor_name)。"""
+    sid = str(session_id or "default")
+    aid = str(actor_id or (actor or {}).get("name") or "default")
+    return (sid, aid), aid
+
+
 def history_for(session_id, actor_id):
     """取某个 (session, actor) 已提交的历史（副本）。"""
     return list(_HISTORY_BUCKETS.get(bucket_key(session_id, actor_id), []))
@@ -1613,34 +1898,386 @@ def next_turn_id(session_id, actor_id):
     return "%s/%s#%d" % (k[0], k[1], _TURN_SEQ[k])
 
 
-def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source):
-    """登记一个待确认的决策。**不写历史**。"""
-    _PENDING[turn_id] = {
-        "session": str(session_id or "default"), "actor": str(actor_id or "default"),
-        "behavior": behavior_id, "intent": intent_id, "source": source,
-        "entries": decision_history_entries(intent_id, behavior_id),
-    }
-    # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
-    if len(_PENDING) > 200:
-        for k in list(_PENDING)[:100]:
-            _PENDING.pop(k, None)
+def propose_turn(turn_id, session_id, actor_id, behavior_id, intent_id, source,
+                 state_proposal=None, state_decision=None, actor=None, record_history=True,
+                 engine_used=None, frozen_state=None, frozen_version=None):
+    """登记一个待确认的决策和状态 Proposal。**不写历史、不写 Actor State**。
+
+    ★ P2-B2：登记在**协议锁内**完成，并绑定作用域状态版本与规则指纹 ——
+      旧 `/commit {turn_id}` 提交时用同一锁校验「当前版本 == 登记版本」，
+      使旧/新提交共用同一版本体系（§6.3 / §9 L1）。
+
+    ★ 闭环审查（2026-09-25）：登记时把**版本**与**冻结快照**原子绑在一起：
+      - `engine_used="fallback"` 的候选（真实推理失败落到启发式）在提交时被拒，
+        不再把启发式结果冒充模型判断写入；
+      - `frozen_state` 由调用方在锁内捕获的服务器快照提供；无则登记时回读桶，
+        保证「分析用的状态」与「提交校验用的状态」是同一份。
+    """
+    session_id = str(session_id or "default")
+    actor_id = str(actor_id or "default")
+    scope = (session_id, actor_id)
+    with PROTOCOL.lock:
+        base_ver = frozen_version if frozen_version is not None else PROTOCOL.state_version(scope)
+        # ★ 推理期间已发生提交/Reset → 登记版本已过时：直接拒绝登记，避免旧计算
+        #   冒用新版本。让调用方重新跑一轮（decide 会用到这份版本重填）。
+        if frozen_version is not None and base_ver != PROTOCOL.state_version(scope):
+            _PENDING.pop(turn_id, None)
+            raise _ProtoError(409, "STATE_VERSION_CONFLICT",
+                              "本轮分析期间状态版本已变化（推理窗口内发生 Reset/Commit），"
+                              "拒绝登记旧计算；请重发",
+                              {"frozen_version": frozen_version,
+                               "current_state_version": PROTOCOL.state_version(scope)})
+        rules = PROTOCOL.rules_fingerprint(PROTOCOL._effective_model(), force=False)
+        if frozen_state is None:
+            frozen_state = actor_state_snapshot(session_id, actor_id,
+                                                actor=actor or CFG.get("actor"))
+        _PENDING[turn_id] = {
+            "session": session_id, "actor": actor_id,
+            "behavior": behavior_id, "intent": intent_id, "source": source,
+            "entries": decision_history_entries(intent_id, behavior_id) if record_history else [],
+            "state_proposal": _copy.deepcopy(state_proposal or {}),
+            "state_decision": _copy.deepcopy(state_decision or {}),
+            "actor_template": _copy.deepcopy(actor) if actor else None,
+            "base_state_version": base_ver,
+            "rules_fingerprint": rules,
+            "engine_used": engine_used,
+            "frozen_state": _copy.deepcopy(frozen_state),
+        }
+        # 防止长跑进程里 _PENDING 无限增长（未提交的轮次不该被记住）
+        if len(_PENDING) > 200:
+            for k in list(_PENDING)[:100]:
+                _PENDING.pop(k, None)
     return _PENDING[turn_id]
 
 
 def commit_turn(turn_id):
-    """把某轮决策标记为 committed 并写入对应桶。返回 (ok, note)。"""
-    p = _PENDING.get(turn_id)
-    if p is None:
-        return False, "未知 turn_id（未被 propose 过，或已被提交/淘汰）"
-    if not p.get("behavior"):
-        # ambiguous 轮次没有行为 —— 没有可确认的事实，不许进历史
-        return False, "该轮没有行为（ambiguous / behavior=null），不是已确认事实，拒绝写入历史"
-    k = bucket_key(p["session"], p["actor"])
-    bucket = _HISTORY_BUCKETS.setdefault(k, [])
-    bucket.extend(p["entries"])
-    del bucket[:-_HISTORY_MAX]
-    _PENDING.pop(turn_id, None)
-    return True, "已提交，该桶现有 %d 条" % len(bucket)
+    """显式提交某轮的状态 Proposal 与历史。返回 (ok, note, state_result)。
+
+    ★ P2-B2：委托给协议层 `commit_legacy_turn` —— 与新的 `/commit_state`
+      共用同一进程锁与版本体系（版本检查、规则复核、历史/状态/版本同锁发布）。
+    """
+    return PROTOCOL.commit_legacy_turn(turn_id)
+
+
+# ============================================================================
+# ★★ Phase3-P3：Actor State 存储 + State Transition
+#    （第一阶段：闭环；第二阶段：中性死区 + 多关系维度）
+# ============================================================================
+# 为什么必须有这一段：P2 之前整条链路是**无状态**的 —— /decide 从 payload 里读
+# actor，算完给一份 state_proposal，然后**忘掉**。下一轮又是原来的 relationship.trust。
+# 于是「连续交互让关系变化」在架构上根本不可能发生，跟模型好坏无关。
+# 这一段只补一件事：让 state_shift 的 proposal 真的能落到下一轮的输入里。
+#
+# 固定链路（第二版，加了一步死区）：
+#     proposal → deadzone → per_turn clamp → range clamp → commit
+#
+# 四个刻意的设计约束：
+#   1) 范围**复用** state_shift.paths.*.range，不新建第二套格式。
+#      relationship.trust 就是 0~100，不另起一套 0~1。
+#   2) 单轮上限**不是**分数上限。range 0~100 的字段单轮最多走 ±12，
+#      所以「一句话就把关系打满/打到底」在结构上不可能 —— 这是体验的自然感来源。
+#   3) 只有 active 能写。auxiliary 依然只登记不写；ambiguous / awaiting_upstream 不 commit。
+#      P2 已经把「谁能写」交给能力档案裁决，P3 只是尊重那个裁决，不在这里重新定级。
+#   4) 中性死区只**部分**缓解「闲聊也在改关系」。这是实测结论不是设计选择：
+#      中性句与有意义句的 delta 在数值上高度重叠，任何阈值都无法真正分开它们。
+#      详见报告 §20.2。不要指望调大它能「修好」——调大会先吃掉真实关系变化。
+
+_ACTOR_STATE = {}       # (session_id, actor_id) -> {"relationship": {...}, "emotion": {...}, "goals": {...}}
+_STATE_TRACE = {}       # (session_id, actor_id) -> [ 每轮 commit 的审计记录 ]
+_STATE_TRACE_MAX = 30
+
+
+def _blank_actor_state(actor):
+    """从 actor 模板抽出「会被状态层改写」的那几组字段。深拷贝，绝不共享引用。"""
+    a = actor or CFG.get("actor") or {}
+    return {
+        "name": a.get("name"), "name_en": a.get("name_en"),
+        "relationship": _copy.deepcopy(a.get("relationship") or {}),
+        "emotion": _copy.deepcopy(a.get("emotion") or {}),
+        "goals": _copy.deepcopy(a.get("goals") or {}),
+        "traits": _copy.deepcopy(a.get("traits") or {}),
+    }
+
+
+def actor_state_for(session_id, actor_id, actor=None, create=True):
+    """取某桶的 Actor State。不存在且 create=True 时，用 actor 模板初始化。
+
+    ★ 键与 history 完全一致（session_id, actor_id）—— 两者必须同桶，
+      否则「历史属于 A、状态属于 B」这种串线在架构上就成立了。
+    """
+    k = bucket_key(session_id, actor_id)
+    st = _ACTOR_STATE.get(k)
+    if st is None and create:
+        st = _blank_actor_state(actor)
+        st["_created_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        _ACTOR_STATE[k] = st
+    return st
+
+
+def actor_state_snapshot(session_id, actor_id, actor=None):
+    """返回 Actor State 的深拷贝；桶不存在时只构造默认值，不写入全局状态。"""
+    st = _ACTOR_STATE.get(bucket_key(session_id, actor_id))
+    return _copy.deepcopy(st if st is not None else _blank_actor_state(actor))
+
+
+def actor_state_view(session_id, actor_id):
+    """给前端/测试看的只读快照（含本轮之后的取值）。"""
+    k = bucket_key(session_id, actor_id)
+    st = _ACTOR_STATE.get(k)
+    return {"bucket": "%s/%s" % k, "exists": st is not None,
+            "state": _copy.deepcopy(st), "trace": _copy.deepcopy(_STATE_TRACE.get(k, []))}
+
+
+def actor_state_analysis_view(session_id, actor_id, actor=None):
+    """纯分析使用的当前状态视图；不会因为读取而创建 Actor State 桶。"""
+    k = bucket_key(session_id, actor_id)
+    return {"bucket": "%s/%s" % k, "exists": k in _ACTOR_STATE,
+            "state": actor_state_snapshot(session_id, actor_id, actor),
+            "trace": _copy.deepcopy(_STATE_TRACE.get(k, []))}
+
+
+def _transition_cfg():
+    t = (CFG.get("state_shift") or {}).get("transition") or {}
+    return t
+
+
+def _deadzone_cfg():
+    """中性死区配置。缺段 = 全部为 0（即不启用死区），不报错。"""
+    dz = _transition_cfg().get("deadzone") or {}
+    return {k: float(v) for k, v in dz.items() if not str(k).startswith("_") and isinstance(v, (int, float))}
+
+
+def deadzone_of(signal):
+    """该 signal 的死区阈值（绝对值）。找不到就取 default，再找不到就是 0。"""
+    dz = _deadzone_cfg()
+    v = dz.get(signal, dz.get("default", 0.0))
+    return max(0.0, float(v))
+
+
+def _apply_deadzone(delta, thr):
+    """|delta| < thr → 0；否则原样返回。
+
+    ★ 刻意只做「归零」，不做柔性衰减。
+      理由是可审计性：柔性衰减会引入一个「缩小了多少」的中间量，
+      而它无法用一句话说明白（见报告 §20.2 的取舍）。归零的话
+      after_deadzone 只可能是 proposal 或 0，调试时一眼就知道死区有没有生效。
+    """
+    if thr <= 0:
+        return float(delta), False
+    if abs(float(delta)) < thr:
+        return 0.0, True
+    return float(delta), False
+
+
+def state_transition(signal, proposal_delta, current_value, allowed=True):
+    """Phase3-P3 State Transition（第二版：加入中性死区）。
+
+    链路固定为：
+        proposal → deadzone → per_turn clamp → range clamp → commit
+
+    输入：
+      signal          —— 如 "trust_shift"（key 必须存在于 state_shift.paths）
+      proposal_delta  —— Laya 算出的原始增量（build_deltas 的产物）
+      current_value   —— 该 target 当前值
+      allowed         —— 前置准入（status==active / 不是 ambiguous / 不是 awaiting_upstream）
+
+    返回一份**完整可审计**的裁决，字段固定为：
+        old / proposal / after_deadzone / final_delta / new_value
+    外加 clamped_by / range / per_turn / deadzone / skipped_reason，方便调试。
+
+    ★ 顺序很重要：先按单轮上限截 proposal，再按合法区间截结果值。
+      反过来做会得到一个「区间内合法、但本轮变化超过单轮上限」的 new_value，
+      即漏掉单轮限制。这两种顺序在信任已接近 100 时才看得出差别，
+      但正是那种情况最容易出现「最后一句话把关系推满」的跳变。
+    """
+    t = _transition_cfg()
+    paths = (CFG.get("state_shift") or {}).get("paths") or {}
+    p = paths.get(signal) or {}
+    rng = p.get("range")
+    target = p.get("target")
+    label = p.get("label") or signal
+    dz_thr = deadzone_of(signal)
+    out = {
+        "signal": signal, "target": target, "label": label,
+        "old": current_value, "proposal": proposal_delta,
+        "after_deadzone": None, "final_delta": 0.0, "new_value": current_value,
+        "range": list(rng) if rng else None,
+        "deadzone": {"threshold": dz_thr, "applied": False},
+        "committed": False, "skipped_reason": None, "clamped_by": [],
+    }
+    if not t or not t.get("enabled", True):
+        out["skipped_reason"] = "state_shift.transition 未启用（配置里 enabled=false 或缺段）"
+        return out
+    if not rng:
+        out["skipped_reason"] = ("state_shift.paths.%s 没有 range —— 没有合法区间的字段不许写状态"
+                                 "（宁可不动，也不猜一个范围）" % signal)
+        return out
+    if not allowed:
+        out["skipped_reason"] = "前置准入未通过（status 非 active / 歧义 / 等上游）"
+        return out
+    if current_value is None:
+        out["skipped_reason"] = ("Actor State 里 %s 没有当前值 —— 不猜初值"
+                                 % target)
+        return out
+    if proposal_delta is None:
+        out["skipped_reason"] = "本轮没有拿到该 signal 的数值（未出值或未达 active）"
+        return out
+    # ★ P1 审查（2026-09-25）：核心状态公式也拒绝非有限数值（老/新路径共用本函数，
+    #   双层兜底：build_deltas 映射前 + 这里提交/预演前）。NaN 会在 range clamp
+    #   阶段产生 NaN 新值并写入 Actor State —— 那是最难查的一类污染。
+    if not _finite_number(proposal_delta) or not _finite_number(current_value):
+        out["skipped_reason"] = "数值非有限（NaN/Infinity/布尔），拒绝写入"
+        return out
+
+    lo_max = (t.get("per_turn_max") or {}).get(signal,
+             (t.get("per_turn_max") or {}).get("default"))
+    lo_min = (t.get("per_turn_min") or {}).get(signal,
+             (t.get("per_turn_min") or {}).get("default"))
+    if lo_max is None or lo_min is None:
+        out["skipped_reason"] = "transition 配置缺 per_turn_max / per_turn_min（含 default）"
+        return out
+    if lo_min > lo_max:
+        out["skipped_reason"] = "per_turn_min(%s) > per_turn_max(%s)，配置自相矛盾" % (lo_min, lo_max)
+        return out
+
+    # ① 中性死区：先于任何 clamp，作用在最终 proposal delta 上
+    d, dz_hit = _apply_deadzone(proposal_delta, dz_thr)
+    out["after_deadzone"] = d
+    out["deadzone"]["applied"] = dz_hit
+    if dz_hit:
+        out["clamped_by"].append("deadzone:%s" % dz_thr)
+    # ② 单轮上限
+    capped = min(max(d, float(lo_min)), float(lo_max))
+    if abs(capped - d) > 1e-9:
+        out["clamped_by"].append("per_turn:%s~%s" % (lo_min, lo_max))
+    # ③ 合法区间（在**结果值**上截，不是在增量上）
+    new = float(current_value) + capped
+    final_new = min(max(new, float(rng[0])), float(rng[1]))
+    if abs(final_new - new) > 1e-9:
+        out["clamped_by"].append("range:%s~%s" % (rng[0], rng[1]))
+    out["final_delta"] = round(final_new - float(current_value), 6)
+    out["new_value"] = round(final_new, 6)
+    out["committed"] = True
+    out["skipped_reason"] = None
+    out["per_turn"] = {"min": lo_min, "max": lo_max}
+    return out
+
+
+
+def validate_state_delta(session_id, actor_id, state_proposal, decision, actor=None,
+                         frozen_state=None):
+    """纯校验 state proposal；返回可提交项、跳过项和提交后的预览，不写全局状态。
+
+    ★ P2-B1（2026-09-25）：`frozen_state` 由**协议层在锁内捕获的服务器快照**提供
+      （不接受客户端）。提供时不再读桶，避免「外层验版本、内层又读另一份状态」
+      的竞态 —— 协议层先固定快照与版本，再在快照上完成分析/校验，发布前复核。
+    """
+    t = _transition_cfg()
+    if frozen_state is not None:
+        st = _copy.deepcopy(frozen_state)
+    else:
+        st = actor_state_snapshot(session_id, actor_id, actor)
+    validated, skipped = [], []
+
+    upstream = None
+    if decision:
+        if decision.get("behavior_is_null"):
+            upstream = "behavior_is_null" if decision.get("awaiting_upstream") else "behavior_is_null"
+        elif decision.get("awaiting_upstream"):
+            upstream = "awaiting_upstream"
+
+    if upstream:
+        for d in (state_proposal or {}).get("delta") or []:
+            skipped.append({
+                "source_signal": d.get("source_signal"), "target": d.get("target"),
+                "proposal": d.get("delta"), "old": _dig(st, d.get("target")),
+                "final_delta": 0.0, "new_value": _dig(st, d.get("target")),
+                "committed": False,
+                "skipped_reason": ("本轮 %s（歧义 / 未给行为）→ 不 commit 状态。"
+                                   "事实认定权在上游，状态层不抢跑。" % upstream),
+            })
+        return validated, skipped, {"state": st, "would_change": False}
+
+    for d in (state_proposal or {}).get("delta") or []:
+        sig = d.get("source_signal")
+        stt = d.get("status")
+        allowed = stt in (t.get("write_status") or ["active"])
+        if not allowed:
+            skipped.append({"source_signal": sig, "target": d.get("target"),
+                            "proposal": d.get("delta"), "old": _dig(st, d.get("target")),
+                            "final_delta": 0.0, "new_value": _dig(st, d.get("target")),
+                            "committed": False,
+                            "skipped_reason": "status=%s 不在 write_status=%s 里"
+                                              % (stt, t.get("write_status"))})
+            continue
+        # ★ P1 审查（2026-09-25）：校验层显式拒绝非有限数值，避免异常值进入
+        #   状态公式（state_transition 亦有守卫，这里是语义更清晰的提前标注）。
+        if not _finite_number(d.get("delta")):
+            skipped.append({"source_signal": sig, "target": d.get("target"),
+                            "proposal": d.get("delta"), "old": _dig(st, d.get("target")),
+                            "final_delta": 0.0, "new_value": _dig(st, d.get("target")),
+                            "committed": False,
+                            "skipped_reason": "delta 非有限（NaN/Infinity/布尔），拒绝写入"})
+            continue
+        r = state_transition(sig, d.get("delta"), _dig(st, d.get("target")), allowed=True)
+        r.update(grade=d.get("grade"), status=stt, role=d.get("role"),
+                 attribute=d.get("attribute"), checkpoint=d.get("checkpoint"))
+        # ★ 规则层裁决标记随 delta 透传（前端可视化「为何这个值变/回落」）
+        if d.get("rule_adjudicated"):
+            r["rule_adjudicated"] = d["rule_adjudicated"]
+        # ★ TI v1：判定来源（structured/keyword）与依据随 delta 透传，供 debug/复核
+        if d.get("adjudication_source"):
+            r["adjudication_source"] = d["adjudication_source"]
+        if d.get("ti_basis"):
+            r["ti_basis"] = list(d["ti_basis"])
+        if r["committed"]:
+            _set_path(st, d.get("target"), r["new_value"])
+            r.update(validated=True, committed=False)
+            validated.append(r)
+        else:
+            skipped.append(dict(r, proposal=d.get("delta")))
+    return validated, skipped, {"state": st, "would_change": bool(validated)}
+
+
+def commit_state(session_id, actor_id, state_proposal, decision, actor=None):
+    """校验并提交一份 state proposal；运行时 delta 的唯一写入入口（初始化/重置另计）。"""
+    commits, skipped, _preview = validate_state_delta(
+        session_id, actor_id, state_proposal, decision, actor=actor)
+    if not commits:
+        return commits, skipped, actor_state_view(session_id, actor_id)
+
+    st = actor_state_for(session_id, actor_id, actor)
+    k = bucket_key(session_id, actor_id)
+    for r in commits:
+        _set_path(st, r.get("target"), r.get("new_value"))
+        r["committed"] = True
+
+    if commits:
+        tr = _STATE_TRACE.setdefault(k, [])
+        tr.append({"t": time.time(),
+                   "turn_id": (decision or {}).get("turn_id"),
+                   "n": len(commits), "commits": commits})
+        del tr[:-_STATE_TRACE_MAX]
+    return commits, skipped, actor_state_view(session_id, actor_id)
+
+
+def apply_state_transition(session_id, actor_id, state_proposal, decision, actor=None):
+    """兼容旧调用名；实际写入统一委托给 commit_state。"""
+    return commit_state(session_id, actor_id, state_proposal, decision, actor=actor)
+
+
+def reset_actor_state(session_id=None, actor_id=None):
+    """清 Actor State（与 reset_history 同样的三个参数语义）。"""
+    hit = []
+    for k in list(_ACTOR_STATE):
+        if session_id is not None and k[0] != str(session_id):
+            continue
+        if actor_id is not None and k[1] != str(actor_id):
+            continue
+        _ACTOR_STATE.pop(k, None)
+        _STATE_TRACE.pop(k, None)
+        hit.append("%s/%s" % k)
+    return hit
 
 
 def reset_history(session_id=None, actor_id=None):
@@ -1665,14 +2302,46 @@ def reset_history(session_id=None, actor_id=None):
     return hit
 
 
-def decide(payload):
+def analyze_core(payload, turn_id=None, frozen_state=None, apply_adjudication=True):
+    """运行 Laya 判断并生成 Proposal；只读 Actor State，不提交任何状态变化。
+
+    ★ P2-B1（2026-09-25）：`frozen_state` 由协议层在锁内捕获（服务器内部，不接受
+      客户端快照伪装）。提供时跳过读桶，直接用冻结快照合并进本轮 actor 与校验，
+      保证「分析用的状态」与「对外承诺的基础版本」是同一份。
+
+    ★ P3-B（2026-09-29）：`apply_adjudication`（默认 True，保持旧调用方行为）。
+      传 False 时**跳过** `apply_rule_adjudication()`，让 `state_proposal["delta"]` 只含
+      「模型原始信号经能力档案过滤」的结果，不含结构化/关键词规则修正。真实 Laya
+      Evidence 适配器必须用 False，以区分「模型信号」与「规则修正」。
+    """
     actor = payload.get("actor") or CFG["actor"]
     history = payload.get("history") or []
     # ★ 历史分桶键（Phase3-Task2）：不传就退到 "default"，但会**报出来**，
     #   不让调用方以为自己在用隔离的历史。
     session_id = payload.get("session_id") or "default"
     actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
-    turn_id = next_turn_id(session_id, actor_id)
+    turn_id = turn_id or "%s/%s#analysis" % (session_id, actor_id)
+    # ★★ Phase3-P3：Actor State 就是**按同一个桶**取的当前人物状态。
+    #   传了 actor 就说明调用方要显式指定这一轮的模板 —— 此时状态以传入的 actor 为准
+    #   （多 NPC 演示就是这么用的：同一 session 下给不同 actor 对象）。
+    #   没传 actor 就说明调用方想走**连续剧情**：从桶里取上一轮 commit 之后的状态。
+    #   这两条路径必须写清楚，否则「为什么我的状态没变化」会变成一个谜。
+    if frozen_state is not None:
+        _st = _copy.deepcopy(frozen_state)
+    elif payload.get("actor"):
+        _st = actor_state_snapshot(session_id, actor_id, actor)
+    else:
+        _st = actor_state_snapshot(session_id, actor_id, CFG.get("actor"))
+    state_source = "payload.actor" if payload.get("actor") else "bucket"
+    # ★ 把桶里的状态合进这一轮要喂给 Laya 的 actor：relationship / emotion / goals 用状态，
+    #   其余（identity / personality / situation）仍来自模板。
+    #   只合会变的那几组，是刻意的 —— 把整个 actor 覆盖掉等于把「人物设定」也交给状态层，
+    #   那不是本阶段的职责。
+    if _st:
+        actor = dict(actor or {})
+        for _grp in ("relationship", "emotion", "goals"):
+            if _st.get(_grp):
+                actor[_grp] = dict(_st[_grp])
     # ★ 是否真的隔离（Phase3-Task2）：只有调用方显式传了 session_id **和** actor 标识才算。
     #   退到 default 桶时不报错（单角色 Demo 必须能用），但要在本轮输出里**标出来**，
     #   否则会有人把「多角色共用一条历史」的演示结果当成隔离证据。
@@ -1702,13 +2371,39 @@ def decide(payload):
     t0 = time.perf_counter()
 
     # ---- 语言桥：Laya 只吃英文。客户端若已带上 text_en 就复用，否则现翻。----
+    # ★★ fail-closed（2026-09-24，用户明确要求）：翻译失败**必须停在这一轮**。
+    #   四件事一件都不能沾：①不调用英文 checkpoint ②不生成 state proposal
+    #   ③不 commit ④结果标 invalid。理由见 translate_to_en 的注释 ——
+    #   「中文冒充英文继续算」是本项目最危险的静默失效，必须从结构上堵掉。
     player_input_en = payload.get("player_input_en")
     xlate_src = "client" if player_input_en else ("n/a" if LANG != "en" else None)
     xlate_ms = 0.0
     if player_input_en is None and LANG == "en":
         tx0 = time.perf_counter()
-        player_input_en, xlate_src = translate_to_en(player_input)
-        xlate_ms = (time.perf_counter() - tx0) * 1000
+        try:
+            player_input_en, xlate_src = translate_to_en(player_input)
+        except TranslationFailure as e:
+            xlate_ms = (time.perf_counter() - tx0) * 1000
+            # 环境自检：key 是否配置（**不记** key 本身、不记尾号）
+            _has_key = bool(os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY"))
+            return {
+                "ok": False,
+                "status": "invalid",
+                "invalid_reason": "translation_failed",
+                "translation": {
+                    "failed": True, "reason": e.reason, "source": "none",
+                    "has_api_key": _has_key, "ms": round(xlate_ms, 1),
+                    # 不回显原始台词译文（失败时它根本不存在）；只回显原文供调用方对账
+                    "text_chars": len(player_input or ""),
+                },
+                "note": ("玩家台词无法翻成英文（reason=%s）。本轮**已中止**："
+                         "未调用 Laya、未生成 state proposal、未 commit 任何状态。"
+                         "这是刻意的 fail-closed —— 用中文冒充英文喂英文校准的模型会"
+                         "得到「高置信 + 零准确」，且 API 里毫无迹象。请检查 API key / 网络后重试。"
+                         % e.reason),
+                "session_id": session_id, "actor_id": actor_id, "turn_id": turn_id,
+                "state_commits": [], "state_skipped": [],
+            }
 
     decision_history = build_decision_history(payload, history_for(session_id, actor_id))
 
@@ -1731,17 +2426,17 @@ def decide(payload):
     laya_q = build_laya_questions(all_questions)          # 交给 Laya 的（只有 type/instructions/criteria）
     fallback_q = laya_q
 
-    engine_used, meta_raw, routing = "fallback", {}, None
+    engine_used, meta_raw, routing = ENGINE_MODE_FALLBACK, {}, None
     if ENGINE.ready:
         try:
             res = ENGINE.predict(state_doc, laya_q)
             raw_answers, meta_raw = normalize_laya(res)
             routing = res.get("routing") if isinstance(res, dict) else None
-            engine_used = "laya"
+            engine_used = ENGINE_MODE_LAYA
         except Exception as e:
             meta_raw = {"laya_error": repr(e)}
             ENGINE.last_error = repr(e)
-    if engine_used == "fallback":
+    if engine_used == ENGINE_MODE_FALLBACK:
         raw_answers, _intent, _pairs = fallback_decide(actor, world_state, player_input, fallback_q, seed)
     latency_ms = (time.perf_counter() - t0) * 1000
 
@@ -1767,6 +2462,74 @@ def decide(payload):
     gated_id, gate_hit = apply_gates(answers, choice_argmax)
     signal_rows, signal_values = signal_snapshot(answers)
     policy = policy_resolve(signal_values, choice_argmax)
+    # ★ TI 校准调试（env: LAYA_TI_DEBUG=1）：打印真实信号读数，供阈值定标（路线 A）
+    if os.environ.get("LAYA_TI_DEBUG"):
+        _sv = {k: round(_fnum(v), 3) for k, v in (signal_values or {}).items()
+               if k in ("hostility", "confront", "disclose", "cooperation")}
+        print("[TI-DEBUG] player=%r signals=%s" % (str(player_input)[:40], _sv))
+
+    # ---- ★★ Phase3-P2 Task10：按能力档案过滤后的统一 Proposal ------------------
+    # 只有 role=state_shift 且 status=active 的 signal 能产出 delta。
+    # 档案缺失 / 输入哈希不符时**一条都不产出** —— 宁可不动状态，也不拿未知能力当全能力用。
+    # 代价是：换到一个没有档案的检查点（如 multilingual）时，本桥不再给状态建议；
+    # 这是刻意的，因为「没验证过」和「验证过没问题」必须表现成不一样。
+    _cap_prof, _cap_check = load_capability_profile(
+        getattr(ENGINE, "model_name", None) or DEFAULT_MODEL_NAME)
+    state_proposal, behavior_tendency, situation_assessment = build_state_proposal(
+        answers, deltas, signal_values, _cap_prof, _cap_check)
+    # ★ 规则层事件裁决（2026-09-25）：独立于 Laya 输出的启发式修正。
+    #   口径：Laya 识别倾向，数值公式与裁决由规则层独立设计（见 apply_rule_adjudication）。
+    #   安全边界：只作用于 doubt_shift；无命中时与旧版逐字节一致。
+    #   P3-B：`apply_adjudication=False` 时跳过，把「模型信号」与「规则修正」分开。
+    if apply_adjudication:
+        state_proposal = apply_rule_adjudication(state_proposal, signal_values, player_input)
+
+    # ★ 信号总表（Task9/Task10 的展示接口）：把 role / status / grade 直接挂到每个信号上。
+    #   为什么不让前端自己按名字 join 三份数据 —— 前端 join 一定会和后端漂，
+    #   而这张表的用途恰恰是「一眼看出这个信号能不能用」，漂了就等于给了错误的安全感。
+    _prof_sig = ((_cap_prof or {}).get("signals") or {})
+    signal_table = []
+    for _r in signal_rows:
+        _v = _prof_sig.get(_r["signal"]) or {}
+        signal_table.append(dict(
+            _r,
+            role=_v.get("role"), status=_v.get("status"), grade=_v.get("grade"),
+            portability=_v.get("portability"), status_source=_v.get("status_source"),
+            may_write_state=_v.get("may_write_state"),
+            consumable=bool(_v.get("status") in ("active", "auxiliary")),
+            has_profile=bool(_v),
+        ))
+
+    # ★ 档案摘要（给前端 ⓿ 那一栏用）—— 注意必须覆盖**全部 15 个 signal**，
+    #   而不是只有面板上那 9 个：会写 Actor State 的 6 个 *_shift 刻意不在面板上
+    #   （见 SHIFT_IDS 的注释），只统计面板信号会得到「可写状态的信号：无」这种错误结论。
+    cap_summary = None
+    if _cap_prof:
+        _psig = _cap_prof.get("signals") or {}
+        _order = all_signal_names()
+        _by_role = {}
+        for _n, _v in _psig.items():
+            _by_role.setdefault(_v.get("role"), []).append({
+                "signal": _n, "status": _v.get("status"), "grade": _v.get("grade"),
+                "portability": _v.get("portability"),
+                "status_source": _v.get("status_source"),
+                "label": ((CFG.get("state_shift") or {}).get("paths") or {}).get(_n, {}).get("label"),
+            })
+        for _r in _by_role.values():
+            _r.sort(key=lambda x: _order.index(x["signal"]) if x["signal"] in _order else 99)
+        cap_summary = {
+            "checkpoint": _cap_prof.get("checkpoint"),
+            "profile_id": _cap_prof.get("profile_id"),
+            "role_in_phase3": _cap_prof.get("role_in_phase3"),
+            "generated_at": _cap_prof.get("generated_at"),
+            "n_runs": (_cap_prof.get("runs") or {}).get("n_runs"),
+            "counts": _cap_prof.get("counts"),
+            "state_writable": [_n for _n in _order
+                               if (_psig.get(_n) or {}).get("may_write_state")],
+            "revalidate_on_switch": [_n for _n in _order
+                                     if (_psig.get(_n) or {}).get("revalidate_on_switch")],
+            "by_role": _by_role,
+        }
 
     # ★ 最终行为的取值规则（Phase3-Task1 后）：
     #   · source=ambiguous → **不给行为**（behavior=None），由上游 Story/Director 决定。
@@ -1807,6 +2570,18 @@ def decide(payload):
     conf = answers.get("npc_behavior", {}).get("confidence")
     prob = answers.get("npc_behavior", {}).get("_probabilities")
 
+    # ★★ 新版地基：分析与提交彻底分开。这里可以预演 State Transition，
+    #   但绝不创建或修改 Actor State；只有 commit_state() 允许真正写入。
+    state_decision = {
+        "behavior_is_null": bh is None, "awaiting_upstream": bh is None,
+        "source": policy.get("source"), "turn_id": turn_id,
+    }
+    state_validated, state_skipped, state_preview = validate_state_delta(
+        session_id, actor_id, state_proposal,
+        state_decision,
+        actor=actor, frozen_state=frozen_state)
+    state_view = actor_state_analysis_view(session_id, actor_id, actor=actor)
+
     # ★ behavior=null 的原因（Phase3-Task1）：必须能用一句话说清「为什么没给行为」。
     #   上游拿到一个裸 null 只能猜；而且歧义是**正常裁决**，不是故障，两者要分开。
     if bh is not None:
@@ -1821,8 +2596,8 @@ def decide(payload):
 
     return {
         "engine": engine_used,
-        "engine_detail": ENGINE.detail if engine_used == "laya" else (ENGINE.detail or "未安装 laya"),
-        "confidence_reliable": engine_used == "laya",
+        "engine_detail": ENGINE.detail if engine_used == ENGINE_MODE_LAYA else (ENGINE.detail or "未安装 laya"),
+        "confidence_reliable": engine_used == ENGINE_MODE_LAYA,
         "latency_ms": round(latency_ms, 2),
         "lang": LANG,
         # ★ 输入自检：让我们一眼看出「这轮到底吃到了什么输入」
@@ -1845,14 +2620,51 @@ def decide(payload):
         # ★ 本轮主输出：Laya 判断了什么
         "decision_signals": signal_rows,
         "signal_values": dict((k, round(v, 4)) for k, v in signal_values.items()),
+        # ★ P2：信号面板要看的那张表（含 role / status / grade / 能不能用）
+        "signal_table": signal_table,
+        # ★ P2：能力档案摘要（覆盖全部 15 个 signal，含写状态的 6 个 *_shift）
+        "capability_summary": cap_summary,
         # ★ Narraverse 侧为什么做这个决定
         "policy": policy,
         # ★ 状态增量只是「建议」，不是最终写入值
-        "proposed_deltas": deltas,
-        "deltas": deltas,                        # 兼容旧前端，逐步淘汰
+        # ★★ Phase3-P2 Task10：P2 起这里**已经不是全部增量**了 ——
+        #     只有 role=state_shift 且 status=active 的 signal 才进 proposed_deltas；
+        #     auxiliary / disabled / semantic_review 全部被 capability profile 拦下并逐条留 reason。
+        #     未过滤的全量增量仍在 raw_deltas_all_signals，**仅供审计，不许拿去写状态**。
+        "state_proposal": state_proposal,
+        "behavior_tendency": behavior_tendency,
+        "situation_assessment": situation_assessment,
+        # ★★ 纯分析契约：state_commits 永远为空；validated 只是提交预演。
+        "state_commits": [],
+        "state_skipped": state_skipped,
+        "actor_state": {"source": state_source, **(state_view or {})},
+        "state_validation": {
+            "validated_delta": state_validated,
+            "preview": state_preview,
+            "decision": state_decision,
+        },
+        "state_transition_meta": {
+            "is_proposal": True,
+            "authority": "none",
+            "n_committed": 0,
+            "n_validated": len(state_validated),
+            "n_skipped": len(state_skipped),
+            "note": ("本轮只分析与校验，没有写 Actor State。"
+                     "validated_delta 是提交预演；真正写入只能走 commit_state()。"
+                     "本轮状态取自 %s。" % state_source),
+        },
+        "checkpoint_profile": state_proposal["profile"],
+        "proposed_deltas": state_proposal["delta"],
+        "deltas": state_proposal["delta"],           # 兼容旧前端，逐步淘汰
+        "raw_deltas_all_signals": deltas,
         "state_proposal_meta": {
             "is_proposal": True,
-            "note": ("proposed_deltas 是**决策建议**，不是 Actor State 的最终写入值。"
+            "filtered_by_capability_profile": True,
+            "n_active": len(state_proposal["delta"]),
+            "n_auxiliary": len(state_proposal["auxiliary"]),
+            "n_ignored": len(state_proposal["ignored_signals"]),
+            "note": ("proposed_deltas 是**决策建议**，不是 Actor State 的最终写入值；"
+                     "且自 Phase3-P2 起它已是**按能力档案过滤后**的结果 —— "
                      "正式链路应为 Laya Proposal → 后端 Validate → State Transition → Commit；"
                      "浏览器端 applyDeltas() 只是本 Demo 的演示手段，**不是状态权威**。"),
         },
@@ -1926,23 +2738,37 @@ def decide(payload):
     }
 
 
+def decide(payload, frozen_state=None):
+    """兼容现有 /decide 入口：分配 turn_id 后调用纯分析核，不写 Actor State。
+
+    `frozen_state` 供 legacy handler 在锁内捕获的服务器状态快照 —— 与提交流程
+    共用同一份「版本+快照」，避免模型推理期间发生 Reset/Commit 时把旧计算
+    冒用的新版本提交（闭环审查 2026-09-25）。
+    """
+    actor = payload.get("actor") or CFG["actor"]
+    session_id = payload.get("session_id") or "default"
+    actor_id = str(payload.get("actor_id") or (actor or {}).get("name") or "default")
+    return analyze_core(payload, turn_id=next_turn_id(session_id, actor_id),
+                        frozen_state=frozen_state)
+
+
 def world_decide(payload):
     state = payload.get("world_state") or CFG["world"]["state"]
     qs = CFG["world"]["questions"]
     laya_q = build_laya_questions(qs)
     names = CFG["world"].get("names", {})
     t0 = time.perf_counter()
-    engine_used = "fallback"
+    engine_used = ENGINE_MODE_FALLBACK
     raw_answers, meta_raw, routing = {}, {}, None
     if ENGINE.ready:
         try:
             res = ENGINE.predict({"world_state": state, "role": "WORLD"}, laya_q)
             raw_answers, meta_raw = normalize_laya(res)
             routing = res.get("routing") if isinstance(res, dict) else None
-            engine_used = "laya"
+            engine_used = ENGINE_MODE_LAYA
         except Exception as e:
             meta_raw = {"laya_error": repr(e)}
-    if engine_used == "fallback":
+    if engine_used == ENGINE_MODE_FALLBACK:
         raw_answers, _i, _p = fallback_decide(CFG["actor"], state, "", laya_q)
     latency_ms = (time.perf_counter() - t0) * 1000
     answers = normalize_answers(raw_answers, laya_q)
@@ -1967,6 +2793,10 @@ def world_decide(payload):
 class Handler(BaseHTTPRequestHandler):
     server_version = "LayaBridge/0.1"
     protocol_version = "HTTP/1.1"   # 开 keep-alive：一轮对话有 2~3 次请求
+    # ★ P1 审查（2026-09-25）：请求读超时兜底 —— 防「声明 Content-Length 大于实际
+    #   字节」的请求让读取线程永久挂起（rfile.read(n) 会一直等缺的字节）。
+    #   超时按 socket 异常捕获并转 400，连接随后关闭。
+    timeout = 10
 
     def log_message(self, fmt, *args):
         sys.stderr.write("[bridge] %s - %s\n" % (self.address_string(), fmt % args))
@@ -1996,18 +2826,92 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
+    def _read_protocol(self):
+        """协议端点专用读取：区分空 body / 未声明长度 / 超限(413) / 坏 JSON(400) / 顶层类型(422)。
+
+        ★ P1 审查（2026-09-25）三处加固：
+          1) Content-Length 缺失或非整数 → 400（不再把空 body 当 `{}` 之类继续路由）；
+          2) 实际读到的字节数必须等于声明长度（防「加大声明长度」后带着残缺 body 进入路由）；
+          3) JSON 顶层必须是对象，数组/标量 → 422 INVALID_REQUEST（约定错误协议，不允许越层 404/500）。
+        """
+        cl = self.headers.get("Content-Length")
+        if cl is None:
+            raise _ProtoError(400, "INVALID_JSON", "缺少 Content-Length，无法确定请求体边界")
+        try:
+            n = int(str(cl).strip())
+        except (TypeError, ValueError):
+            raise _ProtoError(400, "INVALID_JSON", "Content-Length 不是合法整数")
+        if n <= 0:
+            raise _ProtoError(400, "INVALID_JSON", "请求体为空")
+        if n > MAX_BODY_BYTES:
+            raise _ProtoError(413, "PAYLOAD_TOO_LARGE", "请求体超过 64 KiB 上限")
+        try:
+            raw = self.rfile.read(n)
+        except OSError as e:
+            # 含 socket.timeout：声明长度大于实际且连接不再来字节时，按超时/断连转 400
+            raise _ProtoError(400, "INVALID_JSON", "读取请求体失败或超时：%r" % (e,))
+        if len(raw) != n:
+            raise _ProtoError(400, "INVALID_JSON",
+                              "请求体不完整（声明 %d 字节，实际读到 %d 字节）" % (n, len(raw)))
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except Exception:
+            raise _ProtoError(400, "INVALID_JSON", "JSON 无法解析")
+        if not isinstance(body, dict):
+            raise _ProtoError(422, "INVALID_REQUEST", "请求体顶层必须是 JSON 对象")
+        return body
+
     # ---- routes ----
     def do_OPTIONS(self):
+        # ★ P3-D1：/interaction/* 的 OPTIONS 与真实请求同源口径一致（共用守卫：
+        #   带 Origin 且非同源 / 受信 origin 未配置 → 拒绝，不静默放行）。
+        path = self.path.split("?")[0]
+        if path.startswith("/interaction/"):
+            try:
+                import laya_interaction_http as _ih
+                reject = _ih._reject_foreign_origin(self.headers,
+                                                    getattr(self.server, "origin", None))
+                if reject:
+                    return self._json(reject[1], reject[0])
+            except Exception:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": "internal error", "details": None}}, 500)
         self.send_response(204)
         self._cors()
         self.end_headers()
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        # ★ P3-D2b：同源 Interaction Demo 页面。必须在 /interaction/* API 分发之前：
+        #   页面加载是普通导航（不做 Origin 门禁），API 调用仍走下方 handle_get 守卫。
+        if path == "/interaction/demo":
+            if not INTERACTION_DEMO_HTML.exists():
+                return self._json({"error": "缺少 %s" % INTERACTION_DEMO_HTML.name}, 404)
+            body = INTERACTION_DEMO_HTML.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self._cors()
+            self.end_headers()
+            return self.wfile.write(body)
+        # ★ P3-D1：/interaction/* 同源路由（在旧端点之前分发，语义独立）。
+        if path.startswith("/interaction/"):
+            try:
+                import laya_interaction_http as _ih
+                code, body = _ih.handle_get(
+                    path, self.path.split("?", 1)[1] if "?" in self.path else "",
+                    self.headers, getattr(self.server, "origin", None))
+                return self._json(body, code)
+            except Exception as e:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": "internal error", "details": None}}, 500)
         if path in ("/health", "/"):
             return self._json({
                 "ok": True,
-                "engine": "laya" if ENGINE.ready else "fallback",
+                "engine": ENGINE_MODE_LAYA if ENGINE.ready else ENGINE_MODE_FALLBACK,
                 "laya": ENGINE.describe(),
                 "config_path": str(CFG_PATH),
                 "questions": list(CFG["questions"].keys()),
@@ -2039,6 +2943,57 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/config":
             return self._json(CFG)
+        if path == "/state":
+            # ★★ Phase3-P3：查某桶的 Actor State（含最近若干轮 commit 审计）。
+            #   为什么必须有这个只读口：没有它，"状态到底有没有变化"只能靠再跑一轮来推断，
+            #   而那种推断分不清「状态没变」和「状态变了但没接进输入」。
+            #   ★ P2-B1：显式给 session_id+actor_id 时追加协议 `current`（版本/初始化/快照）。
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sid = (qs.get("session_id") or [None])[0]
+            aid = (qs.get("actor_id") or [None])[0]
+            tr_cfg = (CFG.get("state_shift") or {}).get("transition") or {}
+            if sid is not None and aid is not None:
+                views = {("%s/%s" % (sid, aid)): actor_state_view(sid, aid)}
+            else:
+                views = {}
+                for k in _ACTOR_STATE:
+                    if sid is not None and k[0] != sid:
+                        continue
+                    if aid is not None and k[1] != aid:
+                        continue
+                    views["%s/%s" % k] = actor_state_view(k[0], k[1])
+                if not views and sid is None and aid is None:
+                    views["(空)"] = {"bucket": None, "exists": False, "state": None, "trace": []}
+            out = {
+                "n_buckets": len(_ACTOR_STATE),
+                "buckets": views,
+                "ranges": dict((sig, (p or {}).get("range"))
+                               for sig, p in ((CFG.get("state_shift") or {}).get("paths") or {}).items()),
+                "per_turn": {"max": tr_cfg.get("per_turn_max"), "min": tr_cfg.get("per_turn_min")},
+                "note": ("Actor State 按 (session_id, actor_id) 分桶，与 history 同键。"
+                         "ranges 直接读 state_shift.paths.*.range —— 本桥不维护第二套范围。"),
+            }
+            if sid is not None and aid is not None:
+                try:
+                    out.update(PROTOCOL.get_state(sid, aid))
+                except _ProtoError as e:
+                    return self._json(e.body(), e.http)
+            return self._json(out)
+        if path.startswith("/analysis/"):
+            # ★ P2-B1：候选生命周期查询（只读，必须给 scope）。
+            qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sid = (qs.get("session_id") or [None])[0]
+            aid = (qs.get("actor_id") or [None])[0]
+            analysis_id = path[len("/analysis/"):]
+            if not sid or not aid:
+                return self._json({"protocol_version": "laya-state-v1",
+                                   "error": {"code": "INVALID_REQUEST",
+                                             "message": "GET /analysis/{id} 必须提供 session_id/actor_id 查询参数",
+                                             "details": None}}, 422)
+            try:
+                return self._json(PROTOCOL.get_analysis(analysis_id, sid, aid))
+            except _ProtoError as e:
+                return self._json(e.body(), e.http)
         if path in ("/demo", "/demo.html", "/index.html"):
             # 直接从桥上提供页面：省掉一个静态服务器，也避免 file:// 打开时
             # 跨源 fetch 到 http://127.0.0.1 的各种不确定行为（本地文件源是 opaque origin）。
@@ -2074,16 +3029,91 @@ class Handler(BaseHTTPRequestHandler):
                 "filter": {"session_id": sid, "actor_id": aid},
             })
         return self._json({"error": "not found",
-                           "try": ["/health", "/config", "/demo", "/history", "/decide", "/commit",
-                                   "/narrate", "/world", "/reset", "/predict"]}, 404)
+                           "try": ["/health", "/config", "/demo", "/history", "/state", "/decide",
+                                   "/turn", "/commit", "/narrate", "/world", "/reset", "/predict",
+                                   "/analyze", "/analysis/{id}", "/commit_state", "/reject_analysis"]}, 404)
 
     def do_POST(self):
         path = self.path.split("?")[0]
+
+        # ★ P3-D1：/interaction/* 同源路由（协议端点，用 _read_protocol 严格读 body）。
+        if path.startswith("/interaction/"):
+            try:
+                payload = self._read_protocol()
+            except _ProtoError as e:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": e.code, "message": e.message,
+                                             "details": e.details}}, e.http)
+            try:
+                import laya_interaction_http as _ih
+                if path == "/interaction/scene":
+                    code, body = _ih.handle_post_scene(payload, self.headers,
+                                                       getattr(self.server, "origin", None))
+                elif path == "/interaction/prepare":
+                    code, body = _ih.handle_post_prepare(payload, self.headers,
+                                                         getattr(self.server, "origin", None))
+                elif path == "/interaction/commit":
+                    code, body = _ih.handle_post_commit(payload, self.headers,
+                                                        getattr(self.server, "origin", None))
+                elif path == "/interaction/narrate":
+                    # ★ P3-D3：叙事薄链（只消费已提交回合；不调旧 /narrate 的 decide 路径）。
+                    code, body = _ih.handle_post_narrate(payload, self.headers,
+                                                         getattr(self.server, "origin", None))
+                else:
+                    code, body = 404, {"protocol_version": "laya-delivery-v1",
+                                       "error": {"code": "NOT_FOUND",
+                                                 "message": "未知 /interaction 路由",
+                                                 "details": None}}
+                return self._json(body, code)
+            except Exception:
+                return self._json({"protocol_version": "laya-delivery-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": "internal error", "details": None}}, 500)
+
+        # ★ P2-B1：协议端点（错误统一按 §8；响应带 protocol_version）。
+        #   必须用 _read_protocol 单独读 body —— do_POST 开头的 _read()
+        #   只用于旧端点；协议端点最先读，避免 body 被提前消费导致空读。
+        if path in ("/analyze", "/commit_state", "/reject_analysis"):
+            try:
+                payload = self._read_protocol()
+            except _ProtoError as e:
+                return self._json(e.body(), e.http)
+            try:
+                if path == "/analyze":
+                    res = PROTOCOL.analyze(payload)
+                elif path == "/commit_state":
+                    res = PROTOCOL.commit_state(payload)
+                else:
+                    res = PROTOCOL.reject_analysis(payload)
+                return self._json(res)
+            except _ProtoError as e:
+                return self._json(e.body(), e.http)
+            except Exception as e:
+                return self._json({"protocol_version": "laya-state-v1",
+                                   "error": {"code": "INTERNAL_ERROR",
+                                             "message": repr(e), "details": None}}, 500)
+
         payload = self._read()
 
         if path == "/decide":
+            # ★ 闭环审查（2026-09-25）：先锁定一处「版本+状态快照」再跑分析 ——
+            #   若推理期间发生 Reset/Commit，propose_turn 用版本校验直接拒绝，
+            #   不让旧计算冒用新版本登记/提交。
+            _fx_version, _fx_state = PROTOCOL.capture_legacy_scope(
+                payload.get("session_id"), payload.get("actor_id"),
+                payload.get("actor") or CFG.get("actor"))
             try:
-                out = decide(payload)
+                try:
+                    out = decide(payload, frozen_state=_fx_state)
+                except TypeError as _sig_e:
+                    # == Qoder M-2（2026-09-25）：只兼容「单参数桩」这一个签名差异 ====
+                    #   str 含 "unexpected keyword argument" 才回退（测试桩/外部单参替换）；
+                    #   分析核内部真抛的 TypeError 原样上抛（且绝不重跑推理）。
+                    if "unexpected keyword argument" in str(_sig_e):
+                        out = decide(payload)
+                        out.setdefault("frozen_binding_skipped", True)
+                    else:
+                        raise
             except Exception as e:
                 return self._json({"error": repr(e)}, 500)
             dec = out.get("decision") or {}
@@ -2091,8 +3121,14 @@ class Handler(BaseHTTPRequestHandler):
             turn = out.get("turn") or {}
             intent_id = (dec.get("player_intent") or {}).get("id")
             # ★ 历史日志也用统一取值，否则用 message 调用的轮次会被记成 player=None。
+            # ★★ 注意 `out.get("engine")` 而不是 `out["engine"]`：
+            #    `decide()` 有**两条返回路径** —— 正常轮带 engine，
+            #    fail-closed 轮（翻译失败，status="invalid"）是**精简返回**、没有 engine 键。
+            #    用下标取值会让 bridge 在「玩家台词翻译失败」这一**已经异常**的场景上
+            #    再抛一次 KeyError，直接掐断 HTTP 连接（10061/RemoteDisconnected），
+            #    把一次可控的 invalid 升级成看起来像服务崩了。见 tests/p3p2_unit.py T10。
             _HISTORY.append({"t": time.time(), "player": payload_text(payload),
-                             "engine": out["engine"], "behavior": beh.get("id"),
+                             "engine": out.get("engine"), "behavior": beh.get("id"),
                              "source": beh.get("source"),
                              "turn_id": turn.get("turn_id"),
                              "bucket": turn.get("history_bucket")})
@@ -2100,9 +3136,22 @@ class Handler(BaseHTTPRequestHandler):
             # ★ 三轮门控（Phase3-Task2/Task3）：/decide 只 **propose**，绝不直接写历史。
             #   旧实现在这里 extend _DECISION_HISTORY —— 于是「判了歧义、上游根本没采纳」
             #   的轮次也会污染下一轮 state，而且完全静默。现在只有 /commit 才进桶。
-            if not payload.get("decision_history"):
-                propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
-                             beh.get("id"), intent_id, dec.get("source"))
+            if turn.get("turn_id"):
+                try:
+                    propose_turn(turn.get("turn_id"), turn.get("session_id"), turn.get("actor_id"),
+                                 beh.get("id"), intent_id, dec.get("source"),
+                                 state_proposal=out.get("state_proposal"),
+                                 state_decision=(out.get("state_validation") or {}).get("decision"),
+                                 actor=payload.get("actor") or CFG.get("actor"),
+                                 record_history=not bool(payload.get("decision_history")),
+                                 engine_used=out.get("engine"),
+                                 frozen_state=_fx_state, frozen_version=_fx_version)
+                except _ProtoError as e:
+                    # ★ Qoder 审查 B-1（2026-09-25）：propose_turn 现在会因
+                    #   推理窗口内版本变化抛 409，必须翻译成 HTTP 响应，
+                    #   否则异常逃到 socketserver 会直接掐断连接（客户端
+                    #   RemoteDisconnected，日志却仍记 200，排障被误导）。
+                    return self._json(e.body(), e.http)
             out = dict(out, history_gate={
                 "stage": "proposed",
                 "committed": False,
@@ -2113,6 +3162,75 @@ class Handler(BaseHTTPRequestHandler):
             })
             return self._json(out)
 
+        if path == "/turn":
+            # ★★ 新版地基：一步走完闭环，但仍严格执行 Analyze → Commit。
+            #   decide() 只分析；本分支在 commit_state=true 时显式提交状态与历史。
+            #   与 /decide + /commit 两步走的关系：
+            #     /turn   = 单人连续剧情 / 体验测试。默认认定本轮成立。
+            #     /decide+/commit = 上游（Story / Director）可能否决的正式链路。
+            #   两者共用同一套状态层，不存在"快路绕过校验"。
+            #   确实要在 /turn 上也不写状态时传 commit_state=false。
+            _fx_version, _fx_state = PROTOCOL.capture_legacy_scope(
+                payload.get("session_id"), payload.get("actor_id"),
+                payload.get("actor") or CFG.get("actor"))
+            try:
+                try:
+                    out = decide(payload, frozen_state=_fx_state)
+                except TypeError as _sig_e:
+                    # M-2：只兼容「单参数桩」，其它 TypeError 原样上抛、绝不重跑推理
+                    if "unexpected keyword argument" in str(_sig_e):
+                        out = decide(payload)
+                        out.setdefault("frozen_binding_skipped", True)
+                    else:
+                        raise
+            except Exception as e:
+                return self._json({"error": repr(e)}, 500)
+            turn = out.get("turn") or {}
+            dec = out.get("decision") or {}
+            beh = dec.get("behavior") or {}
+            do_commit = payload.get("commit_state", True)
+            ok, note = (False, "commit_state=false → 本轮不写状态、不写历史")
+            state_result = {}
+            if do_commit and beh.get("id"):
+                try:
+                    propose_turn(turn.get("turn_id"), turn.get("session_id"),
+                                 turn.get("actor_id"), beh.get("id"),
+                                 (dec.get("player_intent") or {}).get("id"), dec.get("source"),
+                                 state_proposal=out.get("state_proposal"),
+                                 state_decision=(out.get("state_validation") or {}).get("decision"),
+                                 actor=payload.get("actor") or CFG.get("actor"),
+                                 engine_used=out.get("engine"),
+                                 frozen_state=_fx_state, frozen_version=_fx_version)
+                except _ProtoError as e:
+                    # B-1（2026-09-25）：同 /decide，把 409 翻译成 HTTP 响应而非掐断连接
+                    return self._json(e.body(), e.http)
+                ok, note, state_result = commit_turn(turn.get("turn_id"))
+            elif do_commit:
+                note = ("本轮无行为（歧义 / 未给行为）→ 按 P3 第一版规则：不 commit 状态、"
+                        "不写历史。状态变化本身就是事实认定，歧义轮不抢跑。")
+            _HISTORY.append({"t": time.time(), "player": payload_text(payload),
+                             "engine": out.get("engine"), "behavior": beh.get("id"),
+                             "source": beh.get("source"), "turn_id": turn.get("turn_id"),
+                             "bucket": turn.get("history_bucket")})
+            del _HISTORY[:-50]
+            committed_view = state_result.get("actor_state")
+            if committed_view is not None:
+                out = dict(out, actor_state={"source": "committed", **committed_view},
+                           state_commits=state_result.get("state_commits") or [],
+                           state_skipped=state_result.get("state_skipped") or [],
+                           state_transition_meta={
+                               "is_proposal": False, "authority": "commit_state",
+                               "n_committed": len(state_result.get("state_commits") or []),
+                               "n_skipped": len(state_result.get("state_skipped") or []),
+                               "note": "本轮已执行显式提交；实际变化见 state_commits。",
+                           })
+            return self._json(dict(out, state_gate={
+                "stage": "committed" if ok else "not_committed",
+                "history_committed": bool(ok),
+                "state_commits": state_result.get("state_commits") or [],
+                "note": note,
+            }))
+
         if path == "/commit":
             # ★ 提交门（Phase3-Task3）：只有这一步才把决策写进 (session, actor) 桶。
             #   语义上＝「上游 Story / Director 真的采纳了这轮行为」。
@@ -2120,24 +3238,60 @@ class Handler(BaseHTTPRequestHandler):
             if not tid:
                 return self._json({"error": "缺少 turn_id",
                                    "hint": "turn_id 来自 /decide 响应里的 turn.turn_id"}, 400)
-            ok, note = commit_turn(tid)
+            ok, note, state_result = commit_turn(tid)
             return self._json({"ok": ok, "turn_id": tid, "note": note,
-                               "stage": "committed" if ok else "rejected"}, 200 if ok else 409)
+                               "stage": "committed" if ok else "rejected",
+                               "reason": state_result.get("reason"),
+                               "state_version": state_result.get("state_version"),
+                               "state_commits": state_result.get("state_commits") or [],
+                               "state_skipped": state_result.get("state_skipped") or [],
+                               "actor_state": state_result.get("actor_state")},
+                              200 if ok else 409)
 
         if path == "/reset":
             # ★ 按桶清（Phase3-Task2）：传 session_id（+可选 actor_id）只清那一个桶，
             #   都不传 = 全清（保留旧行为，单角色演示方便）。
+            #   ★ P2-B2：清状态/历史/重试均在同一事务锁内，并连同协议层
+            #     reset_scope（换版本 generation、作废计算中的候选）一起执行。
+            #   ★ 闭环审查（2026-09-25）风险2：全部 / 按 session 清空时，也必须
+            #     对**每个受影响作用域**换 generation —— 否则旧协议候选仍可提交。
             sid = payload.get("session_id")
             aid = payload.get("actor_id")
-            hit = reset_history(sid, aid)
-            cleared = []
-            if sid is None and aid is None:
-                del _HISTORY[:]
-                cleared.append("history_display")
+            with PROTOCOL.lock:
+                scopes = set()
+                if sid is not None and aid is not None:
+                    scopes.add((str(sid), str(aid)))
+                else:
+                    for _ks in (set(_ACTOR_STATE) | set(PROTOCOL._buckets)):
+                        if sid is not None and str(_ks[0]) != str(sid):
+                            continue
+                        scopes.add(_ks)
+                    for _p in _PENDING.values():
+                        _pp = (_p.get("session"), _p.get("actor"))
+                        if sid is not None and str(_pp[0]) != str(sid):
+                            continue
+                        scopes.add(_pp)
+                new_ver = None
+                hit = None
+                for _sc in sorted(scopes):
+                    new_ver = PROTOCOL.reset_scope(_sc)
+                if scopes:
+                    hit = ["%s/%s" % s for s in sorted(scopes)]
+                hit_state = reset_actor_state(sid, aid)
+                hit_buckets = reset_history(sid, aid)
+                cleared = []
+                if sid is None and aid is None:
+                    del _HISTORY[:]
+                    cleared.append("history_display")
             return self._json({"ok": True, "cleared": cleared,
-                               "buckets_cleared": hit,
+                               "buckets_cleared": hit_buckets,
+                               # ★ Phase3-P3：Actor State 与 history 同桶，就一起清。
+                               #   只清一个会造出「历史清了但关系还在 82」的拧巴状态。
+                               "actor_state_cleared": hit_state,
+                               "protocol_scopes_reset": hit,
                                "scope": ("全部" if sid is None and aid is None
-                                         else "session=%s actor=%s" % (sid, aid))})
+                                         else "session=%s actor=%s" % (sid, aid)),
+                               "state_version": new_ver})
 
         if path == "/world":
             try:
@@ -2148,6 +3302,87 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/narrate":
             actor = payload.get("actor") or CFG["actor"]
             bid = (payload.get("behavior") or {}).get("id")
+            if payload.get("mode") == "analysis":
+                # ★ P2-C（§7）：服务器选定的 analysis 模式。输入仅
+                #   {mode, session_id, actor_id, analysis_id}——拒绝客户端携带
+                #   actor/delta/behavior/state_line；不调 decide、不产生新候选、
+                #   绝不重复 Commit。committed 取回执快照；reference_only 仅当
+                #   版本/规则仍有效时引用；ready 未提交 → 409。
+                if not payload.get("analysis_id"):
+                    return self._json({"protocol_version": "laya-state-v1",
+                                       "error": {"code": "INVALID_REQUEST",
+                                                 "message": "mode=analysis 必须提供 analysis_id",
+                                                 "details": None}}, 422)
+                try:
+                    ctx = PROTOCOL.narrate_context(payload.get("analysis_id"),
+                                                   str(payload.get("session_id") or ""),
+                                                   str(payload.get("actor_id") or ""))
+                except _ProtoError as e:
+                    return self._json(e.body(), e.http)
+                n_actor = _copy.deepcopy(CFG["actor"])
+                _st = ctx.get("state") or {}
+                for _grp in ("relationship", "emotion", "goals"):
+                    if _st.get(_grp):
+                        n_actor[_grp] = dict(_st[_grp])
+                # ★ P3-A：参考信号分块（availability=known，标注不改状态）+ 场景分块
+                _blk = []
+                for _sig, _sv in (ctx.get("signals") or {}).items():
+                    _raw = (_sv or {}).get("raw_delta")
+                    _blk.append("%s: raw_delta=%s（参考，未提交前不算已变化）"
+                                % (_sig, "—" if _raw is None else _raw))
+                _wd = (ctx.get("writable_delta") or [])
+                for _w in _wd:
+                    _blk.append("%s → %s: 提议 %s（候选建议，未提交前不是已变化）"
+                                % (_w.get("source_signal"), _w.get("target"),
+                                   _w.get("proposed_delta")))
+                _signals_block = "\n".join(_blk) if _blk else None
+                _scene = (ctx.get("context") or {}).get("scene") or None
+                # ★ 玩法层：剧情阶段分块（决策呈现给叙事模型，让语气随关系档位走）
+                _stage = plot_stage(ctx.get("state"))
+                _stage_block = "当前关系档位：%s。%s（参考，不念数字）" % (_stage["txt"], _stage["hint"])
+                _signals_block = (_stage_block + "\n" + _signals_block) if _signals_block else _stage_block
+                r = llm_narrate(n_actor, None, ctx.get("message") or "",
+                                (ctx.get("context") or {}).get("history") or [],
+                                state_line(n_actor), bool(payload.get("include_reasoning")),
+                                proactive=True, signals_block=_signals_block, scene=_scene)
+                base = {
+                    "ok": True, "mode": "analysis",
+                    "analysis_id": payload.get("analysis_id"),
+                    "state_version": ctx.get("state_version"),
+                    "state_source": ctx.get("state_source"),
+                    "commit_allowed": False, "state_commits": [],
+                    "state": ctx.get("state"),
+                    "plot_stage": _stage,
+                }
+                if not r or r.get("error") or not r.get("line"):
+                    return self._json(dict(base, ok=False, line=None,
+                                           error="云端叙事失败（状态已确认/可参考，回复可在稍后重试）"), 502)
+                return self._json(dict(r, **base))
+            if payload.get("mode") == "upstream":
+                # 只续写服务端确实判为歧义的轮次；生成文本不等于接受状态 Proposal。
+                pending = _PENDING.get(payload.get("turn_id"))
+                sid = str(payload.get("session_id") or "default")
+                aid = str(payload.get("actor_id") or actor.get("name") or "default")
+                if (not pending or pending["session"] != sid or pending["actor"] != aid
+                        or pending.get("behavior")
+                        or not pending.get("state_decision", {}).get("awaiting_upstream")):
+                    return self._json({"error": "没有匹配的待接续歧义轮次，请重新分析。"}, 409)
+                if not payload.get("use_llm", True):
+                    return self._json({"error": "请开启 LLM 生成以接续本轮对话。"}, 400)
+                actor = _copy.deepcopy(pending.get("actor_template") or CFG["actor"])
+                snapshot = actor_state_snapshot(sid, aid, actor)
+                for group in ("relationship", "emotion", "goals"):
+                    if group in snapshot:
+                        actor[group] = snapshot[group]
+                r = llm_narrate(actor, None, payload_text(payload), payload.get("history") or [],
+                                state_line(actor), bool(payload.get("include_reasoning")),
+                                signals_block=_narrate_stage_block(sid, aid, actor))
+                if not r or r.get("error") or not r.get("line"):
+                    return self._json({"error": "云端接续失败，请稍后重试；本轮未提交状态。",
+                                       "state_commits": [], "commit_allowed": False}, 502)
+                return self._json(dict(r, ok=True, mode="upstream", behavior=None,
+                                       turn_id=payload.get("turn_id"), commit_allowed=False,
+                                       state_commits=[], history_committed=False))
             pre = None
             if not bid:
                 # ★ 没带 behavior 就自己先跑一次 decide（"实时输入"的主要用法）。
@@ -2187,7 +3422,11 @@ class Handler(BaseHTTPRequestHandler):
                                 payload.get("history") or (pre or {}).get("history"),
                                 payload.get("state_line")
                                 or (pre or {}).get("state_line") or state_line(actor),
-                                bool(payload.get("include_reasoning")))
+                                bool(payload.get("include_reasoning")),
+                                signals_block=_narrate_stage_block(
+                                    str(payload.get("session_id") or "default"),
+                                    str(payload.get("actor_id") or actor.get("name") or "default"),
+                                    actor))
                 if r and not r.get("error"):
                     return self._json(dict(r, **({"decision": pre} if pre else {})))
                 if r and r.get("error"):
@@ -2245,7 +3484,17 @@ def cmd_probe():
         (out["decision"]["behavior"] or {}).get("confidence")))
     print("行为分布：", json.dumps((out["decision"]["behavior"] or {}).get("probabilities"),
                                 ensure_ascii=False, default=str))
-    print("状态增量：", "  ".join("%s %+.2f" % (d["label"], d["delta"]) for d in out["deltas"]))
+    # ★ P2 起 out["deltas"] 是**按能力档案过滤后**的结果，不等于「Laya 报了多少增量」。
+    #   两行分开打，避免有人拿过滤后的数字去说明模型能力（或反过来）。
+    print("状态建议（已过滤，能进 State Transition 的）：",
+          "  ".join("%s %+.2f" % (d["label"], d["delta"]) for d in out["deltas"]) or "（无）")
+    print("全量增量（未过滤，仅审计）：",
+          "  ".join("%s %+.2f" % (d["label"], d["delta"]) for d in out["raw_deltas_all_signals"]))
+    print("能力档案：%s fresh=%s ｜ 可写状态 %d 条 / 修正项 %d 条 / 拦下 %d 条"
+          % ((out.get("checkpoint_profile") or {}).get("checkpoint"),
+             (out.get("checkpoint_profile") or {}).get("fresh"),
+             len(out["state_proposal"]["delta"]), len(out["state_proposal"]["auxiliary"]),
+             len(out["state_proposal"]["ignored_signals"])))
     print("\n引擎原始返回：")
     print(json.dumps(out["raw"], ensure_ascii=False, indent=2, default=str)[:3000])
     return 0
@@ -2473,6 +3722,45 @@ TESTS_DIR = HERE / "tests"
 # 注意别叫 _XLATE_CACHE —— 那个名字已经被 translate_to_en 的**内存**翻译记忆占用了，
 # 重名会把 dict 换成 Path，直到调用翻译时才崩（TypeError: WindowsPath is not iterable）。
 _XLATE_DISK = HERE / "_diag" / "translation_cache.json"
+# ★★ P1（2026-09-24）：冻结基线与运行缓存彻底分家。
+#   旧实现里档案校验（_xlate_subset_fingerprint）和实验翻译读的是**同一个**
+#   可写文件 _diag/translation_cache.json —— 换机器/新 checkout 上它不存在，
+#   就出现 P0 撞到的怪象：「翻译明明能命中（内存已载入冻结译文），
+#   校验却报缺 137/137」。现在基线固定为 tests/assets/translation_cache.json
+#   （选项 B 已入库：264 条，sha256 ac954c9494cde484…，见 tests/assets/README.md），
+#   **只读**；日常运行缓存仍走 _diag，只能追加、永不覆盖基线。
+#   LAYA_XLATE_FROZEN 可显式指定基线路径；优先级同 LAYA_MODEL（系统环境 > .env）。
+_XLATE_FROZEN = Path(os.environ.get("LAYA_XLATE_FROZEN") or
+                     (TESTS_DIR / "assets" / "translation_cache.json"))
+_FROZEN_XLATE_MEMO = {"path": None, "mtime": None, "blob": None}
+
+
+def _load_frozen_xlate():
+    """读**冻结**翻译基线（只读，绝不写任何文件）。缺失/损坏返回 None。
+
+    ★ 返回 None 时调用方必须 fail-closed（档案校验拒用 / 实验拒绝开跑），
+      **不允许**静默回落运行缓存或在线补译 —— 那是把「校验读 A、翻译读 B」
+      的原始 bug 换个地方重演。聚焦测试用 LAYA_XLATE_FROZEN 指向临时副本，
+      真基线永不被测试触碰。
+    """
+    p = _XLATE_FROZEN
+    m = _FROZEN_XLATE_MEMO
+    try:
+        mt = p.stat().st_mtime
+    except OSError:
+        m.update({"path": str(p), "mtime": None, "blob": None})
+        return None
+    if m.get("path") == str(p) and m.get("mtime") == mt and m.get("blob") is not None:
+        return m["blob"]
+    try:
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(blob, dict):
+            raise ValueError("顶层不是 JSON 对象")
+    except Exception:
+        m.update({"path": str(p), "mtime": mt, "blob": None})
+        return None
+    m.update({"path": str(p), "mtime": mt, "blob": blob})
+    return blob
 
 
 def _load_fixture(name):
@@ -2484,18 +3772,75 @@ def _load_fixture(name):
         return None
 
 
+_BASE_TEXTS_MEMO = {"mtime": None, "texts": None}
+
+
+def _baseline_texts():
+    """基准用例文本集合（frozenset，带 mtime 缓存）。
+
+    供 `_cached_translate` 判定「text 是否属于基准用例」：基准用例的英文只能由
+    冻结基线供给（fail-closed），未知玩家输入才允许走运行缓存/在线。
+    缓存键是三个用例文件（cases/*.json）的 mtime 元组 —— 补文件、删文件、
+    行尾重写等任何在磁盘上的变化都会让 mtime 变化从而重建；日常调用零重复读盘。
+    """
+    names = ("observable.json", "contextual.json", "hidden_truth.json")
+    try:
+        mt = tuple((TESTS_DIR / "cases" / n).stat().st_mtime for n in names)
+    except OSError:
+        mt = None
+    m = _BASE_TEXTS_MEMO
+    if m.get("mtime") == mt and m.get("texts") is not None:
+        return m["texts"]
+    texts = frozenset(_case_texts())
+    m.update({"mtime": mt, "texts": texts})
+    return texts
+
+
 def _cached_translate(text, cache):
-    """带磁盘缓存的翻译。48 条输入每条都要翻，不能每次重跑都重新调一遍 LLM。"""
+    """带磁盘缓存的翻译。48 条输入每条都要翻，不能每次重跑都重新调一遍 LLM。
+
+    ★ fail-closed（2026-09-24）：拿不到英文就**返回 None**，绝不回落中文原文。
+      本函数的调用方（signalmetrics / 实验脚本）应当把 None 当**剔除**处理，
+      并在 invalid 段里记明原因 —— 旧实现的 `en != text` 判据看起来在防这件事，
+      但 translate_to_en 当时是**原样返回 text**，所以判据恰好把中文挡在了缓存外、
+      却把 `en`（=中文）继续交给下游用了。判据对了一半，毒还在。
+      现在源头就抛/返回空，下游无从误用。
+
+    ★ P1 审查 P1（2026-09-25）查找语义再收紧：**基准用例与未知玩家输入分两条路径**。
+      当前实现「冻结没命中就继续查运行缓存/在线」会让基准用例在基线无效或缺条时
+      回退到运行缓存甚至在线翻译 —— 这正是「校验读 A、翻译读 B」的变体（审查反例
+      实测拿到了运行缓存的 RUNTIME_DRIFT 和一次在线调用）。现在：
+        · 若 text 在基准用例集合（_case_texts）里 → 唯一可信来源是**冻结基线**：
+          基线不可读、或基线上缺这条 → 直接返回 None（fail-closed），
+          不查运行缓存、不调在线翻译；
+        · 仅对**未知玩家输入**才保留 冻结 → 运行缓存 → 在线 的原路径，
+          且在线译文只写运行缓存，永不写回基线。
+    """
+    frozen = _load_frozen_xlate()
+    if text in _baseline_texts():
+        if frozen is None or text not in frozen:
+            return None
+        return frozen[text]
+    if frozen is not None and text in frozen:
+        return frozen[text]
     if text in cache:
         return cache[text]
-    en, _src = translate_to_en(text)
-    if en and en != text:
-        cache[text] = en
-        try:
-            _XLATE_DISK.parent.mkdir(parents=True, exist_ok=True)
-            _XLATE_DISK.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
-        except Exception:
-            pass
+    try:
+        en, _src = translate_to_en(text)
+    except TranslationFailure as e:
+        if os.environ.get("LAYA_TRACE"):
+            sys.stderr.write("[xlate-trace] _cached_translate: TranslationFailure reason=%s\n" % e.reason)
+        return None
+    if not en or en == text:
+        if os.environ.get("LAYA_TRACE"):
+            sys.stderr.write("[xlate-trace] _cached_translate: en=%r empty_or_same (text=%r)\n" % (en, text))
+        return None
+    cache[text] = en
+    try:
+        _XLATE_DISK.parent.mkdir(parents=True, exist_ok=True)
+        _XLATE_DISK.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
     return en
 
 
@@ -2634,6 +3979,11 @@ def cmd_signaltest():
 
     for i, c in enumerate(cases, 1):
         text_en = _cached_translate(c["text"], cache) if LANG == "en" else c["text"]
+        if LANG == "en" and not text_en:
+            # ★ fail-closed：拿不到英文就**不跑这条**，而不是拿中文去跑。
+            #   静默用中文跑会让这条用例的「准确率」变成噪声，且主表看不出来。
+            print("  [%s] 跳过：翻译失败（fail-closed，不以中文冒充英文）" % c["id"])
+            continue
         doc = build_state_doc(CFG["actor"], c["text"], [], CFG.get("scene"), None,
                               player_input_en=text_en,
                               decision_history=[{"type": "start", "summary": "scene begins"}])
@@ -2931,6 +4281,1378 @@ def _load_case_sets():
     return out
 
 
+# ==========================================================================
+# Phase3-P2 Task8：Checkpoint Capability Profile（机器可读的能力档案）
+#
+# 为什么必须有这一步：P1.5 的实测结论是「同一个 signal 在不同 checkpoint 上等级会变」——
+#   15 个里 8 个变、1 个稳定反向、只有 trust_shift 一个跨检查点都是 A。
+#   既然能力不是 Laya 的属性、而是 **checkpoint 的属性**，那么
+#   「哪些 signal 可以进 State Transition」就**不能**是代码里的常量，
+#   必须是每个 checkpoint 一份、从实验数据推导、跟着检查点走的档案。
+#
+# 三条纪律：
+#   1) **等级不在这里定**。全部读 tests/runs/*.json 里 signalmetrics 已经算好的 grade，
+#      本模块只做「跨跑次取代表值 → 跨检查点分类 → 按 grade 推导 status」。
+#      想改判据就去改 grade_signal()，改在这里等于偷偷改评分规则。
+#   2) 推导规则写死在 _derive_status()，可审计；唯一允许的例外是 config 里
+#      capability_policy.override 显式点名的 signal —— 且 profile 会标
+#      status_source=policy_override 并附 reason，覆盖是**可见的**，不伪装成推导结果。
+#   3) 档案必须能自证来源：dataset / translation-cache / checkpoint / config / code 五个哈希。
+#      哈希对不上时**拒绝使用**旧档案（见 load_capability_profile），不许静默沿用 ——
+#      「拿 A 条件的档案去指导 B 条件的运行」正是这套实验里已经踩过一次的坑。
+# ==========================================================================
+
+_ROLE_NAMES = ("state_shift", "behavior_tendency", "situation_assessment")
+
+# status 的四个取值（与提示词一致，不要扩成五个；要表达「暂时不用」用 disabled + reason）
+_STATUSES = ("active", "auxiliary", "disabled", "semantic_review")
+
+
+def _sha256_file(p):
+    try:
+        return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+
+def _sha256_blob(obj):
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _dataset_fingerprint():
+    """用例集指纹：逐文件内容哈希后再整体哈希一次。
+
+    ★ 只哈希文件名列表是不够的 —— 改了用例内容必须能看出来，
+      而「改了什么用例」恰恰是 P1→P1.5 之间最大的变量。
+
+    ★ P1（2026-09-24）增加行尾兼容哈希：.gitattributes 对 JSON 只标了 `text`，
+      Windows 检出会把工作区变成 CRLF，raw 哈希随之改变，但用例内容一个字节没变
+      （P0 已证明：三文件转 LF 后与档案逐字节一致）。`sha_lf` 是每个文件**仅做
+      CRLF→LF**后重算的聚合指纹 —— raw 不符而 `sha_lf` 与档案一致，即可断定
+      「内容未变、只有行尾不同」；任何真实内容改动（改用例 / 增删文件 / 改编码）
+      两个哈希会同时失配，照样拒绝。归一化只此一种：去空白、重排序、重序列化、
+      读 Git HEAD 代替工作区，一律不做。
+    """
+    d = TESTS_DIR / "cases"
+    per, per_lf, crlf = {}, {}, []
+    try:
+        for p in sorted(d.glob("*.json")):
+            b = p.read_bytes()
+            per[p.name] = hashlib.sha256(b).hexdigest()
+            b_lf = b.replace(b"\r\n", b"\n")
+            per_lf[p.name] = hashlib.sha256(b_lf).hexdigest()
+            if per[p.name] != per_lf[p.name]:
+                crlf.append(p.name)
+    except Exception:
+        pass
+    return {"dir": str(d), "files": per, "sha": _sha256_blob(per),
+            "files_lf": per_lf, "sha_lf": _sha256_blob(per_lf),
+            "crlf_files": crlf, "n_files": len(per)}
+
+
+def _checkpoint_fingerprint(model):
+    """检查点指纹。
+
+    ★ 刻意**不**哈希权重内容：权重上 GB，读一遍纯属浪费，而且换不了任何结论。
+      改为「配置/分词器配置的内容哈希 + 顶层文件清单（名 + 大小）」——
+      换 checkpoint、换权重、换 max_len 都能看出来，开销毫秒级。
+
+    ★ P1 审查 P2：目录解析**必须**与 find_local_models 共用 `_checkpoint_candidates`
+      （laya-<名>/ 与裸 <名>/ 两种布局都认），否则出现「加载器认得出、指纹却
+      报 exists=False」的布局，能力档案在该布局下永远不 fresh。
+      有效判定与加载器一致：model.safetensors 与 rl_agent_config.json 都在。
+    """
+    d = next((c for c in _checkpoint_candidates(model)
+              if (c / "model.safetensors").exists() and (c / "rl_agent_config.json").exists()),
+             None)
+    if d is None:
+        # 两种布局都无效：用默认候选（laya-<名>）做诊断路径，exists=False
+        d = Path(_checkpoint_candidates(model)[0])
+    cfg_files = {}
+    for rel in ("rl_agent_config.json", "config.json", "model_config.json",
+                "tokenizer/tokenizer_config.json", "tokenizer/special_tokens_map.json"):
+        p = d / rel
+        if p.exists():
+            cfg_files[rel] = _sha256_file(p)
+    listing = []
+    try:
+        listing = sorted((p.name, p.stat().st_size) for p in d.iterdir() if p.is_file())
+    except Exception:
+        pass
+    blob = {"model": model, "cfg": cfg_files, "files": listing}
+    return {"model": model, "dir": str(d), "exists": d.is_dir(),
+            "config_files": cfg_files, "top_level_files": listing,
+            "id": _sha256_blob(blob)}
+
+
+def _config_fingerprint():
+    """narra_config.json 指纹：raw sha + 仅 CRLF→LF 后的 sha_lf。
+
+    ★ P3-B（2026-09-29，A 授权）：config freshness 增加「仅 CRLF→LF 后 sha 精确等于
+      档案 sha」的兼容核对。.gitattributes 对 JSON 标 `text`，Windows 检出会把工作区
+      变成 CRLF，raw 哈希随之改变但配置内容一个字节没变。归一化只此一种（CRLF→LF），
+      去空白/重排序/读 Git HEAD 一律不做；真实内容改动会使两个哈希同时失配，照样拒绝。
+    """
+    out = {"path": str(CFG_PATH), "sha": _sha256_file(CFG_PATH), "sha_lf": None}
+    try:
+        b = Path(CFG_PATH).read_bytes()
+        out["sha_lf"] = hashlib.sha256(b.replace(b"\r\n", b"\n")).hexdigest()
+    except Exception:
+        pass
+    return out
+
+
+def _case_texts():
+    """三组用例的全部输入文本（稳定顺序）。"""
+    out = []
+    for key in ("observable", "contextual", "hidden_truth"):
+        try:
+            blob = json.loads((TESTS_DIR / "cases" / ("%s.json" % key)).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for c in (blob.get("cases") or []):
+            t = c.get("text")
+            if t:
+                out.append(t)
+    return out
+
+
+def _xlate_subset_fingerprint():
+    """实验**真正用到**的那部分译文 → 哈希。这才是英文侧的输入条件。
+
+    ★ 为什么不哈希整个缓存文件：正常使用（玩家自己敲中文）也会往缓存里写条目。
+      哈希整个文件会让「玩过几轮 demo」变成「实验条件变了」——
+      假告警多了等于没有告警，最后没人看。
+      该冻结的是**这批用例的译文**：同一个中文句子只要译文没变，
+      实验的输入条件就没变；缓存里多几条别的句子与本次实验无关。
+
+    ★ n_missing > 0 表示这批输入根本没进过缓存 —— 那 signalmetrics 也不会开跑
+      （开跑前的完备性断言会拦住），所以这个数字应当永远是 0；
+      它不是 0 就说明缓存被换过 / 被删过。
+
+    ★ P1（2026-09-24）：读取源改为**冻结基线**（_XLATE_FROZEN，默认
+      tests/assets/translation_cache.json），与运行缓存（_XLATE_DISK）分离 ——
+      校验和翻译必须同源（P0 的核心结论）。基线缺失/损坏时 source_error
+      会给出原因，档案校验据此拒绝，绝不静默换源。
+    """
+    texts = sorted(set(_case_texts()))
+    fr = _load_frozen_xlate()
+    cache = fr if fr is not None else {}
+    sub = dict((t, cache.get(t)) for t in texts if t in cache)
+    missing = [t for t in texts if t not in cache]
+    return {"sha": _sha256_blob(sub), "kind": "case_subset",
+            "n_texts": len(texts), "n_present": len(sub), "n_missing": len(missing),
+            "missing_sample": missing[:5], "source": str(_XLATE_FROZEN),
+            "source_file_sha": _sha256_file(_XLATE_FROZEN),
+            "source_error": None if fr is not None else "冻结基线缺失或不是合法 JSON 对象"}
+
+
+def _code_fingerprint():
+    p = Path(__file__).resolve()
+    return {"path": str(p), "sha": _sha256_file(p)}
+
+
+def all_signal_names():
+    """15 个可定级 signal = signals.order 的 9 个 + 6 个 *_shift（顺序稳定）。"""
+    spec = CFG.get("signals") or {}
+    order = list(spec.get("order") or list(spec.get("meta") or {}))
+    return order + [s for s in SHIFT_IDS if s not in order]
+
+
+def _signal_roles(strict=True):
+    """读 signals.roles。strict=True 时缺一个就返回 None。
+
+    ★ 为什么必须有 strict：如果「忘了分层」会静默退回默认 role，
+      那么一个 role 写错的 signal 会以正确的外表出现在错误的位置上 ——
+      这类错误在验收时看不出来，只有出了事故才看得出来。
+    """
+    roles = (CFG.get("signals") or {}).get("roles") or {}
+    roles = dict((k, v) for k, v in roles.items() if not k.startswith("_"))
+    names = all_signal_names()
+    missing = [s for s in names if s not in roles]
+    if missing:
+        msg = "signals.roles 没有覆盖这些 signal：%s" % "、".join(missing)
+        if strict:
+            print("★ 配置错误：%s" % msg)
+            print("  每个 signal 都必须显式声明 role —— 不许有默认值，")
+            print("  否则「忘了分层」会变成「静默用了默认值」，验收时看不出来。")
+            return None
+        print("⚠ %s（非 strict 模式，继续）" % msg)
+    unknown = [k for k in roles if k not in names]
+    if unknown:
+        print("⚠ signals.roles 里 %d 个名字不是可定级 signal（将被忽略）：%s"
+              % (len(unknown), "、".join(unknown)))
+    for k, v in sorted(roles.items()):
+        if k in names and (v or {}).get("role") not in _ROLE_NAMES:
+            print("⚠ signals.roles.%s 的 role=%r 不在 %s 之内" % (k, (v or {}).get("role"), _ROLE_NAMES))
+    return roles
+
+
+def _capability_policy():
+    return CFG.get("capability_policy") or {}
+
+
+def parse_run_filename(stem):
+    """从 `tests/runs/<a>__<b>.json` 拆出 (候选检查点名, run_id)。仅作**兜底**。
+
+    ★ 为什么只算兜底、最终以文件内的 `model` 字段为准 —— 因为这里踩过一个静默坑：
+      格式 `<checkpoint>__<run_id>` 用 `__` 分隔，但**检查点名自己也可能含 `__`**。
+      实测：`trust_context__typed-decisions.json`（P2.5 产物，真检查点=typed-decisions）
+      被旧实现的 `stem.rsplit("__", 1)` 解析成 检查点=`trust_context`、run=`typed-decisions`，
+      于是凭空多出一个叫 `trust_context` 的"检查点"——**没有任何报错**。
+      若那时跑 `capability`，就会拿两份 P2.5 结果去算一个不存在的检查点的等级，
+      产出一份**看起来完全正常**的错误档案。静默错配比崩溃危险。
+    """
+    if "__" not in stem:
+        return stem, "run1"
+    i = stem.rfind("__")
+    return stem[:i], stem[i + 2:]
+
+
+def _load_run_results(runs_dir=None):
+    """读 tests/runs/*.json，按**文件内的 model 字段**分组（文件名只作兜底）。
+
+    返回 (分组, 文件名分组, 跳过的文件名)。
+
+    ★ 判定顺序是刻意的：文件内容 > 文件名。
+      文件名是人手写的、可以含 `__`、可以改；`model` 字段是写文件时代码填的，
+      与那次运行实际加载的检查点一一对应。用内容判定把上面那类错配根除掉。
+      解析不出 model 又不满足兜底规则的文件，**列出来并跳过**，不猜。
+    """
+    d = Path(runs_dir) if runs_dir else (TESTS_DIR / "runs")
+    out, names, skipped = {}, {}, []
+    try:
+        files = sorted(d.glob("*.json"))
+    except Exception:
+        files = []
+    for p in files:
+        try:
+            blob = json.loads(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            print("⚠ 解析 %s 失败：%r（跳过）" % (p.name, e))
+            skipped.append(p.name)
+            continue
+        ck = blob.get("model")
+        if not ck:
+            # 兜底：文件名解析。要能被当作检查点的，至少得像个 signalmetrics 产物
+            cand, _run = parse_run_filename(p.stem)
+            if not (blob.get("discrimination") or blob.get("final_grades")):
+                skipped.append(p.name)
+                continue
+            ck = cand
+        ck = str(ck)
+        out.setdefault(ck, []).append(blob)
+        names.setdefault(ck, []).append(p.name)
+    return out, names, skipped
+
+
+def _median(xs):
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    n = len(xs)
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2.0
+
+
+def _rep_grade(gs):
+    """跨跑次的代表等级 → (grade, unstable)。
+
+    ★ 全部一致 → 直接用它；不一致 → 取**较差**的那个并标 unstable。
+      取较差而不是取众数/取最好：跑次之间有分歧本身就是结论（说明不稳），
+      挑最好的一次当结论等于把抖动当能力 —— P1 已经在这一步上栽过一次。
+    """
+    gs = [g for g in gs if g]
+    if not gs:
+        return None, False
+    if len(set(gs)) == 1:
+        return gs[0], False
+    return min(gs, key=lambda g: _GRADE_ORDER.get(g, -1)), True
+
+
+def _collect_signal_stats(runs):
+    """从 N 次运行里抽每个 signal 的等级序列与指标。"""
+    st = {}
+    for s in all_signal_names():
+        aucs, dgs, cgs, fgs = [], [], [], []
+        csigned, cg, cn = [], [], []
+        thr, gap = [], []
+        for r in runs:
+            d = (r.get("discrimination") or {}).get(s) or {}
+            aucs.append(d.get("auc"))
+            dgs.append(d.get("grade"))
+            thr.append(d.get("best_threshold"))
+            gap.append(d.get("mean_gap"))
+            f = (r.get("final_grades") or {}).get(s) or {}
+            cgs.append(f.get("context") or ((r.get("contextual") or {}).get(s) or {}).get("grade"))
+            fgs.append(f.get("final") or d.get("grade"))
+            x = (r.get("contextual") or {}).get(s)
+            if x:
+                csigned.append(x.get("mean_signed"))
+                cg.append(x.get("grade"))
+                cn.append(x.get("n"))
+        dg_rep, dg_unstable = _rep_grade(dgs)
+        cg_rep, cg_unstable = _rep_grade(cgs)
+        fg_rep, fg_unstable = _rep_grade(fgs)
+        st[s] = {
+            "auc_by_run": aucs, "auc_median": _median(aucs),
+            "disc_grades": dgs, "disc_grade": dg_rep,
+            "ctx_grades": cgs, "ctx_grade": cg_rep,
+            "final_grades": fgs, "final_grade": fg_rep,
+            "unstable": bool(dg_unstable or cg_unstable or fg_unstable),
+            "n_ctx_pairs": max(cn) if cn else None,
+            "ctx_signed_median": _median(csigned),
+            "threshold_median": _median(thr),
+            "mean_gap_median": _median(gap),
+        }
+    return st
+
+
+def _derive_status(name, grade, role, unstable, override, portability):
+    """由实验结果推导 status → (status, source, reasons[])。
+
+    规则（写死在这里，可审计；**等级不在本函数里决定**，只消费 grade）：
+
+      0) config.capability_policy.override 显式点名 → 用它（source=policy_override）
+      1) grade = N  → disabled         样本不足：不下结论，同样不接入
+      2) 跑次之间等级不一致 → disabled  同一检查点内自己都不稳，谈不上能力
+      3) grade = R  → semantic_review  「稳定反向」不是「弱」，是方向/语义出了问题。
+                                       不接入，且**禁止静默取反** —— 取反等于把一个
+                                       没查清的假设写进状态，比不用更危险
+      4) grade = A  → active           该 role 的主输入
+      5) grade = B  → auxiliary        「可作强提示，上层必须有规则约束」= 修正项
+      6) grade = C  → auxiliary        「只能当合取项，禁止单独定行为」
+      7) grade = D  → disabled         不可用
+      8) 兜底       → disabled
+
+    ★ portability（跨检查点稳定 / 特有 / 反向）**不参与降级**。
+      档案本身是按检查点生成的：在这个检查点上 grade 是多少就是多少，
+      拿另一个检查点的表现来降当前检查点的级，等于让 A 条件的数据否定 B 条件的结论。
+      portability 只写进 revalidate_on_switch —— 真正的安全阀是
+      「换检查点必须重新生成档案，哈希对不上时 load_capability_profile() 直接拒用」。
+    """
+    ov = (override or {}).get(name)
+    if ov:
+        st = ov.get("status")
+        if st not in _STATUSES:
+            return "disabled", "policy_override", ["override 里的 status=%r 非法，按 disabled 处理" % st]
+        return st, "policy_override", list(ov.get("reason") or ["config 里显式覆盖"])
+
+    r = []
+    if grade == "N" or grade is None:
+        return "disabled", "derived", ["grade=N（样本不足）：不下结论，也不接入正式链路"]
+    if unstable:
+        return "disabled", "derived", ["3 次运行的等级不一致 —— 该检查点内自己就不稳，"
+                                       "谈不上「已验证的能力」"]
+    if grade == "R":
+        return "semantic_review", "derived", [
+            "grade=R（稳定反向）：这不是「信号弱」，是方向或语义有问题。",
+            "不接入正式链路，**并且禁止静默取反** —— 必须先查清是用例期望写反了、"
+            "还是这个量的语义与名字不符",
+        ]
+    if grade == "A":
+        r.append("grade=A（CI 下界 >0.50 且 AUC ≥0.70）：可作为该 role 的主输入")
+        return "active", "derived", r
+    if grade == "B":
+        r.append("grade=B（CI 下界 >0.50 且 AUC ≥0.60）：可作强提示，但上层必须有规则约束 → 修正项")
+        return "auxiliary", "derived", r
+    if grade == "C":
+        r.append("grade=C（AUC ≥0.55 但 CI 不稳）：只能当合取项，禁止单独定行为 → 修正项")
+        return "auxiliary", "derived", r
+    if grade == "D":
+        r.append("grade=D（AUC <0.55）：不可用，不要拿它写阈值")
+        return "disabled", "derived", r
+    return "disabled", "derived", ["未知等级 %r" % grade]
+
+
+def _evidence_check(runs, names, ckpt_fp, ds_fp):
+    """核对「这几次运行是不是同一个条件」，并把结论写进档案。
+
+    ★ 这是那次静默条件漂移事故的固化：当时同一组号称「3 次独立运行」的数据里
+      混进了两种翻译缓存状态（obs_crow_3 在不在缓存里），**而且没有任何报错**。
+      所以档案不能只说「3 次运行」，必须能回答「这 3 次条件是否一致」。
+    """
+    out = {"checks": {}, "consistent": True, "problems": []}
+
+    # (1) 检查点：运行记录的 model 字段必须一致，且与档案一致
+    models = sorted(set(str(r.get("model")) for r in runs))
+    out["checks"]["models"] = models
+    if len(models) > 1:
+        out["consistent"] = False
+        out["problems"].append("这几次运行的 model 字段不一致：%s" % "、".join(models))
+
+    # (2) 翻译缓存：每次运行记录的 cache_sha 必须一致
+    shas = [(r.get("validity") or {}).get("cache_sha") for r in runs]
+    uniq = sorted(set(s for s in shas if s))
+    out["checks"]["cache_sha"] = [(names[i] if i < len(names) else "?", (shas[i] or "")[:16])
+                                  for i in range(len(shas))]
+    out["checks"]["cache_sha_unique"] = uniq
+    if len(uniq) > 1:
+        out["consistent"] = False
+        out["problems"].append(
+            "★ 这几次运行用的是**不同的翻译缓存**（%d 个不同哈希）—— 条件已经变了，"
+            "不能当同一组独立运行合并比较。见 tests/replication/ckpt_analysis.py 的说明。"
+            % len(uniq))
+    for i, r in enumerate(runs):
+        if (r.get("validity") or {}).get("cache_changed_during_run"):
+            out["consistent"] = False
+            out["problems"].append("★ %s 运行**期间**翻译缓存被改写"
+                                   % (names[i] if i < len(names) else "?"))
+
+    # (3) 用例集：运行记录的 counts 必须与当前磁盘上的用例数一致
+    cur = {}
+    for key in ("observable", "contextual", "hidden_truth"):
+        try:
+            blob = json.loads((TESTS_DIR / "cases" / ("%s.json" % key)).read_text(encoding="utf-8"))
+            cur[key] = len(blob.get("cases") or [])
+        except Exception:
+            cur[key] = None
+    out["checks"]["case_counts_now"] = cur
+    out["checks"]["case_counts_runs"] = [r.get("counts") for r in runs]
+    for i, r in enumerate(runs):
+        c = r.get("counts") or {}
+        if cur and any(cur.get(k) is not None and c.get(k) != cur.get(k) for k in cur):
+            out["consistent"] = False
+            out["problems"].append(
+                "%s 的用例数与当前磁盘不一致（运行 %s / 现在 %s）—— "
+                "档案描述的是另一批输入，等级不能直接沿用"
+                % (names[i] if i < len(names) else "?", c, cur))
+
+    # (4) 有效性：被剔除的用例要能说出来
+    out["checks"]["invalid_per_run"] = [
+        len((r.get("validity") or {}).get("invalid") or []) for r in runs]
+    for i, r in enumerate(runs):
+        for it in ((r.get("validity") or {}).get("invalid") or []):
+            out["problems"].append("剔除用例 [%s/%s/%s]：%s"
+                                   % (it.get("set"), it.get("id"), it.get("role"),
+                                      "；".join(it.get("reasons") or [])))
+    out["checkpoint_id"] = ckpt_fp.get("id")
+    out["dataset_sha"] = ds_fp.get("sha")
+    return out
+
+
+def _portability_from_analysis(name):
+    """跨检查点分类：优先读 ckpt_analysis 的产物，读不到就标「未跨检查点验证」。
+
+    ★ 刻意**不**在这里重新实现一遍 classify()。
+      两份规则一定会漂，而「同一份数据被两套规则解释成不同结论」是这套实验里
+      最难查的一类错误。分类只允许有一个权威实现（tests/replication/ckpt_analysis.py）。
+    """
+    p = TESTS_DIR / "ckpt_replication.json"
+    try:
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        row = ((blob.get("rows") or {}).get(name) or {})
+        cls = row.get("class")
+        if cls:
+            return cls, "tests/ckpt_replication.json"
+    except Exception:
+        pass
+    return "未跨检查点验证", None
+
+
+def _build_profile(model, runs, names, era_ids=None):
+    """为一个检查点生成档案。
+
+    era_ids —— 若给了，表示这批 run 是被 tests/runs/eras.json **显式声明**为
+    同一个可比较纪元的。它会被写进档案（`runs.era_ids`），让「这份等级是在哪几次
+    运行上算的」可被独立核对。没有它时写明 `era_declared=False` ——
+    「未声明」和「声明了就是这些」必须能区分。
+    """
+    roles = _signal_roles(strict=True)
+    if roles is None:
+        return None
+    pol = _capability_policy()
+    override = pol.get("override") or {}
+    prod = pol.get("production_candidate")
+    cmp_list = list(pol.get("comparison_checkpoints") or [])
+
+    ckpt_fp = _checkpoint_fingerprint(model)
+    ds_fp = _dataset_fingerprint()
+    cfg_fp = _config_fingerprint()
+    code_fp = _code_fingerprint()
+    stats = _collect_signal_stats(runs)
+    ev = _evidence_check(runs, names, ckpt_fp, ds_fp)
+
+    signals = {}
+    counts = dict((s, 0) for s in _STATUSES)
+    for s in all_signal_names():
+        entry = roles.get(s) or {}
+        role = entry.get("role")
+        st = stats[s]
+        portability, port_src = _portability_from_analysis(s)
+        status, source, reasons = _derive_status(
+            s, st["final_grade"], role, st["unstable"], override, portability)
+        counts[status] = counts.get(status, 0) + 1
+
+        target = entry.get("target")
+        if not target and role == "state_shift":
+            target = (((CFG.get("state_shift") or {}).get("paths") or {}).get(s) or {}).get("target")
+
+        signals[s] = {
+            "name": s,
+            "role": role,
+            "kind": entry.get("kind") or st.get("kind") or _signal_kind(s),
+            "range": entry.get("range"),
+            "state_target": target,
+            "semantic_zh": entry.get("semantic_zh"),
+            "semantic_en": entry.get("semantic_en"),
+            "validated_on": entry.get("validated_on"),
+            # ---- 实验推导部分（唯一的事实来源）----
+            "grade": st["final_grade"],
+            "grade_by_run": st["final_grades"],
+            "discrimination_grade": st["disc_grade"],
+            "context_grade": st["ctx_grade"],
+            "grade_detail": {
+                "discrimination_by_run": st["disc_grades"],
+                "context_by_run": st["ctx_grades"],
+                "n_ctx_pairs": st["n_ctx_pairs"],
+            },
+            "metrics": {
+                "auc_by_run": st["auc_by_run"],
+                "auc_median": st["auc_median"],
+                "ctx_signed_median": st["ctx_signed_median"],
+                "mean_gap_median": st["mean_gap_median"],
+                # ★ 最佳阈值只是统计输出：档案里记录，但**不写回 config / Policy**。
+                #   从一次实验的阈值直接当生产阈值，是这套系统最容易犯的错。
+                "best_threshold_median": st["threshold_median"],
+                "best_threshold_is_statistical_only": True,
+            },
+            "status": status,
+            "status_source": source,
+            "status_reasons": reasons,
+            "portability": portability,
+            "portability_source": port_src,
+            "revalidate_on_switch": portability not in ("① 跨检查点稳定", "未跨检查点验证"),
+            "may_write_state": bool(role == "state_shift" and status == "active"),
+            "need_upper_constraint": status == "auxiliary",
+        }
+
+    prof = {
+        "_readme": [
+            "Phase3-P2 Task8：Checkpoint Capability Profile（机器可读，由 laya_bridge.py capability 生成，不要手改）。",
+            "★ 等级 (grade) 一律读自 tests/runs/*.json 里 signalmetrics 算好的值，本文件不重新定级。",
+            "★ status 由 _derive_status() 推导；status_source=policy_override 的条目来自",
+            "  narra_config.json 的 capability_policy.override，是**可见的**声明式覆盖。",
+            "★ 只能由 role=state_shift 且 status=active 的 signal 产生 state_proposal 的 delta。",
+            "  role 决定「能流向哪里」，status 决定「够不够格」，两者正交。",
+            "★ metrics.best_threshold_median 只是统计输出，禁止写回 config / Policy。",
+            "★ 使用前必须核对 evidence 里的五个哈希；对不上就重新生成档案。",
+        ],
+        "checkpoint": model,
+        "profile_id": None,          # 下面回填
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "generator": "laya_bridge.py capability",
+        "role_in_phase3": ("production_candidate" if model == prod
+                           else ("capability_comparison" if model in cmp_list else "unregistered")),
+        "runs": {"n_runs": len(runs), "files": names, "run_ids": [r.get("run_id") for r in runs],
+                 "era_declared": bool(era_ids),
+                 "era_ids": list(era_ids or []),
+                 "era_source": str(ERA_PATH) if era_ids else None,
+                 "era_note": (("这批运行由 %s 显式声明为同一可比较纪元。" % ERA_PATH.name)
+                              if era_ids else
+                              "未声明纪元 → 本档案是在该检查点的**全部** run 上算的，"
+                              "若 runs/ 横跨多次缓存改动，跨跑次一致性可能不成立。")},
+        "evidence": {
+            "dataset": ds_fp, "checkpoint": ckpt_fp, "config": cfg_fp,
+            # ★ 英文侧输入条件的权威哈希 = 实验用例译文的哈希（不是整个缓存文件）。
+            #   file_sha_now / file_sha_per_run 只作旁证：前者会随日常使用增长，
+            #   后者用来发现「运行期间缓存被改写」（那次静默条件漂移事故的指纹）。
+            "translation_cache": {
+                # ★ P1：权威来源是冻结基线（与 _xlate_subset_fingerprint 同源）。
+                #   runtime_file 只是日常缓存的位置，供追查用，不参与哈希比对。
+                "path": str(_XLATE_FROZEN),
+                "sha": _xlate_subset_fingerprint()["sha"],
+                "kind": "case_subset",
+                "subset": _xlate_subset_fingerprint(),
+                "file_sha_now": _sha256_file(_XLATE_FROZEN),
+                "runtime_file": str(_XLATE_DISK),
+                "file_sha_per_run": ev["checks"].get("cache_sha"),
+            },
+            "code": code_fp,
+            "consistency": ev,
+        },
+        "status_rule": [
+            "0) capability_policy.override 显式点名 → 覆盖（source=policy_override）",
+            "1) grade=N → disabled；2) 跑次等级不一致 → disabled",
+            "3) grade=R → semantic_review（方向/语义问题，禁止静默取反）",
+            "4) grade=A → active；5) grade=B → auxiliary；6) grade=C → auxiliary；7) grade=D → disabled",
+            "★ portability 不参与降级：档案是按检查点生成的，换检查点必须重新生成。",
+        ],
+        "counts": counts,
+        "signals": signals,
+    }
+    prof["profile_id"] = _sha256_blob({
+        "ckpt": model,
+        "signals": dict((k, [v["grade"], v["status"], v["role"]]) for k, v in signals.items()),
+        "dataset": ds_fp.get("sha"), "checkpoint": ckpt_fp.get("id"), "config": cfg_fp.get("sha"),
+    })
+    return prof
+
+
+CAPABILITY_PATH = TESTS_DIR / "capability_profiles.json"
+# ★★ 实验纪元声明（2026-09-24 P3 新增）。
+#   为什么需要这个文件：tests/runs/ 是**只增不减**的（那些是证据，不该删），
+#   但每个纪元跑的时候翻译缓存 / 用例集可能不同。于是「同一检查点的所有 run 文件」
+#   会横跨多个条件，`_evidence_check` 一旦看到 2 个不同的 cache_sha 就判 inconsistent
+#   → 档案永远不 fresh → 状态层一条都不写。
+#   这是同一个类的第三次出现（前两次：run 文件名错配、prewarm 漏扫形状）。
+#   修法不是「删掉旧 run」也不是「放宽一致性检查」（那等于把条件漂移当正常），
+#   而是**让纪元显式声明**：哪些 run 属于同一次可比较的基线。
+#   文件缺失时退回「全部 run」的旧行为，但会打印提示 —— 不静默。
+ERA_PATH = TESTS_DIR / "runs" / "eras.json"
+
+
+def _load_eras():
+    """读 tests/runs/eras.json → {checkpoint: [run_id, ...]}。缺失/坏掉则返回 {}。"""
+    try:
+        blob = json.loads(ERA_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    out = {}
+    for ck, v in (blob.get("eras") or {}).items():
+        if isinstance(v, list):
+            out[ck] = [str(x) for x in v]
+        elif isinstance(v, dict):
+            out[ck] = [str(x) for x in (v.get("run_ids") or [])]
+    return out
+
+
+def _filter_runs_to_era(model, runs, names):
+    """把某检查点的 runs 收敛到「声明的那一个纪元」。
+
+    ★ 判据是 run_id（文件内字段），不是文件名 —— 与 _load_run_results 同源。
+      返回 (runs, names, era_ids, note)；note 说明做了什么，永远不静默。
+    """
+    eras = _load_eras()
+    want = eras.get(model)
+    if not want:
+        if runs:
+            return runs, names, None, (
+                "未声明纪元（%s 不存在或没有 %s 条目）→ 使用 tests/runs/ 里该检查点的**全部** run"
+                % (ERA_PATH.name, model))
+        return runs, names, None, None
+    keep_r, keep_n, hit = [], [], []
+    for r, n in zip(runs, names):
+        rid = str(r.get("run_id") or "")
+        if rid in want:
+            keep_r.append(r)
+            keep_n.append(n)
+            hit.append(rid)
+    missing = [x for x in want if x not in hit]
+    if not keep_r:
+        return runs, names, None, (
+            "★ 声明了纪元 %s，但 tests/runs/ 里一个都匹配不到（run_id=%s）→ 退回全部 run。"
+            "这通常意味着 runs 文件被移动/改名了，请核对。" % (model, want))
+    note = ("已按纪元收敛到 %d/%d 次运行：%s"
+            % (len(keep_r), len(runs), "、".join(hit)))
+    if len(keep_r) < len(runs):
+        note += "（未计入：%s）" % "、".join(
+            str(r.get("run_id")) for r in runs if str(r.get("run_id")) not in want)
+    if missing:
+        note += " ★ 声明里这些 run 不存在：%s" % "、".join(missing)
+    return keep_r, keep_n, hit, note
+
+
+_CAP_PROFILE_CACHE = {"mtime": None, "blob": None}
+
+
+def load_capability_profiles(force=False):
+    """读 tests/capability_profiles.json（带 mtime 缓存）。"""
+    p = CAPABILITY_PATH
+    if not p.exists():
+        return None
+    try:
+        mt = p.stat().st_mtime
+        if not force and _CAP_PROFILE_CACHE["mtime"] == mt and _CAP_PROFILE_CACHE["blob"] is not None:
+            return _CAP_PROFILE_CACHE["blob"]
+        blob = json.loads(p.read_text(encoding="utf-8"))
+        _CAP_PROFILE_CACHE.update({"mtime": mt, "blob": blob})
+        return blob
+    except Exception as e:
+        print("⚠ 读取能力档案失败：%r" % e)
+        return None
+
+
+def load_capability_profile(model=None, force=False):
+    """运行时取当前检查点的能力档案 → (profile, check)。
+
+    ★ P3-B：`force=True` 时绕过 `_CAP_PROFILE_CACHE` 的 mtime 缓存、重读档案文件内容，
+      使「同 mtime 替换档案内容」也能被识别（身份变化 → fresh 变化 / profile_id 变化）。
+      real_capability_identity 用它做 Commit 身份重验，不能只依赖 mtime 缓存。
+
+    check 里是「为什么可用 / 不可用」，decide() 会原样透出给上游：
+      matched          —— 档案里的 checkpoint 与当前运行的是同一个
+      fresh            —— 输入侧哈希（dataset / config / checkpoint / cache）与磁盘现状一致
+      problems[]       —— 具体哪一项对不上
+      code_changed     —— 只是提示：代码变了不等于等级变了，所以**不阻断**
+                          （断的是输入变了 —— 那会让同一份档案描述的是另一批条件）
+
+    ★ 档案缺失或不 fresh 时**返回 (None, check)**，调用方必须据此拒绝写状态，
+      而不是退回「所有 signal 都可用」—— 未知能力当全能力用，是最危险的默认值。
+    """
+    name = model or DEFAULT_MODEL_NAME
+    blob = load_capability_profiles(force=force)
+    check = {"checkpoint": name, "profile_file": str(CAPABILITY_PATH),
+             "file_exists": CAPABILITY_PATH.exists(),
+             "matched": False, "fresh": False, "problems": [], "code_changed": False,
+             "profile_id": None}
+    if not blob:
+        check["problems"].append("能力档案不存在（先跑：python laya_bridge.py capability）")
+        return None, check
+    prof = ((blob.get("profiles") or {}).get(name))
+    if not prof:
+        check["problems"].append(
+            "档案里没有检查点 %r 的条目（有的：%s）。"
+            "换检查点必须重新生成档案 —— 能力不是 Laya 的属性，是检查点的属性。"
+            % (name, "、".join(sorted((blob.get("profiles") or {}).keys())) or "无"))
+        return None, check
+    check["matched"] = (prof.get("checkpoint") == name)
+    check["profile_id"] = prof.get("profile_id")
+
+    ev = prof.get("evidence") or {}
+    # 输入侧：不一致就拒用
+    ds_now = _dataset_fingerprint()
+    ds_arch = (ev.get("dataset") or {}).get("sha")
+    if ds_arch != ds_now.get("sha"):
+        # ★ P1 行尾兼容（2026-09-24）：raw 不符时允许**仅 CRLF→LF** 的核对 ——
+        #   且必须**完整文件集合**的 LF 聚合指纹与档案一致才放行。
+        #   放行时把证据写进 check（--check 会打印），内容有任何真实改动仍拒绝。
+        if ds_arch and ds_arch == ds_now.get("sha_lf"):
+            check["line_ending_compat"] = {
+                "matched_via": "CRLF→LF（工作区行尾不同，用例内容与档案完全一致）",
+                "crlf_files": ds_now.get("crlf_files") or [],
+                "raw_sha": ds_now.get("sha"), "lf_sha": ds_now.get("sha_lf"),
+            }
+        else:
+            check["problems"].append(
+                "用例集已变（dataset sha 不符，且 CRLF→LF 兼容核对也不匹配）"
+                "→ 等级是在另一批输入上算的")
+    cfg_now = _config_fingerprint()
+    cfg_arch = (ev.get("config") or {}).get("sha")
+    if cfg_arch != cfg_now.get("sha"):
+        # P3-B（A 授权）：仅 CRLF→LF 后 sha 精确等于档案 sha → 行尾兼容放行并记录；
+        # 真实内容改动 / 文件缺失 / 其他不匹配仍 fail-closed（两个 sha 同时失配）。
+        if cfg_arch and cfg_arch == cfg_now.get("sha_lf"):
+            check["config_line_ending_compat"] = {
+                "matched_via": "CRLF→LF（工作区行尾不同，配置内容与档案完全一致）",
+                "raw_sha": cfg_now.get("sha"), "lf_sha": cfg_now.get("sha_lf"),
+            }
+        else:
+            check["problems"].append("narra_config.json 已变（config sha 不符）→ signal 定义可能已变")
+    ck_now = _checkpoint_fingerprint(name).get("id")
+    if (ev.get("checkpoint") or {}).get("id") != ck_now:
+        check["problems"].append("检查点本体已变（checkpoint id 不符）→ 必须重新验证")
+    # ★ 比对的是「实验用例译文的哈希」，不是缓存文件哈希 ——
+    #   日常使用会让文件增长，那不是实验条件变化（见 _xlate_subset_fingerprint 的说明）。
+    #   ★ P1：读的是冻结基线；基线本身缺失/损坏要单独报出，不能笼统说「译文已变」。
+    xsub_now = _xlate_subset_fingerprint()
+    if xsub_now.get("source_error"):
+        check["problems"].append(
+            "冻结译文基线不可读（%s）：%s → 拒绝猜测，不在线补译、不静默换源"
+            % (xsub_now["source"], xsub_now["source_error"]))
+    elif (ev.get("translation_cache") or {}).get("sha") != xsub_now["sha"]:
+        check["problems"].append(
+            "实验用例的译文已变（缺 %d/%d 条，基线：%s）→ 英文侧的输入条件与生成档案时不同"
+            % (xsub_now["n_missing"], xsub_now["n_texts"], xsub_now["source"]))
+    # 旁证：生成档案时那几次运行本身是否条件一致（运行期缓存被改写等），
+    # 由 _evidence_check 在生成阶段已经判定并存进 consistency —— 这里只透出结论，
+    # 不在每次 decide 里重读 6 个运行文件（那是几百 KB 的 I/O，且结论不会变）。
+    # 代码侧：只提示
+    if (ev.get("code") or {}).get("sha") != _code_fingerprint().get("sha"):
+        check["code_changed"] = True
+    if not (ev.get("consistency") or {}).get("consistent", True):
+        check["problems"] += ["生成档案时这几次运行的条件就不一致：%s" % x
+                              for x in ((ev.get("consistency") or {}).get("problems") or [])[:3]]
+
+    check["fresh"] = not check["problems"]
+    return (prof if check["fresh"] else None), check
+
+
+def capability_status_map(profile):
+    """profile → {signal: status}，供 decide() 过滤用。"""
+    return dict((k, v.get("status")) for k, v in (profile.get("signals") or {}).items())
+
+
+def _role_entries():
+    return dict((k, v) for k, v in ((CFG.get("signals") or {}).get("roles") or {}).items()
+                if not k.startswith("_"))
+
+
+def _role_block(role_name, signal_values, profile, usable):
+    """behavior_tendency / situation_assessment 两个块共用。
+
+    ★ 这里**刻意不套阈值**。0.5 对 kind=prob 是「概率的中点」而不是标定出来的阈值，
+      但即便这样也不在这里判读 —— 阈值属于 Policy Resolver 的规则表，
+      能力档案里那些 best_threshold 又只是**统计输出**。
+      让 Laya 层自己「顺手判一下」，等于把一处没标定的判据藏进推演层，
+      以后没人能说清某个行为到底是哪条规则定的。
+    """
+    roles = _role_entries()
+    sig = (profile or {}).get("signals") or {}
+    out = []
+    for name in all_signal_names():
+        ent = roles.get(name) or {}
+        if ent.get("role") != role_name:
+            continue
+        if name not in signal_values:
+            continue
+        pv = sig.get(name) or {}
+        st = pv.get("status")
+        out.append({
+            "signal": name,
+            "role": role_name,
+            "value": signal_values.get(name),
+            "kind": ent.get("kind"),
+            "range": ent.get("range"),
+            "grade": pv.get("grade"),
+            "status": st,
+            "semantic_zh": ent.get("semantic_zh"),
+            # 只有 active / auxiliary 的值才允许上游当输入；disabled / semantic_review 一律标不可消费
+            "consumable": bool(usable and st in ("active", "auxiliary")),
+            "threshold_applied": False,
+            "note": "本层只给值，不判读。阈值/分档属于 Policy Resolver，不得在这里定。",
+        })
+    return out
+
+
+# 剧情线档位（玩法层）：由 state 的可写/代理信号判定关系走向，
+# 供云端叙事（/narrate analysis 分块）与前端横幅（_plotline）共用。
+# ★ 判据：doubt 是可写代理；trust 只读（档案 grade=C → auxiliary 不可写），
+#   因此「信任渐生」用疑点回落（doubt<30，严格小于）判定，否则信任线永远不可达。
+#   用严格 < 是为避开处女档边界：未提交状态 doubt 恰为 30，d<=30 会让开场
+#   就说「她开始松口」。真实信任弧落在 27 以下，不受影响。
+_PLOT_STAGES = (
+    ("break",   "决裂边缘", "她对你已到决裂边缘，随时可能动手。", lambda d, t: d >= 70),
+    ("guard",   "戒备中",   "她在戒备，每句话都在试探你的来路。", lambda d, t: d >= 45),
+    ("trust",   "信任渐生", "疑点在消解，她开始松口，愿意吐露一两句真话。", lambda d, t: d < 30),
+    ("probing", "试探阶段", "关系未定，她还在权衡是否信你。", lambda d, t: True),
+)
+
+
+def plot_stage(state):
+    """剧情线档位（玩法层）：返回 {"key","txt","hint"}。state 为 actor state 字典。"""
+    rel = (state or {}).get("relationship") or {}
+    d = _fnum(rel.get("doubt"))
+    t = _fnum(rel.get("trust"))
+    if not rel:
+        return {"key": "probing", "txt": "试探阶段", "hint": _PLOT_STAGES[3][2],
+                "doubt": d, "trust": t}
+    for key, txt, hint, cond in _PLOT_STAGES:
+        if cond(d, t):
+            return {"key": key, "txt": txt, "hint": hint, "doubt": d, "trust": t}
+    return {"key": "probing", "txt": "试探阶段", "hint": _PLOT_STAGES[3][2],
+            "doubt": d, "trust": t}
+
+
+def _narrate_stage_block(sid, aid, actor):
+    """旧路由（mode=upstream / 带 behavior 的 /narrate）叙事用：按当前已提交状态
+    给一条「关系档位」分块，与 P2 分析模式同文案 —— 让整页（含旧演示流）的
+    台词语气都随关系档位走，而不是永远「试探阶段」。"""
+    snap = actor_state_snapshot(sid, aid, actor)
+    merged = _copy.deepcopy(actor)
+    for _g in ("relationship", "emotion", "goals"):
+        if (snap or {}).get(_g):
+            merged[_g] = dict(snap[_g])
+    _st = plot_stage(merged)
+    return "当前关系档位：%s。%s（参考，不念数字）" % (_st["txt"], _st["hint"])
+
+
+# ==========================================================================
+# Turn Interpretation v1（用户定方向，2026-09-26）
+# 结构化事件触发：规则通道的主判定从「关键词命中」升级为「Laya 结构化信号事件」，
+# 旧关键词逻辑降级为 fallback/debug（不删除）。这样玩家换一种不带旧词表的说法
+# （如「你要的东西在枯井底」「今晚镇上会少一个人」）也能被结构化地识别为
+# 让渡/施压。v1 阈值是启发式定标，留常量待路线 A（信号校准）用数据校准。
+# ==========================================================================
+_TI = {
+    "surrender": {"disclose": 0.5, "hostility_max": 0.5, "confront_max": 0.5},
+    "escalation": {"hostility": 0.5, "confront": 0.6, "confront_hostility": 0.35},
+}
+
+
+def interpret_turn(text, signal_values):
+    """把本轮玩家输入解释为结构化事件。
+
+    返回 {"event": "surrender"|"escalation"|None, "confidence": float,
+          "basis": [str]}。basis 记录判定依据（信号读数），供 debug/复核。
+
+    校准（2026-09-26 实测，LAYA_TI_DEBUG=1）：
+      - 让渡句 disclose 落在 0.50~0.54（勉强过线）；
+      - 「拔出匕首见血」这类暴力句 disclose 也会到 0.51 —— 因此 surrender
+        必须**低敌意/低对峙门**（hostility/confront < 0.5），否则暴力被误判让渡而压疑点。
+      - 自然施压句 hostility/confront 多落在 0.44~0.49，未达 escalation 阈值；
+        这两类句子结构化不硬判，交还模型/关键词 fallback。
+    """
+    sv = signal_values or {}
+    d = _fnum(sv.get("disclose"))
+    h = _fnum(sv.get("hostility"))
+    c = _fnum(sv.get("confront"))
+    cfg = _TI
+    if d >= cfg["surrender"]["disclose"] and h < cfg["surrender"]["hostility_max"] \
+            and c < cfg["surrender"]["confront_max"]:
+        return {"event": "surrender", "confidence": d,
+                "basis": ["disclose=%.2f host=%.2f confront=%.2f" % (d, h, c)]}
+    if d < cfg["surrender"]["disclose"] and (
+            h >= cfg["escalation"]["hostility"]
+            or (c >= cfg["escalation"]["confront"]
+                and h >= cfg["escalation"]["confront_hostility"])):
+        return {"event": "escalation", "confidence": max(h, c),
+                "basis": ["disclose=%.2f host=%.2f confront=%.2f" % (d, h, c)]}
+    return {"event": None, "confidence": 0.0, "basis": []}
+
+
+def _adjudicate_suppress(out, source, ti=None):
+    """证据通道：疑点增量无条件取负（-|old|-0.8；无 doubt 项则追加 -2.8）。"""
+    target = next((it for it in out.get("delta") or []
+                   if it.get("source_signal") == "doubt_shift"), None)
+    if target is not None:
+        target["delta"] = round(-abs(_fnum(target.get("delta"))) - 0.8, 3)
+        target["rule_adjudicated"] = "evidence_handover"
+        target["adjudication_source"] = source
+        if ti:
+            target["ti_basis"] = ti.get("basis") or []
+        return True
+    item = {
+        "source_signal": "doubt_shift", "target": "relationship.doubt",
+        "delta": -2.8, "status": "active", "grade": "A", "role": "state_shift",
+        "label": "怀疑", "range": [0, 100], "rule_adjudicated": "evidence_handover",
+        "adjudication_source": source,
+    }
+    if ti:
+        item["ti_basis"] = ti.get("basis") or []
+    out.setdefault("delta", []).append(item)
+    return True
+
+
+def _adjudicate_escalate(out, source, ti=None):
+    """暴力通道：疑点增量抬到保底 +2.5（无 doubt 项则追加 +2.5）。"""
+    target = next((it for it in out.get("delta") or []
+                   if it.get("source_signal") == "doubt_shift"), None)
+    if target is not None:
+        old = _fnum(target.get("delta"))
+        if old < _VIOLENCE_ESCALATION_FLOOR:
+            target["delta"] = _VIOLENCE_ESCALATION_FLOOR
+        target["rule_adjudicated"] = "violence_escalation"
+        target["adjudication_source"] = source
+        if ti:
+            target["ti_basis"] = ti.get("basis") or []
+        return True
+    item = {
+        "source_signal": "doubt_shift", "target": "relationship.doubt",
+        "delta": _VIOLENCE_ESCALATION_FLOOR, "status": "active",
+        "grade": "A", "role": "state_shift",
+        "label": "怀疑", "range": [0, 100], "rule_adjudicated": "violence_escalation",
+        "adjudication_source": source,
+    }
+    if ti:
+        item["ti_basis"] = ti.get("basis") or []
+    out.setdefault("delta", []).append(item)
+    return True
+
+
+def apply_rule_adjudication(state_proposal, signal_values, player_input=""):
+    """规则层事件裁决（启发式，独立于 Laya 输出的数值公式层）。
+
+    ★ 口径（2026-09-25，用户方向）：Laya 负责识别玩家行动意图；数值公式与
+      胜负裁决由规则层独立设计。★ Turn Interpretation v1（2026-09-26，用户
+      定方向）：主判定从「关键词触发」升级为「结构化事件触发」（interpret_turn
+      基于 Laya 结构化信号），**旧关键词逻辑保留为 fallback/debug 不删除**，
+      命中来源以 `adjudication_source = "structured"|"keyword"` 标注。
+
+    判定顺序：
+      S）结构化事件（interpret_turn）：
+          surrender —— disclose ≥ 0.5 且 hostility < 0.5 且 confront < 0.5
+                       （无威胁披露）→ 证据压制（同 B 语义）
+          escalation —— disclose < 0.5 且 (hostility ≥ 0.5 或
+                        (confront ≥ 0.6 且 hostility ≥ 0.35)) → 暴力保底（同 C）
+          ★ 校准（2026-09-26 实测）：暴力句 disclose 也会 ≥0.5，故 surrender
+            必须带低敌意/低对峙门；带敌意/对峙的披露不硬判，交还模型/关键词
+            fallback（防「拔刀见血」被误当让渡压掉疑点）。
+      F）fallback 旧关键词（F-B 证据词 / F-C 暴力词，带豁免/护栏），仅当结构化
+          未判出事件时兜底；再落到 A。
+      A）模型侧：Laya 判「合作」显著（cooperation ≥ 0.5）→ 疑点正向增量打折。
+         敌意护栏：hostility ≥ 0.5 则不因此软化（避免瞪视被读成合作）。
+    安全边界：
+      - 只可能改到 source_signal == doubt_shift 的条目；
+      - 无命中时**逐字节返回原对象**（零拷贝）；
+      - 不改 status/grade/target/range，只动 delta 并打 `rule_adjudicated`、
+        `adjudication_source`（与结构化判定时的 `ti_basis`）。
+    """
+    text = str(player_input or "")
+    sv = signal_values or {}
+    coop = _fnum(sv.get("cooperation"))
+    disc = _fnum(sv.get("disclose"))
+    host = _fnum(sv.get("hostility"))
+
+    # ---- 主判定：结构化事件（Turn Interpretation v1）----
+    ti = interpret_turn(text, sv)
+    if ti.get("event") == "surrender":
+        out = _copy.deepcopy(state_proposal or {})
+        _adjudicate_suppress(out, "structured", ti)
+        return out
+    if ti.get("event") == "escalation":
+        out = _copy.deepcopy(state_proposal or {})
+        _adjudicate_escalate(out, "structured", ti)
+        return out
+
+    # ---- fallback：旧关键词逻辑（保留为 fallback/debug，不删除）----
+    evidence_hit = next((kw for kw in _EVIDENCE_STOP_WORDS if kw in text), None)
+    if evidence_hit and (any(m in text for m in _EVIDENCE_QUESTION_MARKERS)
+                         or any(f in text for f in _EVIDENCE_ACCUSATION_FRAMES)):
+        # P3-B 实测反例1：质问「徽章哪来的/你有证据吗」是**质问**物件来源，
+        #   不是让渡 —— 裸名词命中会错误压制疑点（30→27 直接进信任档）。
+        # 反例2（无问号指控句）：「你交信物」「你身上那枚徽章」是当面对质，
+        #   也不是玩家掏出东西交给对方 —— 同样不得当让渡。
+        # 含这些标记时不当作让渡，交还给 Laya 判向。
+        evidence_hit = None
+    violence_hit = None
+    if not evidence_hit and "放下" not in text:
+        violence_hit = next((kw for kw in _VIOLENCE_ESCALATION_WORDS if kw in text), None)
+    if not evidence_hit and not violence_hit and coop < 0.5 and disc < 0.5:
+        return state_proposal
+    # ★ 规则通道必须**先于**「delta 为空」守卫判定：模型对全部信号判空时
+    #   （proposal.delta=[]），拔刀/让渡句仍由规则层兜底追加保底（胜负归规则层，
+    #   不依赖模型给不给信号）。无命中时空列表依旧原样返回。
+    out = _copy.deepcopy(state_proposal or {})
+    changed = False
+    if evidence_hit:
+        # ★ 胜负归规则层：命中证据词时**无条件**施加疑点压制（不依赖 Laya 输出）。
+        changed = _adjudicate_suppress(out, "keyword")
+    elif violence_hit:
+        # ★ 胜负归规则层：命中暴力动作词 → 疑点无条件抬升到保底 +2.5。
+        changed = _adjudicate_escalate(out, "keyword")
+    else:
+        if host >= 0.5:
+            # ★ 敌意护栏：玩家正带敌意施压（hostility ≥ 0.5）时，合作读数
+            #   不打折疑点 —— 交还原判定（瞪视/逼问不该因「合作」被软化）。
+            return state_proposal
+        for item in out.get("delta") or []:
+            if item.get("source_signal") != "doubt_shift":
+                continue
+            old = _fnum(item.get("delta"))
+            if old <= 0:
+                continue
+            item["delta"] = round(old * 0.5 - 0.8, 3)
+            item["rule_adjudicated"] = "pro_cooperation"
+            changed = True
+    return out if changed else state_proposal
+
+
+# 证据词白名单：玩家「交出/摊牌/坦白」类强动作（规则层裁决用，保守列举）
+_EVIDENCE_STOP_WORDS = (
+    "放下刀", "放下剑", "摊开", "交给你", "交出来", "交给",
+    "证据", "证词", "名单", "账目", "账本", "供词",
+    "信物", "徽章", "图纸", "家书", "坦白", "和盘托出",
+    "搜我", "搜身", "敞开外衣", "毫无保留", "再无保留", "搜我身上",
+    "掏出", "递过去", "出示", "密令", "纸条",   # P3-B 挽回探针补漏：掏出密令递过去
+)
+
+# 证据通道的「质问豁免」：命中这些疑问/诘问标记时，裸名词不算让渡
+# （P3-B 实测：徽章哪来的 / 你有证据吗 —— 玩家在质问，不该压制疑点）。
+_EVIDENCE_QUESTION_MARKERS = (
+    "？", "?", "哪来的", "从哪", "哪儿", "哪里", "谁的", "谁给",
+    "是不是", "有没有", "吗", "呢", "什么", "怎么", "为啥", "为什么", "啥",
+)
+
+# 证据通道的「指控豁免」：无问号的当面对质（你交信物 / 你身上那枚徽章），
+# 物件落在玩家对她的话语框架里、不是玩家掏出东西让渡 —— 同样不按让渡压制。
+_EVIDENCE_ACCUSATION_FRAMES = (
+    "你的", "你身上", "你腰间", "你手里", "你兜里", "你交", "你收",
+)
+
+# 暴力升级白名单：玩家「拔刀/掐脖/见血」类施压强动作（规则层裁决用，保守列举；
+# 与证据词互斥，且「放下…」让渡口吻不触发 —— 二者同时出现时证据词优先）。
+_VIOLENCE_ESCALATION_WORDS = (
+    "拔刀", "拔出", "抽刀", "出鞘", "刀锋", "匕首", "刀尖",
+    "掐", "按在墙上", "见血", "杀了你", "杀死你", "砍死",
+    "横在你喉前", "贴在你喉前", "贴上你的颈侧", "架在你脖子",
+    "永远闭嘴", "一脚踢翻", "揪住", "扎在桌上", "插进桌面", "掼在地上",
+)
+_VIOLENCE_ESCALATION_FLOOR = 2.5
+
+
+def _fnum(x):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if v == v and v not in (float("inf"), float("-inf")) else 0.0
+
+
+def build_state_proposal(answers, deltas, signal_values, profile, check):
+    """Phase3-P2 Task10：统一 Proposal Schema（按能力档案过滤后的状态建议）。
+
+    返回 (state_proposal, behavior_tendency, situation_assessment)。三者都是**建议**，
+    绝不写 Actor State —— 真正写入属于 Narraverse 的 State Transition Layer。
+
+    ★ 三道过滤，缺一不可：
+      1) role == state_shift  —— 只有这一层能写状态。behavior_tendency 与
+         situation_assessment 无论等级多高，都**没有**产出 delta 的资格。
+      2) status == active     —— auxiliary 只能当合取/修正项。P2 阶段对 auxiliary 更严：
+         只登记「若启用会产生多少」，**不产生任何数值效果**（applied=false）。
+         这比提示词的要求更保守一格，理由是会写状态的量一旦算错是**不可逆**的。
+      3) 档案自身可用          —— 档案缺失 / 输入哈希不符 → 一条 delta 都不产出。
+         未知能力当全能力用，是这套系统里最危险的默认值。
+
+    ★ 被过滤掉的必须逐条留 reason：只报「忽略了 N 个」不算达标，
+      必须能说出是哪 N 个、为什么。
+    """
+    roles = _role_entries()
+    smap = capability_status_map(profile) if profile else {}
+    usable = bool(profile)
+    ignored = []
+    delta_out, aux_out = [], []
+
+    for d in deltas:
+        sig = d.get("question")
+        ent = roles.get(sig) or {}
+        role = ent.get("role")
+        pv = ((profile or {}).get("signals") or {}).get(sig) or {}
+        base = {"source_signal": sig, "attribute": d.get("target"),
+                "target": d.get("target"),   # 旧键名，前端 applyDeltas 还在读；逐步淘汰
+                "grade": pv.get("grade"), "role": role,
+                "status": smap.get(sig), "semantic_zh": ent.get("semantic_zh")}
+        if role != "state_shift":
+            ignored.append(dict(base, reason=[
+                "role=%s，不是 state_shift —— 它没有写 Actor State 的资格，"
+                "只能进对应的输出块" % (role or "(未声明)")]))
+            continue
+        if not usable:
+            ignored.append(dict(base, reason=[
+                "能力档案不可用（%s）→ 该检查点上没有任何 signal 被验证过，一条 delta 都不产出"
+                % ("；".join(check.get("problems") or []) or "原因未知")]))
+            continue
+        if smap.get(sig) == "active":
+            delta_out.append({
+                "attribute": d.get("target"), "delta": d.get("delta"),
+                "target": d.get("target"),   # 旧键名，前端 applyDeltas 还在读；逐步淘汰
+                "source_signal": sig, "grade": pv.get("grade"), "status": "active",
+                "role": role, "label": d.get("label"),
+                "raw": d.get("raw"), "attribution": d.get("attribution"),
+                "range": d.get("range"),
+                "checkpoint": (profile or {}).get("checkpoint"),
+                "profile_id": (profile or {}).get("profile_id"),
+            })
+        elif smap.get(sig) == "auxiliary":
+            aux_out.append(dict(base, applied=False,
+                                delta_if_enabled=d.get("delta"),
+                                raw=d.get("raw"), attribution=d.get("attribution"),
+                                reason=[
+                                    "grade=%s → auxiliary：只能当合取/修正项，不能单独驱动状态变化。"
+                                    % pv.get("grade"),
+                                    "P2 阶段对它会写状态的量更保守：只登记「若启用是多少」，"
+                                    "不产生数值效果（applied=false）",
+                                ]))
+        else:
+            ignored.append(dict(base, reason=list(pv.get("status_reasons") or
+                                                  ["status=%r，不接入正式链路" % smap.get(sig)])))
+
+    # 档案里 status=disabled / semantic_review 的 signal 若本轮根本没出值，也要列出来 ——
+    # 「因为它没出现所以没被过滤」和「因为它不可用所以没被过滤」是两件事。
+    for name in all_signal_names():
+        ent = roles.get(name) or {}
+        if ent.get("role") != "state_shift":
+            continue
+        if smap.get(name) in (None, "active", "auxiliary"):
+            continue
+        if any(x.get("source_signal") == name for x in ignored):
+            continue
+        pv = ((profile or {}).get("signals") or {}).get(name) or {}
+        ignored.append({"source_signal": name, "attribute": ent.get("target"),
+                        "grade": pv.get("grade"), "role": "state_shift",
+                        "status": smap.get(name), "semantic_zh": ent.get("semantic_zh"),
+                        "reason": list(pv.get("status_reasons") or []) +
+                                  ["本轮该 signal 未产出值，且按档案本来也不可用"]})
+
+    proposal = {
+        "is_proposal": True,
+        "authority": "none",
+        "note": ("state_proposal 是**推演建议**，不是 Actor State 的最终写入值。"
+                 "正式链路应为 Laya Proposal → 后端 Validate → State Transition → Commit；"
+                 "浏览器端 applyDeltas() 只是 Demo 的演示手段，**不是状态权威**。"),
+        "profile": {
+            "checkpoint": check.get("checkpoint"),
+            "profile_id": check.get("profile_id"),
+            "matched": check.get("matched"),
+            "fresh": check.get("fresh"),
+            "code_changed": check.get("code_changed"),
+            "problems": list(check.get("problems") or []),
+            "source_file": check.get("profile_file"),
+            "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        },
+        "delta": delta_out,
+        "auxiliary": aux_out,
+        "ignored_signals": ignored,
+        "gate": {
+            "can_commit_state": bool(delta_out),
+            "n_delta": len(delta_out),
+            "n_auxiliary": len(aux_out),
+            "n_ignored": len(ignored),
+            "why": ("有 %d 条 delta 来自 role=state_shift 且 status=active 的 signal，"
+                    "可以交给 State Transition 层裁决" % len(delta_out)) if delta_out else
+                   ("不产出 delta。" + ("能力档案不可用。" if not usable
+                                      else "该检查点上没有 state_shift 类 signal 达到 active。")),
+        },
+    }
+    bt = _role_block("behavior_tendency", signal_values, profile, usable)
+    sa = _role_block("situation_assessment", signal_values, profile, usable)
+    return proposal, bt, sa
+
+
+def cmd_capability():
+    """Phase3-P2 Task8：从实验产物生成机器可读的 Checkpoint Capability Profile。
+
+    用法：
+        python laya_bridge.py capability                  # tests/runs/ 里出现的所有检查点
+        python laya_bridge.py capability typed-decisions  # 只做指定的
+        python laya_bridge.py capability --check          # 只核对现有档案是否仍与磁盘一致
+
+    ★ 本命令**不跑模型** —— 它只读 tests/runs/*.json，把已经算好的等级整理成档案。
+      所以它是秒级的，可以在每次改动后随手重跑。
+    """
+    argv = sys.argv[2:]
+    only = [a for a in argv if not a.startswith("-")]
+    do_check = "--check" in argv
+
+    runs_by_ck, names_by_ck, run_skipped = _load_run_results()
+    if run_skipped:
+        # ★ 显式列出来：这些文件既没有 model 字段、也不像 signalmetrics 产物，
+        #   所以**没有被算进任何检查点**。不列的话，"少读了一个文件"是看不出来的。
+        print("（以下 %d 个文件没有 model 字段且不似 signalmetrics 产物，未计入任何检查点：%s）"
+              % (len(run_skipped), "、".join(run_skipped)))
+    if not runs_by_ck:
+        print("★ tests/runs/ 里没有任何 <checkpoint>__<run>.json，没有实验数据可依据。")
+        print("  先跑：LAYA_MODEL=<ckpt> python laya_bridge.py signalmetrics")
+        print("  ★ 本命令拒绝在缺实验数据时凭猜测生成档案 —— 那就是「硬写等级」。")
+        return 1
+
+    if do_check:
+        blob = load_capability_profiles(force=True) or {}
+        profs = blob.get("profiles") or {}
+        print("=" * 96)
+        print("能力档案核对（不重新生成，只看现档案与磁盘是否一致）")
+        print("=" * 96)
+        # ★ P1：先报有效资产来源，让「校验读的是哪份资产」有据可查（不含任何密钥）。
+        print("  模型目录   ：%s（存在=%s）" % (MODELS_DIR, MODELS_DIR.is_dir()))
+        print("  冻结译文基线：%s（存在=%s）" % (_XLATE_FROZEN, _XLATE_FROZEN.exists()))
+        print("  运行翻译缓存：%s（存在=%s，只增不参与基线校验）"
+              % (_XLATE_DISK, _XLATE_DISK.exists()))
+        for ck in sorted((profs.keys() if profs else [])) or sorted(runs_by_ck.keys()):
+            prof, check = load_capability_profile(ck)
+            tag = "✅ fresh" if check["fresh"] else "★ 需重新生成"
+            print("  %-18s %s ｜ profile_id=%s ｜ code_changed=%s"
+                  % (ck, tag, (check.get("profile_id") or "")[:12], check["code_changed"]))
+            lec = check.get("line_ending_compat")
+            if lec:
+                print("        · 行尾兼容匹配（%s）；CRLF 文件：%s"
+                      % (lec.get("matched_via"), "、".join(lec.get("crlf_files") or []) or "无"))
+            for x in check["problems"]:
+                print("        · %s" % x)
+        return 0
+
+    # ---- 生成 ----------------------------------------------------------
+    roles = _signal_roles(strict=True)
+    if roles is None:
+        return 2
+
+    ckpts = [c for c in (only or sorted(runs_by_ck.keys())) if c in runs_by_ck]
+    skipped = [c for c in (only or []) if c not in runs_by_ck]
+    for c in skipped:
+        print("⚠ %s 在 tests/runs/ 里没有数据，跳过" % c)
+    if not ckpts:
+        print("★ 没有可生成的检查点。tests/runs/ 里现有：%s" % "、".join(sorted(runs_by_ck.keys())))
+        return 1
+
+    profiles = {}
+    for ck in ckpts:
+        runs_all_ck = runs_by_ck[ck]
+        names_all_ck = names_by_ck.get(ck) or []
+        # ★ 按纪元收敛：只拿「同一次可比较基线」里的 run 去算等级。
+        #   不做这一步时，runs/ 里横跨多次缓存的 run 会被判 inconsistent，
+        #   档案永远不 fresh，状态层一条都不写（见 ERA_PATH 的注释）。
+        runs, names_ck, era_hit, era_note = _filter_runs_to_era(ck, runs_all_ck, names_all_ck)
+        if era_note:
+            print("  [%s] %s" % (ck, era_note))
+        if len(runs) < 3:
+            print("⚠ %s 只有 %d 次运行 —— 档案会记录这个事实，"
+                  "但「跨跑次稳不稳」这一项在它上面是**未验证**的。" % (ck, len(runs)))
+        prof = _build_profile(ck, runs, names_ck, era_ids=era_hit)
+        if prof is None:
+            return 2
+        profiles[ck] = prof
+
+    # ---- 打印 ----------------------------------------------------------
+    print("=" * 104)
+    print("Checkpoint Capability Profile ｜ 由实验产物推导（不跑模型，只读 tests/runs/）")
+    print("★ 等级来自 signalmetrics 的 grade；status 由 _derive_status() 推导；"
+          "policy_override 的条目在下方标 [P]")
+    print("=" * 104)
+    for ck in ckpts:
+        p = profiles[ck]
+        print("\n■ %s ｜ role_in_phase3=%s ｜ %d 次运行 ｜ profile_id=%s"
+              % (ck, p["role_in_phase3"], p["runs"]["n_runs"], p["profile_id"][:16]))
+        print("  role 分布：%s"
+              % " ｜ ".join("%s=%d" % (r, sum(1 for v in p["signals"].values() if v["role"] == r))
+                            for r in _ROLE_NAMES))
+        c = p["counts"]
+        print("  status 分布：active=%d auxiliary=%d disabled=%d semantic_review=%d"
+              % (c.get("active", 0), c.get("auxiliary", 0), c.get("disabled", 0),
+                 c.get("semantic_review", 0)))
+        if not p["evidence"]["consistency"]["consistent"]:
+            print("  ★★ 条件一致性检查未通过：")
+            for x in p["evidence"]["consistency"]["problems"]:
+                print("      · %s" % x)
+        print("  %-15s %-21s %-6s %-6s %-16s %-6s %s"
+              % ("signal", "role", "kind", "grade", "status", "auc", "por"))
+        print("  " + "-" * 100)
+        for s in all_signal_names():
+            v = p["signals"][s]
+            mark = "[P]" if v["status_source"] == "policy_override" else "   "
+            # 只让 active + state_shift 真的能写状态 —— 这是全系统最关键的一条约束
+            wr = "→state" if v["may_write_state"] else ""
+            print("  %-15s %-21s %-6s %-6s %-16s %-6s %-4s %s %s"
+                  % (s, v["role"], v["kind"], v["grade"], v["status"],
+                     ("%.3f" % v["metrics"]["auc_median"])
+                     if v["metrics"]["auc_median"] is not None else "—",
+                     v["portability"].split(" ")[0], mark, wr))
+        print("  ★ 可写 Actor State 的 signal（role=state_shift 且 status=active）：%s"
+              % ("、".join(s for s in all_signal_names() if p["signals"][s]["may_write_state"]) or "无"))
+        print("  ★ 需在换检查点时重新验证的：%s"
+              % ("、".join(s for s in all_signal_names() if p["signals"][s]["revalidate_on_switch"]) or "无"))
+
+    out = {
+        "_readme": ["Phase3-P2 Task8：每个 checkpoint 一份能力档案。",
+                    "由 python laya_bridge.py capability 生成；等级读自 tests/runs/，status 由代码推导。",
+                    "运行时由 load_capability_profile() 按五个哈希核对后才敢用。"],
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "runs_dir": str(TESTS_DIR / "runs"),
+        "index": dict((ck, {"profile_id": profiles[ck]["profile_id"],
+                            "role_in_phase3": profiles[ck]["role_in_phase3"],
+                            "n_runs": profiles[ck]["runs"]["n_runs"],
+                            "counts": profiles[ck]["counts"],
+                            "consistent": profiles[ck]["evidence"]["consistency"]["consistent"]})
+                      for ck in ckpts),
+        "profiles": profiles,
+    }
+    # 合并进旧文件（保留本次没生成的检查点，但仍然逐条记录它的哈希状态由 --check 负责）
+    try:
+        old = load_capability_profiles(force=True)
+        if old and isinstance(old.get("profiles"), dict):
+            merged = dict(old["profiles"])
+            merged.update(profiles)
+            out["profiles"] = merged
+            for ck, ent in (old.get("index") or {}).items():
+                out["index"].setdefault(ck, ent)
+    except Exception:
+        pass
+    CAPABILITY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CAPABILITY_PATH.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("\n已写入 %s（%d 个检查点：%s）"
+          % (CAPABILITY_PATH, len(out["profiles"]), "、".join(sorted(out["profiles"]))))
+    print("运行时核对：python laya_bridge.py capability --check")
+    return 0
+
+
 def cmd_signalmetrics():
     """Phase3 Task6/7：逐 signal 指标 + bootstrap CI + A/B/C/D 分级。
 
@@ -2975,20 +5697,33 @@ def cmd_signalmetrics():
                   if _XLATE_DISK.exists() else None)
 
     if LANG == "en":
+        # ★ P1（2026-09-24）：基准输入的完备性以**冻结基线**为准（与档案校验同源）。
+        #   旧实现查的是可写的 _diag 运行缓存 —— 新 checkout 上它不存在，
+        #   会误报 137/137 缺失（P0 撞到）；反过来只靠运行缓存又会允许
+        #   「基线被换掉但缓存凑齐了」的假通过。现在：基线缺失/缺条目一律拒绝开跑，
+        #   不在线补译、不回落运行缓存凑数 —— 恢复基线是唯一出路。
+        _frozen = _load_frozen_xlate()
         _all = []
         for _k in ("observable", "contextual", "hidden_truth"):
             for _c in (sets.get(_k) or ({}, []))[1]:
                 _all.append(_c["text"])
-        _missing = sorted(set(t for t in _all if t not in cache))
+        if _frozen is None:
+            print("★ 开跑前检查未通过：冻结译文基线不可读（%s）。" % _XLATE_FROZEN)
+            print("  基准输入的英文以冻结基线为准（fail-closed）。")
+            print("  纪律见 tests/assets/README.md；不得用运行缓存或在线补译凑齐条件。")
+            return 2
+        _missing = sorted(set(t for t in _all if t not in _frozen))
         if _missing:
-            print("★ 开跑前检查未通过：%d 条输入不在翻译缓存里，拒绝开跑。" % len(_missing))
-            print("  继续跑的话，「哪些用例被剔除」会取决于运行途中的缓存写入时机 ——")
-            print("  同一组多次运行之间条件就不一致了（这个坑已经踩过一次）。请先预热：")
-            print("      ./.venv-cuda/Scripts/python.exe tests/replication/prewarm_cache.py")
+            print("★ 开跑前检查未通过：%d 条基准输入不在**冻结基线**（%s）里，拒绝开跑。"
+                  % (len(_missing), _XLATE_FROZEN))
+            print("  基线缺失/被换必须先恢复冻结资产（tests/assets/README.md），")
+            print("  不允许靠运行缓存或在线补译凑齐 —— 那会让这批 run 与档案不可比。")
             for _t in _missing[:6]:
                 print("      · %s" % _t[:44])
             return 2
-        print("翻译缓存完备且冻结：%d 条 ｜ sha256=%s" % (len(cache), (_cache_sha or "")[:16]))
+        print("冻结基线完备：%d/%d 条基准输入全部命中（基线共 %d 条）｜ sha256=%s"
+              % (len(set(_all)), len(set(_all)), len(_frozen),
+                 (_sha256_file(_XLATE_FROZEN) or "")[:16]))
 
     def run_one(doc):
         dt, rows, by_name = _run_signals(model, doc, qs)
@@ -3018,10 +5753,13 @@ def cmd_signalmetrics():
     #     1) state 溢出：build_sequence 会做 `st[:room]`（保留左、丢右），而 compact
     #        state 的尾部正是 `message`（玩家这一句）和 `decision_history`。
     #        模型的回答**不是**「它对这个输入的看法」，而是「它对一个被砍过的输入的看法」。
-    #     2) 翻译缓存缺失：_cached_translate 在 translate_to_en 返回空串时**静默回落**
-    #        成中文原文，于是 message 字段变成中文 —— 而 english/typed-decisions 都是
-    #        英文校准的 ModernBERT。实测本机 translate_to_en 现在稳定返回空串（§16），
-    #        所以这一类**不是假设**，是正在发生的事。
+    #     2) 翻译失败/缺失：**2026-09-24 起改为 fail-closed** —— `_cached_translate`
+    #        拿不到英文就直接返回 None（旧行为是静默回落中文原文）。于是
+    #        `player_input_en=None` → message 字段退回中文 —— 而 english 与
+    #        typed-decisions 都是英文校准的 ModernBERT。这一类**不是假设**：
+    #        2026-09-24 撞到 key 失效时，表现为「首次成功、随后失败」，
+    #        随机且间歇，看起来像「模型今天不稳定」。
+    #        ⇒ 剔除 + 单独列为 invalid（与 §15.6「两组不齐」同一处理口径）。
     #   把坏输入留在主表里，得到的就不是「能力对比」，而是「谁被截得更少」的对比。
     #   所以：剔除 + 单独列为 invalid，与 §15.6 的「两组不齐」同一处理口径。
     xcache = cache if isinstance(cache, dict) else {}
@@ -3037,8 +5775,9 @@ def cmd_signalmetrics():
                        "最可能丢掉 message / decision_history"
                        % (b["tokens"] - b["room"], b["room"]))
         if LANG == "en" and text not in xcache:
-            why.append("翻译缓存缺失 → message 字段被填成**中文原文**，"
-                       "模型读不到这句话（translate_to_en 返回空串后静默回落）")
+            why.append("翻译缺失 → message 字段退回**中文原文**，"
+                       "英文校准的模型读不到这句话"
+                       "（fail-closed：_cached_translate 拿不到英文即返回 None，不再静默回填中文）")
         if why:
             invalid.append({"set": cset, "id": cid, "role": role,
                             "tokens": (b or {}).get("tokens"),
@@ -4318,6 +7057,8 @@ def main():
         return cmd_signaltest()
     if len(sys.argv) > 1 and sys.argv[1] == "signalmetrics":
         return cmd_signalmetrics()
+    if len(sys.argv) > 1 and sys.argv[1] == "capability":
+        return cmd_capability()
     if len(sys.argv) > 1 and sys.argv[1] == "ckptcompare":
         return cmd_ckptcompare()
     if len(sys.argv) > 1 and sys.argv[1] == "personatest":
@@ -4356,11 +7097,20 @@ def main():
 
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     srv.daemon_threads = True
+    # ★ P3-D1-R1：用真实监听地址/端口固定受信 origin，/interaction/* 的跨源拒绝才实际生效；
+    #   生产 Provider / 档案身份源 / 运行翻译在任何请求可创建 Core 前配置一次。
+    srv.origin = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        import laya_interaction_http as _ih
+        _ih.configure_real()
+    except Exception as e:
+        sys.stderr.write("（/interaction 生产配置失败：%r；/interaction/* 将 fail-closed）\n" % e)
     url = "http://127.0.0.1:%d" % PORT
     print("\n桥已启动：%s" % url)
     print("  GET  /health    体检（引擎 / Laya API 形状 / 已装预设）")
     print("  GET  /config    读取 narra_config.json")
     print("  GET  /demo      打开演示页（?auto=N 可自动问第 N 句，便于无人值守截图）")
+    print("  GET  /interaction/demo  Interaction 演示页（输入→候选→确认提交，只走 /interaction/*）")
     print("  POST /decide    单轮 NPC Tick：决策信号 → Policy Resolver → 行为候选")
     print("  POST /narrate   按选中的行为生成台词（LLM 或台词池；不传 behavior 会自动先 decide）")
     print("  POST /world     独立 World Tick（低频世界事件，不再混进 /decide）")

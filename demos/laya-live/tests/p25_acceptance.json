@@ -1,0 +1,112 @@
+{
+ "_readme": [
+  "P2.5 验收：trust_shift 是否足以进入 P3。",
+  "判据写在本脚本顶部，不允许看结果后修改。"
+ ],
+ "passed": 14,
+ "failed": 2,
+ "skipped": 0,
+ "gathered": {
+  "G1": {
+   "repeat_ok": {
+    "typed-decisions": true,
+    "english": true
+   },
+   "order_ok": {
+    "typed-decisions": true,
+    "english": true
+   }
+  },
+  "G2": {
+   "per_checkpoint": {
+    "typed-decisions": {
+     "n": 4,
+     "ok": 2,
+     "rate": 0.5,
+     "ids_ok": [
+      "tr_stranger_vs_companion",
+      "tr_lowtrust_vs_hightrust_same_offer"
+     ],
+     "ids_bad": [
+      "tr_kepthistory_vs_brokehistory",
+      "tr_helped_vs_betrayed"
+     ]
+    },
+    "english": {
+     "n": 3,
+     "ok": 2,
+     "rate": 0.6666666666666666,
+     "ids_ok": [
+      "tr_stranger_vs_companion",
+      "tr_lowtrust_vs_hightrust_same_offer"
+     ],
+     "ids_bad": [
+      "tr_helped_vs_betrayed"
+     ]
+    }
+   },
+   "verdict": {
+    "typed-decisions": "conditional",
+    "english": "conditional"
+   }
+  },
+  "G3": {
+   "state": {
+    "typed-decisions": {
+     "n": 2,
+     "ok": 2,
+     "rate": 1.0
+    },
+    "english": {
+     "n": 2,
+     "ok": 2,
+     "rate": 1.0
+    }
+   },
+   "history": {
+    "typed-decisions": {
+     "n": 2,
+     "ok": 0,
+     "rate": 0.0
+    },
+    "english": {
+     "n": 1,
+     "ok": 0,
+     "rate": 0.0
+    }
+   }
+  },
+  "G4": {
+   "n_common": 4,
+   "n_same_sign": 4,
+   "rate": 1.0
+  }
+ },
+ "verdict": "有条件通过",
+ "advice": "trust_shift **不足以整体进入** P3 State Transition；仅在下列范围内可用：state/typed-decisions, state/english。其余场景不得使用，不得因此调模型/调阈值/扩大适用范围。",
+ "axis_ok": [
+  "state/typed-decisions",
+  "state/english"
+ ],
+ "passed_names": [
+  "存在 typed-decisions 的 P2.5 原始结果",
+  "typed-decisions：每条 pair 的 A/B 值均有效",
+  "typed-decisions：config 跑前跑后未变（'True'）",
+  "存在 english 的 P2.5 原始结果",
+  "english：每条 pair 的 A/B 值均有效",
+  "english：config 跑前跑后未变（'True'）",
+  "控制实验至少在一个检查点上可用",
+  "[G1a] 同态重复 3 次极差 = 0（排除运行内抖动）",
+  "[G1b] 反序配对精确反号（排除顺序效应）",
+  "[G2b] 结论不得超出数据：未达到通过线时如实记为不足",
+  "[G3] state 轴至少在一个检查点上正确率 >= 0.75",
+  "[G4] 跨检查点方向一致率 >= 0.75",
+  "[G5] typed-decisions：status 量 trust 的关系轴方向语义正确",
+  "[G5] english：status 量 trust 的关系轴方向语义正确"
+ ],
+ "failed_names": [
+  "[G2] 至少一个检查点的定向正确率达到「通过」线（>=0.75）",
+  "[G3] history 轴至少在一个检查点上正确率 >= 0.75"
+ ],
+ "skipped_names": []
+}

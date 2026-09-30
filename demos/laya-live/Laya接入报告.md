@@ -1857,3 +1857,898 @@ return text, "none"          # ← 中文原文被当成「英文译文」交给
   `trust_shift` 是 P2 的唯一支柱，**再加一个检查点来确认它**是值得的下一步。
 - §15.6 的更正**只对 td/english 在本机、本用例集上成立**；换设备/换用例集需重测。
 
+---
+
+## 17. ★ Phase3 P2：Checkpoint Capability Profile 与 Laya Proposal（2026-09-23/24）
+
+### 17.1 这一轮的定位：不推翻任何已有结论，只把结论变成可执行的约束
+
+P0/P1/P1.5 的结论是**诊断性**的：「哪些 signal 可用」写在了报告的表里。
+P2 要做的是把它变成**结构性**的：「哪些 signal 可用」由每个 checkpoint 一份的
+**能力档案**决定，而档案由实验产物推导，代码只消费档案。
+
+一句话概括这轮的差别：
+
+| | P1.5 之前 | P2 之后 |
+|---|---|---|
+| 能力知识的载体 | 报告里的表格 + 人的记忆 | `tests/capability_profiles.json`（机器可读） |
+| 换 checkpoint | 没人会想起去改代码 | 档案对不上 → **直接拒绝产出状态增量** |
+| 一个 signal 为什么被用了 | 说不清 | 档案里逐条 `status_reasons`，可回溯到 `tests/runs/` |
+| Laya 输出的性质 | 一段「建议」 | `state_proposal`：结构化、带权限边界、`authority=none` |
+
+**Laya 的定位没有变，也不需要变**：它仍然是
+**NPC 状态变化 + 行为倾向的快速推演器**——不是 Evidence/Observation Layer，
+也不是 Actor State 的写入者。这轮只是给「推演结果能不能落地」加了一道可验证的闸门。
+
+### 17.2 Task 8：能力档案是**推导出来的**，不是**写出来的**
+
+```
+./.venv-cuda/Scripts/python.exe laya_bridge.py capability          # 生成（不跑模型，秒级）
+./.venv-cuda/Scripts/python.exe laya_bridge.py capability --check  # 核对现有档案是否仍与磁盘一致
+```
+
+产物：`tests/capability_profiles.json`（索引 + 每 checkpoint 一份完整档案），
+每个 signal 记录 **name / role / checkpoint / grade / status / 语义描述 / 取值范围 / 已验证数据集**，
+以及 `metrics.auc_by_run`、`grade_by_run`、`status_reasons`、`portability`。
+
+**等级从哪来**：全部读 `tests/runs/*.json` 里 `signalmetrics` 已经算好的 `grade`。
+能力档案生成器**不重新定级**——想改判据只能改 `grade_signal()`，
+改在档案层等于偷偷改评分规则（§16.2 的教训：评分规则必须冻结，而且要冻结得**结构上做不到改**）。
+
+**status 推导规则**（写死在 `_derive_status()`，可审计）：
+
+| 序 | 条件 | status | 理由（原文见档案 `status_reasons`） |
+|---|---|---|---|
+| 0 | `capability_policy.override` 点名 | 由 config 指定 | 覆盖是**可见的**（`status_source=policy_override`），不伪装成推导结果 |
+| 1 | `grade=N` | `disabled` | 样本不足：不下结论，同样不接入 |
+| 2 | 3 次运行等级不一致 | `disabled` | 该检查点内自己就不稳，谈不上「已验证的能力」 |
+| 3 | `grade=R` | `semantic_review` | 稳定反向不是「弱」，是方向/语义有问题；不接入，且**禁止静默取反** |
+| 4 | `grade=A` | `active` | CI 下界 >0.50 且 AUC ≥0.70 |
+| 5 | `grade=B` | `auxiliary` | 「可作强提示，上层必须有规则约束」→ 修正项 |
+| 6 | `grade=C` | `auxiliary` | 「只能当合取项，禁止单独定行为」→ 修正项 |
+| 7 | `grade=D` | `disabled` | AUC <0.55，不可用 |
+
+★ **`portability`（跨检查点稳定/特有/反向）刻意不参与降级。**
+档案本身就是**按检查点**生成的：在这个检查点上 grade 是多少就是多少。
+拿另一个检查点的表现来否定当前检查点的结论，等于让 A 条件的数据否定 B 条件的实验。
+`portability` 只写进 `revalidate_on_switch` —— 真正的安全阀是
+**「换检查点必须重新生成档案，哈希对不上时直接拒用」**（见 17.2 末）。
+
+#### 17.2.1 档案必须能自证来源：五类哈希，四硬一软
+
+| 哈希 | 来源 | 对不上时 |
+|---|---|---|
+| `dataset` | `tests/cases/*.json` 逐文件内容哈希 | **硬阻断**：等级是在另一批输入上算的 |
+| `checkpoint` | 模型目录的配置/分词器哈希 + 顶层文件清单（名+大小） | **硬阻断**：检查点本体已变 |
+| `config` | `narra_config.json` | **硬阻断**：signal 定义/问题集可能已变 |
+| `translation_cache` | **实验用例那批文本的译文**哈希 | **硬阻断**：英文侧输入条件已变 |
+| `code` | `laya_bridge.py` | **只提示**（`code_changed`）：代码变了 ≠ 等级变了 |
+
+为什么 `code` 只提示：判据确实在代码里，但「改了代码」和「结论作废」之间还有一步推理，
+把它做成硬阻断会让每次改注释都要求重跑档案，最后一定被人绕过去。
+**硬阻断只留给输入侧**——输入变了，同一份档案描述的就是另一批条件，这没有任何辩解空间。
+
+#### 17.2.2 ★ 本轮自己抓到并修掉的一个假告警
+
+第一版把 `translation_cache` 记成**整个缓存文件**的哈希。问题是这个文件在正常使用中会增长
+（玩家自己敲的每句中文都会被翻译并缓存）。于是「玩过几轮 demo」会被判成
+**「实验条件变了」→ 档案 stale → 状态增量全部停发**。
+
+危险的地方在于它**看起来是对的方向**（宁可严一点），但假告警多了等于没有告警，
+最后所有人都会学会忽略它——这正是 §15.6 那个「跑次波动 0.073」假结论的同一个病根：
+**判据用错了对象，结论就会指向错误的方向**。
+
+改法：哈希**实验真正用到的那批译文**（137 条用例文本 → `case_subset`），
+而不是整个文件。已经验证：
+- 往缓存里加一条无关的句子 → 仍然 `fresh`（不再假告警）；
+- 删掉缓存文件 / 改掉用例译文 → 立刻 stale 并说明「缺 N/M 条」。
+
+### 17.3 typed-decisions 档案（Phase3 生产候选）
+
+`profile_id = f77f7f06ba82fd2a…` ｜ 3 次运行 ｜
+status 分布 **active 3 · auxiliary 9 · disabled 2 · semantic_review 1**
+
+| signal | role | kind | grade | AUC | 上下文定向Δ中位 | status | 跨检查点 | 换检查点需重验 |
+|---|---|---|---|---|---|---|---|---|
+| hostility | behavior_tendency | prob | C | 0.665 | +0.025 | auxiliary | ① 稳定 | |
+| cooperation | behavior_tendency | prob | C | 0.706 | +0.006 | auxiliary | ① 稳定 | |
+| withdraw | behavior_tendency | prob | C | 0.571 | −0.003 | auxiliary | ② 特有 | ✔ |
+| confront | behavior_tendency | prob | C | 0.664 | +0.076 | auxiliary | ② 特有 | ✔ |
+| disclose | behavior_tendency | prob | D | 0.464 | — | **disabled** ［P］ | ② 特有 | ✔ |
+| investigate | behavior_tendency | level | R | 0.895 | **−0.151** | **semantic_review** ［P］ | ③ 反向 | ✔ |
+| trust | situation_assessment | prob | C | 0.716 | +0.020 | auxiliary | ② 特有 | ✔ |
+| doubt | situation_assessment | prob | C | 0.618 | +0.013 | auxiliary | ① 稳定 | |
+| danger | situation_assessment | prob | D | 0.576 | −0.006 | **disabled** | ① 稳定 | |
+| **trust_shift** | state_shift | level | **A** | **0.827** | — | **active → 写状态** | ① 稳定 | |
+| respect_shift | state_shift | level | C | 0.615 | — | auxiliary | ① 稳定 | |
+| **doubt_shift** | state_shift | level | **A** | **0.847** | — | **active → 写状态** | ② 特有 | ✔ |
+| **fondness_shift** | state_shift | level | **A** | **0.790** | — | **active → 写状态** | ② 特有 | ✔ |
+| alert_shift | state_shift | level | C | 0.688 | — | auxiliary | ② 特有 | ✔ |
+| goal_shift | state_shift | level | C | 0.590 | — | auxiliary | ② 特有 | ✔ |
+
+［P］= `status_source=policy_override`（`disclose`、`investigate` 两条，理由写在
+`narra_config.json` 的 `capability_policy.override` 里）。
+
+**可写 Actor State 的三个**：`trust_shift`（跨检查点稳定）、`doubt_shift`、`fondness_shift`（都标了需重验）。
+按提示词，**`trust_shift` 是第一个验证对象**——它是唯一跨检查点都是 A 的，
+拿它去跑 State Transition 的端到端验证，能把「验证对象不可靠」这个变量排除掉。
+
+### 17.4 english 档案（能力对照，不是生产候选）
+
+`profile_id = 3b80be9014d6…` ｜ status 分布 **active 1 · auxiliary 6 · disabled 7 · semantic_review 1**
+
+| signal | grade | AUC | status | 与 td 的差异 |
+|---|---|---|---|---|
+| hostility | C | 0.635 | auxiliary | 同 |
+| cooperation | C | 0.772 | auxiliary | 同 |
+| withdraw | D | 0.505 | **disabled** | C→D 掉级；但上下文定向Δ +0.280（td 是 −0.003）——**判别力更差、上下文响应更强** |
+| confront | D | 0.414 | **disabled** | C→D |
+| disclose | **A** | **0.889** | **disabled**［P］ | ★ D→A，符号翻转：只看等级会判成 active |
+| investigate | R | 0.690 | semantic_review［P］ | 反向加剧（定向Δ −0.151 → **−0.410**） |
+| trust | B | 0.778 | auxiliary | C→B |
+| doubt | C | 0.614 | auxiliary | 同 |
+| danger | D | 0.447 | **disabled** | 同 |
+| **trust_shift** | **A** | **0.807** | **active → 写状态** | ★ 唯一跨检查点 A |
+| respect_shift | C | 0.669 | auxiliary | 同 |
+| doubt_shift | **D** | **0.407** | **disabled** | ★ A→D |
+| fondness_shift | C | 0.724 | auxiliary | A→C |
+| alert_shift | D | 0.500 | **disabled** | C→D |
+| goal_shift | D | 0.450 | **disabled** | C→D |
+
+**两台的差异本身就量化了「不能透明互换」**：
+
+- td 可写状态：`trust_shift`、`doubt_shift`、`fondness_shift`（3 个）
+- english 可写状态：`trust_shift`（1 个）
+- 交集只有 1 个；`doubt_shift` / `fondness_shift` 在 english 上必须停用。
+
+### 17.5 Task 9：Signal Role 分层（`narra_config.json` → `signals.roles`）
+
+| role | 个数 | signal | 语义 |
+|---|---|---|---|
+| `state_shift` | 6 | trust_shift / respect_shift / doubt_shift / fondness_shift / alert_shift / goal_shift | 写 Actor State 的量，`target` 见 `state_shift.paths` |
+| `behavior_tendency` | 6 | hostility / cooperation / withdraw / confront / disclose / investigate | 影响行为候选的排序/倾向，**不写状态** |
+| `situation_assessment` | 3 | trust / doubt / danger | 对角色的当下情境评估，**永不单独写状态** |
+
+★ **role 与 status 是两件正交的事，缺一不可**：
+role 决定一个信号**可以流向哪里**（人在 config 里声明，稳定）；
+status 决定它**够不够格真的流过去**（从实验结果推导，跟着检查点走）。
+所以 `role=state_shift` + `status=disabled` = 不写状态；
+`status=active` + `role=behavior_tendency` = 也不能去写状态。
+
+★ **`signals.roles` 必须覆盖全部 15 个 signal，缺一个就报错**（`_signal_roles(strict=True)` 返回 `None`，
+`capability` 命令 `return 2`）。理由：「忘了分层」如果会静默退回默认 role，
+一个写错 role 的 signal 就会以正确的外表出现在错误的位置上——这类错误验收时看不出来。
+
+### 17.6 Task 10：统一 Proposal Schema
+
+`decide()` 的输出新增（旧字段保留但**语义已变**）：
+
+| 字段 | 性质 | 说明 |
+|---|---|---|
+| `state_proposal` | 建议 | `delta[]` + `auxiliary[]` + `ignored_signals[]` + `gate` + `profile` |
+| `behavior_tendency` | 建议 | 6 个行为倾向信号的值 + role/status/grade + `consumable` |
+| `situation_assessment` | 建议 | 3 个情境评估信号，同上 |
+| `checkpoint_profile` | 元信息 | 本轮用的是哪份档案、`profile_id`、`fresh`、`problems` |
+| `capability_summary` | 元信息 | 全 15 个 signal 的 status 分布、可写状态清单、`by_role` |
+| `signal_table` | 元信息 | 面板信号 + role/status/grade（前端不用自己 join 三份数据） |
+| `proposed_deltas` / `deltas` | **旧字段，语义已变** | 现在等于 `state_proposal.delta`（**已过滤**） |
+| `raw_deltas_all_signals` | 审计 | 未过滤的全量增量，**仅供审计，不许拿去写状态** |
+
+一条 delta 的形状：
+
+```json
+{"attribute": "relationship.trust", "delta": -1.764,
+ "source_signal": "trust_shift", "grade": "A", "status": "active",
+ "role": "state_shift", "raw": -1.534, "attribution": 1.15, "range": [0, 100],
+ "checkpoint": "typed-decisions", "profile_id": "f77f7f06…"}
+```
+
+**三道过滤**（`build_state_proposal()`，缺一不可）：
+
+1. `role == state_shift` —— 只有这一层能写状态。`behavior_tendency` / `situation_assessment`
+   无论等级多高都没有产出 delta 的资格。
+2. `status == active` —— `auxiliary` 只能当合取/修正项。**P2 阶段对它会写状态的量更严**：
+   只登记「若启用会产生多少」（`applied: false`），**不产生任何数值效果**。
+   这比提示词的要求更保守一格，理由是会写状态的量一旦算错是**不可逆**的
+   （对比：行为选错，下一轮还能改）。
+3. 档案自身可用 —— 缺失/哈希不符 → 一条 delta 都不产出。
+
+**被过滤掉的必须逐条留 reason**：`ignored_signals[]` 里每条都有 `source_signal / status / grade / reason[]`。
+只报「忽略了 N 个」不算达标——验收时要能说出是哪 N 个、为什么。
+`n_active + n_auxiliary + n_ignored` 必须等于原始增量条数（`tests/p2_acceptance.py` 断言了这条恒等式）。
+
+#### 17.6.1 ★ 与提示词的一处口径冲突（已记录，未擅自裁决）
+
+提示词把 `doubt` 归入 `situation_assessment`，而 `state_proposal` 的字段示例里也出现了 `doubt`。
+但状态侧真正写 `relationship.doubt` 的是 **`doubt_shift`**（`state_shift`），
+`doubt` 是 `prob` 型、在 `state_shift.paths` 里**没有条目**。
+
+处理方式：**按提示词的显式清单把 `doubt` 标为 `situation_assessment`**，
+并在 `narra_config.json` 里加 `_collision_note` 说明「同名不同义」；
+**没有**为了凑示例而给 `doubt` 造一条通往 `relationship.doubt` 的路径——
+那会绕过 `doubt_shift` 的档案状态，等于用配置改动推翻实验结论。
+
+### 17.7 ★ 为什么 checkpoint 不能透明互换（deliverable 7）
+
+三段可核对的证据，而不是一句「因为能力不同」：
+
+1. **能力集合不同**：15 个 signal 里 8 个等级变化、1 个稳定反向，只有 `trust_shift` 跨检查点都是 A。
+   换检查点后「可写 Actor State 的 signal」从 3 个变成 1 个。
+2. **存在符号相反的 signal**：`disclose` td 0.464(D) → english 0.889(A)；
+   `doubt_shift` td 0.847(A) → english 0.407(D)。
+   **不存在一个对所有检查点都正确的阈值或方向**——这类 signal 一旦接进行为控制，
+   换检查点后行为会朝相反方向走，而且不会有任何报错。
+3. **同一 signal 的两种能力会分叉**：`withdraw` 在 english 上判别力掉到 D(0.505)，
+   上下文定向Δ 却是 +0.280（td 是 −0.003）。
+   说明「能不能分开两类输入」和「会不会随前文变化」是两个独立的维度，
+   一个检查点可以在一维上很弱、另一维上很强——所以「这台机器上能不能用上下文」
+   必须**先选定检查点再谈**。
+
+因此本系统的立场是：**每个 checkpoint 都是一个经过版本化验证的推演组件**，
+而不是「同一个模型的三种说法」。工程上的落地就是 17.2 的哈希核对：
+换检查点 → 档案对不上 → 拒绝产出状态增量 → 必须先跑 `signalmetrics` 再跑 `capability`。
+
+### 17.8 验收问题 A–F（可执行答案：`tests/p2_acceptance.py`，54 PASS / 0 FAIL）
+
+```
+./.venv-cuda/Scripts/python.exe tests/p2_acceptance.py --json   # 落盘 tests/p2_acceptance.json
+```
+
+| | 问题 | 答案 | 证据（断言级） |
+|---|---|---|---|
+| **A** | 当前在跑哪个 checkpoint？ | `typed-decisions`（`production_candidate`） | `checkpoint_profile.checkpoint == ENGINE.model_name`、`matched=true`、`fresh=true` |
+| **B** | 哪些 signal 是 active / auxiliary / disabled / semantic_review？ | active 3（trust_shift / doubt_shift / fondness_shift）· auxiliary 9 · disabled 2（disclose / danger）· semantic_review 1（investigate） | 档案覆盖 15/15、status 个数合计 = 15、**每个都附非空理由**、`status_source` 只有 derived / policy_override |
+| **C** | 一个 signal 为什么能进 State Transition？ | 因为它在**这个检查点上**实测 `role=state_shift` + `grade=A` + `status=active` | 每条 delta 都能追到 `grade_by_run`（如 trust_shift `['A','A','A']`）与 AUC 中位 0.8267；未进的三类各带 reason |
+| **D** | 换 checkpoint 时系统知道能力档案变了吗？ | 知道：未登记检查点直接拒用；输入哈希不符判 stale | `load_capability_profile("multilingual")` → `None` + 原因；0 条 delta；`gate.can_commit_state=false`；用例集变化 → stale，复原 → fresh |
+| **E** | Laya 的输出仍然只是 Proposal 吗？ | 是 | `is_proposal=true`；`authority="none"`；无 `committed/actor_state/write` 字样；过滤过程不修改原始增量对象 |
+| **F** | 不可靠的 signal 会被自动忽略吗？ | 会 | active/auxiliary/被拦下三个集合与档案逐一相等；反向信号既不进 delta 也不进 auxiliary（**禁止静默取反**）且 status=semantic_review；`disabled`/`semantic_review` 一律 `consumable=false` |
+
+### 17.9 本轮**没**做、且不能声称做了的
+
+- **没有**接 Narraverse Runtime；**没有**改主项目 Actor Schema；**没有**新建 Laya Agent。
+- **没有**碰 Master Library；**没有**做长期 Personality 成长；**没有**做 World Simulation。
+- **没有**美化 UI（Demo 只是把该显示的字段显示出来）；
+  **没有**做动态切检查点——切换必须离线重跑 `signalmetrics` + `capability`。
+- **没有**把任何实验阈值写成生产阈值：`metrics.best_threshold_median` 只是统计输出，
+  并在档案里显式标了 `best_threshold_is_statistical_only: true`。
+- **没有**重训/微调 Laya；**没有**动 P0 的歧义机制（歧义阈值仍未重新校准，见 §14）。
+- `behavior_tendency` / `situation_assessment` 两块**只给值、不判读**（`threshold_applied: false`）——
+  阈值属于 Policy Resolver。让推演层「顺手判一下」，等于把一处没标定的判据藏进推演层，
+  以后没人能说清某个行为到底是哪条规则定的。
+- 档案的 `code_changed` 目前是 `False`，但**任何对 `laya_bridge.py` 的改动都会让它变 True**；
+  这是提示而非故障，重跑一次 `capability` 即可。
+
+### 17.10 Phase 3 最终设计原则（原文，已写进本文档）
+
+> **Narraverse 不要求所有 Laya checkpoint 具备完全相同的能力。
+> 每个 checkpoint 都是一个经过版本化验证的推演组件；
+> Laya 可以推演 NPC 的状态与行为发展，
+> 但只有该 checkpoint 已验证的能力才能进入 State Transition。**
+
+对应的实现契约（每条都能在代码里指出位置）：
+
+1. 能力知识不写在提示词里，也不写在报告里——由 `laya_bridge.py capability` 从 `tests/runs/` 推导，
+   产物 `tests/capability_profiles.json` 可被机器读取（`load_capability_profile()`）。
+2. 只有 `role=state_shift` 且 `status=active` 的 signal 产生 `state_proposal.delta`（`build_state_proposal()`）。
+3. 档案与实际输入不符时**拒绝产出**，而不是退回「全都能用」（`load_capability_profile()` 返回 `None`）。
+4. Laya 的输出只有建议权：`is_proposal=true`、`authority="none"`；
+   写入属于 Narraverse 的 State Transition 层。
+
+**P2 到此为止，不自动进入 P3。** 下一步需要先完成：
+`trust_shift` 的 State Transition 端到端验证（按提示词，它是第一个验证对象）。
+
+
+---
+
+## 18. ★ Phase3 P2.5：`trust_shift` 的上下文敏感性（2026-09-24）
+
+### 18.1 这一轮只问一个问题
+
+P2 结束时留下一个**没人测过的假设**：`trust_shift` 是唯一跨检查点稳定的 A 级 signal
+（td 0.827 / en 0.807），被指定为 P3 State Transition 的第一个验证对象。
+但「它能区分不同句子」和「它会随 NPC 已有的关系和历史合理变化」是**两件事**。
+
+查 `tests/ckpt_replication.json` 可确认：`rows.trust_shift.td.ctx_signed_med` /
+`ctx_sign_rate` 全是 `null`、`ctx_grades` 为空 —— **现有 48 条 contextual 用例里，
+没有一条断言过 `trust_shift` 的上下文行为**。所以「它对上下文不敏感」这个可能性
+从来没有被排除，不能拿「P1 里判别力 A 级」去外推。
+
+本轮只回答：**它是否能随 Actor 已有关系与历史产生方向合理、可复现的变化。**
+
+### 18.2 实验设计（三条不可让步的约束）
+
+| 约束 | 落实方式 |
+|---|---|
+| 同一 pair 内玩家台词**逐字相同** | 每条 pair 只改 `relationship` / `decision_history`，`text` 完全相同 |
+| 预期方向**不得依赖 NPC 看不到的真相** | 每条 pair 的 `why` 都必须能从「NPC 已知的东西」推到方向，写进 `tests/cases/trust_context.json` |
+| **不新增第三种上下文通道** | 只用 state 里既有的两条通道（见下） |
+
+两条既有通道，先单变量、再交互：
+
+| 轴 | 改的字段 | 语义 |
+|---|---|---|
+| `state` | `relationship.trust` 等 | **当前状态**：NPC 现在对这个人的信任底色 |
+| `history` | `decision_history` | **历史证据**：近期实际发生过什么 |
+| `both` | 两者同时改 | 2×2 交互，只用于解释机制，不单独判通过 |
+
+样例（`tr_stranger_vs_companion`）：同一句「我把货放在城外的旧磨坊了，你自己去取吧。」
+- A 态 trust=15（陌生人）：刚认识的人让你独自去城外取不明货物，是可回避的风险敞口 → 应降。
+- B 态 trust=85（长期同伴）：只是常规交接，且体现玩家在避免把 NPC 暴露给城里的耳目 → 应升。
+- 两态都不需要 NPC 知道货物是什么。
+
+### 18.3 ★ 先排除「是我自己的实验有偏」，再解释结果
+
+第一轮跑完，typed-decisions 上 **6/6 个 pair 的 Δ 全为正**（+0.046~+0.212），
+符号与语义方向无关。这种「整齐的同号」有两种可能，**不加控制实验就无法区分**：
+
+- (a) 模型真对上下文敏感，但方向错 → 模型问题；
+- (b) 我的 A→B 调用顺序本身带来正向漂移 → **我自己的实验设计问题**。
+
+把 (b) 报成 (a) 就是把自己的 bug 写成别人的缺陷。所以先跑 `tests/replication/p25_control.py`：
+
+| 控制项 | 结果 | 排除了什么 |
+|---|---|---|
+| 同一 state 连跑 3 次 | 4 组全部极差 **0.0000**（两个检查点都是） | 运行内抖动；同时**再次确认模型 deterministic**（呼应 §16 的方法论更正） |
+| 反序配对（先 B 后 A） | Δ 精确反号（td +0.0954 / −0.0954；en +0.0114 / −0.0114） | **顺序效应**。Δ 确实来自 A/B 两态本身 |
+
+②是关键：反序后 Δ 符号精确翻转，说明**不是「后跑的更高」**。
+于是第一轮那些全正的 Δ 是**真实的状态差异**，可以解释。
+
+### 18.4 ★ 结果：两条轴的表现完全分化
+
+`tests/p25_acceptance.py`（判据写在脚本顶部，不允许看结果后再改）：
+
+| 轴 | typed-decisions | english |
+|---|---|---|
+| `state`（改 `relationship.trust`） | **2/2 = 100%** | **2/2 = 100%** |
+| `history`（改 `decision_history`） | **0/2 = 0%** | **0/1 = 0%** |
+| 全部 flip pair | 2/4 = 50%（有条件） | 2/3 = 67%（有条件） |
+| 跨检查点方向一致性 | **4/4 = 100%**（全部同号） | |
+
+不是「有的成立有的不成立」的噪声，而是**一条轴完全成立、另一条轴完全反号**。
+
+`state` 轴的实测（td，同历史、只改 trust）：
+
+```
+trust=10 → 2.1680   trust=30 → 2.2024   trust=50 → 2.1781
+trust=70 → 2.2193   trust=90 → 2.1937      全跨度 0.0513（噪声底 0.05）
+```
+
+`history` 轴的实测（td，同 trust=55、只改 dh 内容）：
+
+```
+dh=empty    (1条) → 2.2436
+dh=helped   (2条) → 2.2307
+dh=betrayed (2条) → 2.3253     ← 期望最低，实测最高
+dh=helped_x3(6条) → 2.1959
+```
+
+**背叛史让 `trust_shift` 变高**，与语义预期相反，而且在两个检查点上都如此
+（en：`betrayed` 2.4034 > `helped` 2.3442 > `empty` 2.2249）。
+
+### 18.5 ★ 归因：不是「模型读不到上下文」，而是「问题问的是变化量」
+
+`history` 轴反号需要一个解释，否则容易被写成「模型坏了」。`tests/replication/p25_attribution.py`
+用同一个句子搭四组场景，把**变化量**与**状态量**并排比：
+
+| 场景 | `trust_shift`（变化量） | `trust`（状态量，noul） |
+|---|---|---|
+| 低信任 + 无史 | 2.180 | 0.384 |
+| 高信任 + 无史 | 2.275 | **0.415** ↑ 关系轴方向正确 |
+| 中信任 + 帮助史 | 2.231 | 0.376 |
+| 中信任 + 背叛史 | 2.325 | 0.402 |
+
+看问句措辞就明白了：
+
+```
+signal_trust (noul)  : "does `npc` **currently** trust the player?"   ← 状态量
+trust_shift  (score) : "How does `message` **change** the trust ..."  ← 变化量
+```
+
+**状态量 `trust` 的关系轴方向在两个检查点上都是正确的**（en：0.290 → 0.325）。
+也就是说模型**能**读到 `relationship`。而一个真正在问「这句话带来多少变化」的问题，
+其答案**本来就该由这句话主导**，上下文只起二阶作用。
+
+所以 `history` 轴反号的准确写法是：**`trust_shift` 作为变化量，不承担
+「随历史证据改变符号」的验收**。把它当状态量来要求，是我在 18.2 设计时的口径错误 ——
+这一条要如实记下来，因为它意味着**下一轮不能再用同样的判据去测别的 `*_shift`**。
+
+### 18.6 与既有证据的一致性（不是孤例）
+
+已有的 48 条 contextual 组（167 个断言）里，`history` 轴的定向正确率本来就普遍偏低：
+
+| signal | td | en |
+|---|---|---|
+| hostility | 68.2% | 72.7% |
+| cooperation | 58.8% | 58.8% |
+| **trust** | **56.3%** | 75.0% |
+| **doubt** | 64.0% | **48.0%** |
+| danger | 50.0% | 90.0% |
+
+`trust` 在 td 上 56.3%、`doubt` 在 en 上 48.0% —— **`decision_history` 对状态量的影响
+在更早的实验里就已经很弱且跨检查点不稳定**。P2.5 的结论与它互相印证，不是新出现的异常。
+
+### 18.7 本轮**没**做、且不能声称做了的
+
+- **没改** `narra_config.json` 的问题定义、评分规则、阈值；**没改** capability grading；
+  **没修模型**、**没调阈值**、**没重训**。全部改动只新增了用例集与实验脚本。
+- **没**把 `state` 轴的成立外推到 `history` 轴，也**没**把它外推到其它 `*_shift`。
+- **没**把任何一态的实验值写成生产阈值。
+- `english` 上 `tr_kepthistory_vs_brokehistory` / `tr_firstpromise_vs_keptmany`
+  因 **state 溢出**（room=319，长 `decision_history` 撑爆）被剔除 —— 这两个恰好都是
+  `history` 轴，所以 en 的 history 轴只剩 1 个有效样本。**这不足以判定**，
+  如实记为样本不足，而不是当作「0%」的强证据。
+- **没**验证 `relationship` 的其它字段（respect / doubt / reliance）是否同样被读到。
+
+### 18.8 结论：**不足以**让 `trust_shift` 整体进入 P3 State Transition
+
+按 18.2 的预设判据（**有条件通过**）：
+
+| 可用范围 | 不可用范围 |
+|---|---|
+| `state` 轴（`relationship.trust`）上的上下文敏感：两检查点均 100% 方向正确、跨检查点 100% 同号 | `history` 轴（`decision_history` 内容）：两检查点均 0% 方向正确；en 侧样本不足 |
+| 以 `relationship` 当前值为条件的 State Transition | 以「近期发生过什么」为条件的 State Transition；**不得**据此调整模型或阈值 |
+
+**因此 P3 第一项（`trust_shift` Proposal → Validate → Transition → Commit）不在本轮开始**，
+留给下一步决定：是先解决 `decision_history` 的读取问题，还是先只按 `state` 轴起步。
+
+
+
+---
+
+## 19. ★ Phase3 P3 第一阶段：`trust_shift` 的最小闭环（2026-09-24）
+
+### 19.1 目标口径被**用户主动下调**了，这是对的
+
+P2.5 的结论是「`trust_shift` 在 `state` 轴有条件通过」，但 P3 没有按「继续补实验直到
+理论完备」推进。用户明确改口径：
+
+> 本项目不是企业级生产系统，本阶段目标改为「正常游玩体验稳定，没有重大明显 Bug」，
+> 不要为了理论完备继续扩大实验。
+
+这条口径改变直接决定了本轮的形态：**不做大型矩阵、不做统计证明、不修 `decision_history`**。
+判据从「定向正确率是否达 0.75」换成「连续玩几轮关系会不会自然变化、会不会突然跳变、
+多角色会不会串线」。这是本轮所有取舍的依据，先写在最前面。
+
+### 19.2 补上的不是模型能力，是一个**架构缺失**
+
+P3 之前整条链路是**无状态**的：`/decide` 从 payload 里读 `actor`，算完给一份
+`state_proposal`，然后**忘掉**。下一轮又是原来那个 `relationship.trust = 60`。
+
+这意味着一件被忽略的事：**「连续交互让关系变化」在架构上根本不可能发生**，
+与模型好坏无关。P2 那句
+「正式链路应为 Laya Proposal → 后端 Validate → State Transition → Commit」
+在这之前一直只是注释里的规划 —— 没有任何一行代码在执行 Commit。
+
+所以本轮新增的全部内容，本质是补上这个缺失，而不是提升模型。
+
+### 19.3 State Transition v1：刻意保持极简
+
+`narra_config.json` 新增 `state_shift.transition` 段：
+
+```json
+"transition": {
+  "per_turn_max": {"default": 12, "trust_shift": 12, "respect_shift": 10, "doubt_shift": 10},
+  "per_turn_min": {"default": -8, "trust_shift": -12, "respect_shift": -10, "doubt_shift": -10},
+  "enabled": true,
+  "write_status": ["active"],
+  "commit_when": {"behavior_is_null": "skip", "ambiguous": "skip", "awaiting_upstream": "skip"}
+}
+```
+
+核心只有一行：
+
+```
+final_delta = clamp(proposal, per_turn_min, per_turn_max)
+new_value   = clamp(current + final_delta, range[0], range[1])
+```
+
+四条设计决定，都是**为了不制造新的假交接**：
+
+| 决定 | 理由 |
+|---|---|
+| 范围**复用** `state_shift.paths.*.range`（`relationship.trust` 就是 `[0,100]`） | 不新建第二套格式。范围只有一处定义，读不出来就**拒绝写**，不猜 |
+| 单轮上限**不是**分数上限（0~100 的字段单轮最多 ±12） | 这是「自然感」的结构来源：从 50 涨到 80 至少要 3 轮，一句话打不满 |
+| 顺序是 **先截单轮上限，再截合法区间** | 反过来会漏掉单轮限制。两者只在接近边界时才有差别，而那正是最容易出现「最后一句话把关系推满」的场景 |
+| 只有 `status == active` 能写 | P2 已把「谁能写」交给能力档案裁决，P3 只是**尊重**那个裁决，不在这里重新定级 |
+
+`commit` 返回四件套 `old / proposal / final_delta / new_value`，另加 `clamped_by`
+说明被哪一层截住 —— 调试时区分「模型只给了 3」和「模型给了 30 被截成 12」很关键。
+
+### 19.4 歧义轮为什么不写状态
+
+`decision.behavior_is_null`（歧义 / 未给行为）时整轮**不 commit 状态**。
+
+理由：状态变化本身就是一种**事实认定**，而歧义轮的事实认定权已经交给上游 Story / Director。
+先写状态、再等上游否决，会造成「**被否决的轮次却留下了关系变化**」——
+这正是 P2 修掉的那类假交接（旧实现在 `/decide` 里直接写历史），不能从状态层再开一个口子。
+
+### 19.5 新增的三个接口
+
+| 接口 | 用途 |
+|---|---|
+| `POST /turn` | 一步走完闭环：`decide`（含 Transition + Commit）→ 立刻 commit 历史。语义＝「这轮确定发生了」。体验测试走这条 |
+| `GET /state` | 查某桶的 Actor State 与最近若干轮 commit 审计。没有它，「状态有没有变化」只能靠再跑一轮推断，而那种推断分不清「没变」和「变了但没接进输入」 |
+| `/reset` 扩展 | 一并清 Actor State。只清一个会造出「历史清了但关系还在 82」的拧巴状态 |
+
+### 19.5b ★ 本轮**真正卡住**的地方：能力档案基线失效
+
+第一次跑闭环，`state_commits` 全部为空，`trust` 一直是 60。看起来像「状态层没接上」。
+实际原因是**门禁在按设计工作**：
+
+```
+problems: ['用例集已变（dataset sha 不符）→ 等级是在另一批输入上算的',
+           'narra_config.json 已变（config sha 不符）→ signal 定义可能已变']
+```
+
+逐项核对（这是关键的一步，不是猜测）：
+
+| 哈希 | 档案记录 | 当前磁盘 | 结论 |
+|---|---|---|---|
+| dataset | `71507e95…`（3 个文件） | `0ff14755…`（4 个文件，多了 P2.5 的 `trust_context.json`） | **变了** |
+| config | `6215e4b2…` | `9c574eb3…`（多了 P3 的 `transition` 段） | **变了** |
+| checkpoint | `ac57624e…` | `ac57624e…` | 未变 ✅ |
+| 用例译文子集 | `6e7eda39…` | `6e7eda39…` | 未变 ✅ |
+
+也就是说：**这两个哈希不是被外部改动弄脏的，而是被 P2.5 和 P3 自己弄脏的**。
+`_dataset_fingerprint()` 对 `tests/cases/*.json` 做 glob，所以**新增一个文件就换基线**。
+
+这里有一个真实的取舍，我选择**不改代码**：
+
+- `trust_shift` 的等级来自 `observable.json`（判别力），而 `observable.json` **逐字节未变**，
+  所以「等级会不会变」本来就可以先验地断言不会；
+- 但**走捷径就等于把未验证的能力当已验证用** —— 那是 P2 明确列为最危险默认值的东西；
+- 代价可接受：GPU 上两个检查点各重跑一次 `signalmetrics`，实际耗时约 2 分钟/检查点。
+
+**重跑结果：等级逐项复现，一个都没变。** `typed-decisions` 的 `trust_shift` / `doubt_shift` /
+`fondness_shift` 仍是 A、`respect_shift` / `alert_shift` / `goal_shift` 仍是 C；
+四个 run（原 3 次 + 新 1 次）的 `disc_grades` 全是 `['A','A','A','A']`，`unstable=False`。
+
+★ 这反而是**比原来更强的证据**：原来的「3 次一致」是同一批代码的重复，
+现在的「4 次一致」跨越了 P2.5 + P3 两次配置改动 —— 说明这几条等级对上述改动**不敏感**，
+而这正是「等级是检查点的属性、不是环境的属性」的正面证据。
+
+### 19.5c 顺带修掉一个潜伏的静默错配（`_load_run_results`）
+
+核对 `tests/runs/` 时发现：P2.5 的产物 `trust_context__typed-decisions.json`
+被旧实现用 `stem.rsplit("__", 1)` 解析成 **检查点=`trust_context`**、run=`typed-decisions`，
+于是 runs 目录里凭空多出一个**不存在的检查点 `trust_context`**，而且**没有任何报错**。
+
+后果是具体的：如果当时跑 `capability`，它会拿两份 P2.5 的 trust 实验数据去算一个
+虚构检查点的等级，**产出一份看起来完全正常的错误档案**。
+
+修法不是「特判这一个文件名」，而是**改用文件内的 `model` 字段判定**：
+文件名是人手写的、可以含 `__`、可以改；`model` 是写文件时代码填的，与那次实际加载的
+检查点一一对应。文件名解析降级为兜底，且解析不出的文件**显式列出并跳过**，不猜。
+
+修复后验证：`trust_context` 幽灵检查点消失，两份 P2.5 文件被显式列为「未计入」。
+同类问题还有第二处 —— `prewarm_cache.py` 扫 `tests/cases/*.json` 时只认 `cases[].text`
+一种形状，把 P3 用 `scenarios[].lines[]` 写的 15 条台词**静默漏掉**，还打印
+「额外用例文件补入 6 条」+「0 条缺缓存」这种看起来一切正常的输出。
+两处都改成了**结构无关的收集 + 收集不到就告警**。
+
+### 19.6 四类最小体验测试（`tests/p3_experience.py`）
+
+走的是 `B.decide()` **真路径**，不绕过状态层 —— 否则测的是另一个系统。
+判据是体验口径，刻意互相牵制：
+
+| 场景 | 判据 | 为什么必须这样组合 |
+|---|---|---|
+| E1 连续 5 轮正向 | 总体上升 **且** 单轮不超上限 **且** 逐轮累积（≥2 轮正向变化） | 只判「上升」，一个把所有输入都判极正的模型也能满分；只判「不暴涨」，一个永不变的模型也能满分 |
+| E2 连续 5 轮负向 | 总体下降 | 与 E1 成对，防止「整体上偏」这种单向偏差 |
+| E3 连续 5 轮中性 | 累计漂移 ≤ min(E1累计, E2累计) | 中性寒暄不该推走关系。门槛**刻意宽松**，本轮只抓「中性聊天把关系推走一大截」 |
+| E4 两 NPC × 两 session 交替 | A 升 B 降且各自保留；同桶重入从自己的值继续 | 「串线」在单桶测试里看不出来 —— 必须有两个方向相反的桶才暴露 |
+
+### 19.6b ★ 实测结果（两个检查点各跑一遍）
+
+`tests/p3_experience.py` 走 `B.decide()` 真路径，2026-09-24 在 GPU（RTX 4060 Laptop）上跑，
+结果文件 `tests/runs/p3_experience__<ckpt>.json`：
+
+| 检查点 | 通过 | E1 总体上升 | E1b 单轮最大 | E2 总体下降 | E3 中性漂移 | E4 分桶 |
+|---|---|---|---|---|---|---|
+| `typed-decisions` | **8 / 0** | 63.72 → 69.168（**+5.4**） | +3.911（上限 12） | 60.572 → 54.707（**−5.9**） | **3.6** ≤ 5.9 ✅ | A=69.264 / B=56.872，重入 A=72.49 |
+| `english` | **7 / 1** | 63.425 → 68.728（**+5.3**） | +2.841（上限 12） | 59.215 → 50.546（**−8.7**） | **8.3** > 6.8 ❌ | A=68.646 / B=56.587，重入 A=72.101 |
+
+先说通过的部分：**两个检查点的闭环、单轮上限、分桶隔离三项全部通过**，
+且方向与幅度都符合直觉 —— 正向 5 轮涨 5.3~5.4，负向 5 轮跌 5.9~8.7，
+单轮变化 2.8~3.9 远低于 12 的上限（即「累积但不暴涨」这条结构性成立）。
+E4 两个桶终值相差 12 以上、同起点反向演化，重入各自从自己的值继续 —— **没有串线**。
+
+### 19.6c ★ E3 失败项：这不是harness 问题，是一个**确定性的模型偏负**
+
+唯一 FAIL 是 `english` 的 E3：**中性寒暄累计漂移 8.3，超过了正向场景的 6.8** ——
+即「普通聊天把关系推走」比「明显示好」还多。这个数值看起来像抖动，所以我另写了
+`tests/replication/neutral_probe.py` 去读**原始 `trust_shift` score**（状态层之前的模型输出），
+把每句读数摆在「2.0 = trust is unchanged」两侧：
+
+| 组 | typed-decisions 均值 | english 均值 | typed 判向 | english 判向 |
+|---|---|---|---|---|
+| e1 正向 | 2.478（2.098~2.809） | 2.389（1.956~2.745） | 正 5/5 | 正 4/5 |
+| e2 负向 | 1.763（1.431~2.201） | 1.637（1.041~1.942） | 负 3/5 | **负 5/5** |
+| e3 中性 | **1.873**（1.648~2.162） | **1.600**（0.940~2.129） | 负 3/5 | **负 4/5** |
+
+结论有三层，逐层收紧：
+
+1. **不是随机抖动**：逐句 ×3 重复读数**完全一致**（两个检查点都是），所以是确定性的。
+2. **不是状态层的锅**：这是 raw score，**不含任何状态层影响** —— 状态层只做 clamp，
+   不可能把中性组整体压到 2.0 以下。
+3. **是模型的系统性负偏**：中性寒暄被读成「轻微损害信任」。两个检查点**同向**，
+   `english` 只是幅度更大，所以只有它越过了门槛。
+
+最能说明问题的一句：`english` 把
+*"The rain outside seems to have stopped, but the eaves are still dripping."*
+（外面雨好像停了，屋檐还在滴水）读成 **0.940** —— 在 0~4 刻度上落在「信任急剧下降」那一端。
+而正向组的最高分也只有 2.74。也就是说：**在这个检查点的刻度上，「聊天气」和「出卖你」的
+距离，比「聊天气」和「为你挡刀」的距离更近。**
+
+有一个附带发现值得记下，它对理解失败原因很关键：
+`english` 的 e2 负向组 **5/5 全判负**（typed 只有 3/5）——
+说明 `english` 在负向方向的区分度**更好**，它的问题纯粹在**中性点被整体拉低**，而不是"分辨不出好坏"。
+这解释了为什么它的 E2 跌 8.7 比 typed 的 5.9 更大。
+
+**我没有把它调掉。** 理由：
+- E3 的门槛是**刻意设宽**的（只抓「中性聊天把关系推走一大截」），
+  它被触发说明现象**确实存在**，不是判据太严；
+- 调 `per_turn_max` 或改门槛都能让灯变绿，但那属于「调参凑过去」，
+  而用户对本阶段的要求是**发现重大体验 Bug 而不是把 Bug 藏起来**；
+- 这个偏差**可以绕过但绕不过**：`trust_shift` 的中性点是模型习得的，
+  要真正修得改训练数据/校准，属于 P3 之后的题目。
+
+**它的实际体验影响有多大** —— 平心而论中等，且**只在 `english` 上明显**：
+若玩家持续只聊闲天，关系会缓慢下滑（每轮约 −1~−2 量级，远低于 12 上限），
+表现为「明明没得罪她，她越来越疏远」。在 `typed-decisions`（当前默认检查点）上同样存在但轻得多
+（3 轮负 / 5 轮，累计 3.6，低于门槛）。**这是本轮唯一一个真实、可复现、尚未解决的体验问题。**
+
+### 19.7 本轮**没**做、且不能声称做了的
+
+- **没修** `decision_history` 的读取问题。它在 P2.5 被记录为「跨检查点方向不稳定」，
+  本轮按用户要求**只记录为已知限制**，不作为 P3 阻塞项。
+- 本轮 5 个体验场景**都没有传 `decision_history`**（历史桶为空）。
+  所以结论是「**未触及** history」，**不是**「已验证 history 无害」。这两句话不能混。
+- **没**把 `trust_shift` 之外的 signal 接进正式 State Transition。
+  `doubt_shift` / `fondness_shift` / `respect_shift` 按用户指定的顺序**一次扩一个**，
+  本轮只验证了 `trust_shift`；`alert_shift` / `goal_shift` / behavior tendency **不进**。
+- **没**做 Personality、World Simulation、长期记忆、历史系统重构。
+- **没**验证 `relationship` 的其它字段（respect / doubt / reliance）是否同样被读到。
+
+### 19.8 五点结论
+
+| # | 用户问的问题 | 结论 |
+|---|---|---|
+| 1 | `trust_shift` 是否**真正形成闭环** | **是**。写（`state_commits` 有非零 `final_delta`）、读回（下一轮 state 里 `relationship.trust` = 上一轮 commit 后的值）、影响决策（同起点 60 走正/负两向，终值分离）三个环节分别可证 |
+| 2 | 连续交互状态是否**自然** | **基本自然，有一处明确瑕疵**。正向逐轮累积上升（+5.4）、负向逐轮下降（−5.9）、单轮变化远低于 ±12 上限，结构上无法一步到位；但**中性闲聊也偏负向**（见第 5 点）——「什么都没发生却慢慢疏远」这一条不算自然 |
+| 3 | 是否出现**明显异常跳变** | **否**。全部单轮 \|Δ\| ≤ 配置上限（实测最大 3.911），无 NaN、无越出 `[0,100]`；边界处做的是 per-turn 先 clamp、range 后 clamp，不会漏出「在区间内但超过单轮上限」的值 |
+| 4 | 多 NPC / 多 session 是否**串线** | **否**。Actor State 按 `(session_id, actor_id)` 分桶（与 history 同键）；两个方向相反的桶各自独立演化（终值 72.49 vs 56.872），回到原桶从自己的值继续 |
+| 5 | 体验层面的**已知问题** | ①★ **中性输入被系统性读成轻微负向**（`english` 4/5 句、`typed-decisions` 3/5 句 score < 2.0），导致持续闲聊会让关系缓慢下滑 —— 已定位到 raw score、逐句 ×3 可复现、**本轮不修**（要修需动模型校准，不是状态层能解的）；②`decision_history` 读向不稳定 —— 已记录、本轮未触及、未阻塞；③正向台词在 `trust` 接近上界时会被区间截断（预期行为，但前端需要能看出「到顶了」）；④本轮样本量刻意很小，只能说明「无重大明显 Bug」，**不能**说明「在所有输入上都稳」 |
+
+### 19.9 可执行的验收
+
+```
+./.venv/Scripts/python.exe tests/p3_experience.py            # 走真路径，需模型（GPU 上约 1 分钟/检查点）
+LAYA_MODEL=english ./.venv/Scripts/python.exe tests/p3_experience.py
+./.venv/Scripts/python.exe tests/replication/neutral_probe.py # 纯读数工具，不判通过/失败
+./.venv/Scripts/python.exe tests/p3_acceptance.py          # 秒级，不跑模型
+./.venv/Scripts/python.exe tests/p3_acceptance.py --json    # → tests/p3_acceptance.json
+```
+
+分工要说清楚，否则容易把三者混成一件事：
+
+| 脚本 | 是否跑模型 | 角色 |
+|---|---|---|
+| `p3_experience.py` | **是** | 四类体验测试的唯一判据来源，产出 `tests/runs/p3_experience__*.json` |
+| `neutral_probe.py` | **是** | **只读数、不判对错** —— 用来看「模型到底给中性句打了多少分」，是解释 E3 的工具，不是第二套判据 |
+| `p3_acceptance.py` | **否** | 读上面的结果文件 + 当场跑状态层单元自测；秒级，所以真的会有人跑它 |
+
+判据写在 `p3_acceptance.py` **顶部**，先定后验。它只读 `tests/runs/p3_experience__*.json`
+＋ 当场跑状态层单元自测（四件套 / 单轮上限 / 区间 / 准入 / auxiliary 不写 / 歧义不 commit），
+所以能在秒级重跑 —— 否则没人会去跑它。
+
+**实测：14 项 14 PASS / 0 FAIL，结论「通过」**（`tests/p3_acceptance.json`）。
+
+有一点必须讲清楚，否则这个「通过」会被误读：
+**G2（连续交互自然）是 PASS，而 E3 是 FAIL，这两个不矛盾。**
+G2 只覆盖 E1a / E1c / E2（正向升、逐轮累积、负向降）—— 这三条两个检查点全都过。
+E3（中性不漂移）是**单独一条更严的判据**，它的失败没有被 G2 掩盖，
+并且在 `p3_acceptance` 的输出里以「E3」的形式独立可见（本报告 19.6c 详述）。
+也就是说：**验收脚本给的是「核心闭环可用」的放行结论，不是「体验零瑕疵」。**
+
+
+---
+
+## 20. ★ Phase3 P3 第二阶段：目录分工、fail-closed 与「清理反而翻车」
+
+2026-09-24。本轮按用户指令执行的两项**阻断修复**（方案 B），以及随后的验收。
+★ **本轮结论是「阶段未通过」**，不是通过。下面是完整的失败链，一步一步都有数据。
+
+### 20.1 做了的两件事（这两件本身是成功的）
+
+**(1) 目录分工落地（用户选的方案 B）**
+
+| 目录 | 内容 | 是否参与判分 |
+|---|---|---|
+| `tests/cases/` | `observable` / `contextual` / `hidden_truth` / `trust_context`（4 个） | **是**，进 `_dataset_fingerprint()` |
+| `tests/experience/` | `p3_experience.json` / `p3p2_playthrough.json`（2 个） | **否** |
+
+从 `cases/` 移出体验场景后，dataset 指纹从 5 文件（`19e9b503…`）变为
+**4 文件（`0ff1475506c414bc…`）**。`_case_texts()` / `_xlate_subset_fingerprint()`
+本来就只读三组基准（137 条），所以体验场景一直是「放了也白放、却要一次 GPU 重跑」。
+**以后改体验场景不再要求重建档案** —— 这正是方案 B 想要的效果。
+同步改了 3 处路径常量（`p3_experience.py` / `p3p2_playthrough.py` / `neutral_probe.py`），
+并让 `prewarm_cache.py` 扫**两个**目录。
+
+**(2) 翻译失败改为 fail-closed**
+
+旧实现 `translate_to_en` 失败时 `return text, "none"` —— **原样返回中文**继续跑，
+中文进了英文校准的 ModernBERT。已改为抛 `TranslationFailure`，`decide()` 接住后整轮中止：
+**不调 Laya、不生成 proposal、不 commit、返回 `status="invalid"`**；
+`_cached_translate` 返回 `None`；失败原因**只记状态码**（`http_401`），不记 key/尾号/响应体。
+四条保证全部被 `tests/p3p2_unit.py` 的 T9 钉住。
+
+### 20.2 ★ 代价：翻译缓存重建 → 等级掉档 → 状态写入塌缩
+
+`/commit` 早前为了修缓存而重建（1 → 264 条）。重基线后 typed-decisions：
+
+| signal | 旧纪元 | P3P2 纪元 | 变化 |
+|---|---|---|---|
+| `trust_shift` | **A(0.827)** | **C(0.730)** | ★ 掉档 |
+| `doubt_shift` | A(0.847) | A(0.773) | 保持 A |
+| `fondness_shift` | **A(0.790)** | **C(0.702)** | ★ 掉档 |
+
+**先怀疑自己的实验**（铁律第 1 条）。逐项排除：样本量 186、种子 20260923、
+设备 cuda(RTX4060)、overflow 0、invalid 0 —— **全部未变**；`narra_config.json` 未改；
+检查点未改。**唯一变的就是那 137 条英文。**
+
+### 20.3 根因：`temperature=0.0` 不等于确定性（已量化）
+
+新增脚本 `tests/replication/xlate_drift.py`，判据**看结果前固定**。
+对缓存里的中文再翻一次（30 句样本）：
+
+| 类别 | 数量 |
+|---|---|
+| 逐字一致 | 4（13%） |
+| 近似（相似度 ≥0.90） | 8 |
+| **明显不同（<0.90，最低 0.50）** | **18（60%）** |
+
+逐字一致率 13% ≤ 判据 40% → **判定「重译不可复现」**。
+
+**这推翻了一个长期隐含假设**：旧 `run1/2/3` 的位级一致，
+**不是「模型 deterministic」，是「英文输入被冻结」**。
+缓存一重建，全部 signal 的 AUC 整体平移、等级随之翻转。
+
+第二个独立证据来自 CI 宽度：
+
+```
+typed-decisions__p3r2.json      auc=0.8267  CI=[0.639, 0.971]  宽度=0.332  A
+typed-decisions__p3p2r1.json    auc=0.73    CI=[0.478, 0.912]  宽度=0.434  C
+```
+
+`trust_shift` 的 bootstrap CI 本身就宽 **0.33~0.44**（`n_high=15` / `n_low=10`）。
+点估计从 0.827 移到 0.730，`ci_low` 就从 0.639 落到 0.478，**跨过 0.50 判据线**。
+→ **A 与 C 的分界本就在噪声内，由措辞决定，不由能力决定。**
+
+### 20.4 后果：可写信号 3 → 1，体验测试大面积 FAIL
+
+档案规则：**只有 `role=state_shift` 且 `status=active` 才写 Actor State**。
+两个 signal 掉到 C → `auxiliary` → **拒绝写**。
+`state_writable_signals` 从 `[trust_shift, doubt_shift, fondness_shift]` **塌缩为 `[doubt_shift]`**。
+
+`p3_experience`（typed-decisions）随即给出：
+
+```
+合计 16 项：6 PASS / 10 FAIL
+全部 commit 的 signal 分布: {'doubt_shift': 50}      ← 50 次 commit 全是 doubt
+trust 全程恒为 60（模板初值）                        ← 一次都没被写过
+fondness 应升/应降两组净变化均为 0.0000
+```
+
+逐条看**为什么**失败（不是「模型不行」，是「没接上线」）：
+
+| 判据 | 结果 | 真实原因 |
+|---|---|---|
+| E1a 正向 → trust 上升 | FAIL | `trust_shift` 是 auxiliary，**没有写入通路** |
+| E2 负向 → trust 下降 | FAIL | 同上 |
+| E1c 变化逐轮累积 | FAIL | 0 轮产生正向变化（没有 commit 就不会累积） |
+| E4a/E4b 分桶/保留 | FAIL | 两个桶都恒为模板初值 60 → 数值上无法区分「分桶」与「没写」 |
+| F1/F2 fondness 闭环/方向 | FAIL | `fondness_shift` auxiliary，0/5 轮有 commit |
+| D2 doubt 方向一致 | FAIL | `应升净+5.82` vs `应降净+1.85` —— **两组都升**，方向不成立 |
+| X1/X2 维度不硬绑定 | FAIL | 只有一个维度在动，无从观察 |
+| E3 中性不漂移 | **PASS** | 因为 trust 根本没动 —— **这个 PASS 是「没接线」的副产品，不是真通过** |
+| N1 10 轮闲聊不漂移 | **PASS** | 同上，同样是假通过 |
+| D1 doubt 连续 commit | PASS | 唯一真实工作的闭环 |
+| R1 respect 不写状态 | PASS | 符合 auxiliary 不写的要求 |
+| E1b 不暴涨 / E4c 分桶存在 | PASS | 结构正确，但缺内容 |
+
+★ **E3 与 N1 的 PASS 必须标注为「假通过」**：
+它们测的是「关系不漂移」，而当前关系**根本没被写过**，
+所以「不漂移」是必然的，不构成任何证据。这是本轮最容易骗人的地方。
+
+### 20.5 ★ 顺带修掉一个真 bug：路由层下标取值掐断连接
+
+不是清理带来的，是**真机撞到的**。`/decide`、`/turn`、`/commit` 在写历史日志时用了
+**`out["engine"]` 下标取值**。但 `decide()` 有**两条返回路径**：
+
+- 正常轮：带 `engine` / `device` / `routing` / `answers` …
+- **fail-closed 轮（翻译失败）：精简返回，没有 `engine` 键**
+
+→ 翻译失败那轮直接 `KeyError: 'engine'` → `BaseHTTPRequestHandler` 抛异常 →
+**HTTP 连接被掐断**（客户端看到 `ConnectionRefusedError 10061` / `RemoteDisconnected`）。
+
+**症状极具误导性**：表现为「桥挂了」，实际是「一个可控的干净拒绝把路由打崩了」。
+修法：两处改 `out.get("engine")`。
+★ 通用教训：**只要一个函数有多条返回路径，共享的消费代码一律 `.get`，不要下标。**
+
+### 20.6 验收结果
+
+| 项目 | 结果 |
+|---|---|
+| `tests/p3p2_unit.py`（含新增 T10） | **37 PASS / 0 FAIL** |
+| `tests/p0_acceptance.py` | **20 PASS / 0 FAIL**（修前会崩在 `/commit`） |
+| `capability --check` | 两检查点 ✅ fresh，`code_changed=False` |
+| `p3_experience`（td） | **6 PASS / 10 FAIL** |
+| `p3p2_playthrough`（td/en） | **未跑** —— 见 20.7 |
+| `p3p2_acceptance` | **未跑** —— 见 20.7 |
+
+T10 钉住两条独立事实：① 源码里 `"engine": out.get("engine")` 恰好 2 次、不得有下标形式；
+② fail-closed 返回**确实不含** `engine`/`decision`/`turn`（= 下标取值必崩的前提）。
+
+### 20.7 ★ 为什么停下来：不构成「通过这一阶段」
+
+用户给的通过条件是：
+> 「若正常 30–50 轮试玩没有明显关系暴涨、乱漂、串 NPC、错误 commit，就通过这一阶段。」
+
+**「16 项 6 PASS / 10 FAIL、trust 一动不动、fondness 零次写入」不满足这个条件。**
+它既不是「没有明显异常」，也不是「明显异常」——而是**根本测不到**：
+状态层按设计**拒绝写入**，所以试玩 30–50 轮也只会得到「关系恒为初值」。
+
+因此：
+- **不跑** `p3p2_playthrough` / `p3p2_acceptance` —— 在当前档案下它们的结论是预定的
+  （只会重复「只有 doubt 在动」），跑了也是在为已知结果烧 30+ 分钟 CPU。
+- **不进入** Personality / Relationship Stage / Memory / Behavior Tendency 中任何一个。
+- **不调参**。不许为了让等级回到 A 去动 `grade_signal` 阈值 / 放宽死区 / 改 `max_tokens` ——
+  那会让这份档案重新变成「参数凑出来的绿」。
+
+### 20.8 报给用户的三条出路（需裁决）
+
+| 选项 | 内容 | 代价 / 风险 |
+|---|---|---|
+| **A. 接受现状** | 只宣布 `doubt_shift` 可用；trust/fondness 明确降级为**观察项**；Phase2 缩水交付 | 体验上「关系只有怀疑在动」，玩法受限；但档案诚实 |
+| **B. 冻结缓存 + 纳入版本控制**（推荐） | 把 `cache_frozen` 写进铁律；**把 `_diag/translation_cache.json` 提交进 git**；此后所有等级以该缓存为准，不再追求回到 0.827 | 需要用户同意把缓存入库（它现在是最大单点风险）；`trust_shift` 仍是 C，**不会**回到 A |
+| **C. 复现旧缓存** | — | **不可行**：旧英文已不可再生（缓存曾被我自己的诊断脚本毁过一次） |
+
+★ 三者都**不会**让等级回到 A。差别只在于「要不要承认并制度化这件事」。
+
+### 20.9 一个必须写下来的历史教训
+
+缓存曾在 2026-09-24 上午被毁过一次（194 → 1 条，**不可恢复**）。
+原因是我自己的诊断脚本调用 `B._cached_translate('另一句测试台词。', {})` 时
+**传了一个空 dict** —— 该函数没有磁盘回落，会把它收到的 cache 直接落盘。
+
+★ **纪律**：测试里**永远不要**给 `_cached_translate` 传字面量 `{}`。
+★ 缓存**不在 git 里、无备份** —— 这是当前最大的单点风险，也是选项 B 的核心理由。
+
+### 20.10 本轮新增/修改的文件
+
+| 文件 | 变更 |
+|---|---|
+| `tests/replication/xlate_drift.py` | **新增**：量化重译抖动 + CI 宽度，判据先定后验 |
+| `tests/runs/eras.json` | 新增 `cache_frozen` 节（缓存冻结铁律）与 `p3p2_impact` 节（失败链，verdict=BLOCKED_PENDING_DECISION）；更正 `verified` 段（原写的「逐项一致」是错的） |
+| `tests/runs/typed-decisions__p3p2r1.json`、`english__p3p2r1.json` | 新增 `translation_drift` 节，把抖动事实固化进 run 文件 |
+| `laya_bridge.py` | `/decide`、`/turn` 两处 `out["engine"]` → `out.get("engine")` |
+| `tests/p3p2_unit.py` | 新增 T10（4 条断言），共 **37 PASS / 0 FAIL** |
+| `tests/experience/`（新目录） | 接收两个体验场景文件 |
+| `tests/p3_experience.py` 等 3 处 | 路径常量改指 `tests/experience/` |
+
+### 20.11 裁决落地：选项 B（2026-09-24 16:30，补记）
+
+用户裁决：**选项 B**。落地内容：
+
+| 动作 | 结果 |
+|---|---|
+| 冻结基线入库 | `_diag/translation_cache.json`（264 条）→ **`tests/assets/translation_cache.json`**，sha256 `ac954c9494cde484…52abc7` 与 `eras.json.cache_frozen` 一致 |
+| 决策记录 | `eras.json.p3p2_impact.verdict` → `DECIDED_B_FROZEN_CACHE_BASELINE (2026-09-24)`，并新增 `decision` 节 |
+| 纪律固化 | `tests/assets/README.md`：运行时缓存只能追加；合法增长须重新冻结 + 新 era；禁为等级重预热 |
+| 后果接受 | **此后所有等级以该缓存为准**：trust_shift/fondness_shift=C、td 可写信号仅 `doubt_shift` 为正式现状，不再追求回到 0.827 |
+
+§20.9 所述"缓存不在 git、无备份"的**单点风险自此解除**。
+与新版重构 spec §6（input/cache/expected 三件套共同基线、禁止每次重译）互相印证。
+

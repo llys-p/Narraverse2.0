@@ -1,5 +1,13 @@
 # Laya 实时对话 Demo
 
+> **当前状态（2026-09-30）**：P3-D4 已按“可试玩 Demo”范围验收，入口为 `/interaction/demo`。页面使用 `/interaction/scene`、`/interaction/state`、`/interaction/prepare`、`/interaction/commit`、`/interaction/receipt` 与 `/interaction/narrate`；分析预览不写状态，确认提交后才更新权威状态并生成叙事。单次五轮实机链已完成，但不代表解释器与叙事在重复采样下稳定。部署与正式发布尚未验收。
+
+> **历史计划与协议**：[P0–P3 体验恢复计划](tasks/plan.md) · [阶段清单](tasks/todo.md) · [P2-A 协议定稿](tasks/P2-A-Analyze-Commit协议.md) · [P1 提示词](tasks/P1-执行提示词.md)。下文保留旧 Demo 的实验记录，以本段当前状态及[项目协作日志](../../项目协作日志.md)为近期进度依据。
+
+> **2026-09-24 新方向：**参见 [Laya 定位书：Narraverse 轻量判断引擎](Laya定位书.md)。后续 Demo 收缩为有限结构化判断、状态提交与云端叙事反馈；保留情绪和可选反应倾向体验。分析/校验/提交的底层职责已拆开，`/analyze` 与安全的 `/commit_state` 尚未施工。下文为旧 Demo 实现及实验记录，其中 Policy Resolver 的行为裁决职责不再作为新 Demo 的目标。
+
+> **2026-09-24 交互补齐：**开启 LLM 时，页面遇到 `awaiting_upstream` 会调用现有 `/narrate` 的 `mode=upstream`，由 DeepSeek 根据原始对话与人物状态继续回应。服务端核对 Pending 的 turn/session/actor 和歧义标记，返回 `behavior=null`、`commit_allowed=false`；页面标注“云端接续”，不应用状态建议、不调用 `/commit`。实际生成的文字可进入页面对话上下文，不作为已提交状态或决策历史。LLM 关闭或失败时明确提示，不伪装成接续成功。资产来源与行尾 mismatch 已由 P1 修复；运行中的旧进程不因此自动更新，真实新版本闭环仍待后续验证。
+
 用 **Laya 决策引擎**（非自回归 System-1）产出 **决策信号**，由 **Policy Resolver** 裁定 NPC 行为，
 再由 **LLM** 把决定写成台词。
 
@@ -62,7 +70,20 @@ Policy Resolver → ★ 行为权威
 
 ### `decision_signals`：9 个信号
 
-`narra_config.json` 的 `signals.order` 定义 9 个信号，两类量纲**不要混用**：
+> ⚠️ **本节口径已被 §16.5 / §17 收窄，先读这段再读下面。**
+> 上面「score 可用 / noul 不可用」的说法**只在 `typed-decisions` 上成立**；
+> 换到 `english`，level 组 AUC 均值 0.750→**0.607**、prob 组 0.623→**0.632**，**两组的差反号**。
+> 所以「哪种 kind 可用」不是 Laya 的属性，**是检查点的属性**。
+> 现在真正的判据不再是 kind，而是每个检查点一份的**能力档案**（`laya_bridge.py capability`）。
+>
+> ⚠️ **还有一条对 `*_shift` 的额外限制（§18 / P2.5）：**
+> `*_shift`（`trust_shift` 等 score 型）问的是「**这句话**带来多少变化」，**是变化量不是状态量**。
+> 实测：`trust_shift` 随 `relationship.trust` 变化（两检查点 100% 方向正确），
+> 但**不随 `decision_history` 的内容反号**（两检查点 0%）。
+> 所以拿 `*_shift` 去验收「随历史变化」是**口径用错**，不是模型缺陷。
+> 需要状态量时应当看 `trust` / `doubt` 这类 noul 信号。详见报告 §18.5。
+
+`narra_config.json` 的 `signals.order` 定义 **9 个面板信号**，两类量纲**不要混用**：
 
 | kind | 来源 | 量纲 | 能否当阈值 |
 |---|---|---|---|
@@ -71,6 +92,14 @@ Policy Resolver → ★ 行为权威
 
 `hostility` / `cooperation` / `withdraw` / `confront` / `disclose` / `trust` / `doubt` / `danger`
 是 `prob`；`investigate` 是 `level`。
+
+★ 面板之外还有 **6 个 `*_shift` 信号**（`trust_shift` / `respect_shift` / `doubt_shift` /
+`fondness_shift` / `alert_shift` / `goal_shift`，都是 `level` 0~4）。
+它们**刻意不上面板**（会把重点淹掉，见 `SHIFT_IDS` 的注释），但它们是**唯一会写 Actor State 的一层**。
+所以「可定级的 signal」一共是 **9 + 6 = 15 个**，
+统计时若只看面板那 9 个，会得出「可写状态的信号：无」这种错误结论
+（`laya-live-demo.html` 的 ⓿ 栏就是为此改成读档案全量的）。
+每个 signal 的 role / status 见 `narra_config.json` 的 `signals.roles` 与能力档案。
 
 ### Policy Resolver
 
@@ -241,6 +270,8 @@ PY=.venv/Scripts/python.exe          # 一律用项目自带 venv，不要裸 py
 
 $PY laya_bridge.py qcheck       # ★ 改配置后必跑：token 预算 / 温度桶 / state 溢出
 $PY laya_bridge.py signalmetrics # ★★ 主实验：逐 signal 判别力 + 上下文响应 + A/B/C/D/R 分级
+$PY laya_bridge.py capability    # ★★ P2：从 tests/runs/ 推导每个检查点的能力档案（不跑模型，秒级）
+$PY laya_bridge.py capability --check  # 核对现有档案是否仍与磁盘一致
 $PY laya_bridge.py signaltest   # 旧口径回归（48 用例 / 99 断言，legacy 对照用）
 $PY laya_bridge.py ckptcompare  # 检查点同条件对照（两个进程各跑一次 signaltest）
 $PY laya_bridge.py personatest  # 人格 A/B 对照（LAYA_PERSONA_STYLE=polarity 换写法）
@@ -250,7 +281,72 @@ $PY laya_bridge.py llmtest      # 验证密钥与模型 id
 $PY laya_bridge.py langtest     # 旧版 4 句极端输入区分度测试
 
 $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶 + 提交门控，需先起桥）
+$PY tests/p2_acceptance.py --json   # ★ Phase3 P2 验收（能力档案 / 角色分层 / Proposal 过滤，54 条断言）
+$PY tests/p25_acceptance.py --json  # ★ Phase3 P2.5 验收（trust_shift 上下文敏感性，14 PASS / 2 FAIL）
+$PY tests/p3_experience.py          # ★ Phase3 P3：4 类最小体验测试（需跑模型，输出 runs/p3_experience__*.json）
+$PY tests/replication/neutral_probe.py  # 只读 raw trust_shift 分数（解释 E3 的工具，不判对错）
+$PY tests/p3_acceptance.py --json   # ★ Phase3 P3 验收（闭环 / 自然度 / 跳变 / 隔离 / 状态层契约，秒级）
 ```
+
+### ★ Phase3 P3：`trust_shift` 的最小闭环（2026-09-24）
+
+**P3 之前整条链路是无状态的。** `/decide` 从 payload 读 `actor`，算完给一份
+`state_proposal`，然后**忘掉** —— 下一轮又是原来那个 `relationship.trust = 60`。
+也就是说「连续交互让关系变化」在架构上**不可能发生**，与模型好坏无关。P3 补的是这个缺失。
+
+```
+player input → Laya trust_shift proposal → State Transition → Commit
+             → relationship.trust 更新 → 下一轮重新进入 Laya
+```
+
+| 环节 | 位置 | 说明 |
+|---|---|---|
+| Proposal | `build_state_proposal()` | 只有 `role=state_shift` **且** `status=active` 才产出 delta（P2 的能力档案裁决） |
+| Transition | `state_transition()` | `final_delta = clamp(proposal, per_turn_min, per_turn_max)` → 再 clamp 到 `paths.*.range` |
+| Commit | `apply_state_transition()` | 写回 `(session_id, actor_id)` 桶；返回 `old / proposal / final_delta / new_value` |
+
+三条硬约束（改 `state_shift.transition` 前必读）：
+
+1. **范围复用** `state_shift.paths.*.range`。`relationship.trust` 就是 `[0,100]`，
+   不新建第二套格式；读不到 range 就**拒绝写**，不猜一个范围。
+2. **单轮上限不是分数上限**。0~100 的字段单轮最多 ±12 ——
+   这是「自然感」的结构来源：从 50 涨到 80 至少要 3 轮，一句话打不满。
+3. **歧义轮不 commit 状态**。`behavior_is_null` / `awaiting_upstream` 时整轮不写。
+   状态变化本身就是事实认定，而歧义轮的事实认定权在上游 ——
+   先写再等否决会造出「被否决的轮次却留下了关系变化」，那正是 P2 修掉的假交接。
+
+接口：`POST /turn`（一步走完闭环，体验测试走这条）、`GET /state`（查桶 + commit 审计）、
+`/decide` 的返回里新增 `state_commits` / `state_skipped` / `actor_state`。
+
+★ **改过 `laya_bridge.py` 或 `narra_config.json` 后必须重建能力档案基线**，否则
+`load_capability_profile()` 会因哈希不符返回 `(None, …)`，状态层**一条 delta 都不写** ——
+看起来像「状态层坏了」，实际是门禁在按设计工作（P3 第一次跑就撞上过）：
+
+```bash
+$PY laya_bridge.py signalmetrics && $PY laya_bridge.py capability
+$PY laya_bridge.py capability --check   # 核对是否 fresh
+```
+
+注意 `_dataset_fingerprint()` 对 `tests/cases/*.json` 做 glob，所以**在 `tests/cases/`
+下新增任何一个文件都会换基线**（P2.5 的 `trust_context.json`、P3 的 `p3_experience.json` 都触发过）。
+
+#### 实测结论（2026-09-24）
+
+| 检查点 | 体验测试 | 验收 |
+|---|---|---|
+| `typed-decisions`（默认） | 8 PASS / 0 FAIL | 14 PASS / 0 FAIL |
+| `english` | 7 PASS / 1 FAIL（E3） | 同上（G2 不掩盖 E3） |
+
+正向 5 轮 **+5.3~+5.4**、负向 5 轮 **−5.9~−8.7**、单轮最大 **3.9**（上限 12）、
+两桶终值 **72.49 vs 56.87** 互不串线 —— 闭环、自然度、无跳变、隔离四项全部成立。
+
+★ **唯一未解决项：中性输入被系统性读成轻微负向。**
+`english` 4/5 句、`typed-decisions` 3/5 句的 raw `trust_shift` score < 2.0（2.0 = 不变）；
+`english` 把「屋檐还在滴水」读成 **0.940**（0~4 刻度偏下）。后果是**持续闲聊会让关系缓慢下滑**。
+已定位到 raw score（状态层无关）、逐句 ×3 复现，**本轮不修** ——
+要修得动模型校准。详见报告 §19.6c。
+
+`decision_history` 读取不稳定仍记为**已知限制**，本轮未触及 —— 注意是「未触及」，不是「已验证无害」。
 
 诊断子集（结果单独存放，不影响正式对照）：
 `LAYA_QSET=signals`、`LAYA_CASES=id1,id2`、`LAYA_SETS=observable,contextual`（排除隐藏真相组）。
@@ -326,6 +422,50 @@ $PY tests/p0_acceptance.py      # Phase3 P0 验收（歧义交接 + 历史分桶
    **P1 的「4 个 level A 级可直接输入」在跨检查点口径下只剩 `trust_shift` 一个**；
    `disclose`（D→A）与 `doubt_shift`（A→D）**方向相反，必须淘汰**。
    P2 的信号选择以报告 §16.8 为准。
+4. ★ **P2 起「哪些 signal 能用」不再写在报告里，而是每个检查点一份能力档案**（见下节）。
+   档案对不上时**拒绝产出状态增量** —— 所以「某个属性忽然不动了」通常是正确行为，不是 bug。
+
+### `capability`：能力档案（P2，`tests/capability_profiles.json`）
+
+P1.5 的结论是诊断性的（写在表里）；P2 把它变成**结构性**的：机器可读、跟着检查点走、可核对。
+
+```bash
+$PY laya_bridge.py capability                     # 为 tests/runs/ 里出现的检查点各生成一份
+$PY laya_bridge.py capability typed-decisions      # 只做指定的
+$PY laya_bridge.py capability --check              # 只核对现档案与磁盘是否一致（不重新生成）
+```
+
+**等级不在这里定**：全部读 `tests/runs/*.json` 里 `signalmetrics` 已经算好的 `grade`。
+能力档案只做「跨跑次取代表值 → 跨检查点分类 → 按 grade 推导 status」。
+想改判据只能改 `grade_signal()` —— 改在档案层等于偷偷改评分规则。
+
+**status 四值**（`_derive_status()`，规则写死在代码里）：
+
+| status | 触发条件 | 含义 |
+|---|---|---|
+| `active` | `grade=A` | 该 role 的**主输入**；`role=state_shift` 时才能产生状态增量 |
+| `auxiliary` | `grade=B` / `grade=C` | 只能当合取/修正项，**不能单独驱动重大状态变化** |
+| `disabled` | `grade=D` / `grade=N` / 跑次等级不一致 | 不接入正式链路 |
+| `semantic_review` | `grade=R`（稳定反向） | 明显稳定响应但方向/语义有问题；**禁止静默取反**，先查清 |
+
+两张**声明式覆盖**（`narra_config.json` → `capability_policy.override`，档案里标
+`status_source=policy_override` 且附理由，不伪装成推导结果）：
+`investigate`→`semantic_review`、`disclose`→`disabled`。
+
+**五类哈希，四硬一软**：`dataset` / `checkpoint` / `config` / `translation_cache` 不符 → **硬阻断**；
+`code` 不符 → 只提示（`code_changed`）。硬阻断只留给**输入侧**：输入变了，
+同一份档案描述的就是另一批条件，没有辩解空间。
+
+★ `translation_cache` 记的是**实验用例那批文本的译文**哈希（`case_subset`），
+不是整个缓存文件 —— 否则「玩过几轮 demo」会被误判成「实验条件变了」（已实测修掉）。
+
+**当前 typed-decisions（生产候选）**：`active 3 · auxiliary 9 · disabled 2 · semantic_review 1`，
+可写 Actor State 的是 `trust_shift` / `doubt_shift` / `fondness_shift`。
+english 上只剩 `trust_shift` 一个 —— 这就是「不能透明互换」的量化证据（报告 §17.7）。
+
+`decide()` 的输出自 P2 起多出 `state_proposal` / `behavior_tendency` / `situation_assessment` /
+`checkpoint_profile` / `capability_summary` / `signal_table`；
+`proposed_deltas` **语义已变**（现在是过滤后的结果），未过滤的全量在 `raw_deltas_all_signals`（仅供审计）。
 
 
 `qcheck` 值得单独说：Laya 的 `build_sequence` 对选项有 48 token 上限，且所有选项必须塞进
@@ -340,12 +480,14 @@ state 塞太满，都会在无声无息中失效。
 | 文件 | 说明 |
 |---|---|
 | `laya_bridge.py` | HTTP 桥 + 决策编排 + CLI 自检（纯标准库） |
-| `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals` |
-| `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent |
-| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 ★ English 检查点跨检查点复现（P2 信号选择依据）** |
-| `tests/cases/` | **三组用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率） |
-| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py`）。**这些是证据，要提交** |
+| `narra_config.json` | **决策模型本体**：行为表、6 个 score 维度、9 个信号、`gates`（已停用）、`policy`、`signals`（含 **`roles`：15 个 signal 的职责分层**）、**`capability_policy`**（检查点身份 + 声明式 status 覆盖） |
+| `laya-live-demo.html` | 单文件前端，三区结构：① Decision Signals ② Policy Resolver ③ Story Agent，外加 **⓿ Checkpoint Capability Profile**（P2） |
+| `Laya接入报告.md` | 面向其他 AI 的交接报告。**§12 第二轮结论、§14 Phase3-P0、§15 Phase3-P1 逐 signal 分级、§16 English 跨检查点复现（P2 信号选择依据）、§17 ★ Phase3-P2 能力档案与 Proposal + Phase3 最终设计原则、§18 ★ Phase3-P2.5 trust_shift 上下文敏感性（state 轴可用 / history 轴不可用）** |
+| `tests/cases/` | **三组标准用例集**：`observable` 70 / `contextual` 48 / `hidden_truth` 20（`omniscient`，永不混进主准确率）；另有 **`trust_context.json`（P2.5 专项，6 条 pair，只测 `trust_shift`）** |
+| `tests/` | 其它实验证据（`regression_cases.json` 旧口径 48 用例 / `signal_metrics.json` 逐 signal 结果 / `thresholds.json` / `personality_personas.json` / `p0_acceptance.py` / **`p2_acceptance.py`** / **`p25_acceptance.py`** / **`capability_profiles.json`**）。**这些是证据，要提交** |
 | `tests/runs/` | ★ **每次运行一份原始结果**（`<检查点>__<run_id>.json`，含逐用例 `budgets`）。跨检查点对照靠它，不能只留最新一次 |
+| `tests/capability_profiles.json` | ★ **P2：每个检查点的能力档案**（机器可读）。由 `capability` 从 `tests/runs/` 推导，**不要手改**；运行时按五类哈希核对后才敢用 |
+| `tests/replication/` | 复现实验工具：`prewarm_cache.py`（预热翻译缓存，**自动扫 `tests/cases/*.json`**）/ `budget_check.py`（静态预算）/ `ckpt_analysis.py`（跨检查点分类，**classify() 的唯一权威实现**）/ **`trust_context_probe.py`（P2.5 主实验）/ `p25_control.py`（自我证伪：同态重复 + 反序配对）/ `p25_attribution.py`（变化量 vs 状态量归因）** |
 | `启动Laya桥.bat` | Windows 一键启动（**GBK 编码**，由 `_gen_bat.py` 生成，勿手改） |
 | `.env.example` | 配置样例，**由 `_gen_env_example.py` 生成，手改会被下次生成覆盖** |
 | `.gitignore` / `.gitattributes` | 排除 `.env`、虚拟环境、检查点权重；`.bat` 标为 binary 防止换行改写 |

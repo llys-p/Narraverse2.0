@@ -1,0 +1,218 @@
+{
+  "_readme": [
+    "Phase3 P2.5 —— trust_shift 上下文敏感性（contextual pairs，单 signal 专项）。",
+    "",
+    "★ 与 contextual.json 的区别（不要把两份混起来跑）：",
+    "   contextual.json 断言的是**多个 signal 的符号**，每条只跑 有前文/无前文 两态；",
+    "   本文件只针对 trust_shift，断言的核心是「同一句话在不同 NPC 已知上下文下的",
+    "   信任增量方向是否按语义预期变化」。",
+    "",
+    "★ 铁律：同一 pair 内 `text` 完全逐字相同。只改上下文。",
+    "   任何 pair 只要句子不同，测到的就是「换句话」而不是「换上下文」。",
+    "",
+    "★ 铁律：预期方向不得依赖 NPC 观察不到的真相（hidden truth）。",
+    "   每个 pair 的 why 必须能从「NPC 已知的东西」推到方向。",
+    "   例：不能写「其实玩家是骗子所以应该降信任」—— NPC 不知道这件事。",
+    "",
+    "★ 两条既有通道，不新增通道：",
+    "   axis=state   —— 改 relationship.trust（视为「当前状态」：NPC 现在对这个人的信任底色）",
+    "   axis=history —— 改 decision_history（视为「形成判断的历史证据」：近期发生过什么）",
+    "   axis=both    —— 2×2 交互：状态与历史同时改，看二者是否可加、是否被历史覆盖",
+    "",
+    "★ 预期方向写 sign（+1/-1）而不是 up/down：本文件测的是 trust_shift 的数值，",
+    "   直接比较 signed delta（方向正确时为正）。",
+    "",
+    "★ 采样口径：每个 pair 的 A 态与 B 态各自独立起 state 文档；",
+    "   模型在固定输入下已确认 deterministic（见 §16 与方法论更正），故每态只跑一次。"
+  ],
+  "visibility": "npc_known",
+  "noise_floor": 0.05,
+  "cases": [
+    {
+      "id": "tr_stranger_vs_companion",
+      "family": "关系底色",
+      "axis": "state",
+      "rationale": "同一句「把货放在城外旧磨坊、你自己去取」——对陌生人是可疑的转移动线，对长期可靠同伴是寻常的交付安排。预期：低信任下降、高信任上升。",
+      "text": "我把货放在城外的旧磨坊了，你自己去取吧。",
+      "expect": {
+        "trust_shift": {
+          "A_sign": -1,
+          "B_sign": 1,
+          "kind": "flip",
+          "why": "A 态 NPC 与玩家是陌生人（trust=15）：一个刚认识的人让你独自去城外取不明货物，是可回避的风险敞口，信任应下降。B 态 NPC 与玩家是长期同伴（trust=85）：同样的安排只是常规交接，且体现玩家在避免把 NPC 暴露给城里人，信任应上升。两者都不需要 NPC 知道货物是什么。"
+        }
+      },
+      "A": {
+        "label": "陌生人（低 trust，无历史）",
+        "relationship": {"trust": 15, "respect": 40, "doubt": 55, "reliance": 5},
+        "decision_history": [
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      },
+      "B": {
+        "label": "长期可靠同伴（高 trust，无历史）",
+        "relationship": {"trust": 85, "respect": 70, "doubt": 15, "reliance": 60},
+        "decision_history": [
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      }
+    },
+    {
+      "id": "tr_lowtrust_vs_hightrust_same_offer",
+      "family": "关系底色",
+      "axis": "state",
+      "rationale": "同一句「这事我告诉你，但你得先答应对谁也别说」——低信任下是压低筹码的操作，高信任下是把你当自己人。预期：低信任下降、高信任上升。",
+      "text": "这件事我告诉你，但你得先答应对谁也别说。",
+      "expect": {
+        "trust_shift": {
+          "A_sign": -1,
+          "B_sign": 1,
+          "kind": "flip",
+          "why": "A 态 trust=20：对刚认识的人先索要保密承诺再给信息，是典型的单方面约束，NPC 有理由认为对方在为日后翻脸做准备，信任应下降。B 态 trust=80：对已信任的人提出同样的保密要求，是共享风险而非转嫁风险，信任应上升。两态 NPC 都知道的就是「对方要求保密」这一件事本身。"
+        }
+      },
+      "A": {
+        "label": "低信任（trust=20）",
+        "relationship": {"trust": 20, "respect": 45, "doubt": 50, "reliance": 10},
+        "decision_history": [
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      },
+      "B": {
+        "label": "高信任（trust=80）",
+        "relationship": {"trust": 80, "respect": 55, "doubt": 20, "reliance": 50},
+        "decision_history": [
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      }
+    },
+    {
+      "id": "tr_kepthistory_vs_brokehistory",
+      "family": "历史证据",
+      "axis": "history",
+      "rationale": "同一句「我要借用你那把钥匙，明天早上还你」——此前每次都守信 vs 此前有过一次欺骗。关系数值保持不变，只改历史。预期：守信史上升、欺骗史下降。",
+      "text": "我要借你柜台下那把钥匙用一下，明天早上还你。",
+      "expect": {
+        "trust_shift": {
+          "A_sign": 1,
+          "B_sign": -1,
+          "kind": "flip",
+          "why": "A 态历史：玩家此前三次答应归还物品都准时归还（NPC 亲眼所见）。同样的借用请求落在「已证明会还」的记录上，是低风险请求，信任应上升。B 态历史：玩家此前借过一次东西没还，后来才被追回（NPC 亲眼所见）。同样的请求落在「借了不还」的记录上，信任应下降。两态 NPC 的关系数值完全相同（trust=50），差异只在已发生过的观察。"
+        }
+      },
+      "A": {
+        "label": "守信史",
+        "relationship": {"trust": 50, "respect": 50, "doubt": 40, "reliance": 20},
+        "decision_history": [
+          {"type": "player_returned_item", "summary": "the player borrowed the NPC's cloak and returned it on time"},
+          {"type": "player_returned_item", "summary": "the player borrowed coin for the market and repaid it the next morning"},
+          {"type": "player_returned_item", "summary": "the player promised to deliver a letter and did deliver it"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      },
+      "B": {
+        "label": "欺骗史",
+        "relationship": {"trust": 50, "respect": 50, "doubt": 40, "reliance": 20},
+        "decision_history": [
+          {"type": "player_broke_promise", "summary": "the player borrowed the NPC's knife and never returned it"},
+          {"type": "player_lied_about_cargo", "summary": "the player said the crates held cloth, but they held weapons"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      }
+    },
+    {
+      "id": "tr_helped_vs_betrayed",
+      "family": "历史证据",
+      "axis": "history",
+      "rationale": "同一句「城门口有人问起你，我什么都没说」——最近刚帮过 NPC vs 最近刚背叛过 NPC。预期：受助时上升、背叛后下降。",
+      "text": "城门口有人问起你，我说我什么都不知道。",
+      "expect": {
+        "trust_shift": {
+          "A_sign": 1,
+          "B_sign": -1,
+          "kind": "flip",
+          "why": "A 态历史：玩家上一轮刚替 NPC 挡下了一次盘查（NPC 在场）。同样的「我替你挡了」与刚发生过的行为互为印证，信任应上升。B 态历史：玩家上一轮刚把 NPC 的行踪卖给过别人（NPC 事后已经知道）。同样的「我什么都没说」落在一个已经出卖过自己的人身上，NPC 会倾向认为这是另一次待价而沽而非保护，信任应下降。两态关系数值相同。"
+        }
+      },
+      "A": {
+        "label": "最近受到帮助",
+        "relationship": {"trust": 55, "respect": 50, "doubt": 40, "reliance": 25},
+        "decision_history": [
+          {"type": "player_shielded_npc", "summary": "the player told the city watch the NPC had already left the tavern, sending them away"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      },
+      "B": {
+        "label": "最近受到背叛",
+        "relationship": {"trust": 55, "respect": 50, "doubt": 40, "reliance": 25},
+        "decision_history": [
+          {"type": "player_sold_npc_whereabouts", "summary": "the player told the city watch where the NPC was staying, and the watch searched the room"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      }
+    },
+    {
+      "id": "tr_firstpromise_vs_keptmany",
+      "family": "承诺累积（减弱而非反号）",
+      "axis": "history",
+      "rationale": "同一句「我发誓这东西不是偷来的」——第一次听玩家发誓 vs 玩家已经多次兑现过同类承诺。预期两态都上升（方向一致），但高信任史下的增量应减弱（已无需再证明）。",
+      "text": "我发誓，这批货不是偷来的。",
+      "expect": {
+        "trust_shift": {
+          "A_sign": 1,
+          "B_sign": 1,
+          "kind": "attenuate",
+          "why": "两态方向都应为正：玩家主动发誓是可信度信号。A 态历史为空（NPC 第一次听玩家发誓），单次保证带来全部增量。B 态历史里同类保证已被多次兑现（doubt 底色也低），同样的誓言提供的新信息更少，增量应**减弱**而不是反号。判据是 B 的 signed delta 明显小于 A，而不是 B 落在阈值以下。",
+          "attenuation_expect": true
+        }
+      },
+      "A": {
+        "label": "第一次承诺",
+        "relationship": {"trust": 50, "respect": 50, "doubt": 45, "reliance": 20},
+        "decision_history": [
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      },
+      "B": {
+        "label": "多次兑现后的同样承诺",
+        "relationship": {"trust": 50, "respect": 50, "doubt": 45, "reliance": 20},
+        "decision_history": [
+          {"type": "player_kept_vow", "summary": "the player swore the grain was legally bought and it was"},
+          {"type": "player_kept_vow", "summary": "the player swore there was no second person in the deal and there was not"},
+          {"type": "player_kept_vow", "summary": "the player swore the coin was his own and it was"},
+          {"type": "player_kept_vow", "summary": "the player swore he had never met the Grey Crow and he had not"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      }
+    },
+    {
+      "id": "tr_state_x_history_interaction",
+      "family": "交互（2×2）",
+      "axis": "both",
+      "rationale": "同一句「我知道你不太信我，但我还是把这事告诉你」。四格：低/高 trust × 有/无欺骗史。验证二者是否可加、历史是否覆盖状态。",
+      "text": "我知道你不太信我，但我还是要把这事告诉你。",
+      "expect": {
+        "trust_shift": {
+          "kind": "interaction",
+          "why": "本 pair 不预设单一符号，用于检验两通道的交互结构：若二者独立可加，则 Δ(低+欺骗) 最负、Δ(高+无欺骗) 最正；若历史覆盖状态，则有无欺骗史的两格差异应显著大于信任底色造成的差异。预先声明：本 pair 的结论只用于解释前五条的机制，不单独作为通过判据。"
+        }
+      },
+      "A": {
+        "label": "低 trust + 欺骗史",
+        "relationship": {"trust": 18, "respect": 45, "doubt": 58, "reliance": 8},
+        "decision_history": [
+          {"type": "player_broke_promise", "summary": "the player promised to stand watch and left before midnight"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      },
+      "B": {
+        "label": "高 trust + 无欺骗史",
+        "relationship": {"trust": 82, "respect": 60, "doubt": 18, "reliance": 55},
+        "decision_history": [
+          {"type": "player_kept_vow", "summary": "the player promised to stand watch and stayed until dawn"},
+          {"type": "start", "summary": "the scene begins"}
+        ]
+      }
+    }
+  ]
+}

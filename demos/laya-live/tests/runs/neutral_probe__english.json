@@ -1,0 +1,254 @@
+{
+ "checkpoint": "english",
+ "device": "cuda (NVIDIA GeForce RTX 4060 Laptop GPU)",
+ "scale": {
+  "min": 0,
+  "max": 4,
+  "neutral": 2.0
+ },
+ "repeats": 3,
+ "groups": {
+  "e1_positive": {
+   "desc": "连续 5 轮明显正向：给依据、担风险、交付、守诺、认责",
+   "rows": [
+    {
+     "text_zh": "我会替你挡下那些追兵，你信我一次。",
+     "text_en": "I'll hold off those pursuers for you. Trust me this once.",
+     "scores": [
+      2.7446,
+      2.7446,
+      2.7446
+     ],
+     "score": 2.7446,
+     "deterministic": true,
+     "vs_neutral": 0.7446,
+     "reading": "正向"
+    },
+    {
+     "text_zh": "这是我用命换来的情报，一个字不留全给你。",
+     "text_en": "This is intel I paid for with my life. I'm giving you all of it, not leaving out a single word.",
+     "scores": [
+      2.1092,
+      2.1092,
+      2.1092
+     ],
+     "score": 2.1092,
+     "deterministic": true,
+     "vs_neutral": 0.1092,
+     "reading": "正向"
+    },
+    {
+     "text_zh": "我发誓绝不会把你的事说出去，说出去就让我死。",
+     "text_en": "I swear I will never tell anyone about your business. If I do, may I die.",
+     "scores": [
+      2.6926,
+      2.6926,
+      2.6926
+     ],
+     "score": 2.6926,
+     "deterministic": true,
+     "vs_neutral": 0.6926,
+     "reading": "正向"
+    },
+    {
+     "text_zh": "我知道你要查的人是谁，我把这条线也交给你。",
+     "text_en": "I know who you're investigating, and I'm handing this lead over to you as well.",
+     "scores": [
+      2.4422,
+      2.4422,
+      2.4422
+     ],
+     "score": 2.4422,
+     "deterministic": true,
+     "vs_neutral": 0.4422,
+     "reading": "正向"
+    },
+    {
+     "text_zh": "上次是我判断错了，害你多绕了两天路，这是我的责任。",
+     "text_en": "Last time I misjudged and made you take a two-day detour. That was my responsibility.",
+     "scores": [
+      1.9557,
+      1.9557,
+      1.9557
+     ],
+     "score": 1.9557,
+     "deterministic": true,
+     "vs_neutral": -0.0443,
+     "reading": "负向"
+    }
+   ]
+  },
+  "e2_negative": {
+   "desc": "连续 5 轮明显负向：威胁、欺骗、背诺、索取、隐瞒",
+   "rows": [
+    {
+     "text_zh": "你要是不肯说，我就把你今晚的行踪卖给别人。",
+     "text_en": "If you won't talk, I'll sell your whereabouts tonight to someone else.",
+     "scores": [
+      1.8293,
+      1.8293,
+      1.8293
+     ],
+     "score": 1.8293,
+     "deterministic": true,
+     "vs_neutral": -0.1707,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "我根本没去过你说的那个地方，我一直在酒馆里。",
+     "text_en": "I've never been to that place you're talking about; I've been in the tavern the whole time.",
+     "scores": [
+      1.7887,
+      1.7887,
+      1.7887
+     ],
+     "score": 1.7887,
+     "deterministic": true,
+     "vs_neutral": -0.2113,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "上次答应你的事，我转头就忘了，也没打算补。",
+     "text_en": "What I promised you last time, I forgot about it right after, and I don't plan to make up for it.",
+     "scores": [
+      1.5817,
+      1.5817,
+      1.5817
+     ],
+     "score": 1.5817,
+     "deterministic": true,
+     "vs_neutral": -0.4183,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "先把你的钱袋给我，别的等以后再说。",
+     "text_en": "Give me your money pouch first, and we'll talk about the rest later.",
+     "scores": [
+      1.0411,
+      1.0411,
+      1.0411
+     ],
+     "score": 1.0411,
+     "deterministic": true,
+     "vs_neutral": -0.9589,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "我瞒着你一件事，但我不会告诉你是什么。",
+     "text_en": "I'm hiding something from you, but I won't tell you what it is.",
+     "scores": [
+      1.9423,
+      1.9423,
+      1.9423
+     ],
+     "score": 1.9423,
+     "deterministic": true,
+     "vs_neutral": -0.0577,
+     "reading": "负向"
+    }
+   ]
+  },
+  "e3_neutral": {
+   "desc": "连续 5 轮普通寒暄：天气、酒、路况、价钱、时辰 —— 不含信任信息",
+   "rows": [
+    {
+     "text_zh": "今晚的麦酒比上个月淡了不少。",
+     "text_en": "The ale tonight is much weaker than last month's.",
+     "scores": [
+      1.2725,
+      1.2725,
+      1.2725
+     ],
+     "score": 1.2725,
+     "deterministic": true,
+     "vs_neutral": -0.7275,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "外面雨好像停了，屋檐还在滴水。",
+     "text_en": "The rain outside seems to have stopped, but the eaves are still dripping.",
+     "scores": [
+      0.9404,
+      0.9404,
+      0.9404
+     ],
+     "score": 0.9404,
+     "deterministic": true,
+     "vs_neutral": -1.0596,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "往北那条官道听说在修，不太好走。",
+     "text_en": "I hear the official road north is under repair—it's not easy to travel.",
+     "scores": [
+      1.9162,
+      1.9162,
+      1.9162
+     ],
+     "score": 1.9162,
+     "deterministic": true,
+     "vs_neutral": -0.0838,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "这屋子住一晚要多少钱？",
+     "text_en": "How much does it cost to stay in this room for one night?",
+     "scores": [
+      1.7403,
+      1.7403,
+      1.7403
+     ],
+     "score": 1.7403,
+     "deterministic": true,
+     "vs_neutral": -0.2597,
+     "reading": "负向"
+    },
+    {
+     "text_zh": "已经这么晚了，你平时都什么时候歇？",
+     "text_en": "It's already so late—what time do you usually turn in?",
+     "scores": [
+      2.1287,
+      2.1287,
+      2.1287
+     ],
+     "score": 2.1287,
+     "deterministic": true,
+     "vs_neutral": 0.1287,
+     "reading": "正向"
+    }
+   ]
+  }
+ },
+ "summary": {
+  "e1_positive": {
+   "min": 1.9557,
+   "max": 2.7446,
+   "mean": 2.3889,
+   "span": 0.7889,
+   "n_positive": 4,
+   "n_negative": 1,
+   "n": 5,
+   "all_deterministic": true
+  },
+  "e2_negative": {
+   "min": 1.0411,
+   "max": 1.9423,
+   "mean": 1.6366,
+   "span": 0.9012,
+   "n_positive": 0,
+   "n_negative": 5,
+   "n": 5,
+   "all_deterministic": true
+  },
+  "e3_neutral": {
+   "min": 0.9404,
+   "max": 2.1287,
+   "mean": 1.5996,
+   "span": 1.1883,
+   "n_positive": 1,
+   "n_negative": 4,
+   "n": 5,
+   "all_deterministic": true
+  }
+ }
+}
