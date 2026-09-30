@@ -1388,6 +1388,55 @@ def pool_line(behavior, player_input):
     return {"line": pool[idx], "source": "pool"}
 
 
+def llm_chat_raw(system, user, timeout=120):
+    """纯云端聊天传输：把**给定**的 system/user 消息发往聊天接口，返回 (content|None, err|None)。
+
+    ★ P3-D3b：/interaction/narrate 的云端叙事薄链复用此传输。它只负责发送：
+      不建提示词、不重试、不回落台词池、不调 decide。密钥/端点/模型/effort/max_tokens
+      全部取自配置源环境（与 llm_narrate 同口径）。无凭据 → ("no_api_key")。
+      原始响应与推理内容不出此函数（调用方只拿 content）。
+    """
+    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("LLM_API_KEY")
+    if not key:
+        return None, "no_api_key"
+    base = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
+    model = os.environ.get("LLM_MODEL", "deepseek-flash")
+    effort = os.environ.get("LLM_EFFORT", "low")
+    try:
+        max_tokens = int(os.environ.get("LLM_MAX_TOKENS", "1600"))
+    except Exception:
+        max_tokens = 1600
+    payload = {
+        "model": model,
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
+        "temperature": 0.35, "max_tokens": max_tokens, "stream": False,
+    }
+    if effort:
+        payload["effort"] = effort
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        base + "/chat/completions", data=body,
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return None, "http_%s" % e.code
+    except Exception as e:
+        return None, "exc_%s" % type(e).__name__
+    try:
+        msg = data["choices"][0]["message"]
+    except Exception:
+        return None, "bad_response_shape"
+    content = (msg.get("content") or "").strip()
+    if not content:
+        return None, "empty_content"
+    return content, None
+
+
 # ==========================================================================
 # 6. state 文档：原则 3 —— 只送压缩后的决策状态，不送角色卡与剧情
 #
@@ -3006,6 +3055,10 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/interaction/commit":
                     code, body = _ih.handle_post_commit(payload, self.headers,
                                                         getattr(self.server, "origin", None))
+                elif path == "/interaction/narrate":
+                    # ★ P3-D3：叙事薄链（只消费已提交回合；不调旧 /narrate 的 decide 路径）。
+                    code, body = _ih.handle_post_narrate(payload, self.headers,
+                                                         getattr(self.server, "origin", None))
                 else:
                     code, body = 404, {"protocol_version": "laya-delivery-v1",
                                        "error": {"code": "NOT_FOUND",
