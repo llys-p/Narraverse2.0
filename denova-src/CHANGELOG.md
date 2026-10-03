@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- 书籍总览移植已选原型的阅读样式：分区标题、衬线介绍、关键资料卡片及右侧只读资料摘要；宽屏列内滚动、窄屏自动单栏。样式限定在总览，不改普通条目编辑器、多图、模型加载或保存链。
+- Book overview adopts the selected prototype’s reading layout: section headings, a serif introduction, key-entry cards and read-only material summaries. Wide layouts scroll within columns; narrow layouts stack. Styles are scoped to the overview, leaving ordinary entry editors, images, model loading and saving unchanged.
+
 - 书籍总览默认按 Markdown 分区阅读，关键资料按类型分组，可选择、调整精选顺序、移出和打开完整条目；编辑与 AI 草稿确认仍使用原保存/revision 链，多图功能保留。精选只影响展示，不改变目录排序或模型加载策略。
 - Book overview now opens as sectioned Markdown with grouped key-entry cards, pin/reorder/unpin controls and full-entry navigation. Editing and AI draft adoption retain the existing save/revision flow, including multi-image attachments. Pinning affects display only, not directory order or model loading.
 - Lore 新增本书范围的 pinned/pin_order；旧数据缺字段视为未精选，普通更新省略字段会继承。精选 PATCH 可携带 workspace，与当前书籍不符返回脱敏 409；旧客户端省略 workspace 保持原行为。切书/卸载停止后续排序请求，部分更新失败也刷新实际状态且不跳走总览。

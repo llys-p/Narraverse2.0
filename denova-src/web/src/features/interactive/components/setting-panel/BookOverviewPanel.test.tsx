@@ -86,6 +86,47 @@ describe('BookOverviewPanel', () => {
     expect(screen.getByRole('textbox')).toHaveValue(content)
   })
 
+  it('shows accessible book composition and loading summaries derived only from lore items', () => {
+    const items = [
+      mockLoreItem({ id: 'resident-enabled', name: '启用常驻', load_mode: 'resident' }),
+      mockLoreItem({ id: 'resident-disabled', name: '停用常驻', enabled: false, load_mode: 'resident', pinned: true, pin_order: 0 }),
+      mockLoreItem({ id: 'key-auto', name: '精选自动', load_mode: 'auto', pinned: true, pin_order: 1 }),
+      mockLoreItem({ id: 'ordinary-manual', name: '普通手动', load_mode: 'manual' }),
+    ]
+    render(<BookOverviewPanel workspace="book-a" content="# 雾港" setContent={vi.fn()} items={items} onSave={vi.fn()} />)
+
+    const composition = screen.getByRole('complementary', { name: '本书资料构成' })
+    const loading = screen.getByRole('complementary', { name: '加载与展示' })
+    expect(composition).toHaveTextContent(/全部条目[^\d]*4 条/)
+    expect(composition).toHaveTextContent(/关键条目[^\d]*2 条/)
+    expect(loading).toHaveTextContent(/常驻[^\d]*1 条/)
+    expect(loading).toHaveTextContent(/关键[^\d]*2 条/)
+    for (const summary of [composition, loading]) {
+      expect(summary).not.toHaveTextContent(/故事线|来源|版本/)
+    }
+  })
+
+  it('keeps overview save and full-entry open callbacks available after the read-view split', () => {
+    const onSave = vi.fn()
+    const onOpenItem = vi.fn()
+    render(<BookOverviewPanel
+      workspace="book-a"
+      content="# 雾港总览"
+      setContent={vi.fn()}
+      items={[mockLoreItem({ pinned: true, load_mode: 'manual' })]}
+      onSave={onSave}
+      onOpenItem={onOpenItem}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '阅读' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看完整条目' }))
+    expect(onOpenItem).toHaveBeenCalledWith('lore-1')
+  })
+
   it('pins an entry without copying its body and refreshes the list', async () => {
     vi.mocked(updateLoreItem).mockResolvedValue(mockLoreItem({ pinned: true, pin_order: 0 }))
     const dispatch = vi.spyOn(window, 'dispatchEvent')

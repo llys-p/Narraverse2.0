@@ -9,8 +9,9 @@ import {
   type LoreItem,
   type LoreItemInput,
 } from '@/lib/api'
-import { ThemedMarkdownRenderer } from '@/components/common/MarkdownRenderer'
 import { parseOverview } from './book-overview-reading'
+import { BookOverviewReadView } from './BookOverviewReadView'
+import './book-overview.css'
 import { isSaveShortcut } from '@/lib/keyboard'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -27,14 +28,6 @@ const SELECTED_MAX = 50
 
 // 关键条目在总览里的分组顺序：与资料库目录的类型口径一致，空组不显示。
 const OVERVIEW_TYPE_ORDER: LoreItem['type'][] = ['rule', 'character', 'location', 'faction', 'item', 'world', 'other']
-
-function blockLabel(heading: string, t: (key: string) => string) {
-  if (/概况|时代|基调/.test(heading)) return t('settingPanel.bookOverview.groupWorld')
-  if (/矛盾|局势/.test(heading)) return t('settingPanel.bookOverview.groupConflict')
-  if (/索引|人物|地点/.test(heading)) return t('settingPanel.bookOverview.groupIndex')
-  if (/来源|整理/.test(heading)) return t('settingPanel.bookOverview.groupSource')
-  return heading
-}
 
 function toInput(item: LoreItem): LoreItemInput {
   const { created_at: _created, updated_at: _updated, ...rest } = item
@@ -228,8 +221,8 @@ export function BookOverviewPanel({
   const resultIsStale = result !== null && resultBaseContent !== content
 
   const headerBar = (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--nova-border)] px-4 py-2">
-      <p className="min-w-0 flex-1 text-xs text-[var(--nova-text-muted)]">{t('settingPanel.bookOverview.hint')}</p>
+    <div className="bo-toolbar">
+      <p className="bo-toolbar-note">{t('settingPanel.bookOverview.hint')}</p>
       <div className="flex flex-wrap items-center gap-2">
         <Button className={actionButtonClassName} variant="outline" size="sm" onClick={() => setEditing((current) => !current)}>
           {editing ? <Eye data-icon="inline-start" /> : <Pencil data-icon="inline-start" />}
@@ -254,7 +247,7 @@ export function BookOverviewPanel({
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="book-overview flex min-h-0 flex-1 flex-col">
       {headerBar}
 
       {editing ? (
@@ -275,78 +268,7 @@ export function BookOverviewPanel({
           />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4">
-            {draft.title ? (
-              <h2 className="text-base font-semibold text-[var(--nova-text)]">{draft.title}</h2>
-            ) : null}
-
-            <section className="rounded-[var(--nova-radius)] border-l-2 border-[var(--nova-accent)] bg-[var(--nova-surface-2)] px-4 py-3">
-              <p className="text-[11px] text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.sectionLede')}</p>
-              <ThemedMarkdownRenderer className="mt-1 text-sm leading-7" content={draft.lede || t('settingPanel.bookOverview.emptySection')} />
-            </section>
-
-            {!content.trim() && !pinned.length ? (
-              <div className="rounded-[var(--nova-radius)] border border-dashed border-[var(--nova-border)] px-4 py-6 text-xs leading-6 text-[var(--nova-text-faint)]">
-                {t('settingPanel.bookOverview.emptyOverview')}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button className={actionButtonClassName} variant="outline" size="sm" onClick={() => setEditing(true)}>
-                    <Pencil data-icon="inline-start" />
-                    {t('settingPanel.bookOverview.editMode')}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {draft.blocks.map((block, index) => (
-              <section key={`${index}:${block.heading}`} className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-4 py-3">
-                <p className="text-[11px] text-[var(--nova-text-faint)]">{blockLabel(block.heading, t)}</p>
-                <h3 className="mt-0.5 text-sm font-medium text-[var(--nova-text)]">{block.heading}</h3>
-                <ThemedMarkdownRenderer className="mt-2 text-xs leading-6" content={block.body || t('settingPanel.bookOverview.emptySection')} />
-              </section>
-            ))}
-
-            {grouped.length > 0 ? (
-              <section>
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-xs font-medium text-[var(--nova-text-muted)]">{t('settingPanel.bookOverview.sectionKeyEntries')}</h3>
-                  <span className="text-[11px] text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.keyHint')}</span>
-                </div>
-                <div className="mt-2 flex flex-col gap-3">
-                  {grouped.map((group) => (
-                    <div key={group.type}>
-                      <p className="text-[11px] text-[var(--nova-text-faint)]">{loreTypeLabel(group.type, t)}</p>
-                      <div className="mt-1 grid gap-2 sm:grid-cols-2">
-                        {group.entries.map((entry) => (
-                          <article key={entry.id} className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface-2)] px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--nova-text)]">{entry.name}</span>
-                              {entry.enabled && entry.load_mode === 'resident' ? (
-                                <span className="shrink-0 rounded-full border border-[var(--nova-border)] px-1.5 text-[10px] text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.residentTag')}</span>
-                              ) : null}
-                            </div>
-                            <p className="mt-1 line-clamp-3 text-[11px] leading-5 text-[var(--nova-text-muted)]">{entry.brief_description}</p>
-                            {onOpenItem ? <Button className={`${actionButtonClassName} mt-2`} variant="outline" size="sm" onClick={() => onOpenItem(entry.id)}>{t('settingPanel.bookOverview.viewEntry')}</Button> : null}
-                          </article>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {gaps.length > 0 ? (
-              <section className="rounded-[var(--nova-radius)] border border-[var(--nova-border)] bg-[var(--nova-surface)] px-4 py-3">
-                <p className="text-[11px] font-medium text-[var(--nova-warning,var(--nova-text-muted))]">{t('settingPanel.bookOverview.gapsTitle')}</p>
-                <ul className="mt-1 list-disc space-y-1 pl-4 text-[11px] leading-5 text-[var(--nova-text-muted)]">
-                  {gaps.map((gap) => <li key={gap}>{gap}</li>)}
-                </ul>
-                <p className="mt-2 text-[11px] text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.gapsNoAutoFix')}</p>
-              </section>
-            ) : null}
-          </div>
-        </div>
+        <BookOverviewReadView content={content} draft={draft} items={items} grouped={grouped} gaps={gaps} onEdit={() => setEditing(true)} onOpenItem={onOpenItem} />
       )}
 
       {result ? (
