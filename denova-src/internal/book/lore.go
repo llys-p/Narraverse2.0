@@ -63,6 +63,7 @@ type LoreItem struct {
 	CreatedAt        string          `json:"created_at"`
 	UpdatedAt        string          `json:"updated_at"`
 	Image            *LoreItemImage  `json:"image,omitempty"`
+	Images           []LoreItemImage `json:"images,omitempty"` // Manual attachments; changed only by attachment operations.
 	Provenance       *LoreProvenance `json:"provenance,omitempty"`
 }
 
@@ -93,7 +94,7 @@ type LoreProvenance struct {
 	SourceHash     string `json:"source_hash"`
 }
 
-// LoreItemImage is the current visual asset attached to a lore item.
+// LoreItemImage describes a visual asset attached to a lore item.
 type LoreItemImage struct {
 	Schema        string `json:"schema"`
 	ImagePath     string `json:"image_path"`
@@ -329,6 +330,7 @@ func (s *LoreStore) Update(id string, input LoreItemInput) (LoreItem, error) {
 			CreatedAt:        collection.Items[i].CreatedAt,
 			UpdatedAt:        time.Now().UTC().Format(time.RFC3339Nano),
 			Image:            firstLoreImage(input.Image, collection.Items[i].Image),
+			Images:           collection.Items[i].Images,
 			Provenance:       collection.Items[i].Provenance,
 		})
 		if updated.Name == "" {
@@ -488,6 +490,7 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				CreatedAt:        next[idx].CreatedAt,
 				UpdatedAt:        time.Now().UTC().Format(time.RFC3339Nano),
 				Image:            firstLoreImage(op.Item.Image, next[idx].Image),
+				Images:           next[idx].Images,
 				Provenance:       firstLoreProvenance(op.Item.Provenance, next[idx].Provenance),
 			})
 			if op.Item.Tags == nil {

@@ -42,6 +42,33 @@ export async function applyLoreClassification(input: LoreClassificationApplyRequ
   })
 }
 
+export interface BookOverviewOrganizeUsage {
+  resident_count: number
+  selected_ids: string[]
+  unknown_ids?: string[]
+  include_outline: boolean
+  outline_found: boolean
+  draft_chars: number
+  missing: string[]
+}
+
+export interface BookOverviewOrganizeResult {
+  draft: string
+  used: BookOverviewOrganizeUsage
+}
+
+export async function organizeBookOverview(input: {
+  current_draft: string
+  selected_lore_ids: string[]
+  include_outline: boolean
+}): Promise<BookOverviewOrganizeResult> {
+  return requestJSON('/api/book/overview/organize', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(input),
+  })
+}
+
 export async function generateLoreItemImage(id: string, input: LoreItemImageGenerateRequest = {}): Promise<LoreItem> {
   return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/image/generate`, {
     method: 'POST',
@@ -52,6 +79,24 @@ export async function generateLoreItemImage(id: string, input: LoreItemImageGene
 
 export async function clearLoreItemImage(id: string): Promise<LoreItem> {
   return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/image`, { method: 'DELETE' })
+}
+
+export async function uploadLoreItemImages(id: string, workspace: string, files: File[]): Promise<LoreItem> {
+  const form = new FormData()
+  form.append('workspace', workspace)
+  files.forEach((file) => form.append('files', file))
+  return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/images`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+export async function removeLoreItemImage(id: string, workspace: string, imagePath: string): Promise<LoreItem> {
+  return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/images`, {
+    method: 'DELETE',
+    headers: jsonHeaders,
+    body: JSON.stringify({ workspace, image_path: imagePath }),
+  })
 }
 
 export async function streamLoreImagesGenerate(input: LoreImagesGenerateRequest, signal?: AbortSignal): Promise<ReadableStream<SSEEvent>> {

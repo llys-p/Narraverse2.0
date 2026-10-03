@@ -95,6 +95,8 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.POST("/books/sort-mode", apiHandlers.HandleBookSortMode)
 		api.GET("/books/info", apiHandlers.HandleBookInfo)
 		api.PUT("/books/info", apiHandlers.HandleUpdateBookInfo)
+		// 书籍总览（P1）：AI 整理草稿；读取/保存复用 /api/workspace/file（setting/book-overview.md）。
+		api.POST("/book/overview/organize", apiHandlers.HandleBookOverviewOrganize)
 		// World Workspace：世界工作区（跨书，存储于全局数据目录 worlds/）。
 		api.GET("/worlds", apiHandlers.HandleWorldList)
 		api.POST("/worlds", apiHandlers.HandleWorldCreate)
@@ -130,6 +132,8 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.POST("/lore/classification/apply", apiHandlers.HandleLoreClassificationApply)
 		api.POST("/lore/items/:id/image/generate", apiHandlers.HandleLoreItemImageGenerate)
 		api.DELETE("/lore/items/:id/image", apiHandlers.HandleLoreItemImageDelete)
+		api.POST("/lore/items/:id/images", apiHandlers.HandleLoreImagesUpload)
+		api.DELETE("/lore/items/:id/images", apiHandlers.HandleLoreImageDetach)
 		api.POST("/lore/images/generate/stream", apiHandlers.HandleLoreImagesGenerateStream)
 		api.POST("/lore/images/generate/abort", apiHandlers.HandleLoreImagesGenerateAbort)
 		api.POST("/config-manager/stream", apiHandlers.HandleConfigManagerStream)

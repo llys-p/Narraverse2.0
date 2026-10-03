@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Loader2, Sparkles, Trash2, Languages } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { ImagePlus, Loader2, Sparkles, Trash2, Languages } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -8,16 +8,16 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { ImagePreviewDialog } from '@/components/common/ImagePreviewDialog'
 import { SearchHighlightTextarea } from '@/components/common/SearchHighlightTextarea'
 import { MarkdownRichEditor } from '@/components/Editor/MarkdownRichEditor'
-import { workspaceAssetURL, type LoreItem } from '@/lib/api'
+import type { LoreItem } from '@/lib/api'
 import type { ImagePreset } from '../../types'
 import { presetActionButtonClassName as actionButtonClassName, presetIconActionClassName as iconActionClassName, presetInputClassName as inputClassName, presetSelectClassName as selectClassName } from '../preset-config/editor-styles'
 import { PresetEmptyState as EmptyState } from '../preset-config/PresetEmptyState'
 import { PresetField as Field } from '../preset-config/PresetField'
 import { BooleanSwitchField } from './BooleanSwitchField'
 import { LoreTranslationDialog } from './LoreTranslationDialog'
+import { LoreImageGallery } from './LoreImageGallery'
 import { IMPORTANCE_OPTIONS, LOAD_MODE_OPTIONS, loadModeDescription, LORE_RESIDENT_TOTAL_WARNING_BYTES, loreImportanceLabel, loreLoadModeLabel, loreTypeLabel, TYPE_OPTIONS } from './editor-shared'
 
 export function LoreEditor({
@@ -29,6 +29,7 @@ export function LoreEditor({
   imagePresetId,
   imageInstruction,
   imageGenerating,
+  imageUploading,
   searchQuery,
   setDraft,
   setTagDraft,
@@ -36,6 +37,8 @@ export function LoreEditor({
   setImageInstruction,
   onGenerateImage,
   onClearImage,
+  onUploadImages,
+  onRemoveUploadedImage,
   onSave,
 }: {
   workspace: string
@@ -46,6 +49,7 @@ export function LoreEditor({
   imagePresetId: string
   imageInstruction: string
   imageGenerating: boolean
+  imageUploading: boolean
   searchQuery?: string
   setDraft: (draft: LoreItem | null) => void
   setTagDraft: (value: string) => void
@@ -53,55 +57,96 @@ export function LoreEditor({
   setImageInstruction: (value: string) => void
   onGenerateImage: () => void
   onClearImage: () => void
+  onUploadImages: (files: File[]) => Promise<void>
+  onRemoveUploadedImage: (imagePath: string) => void
   onSave: () => void
 }) {
   const { t } = useTranslation()
   const [imageDialogOpen, setImageDialogOpen] = useState(false)
   const [translateDialogOpen, setTranslateDialogOpen] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   if (!draft) {
     return <EmptyState title={t('settingPanel.editor.noLoreSelected')} description={t('settingPanel.editor.noLoreSelectedDesc')} />
   }
 
   const residentWarning = draft.enabled !== false && draft.load_mode === 'resident' && residentTotalBytes > LORE_RESIDENT_TOTAL_WARNING_BYTES
   const imagePath = draft.image?.image_path || ''
-  const imageSrc = imagePath ? workspaceAssetURL(imagePath) : ''
-  const hasImage = Boolean(imageSrc)
+  const hasImage = Boolean(imagePath)
+  const uploadedImages = draft.images || []
+  const hasGalleryImages = hasImage || uploadedImages.length > 0
   const validImagePresets = imagePresets.filter((preset) => !preset.invalid)
   const selectedImagePresetId = imagePresetId || validImagePresets[0]?.id || 'game-cg'
   const openGenerateLabel = imagePath ? t('settingPanel.loreImage.openRegenerate') : t('settingPanel.loreImage.openGenerate')
   const topGridClassName = cn(
     'grid shrink-0 items-stretch gap-2 border-b border-[var(--nova-border)] bg-[var(--nova-surface)] px-3 py-2.5 sm:px-4',
-    hasImage && 'lg:grid-cols-[15rem_minmax(0,1fr)] 2xl:grid-cols-[18rem_minmax(0,1fr)]',
+    hasGalleryImages && 'lg:grid-cols-[22rem_minmax(0,1fr)] 2xl:grid-cols-[26rem_minmax(0,1fr)]',
   )
   const imageAction = (
     <Button className={iconActionClassName} variant="outline" size="icon-sm" disabled={imageGenerating} onClick={() => setImageDialogOpen(true)} aria-label={openGenerateLabel} title={openGenerateLabel}>
       {imageGenerating ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Sparkles data-icon="inline-start" />}
     </Button>
   )
+  const handleUploadSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    setUploadError('')
+    if (!files.length) return
+    const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+    if (files.some((file) => !allowedTypes.has(file.type))) {
+      setUploadError(t('settingPanel.loreImage.uploadUnsupported'))
+      return
+    }
+    if (files.some((file) => file.size > 10 * 1024 * 1024)) {
+      setUploadError(t('settingPanel.loreImage.uploadFileTooLarge'))
+      return
+    }
+    if (uploadedImages.length + files.length > 20) {
+      setUploadError(t('settingPanel.loreImage.uploadCountLimit'))
+      return
+    }
+    if (files.reduce((total, file) => total + file.size, 0) > 32 * 1024 * 1024) {
+      setUploadError(t('settingPanel.loreImage.uploadBatchTooLarge'))
+      return
+    }
+    try {
+      await onUploadImages(files)
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : t('settingPanel.loreImage.uploadFailed'))
+    }
+  }
 
   return (
     <>
       <ScrollArea className="min-h-0 flex-1" role="region" aria-label={t('settingPanel.lore.editorScrollArea')}>
         <div className="flex min-h-full min-w-0 flex-col">
           <div className={topGridClassName}>
-            {hasImage ? (
+            {hasGalleryImages ? (
               <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-1.5">
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   <span className="text-[11px] text-[var(--nova-text-faint)]">{t('settingPanel.loreImage.current')}</span>
-                  {imageAction}
+                  <div className="flex items-center gap-1">
+                    <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="sr-only" onChange={(event) => void handleUploadSelection(event)} aria-label={t('settingPanel.loreImage.upload')} />
+                    <Button className="h-7 gap-1 px-2 text-[11px]" variant="outline" size="sm" disabled={imageUploading || uploadedImages.length >= 20} onClick={() => fileInputRef.current?.click()} title={t('settingPanel.loreImage.upload')}>
+                      {imageUploading ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <ImagePlus data-icon="inline-start" />}
+                      {imageUploading ? t('settingPanel.loreImage.uploading') : t('settingPanel.loreImage.upload')}
+                    </Button>
+                    {imageAction}
+                  </div>
                 </div>
-                <LoreImageCompactControl
-                  imageSrc={imageSrc}
-                  title={draft.name || t('settingPanel.loreImage.current')}
-                  alt={draft.image?.alt_text || draft.name}
-                />
+                <LoreImageGallery itemName={draft.name || t('settingPanel.loreImage.current')} aiImage={draft.image} uploadedImages={uploadedImages} onRemove={onRemoveUploadedImage} disabled={imageUploading} />
               </div>
             ) : null}
             <div className="grid min-w-0 gap-1.5" role="group" aria-label={t('settingPanel.lore.metadata')}>
-              {!hasImage ? (
+              {!hasGalleryImages ? (
                 <div className="flex min-h-7 min-w-0 items-center gap-2">
                   <span className="shrink-0 text-[11px] text-[var(--nova-text-faint)]">{t('settingPanel.loreImage.current')}</span>
                   <span className="min-w-0 flex-1 truncate text-xs text-[var(--nova-text-faint)]">{t('settingPanel.loreImage.empty')}</span>
+                  <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="sr-only" onChange={(event) => void handleUploadSelection(event)} aria-label={t('settingPanel.loreImage.upload')} />
+                  <Button className="h-7 gap-1 px-2 text-[11px]" variant="outline" size="sm" disabled={imageUploading} onClick={() => fileInputRef.current?.click()} title={t('settingPanel.loreImage.upload')}>
+                    {imageUploading ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <ImagePlus data-icon="inline-start" />}
+                    {imageUploading ? t('settingPanel.loreImage.uploading') : t('settingPanel.loreImage.upload')}
+                  </Button>
                   {imageAction}
                 </div>
               ) : null}
@@ -109,12 +154,12 @@ export function LoreEditor({
                 data-slot="lore-primary-fields"
                 className={cn(
                   'grid min-w-0 grid-cols-2 gap-2 md:grid-cols-3',
-                  hasImage
+                  hasGalleryImages
                     ? '2xl:grid-cols-[minmax(12rem,2fr)_repeat(4,minmax(7rem,1fr))]'
                     : 'xl:grid-cols-[minmax(12rem,2fr)_repeat(4,minmax(7rem,1fr))]',
                 )}
               >
-                <Field label={t('settingPanel.field.name')} className={cn('col-span-2', hasImage ? '2xl:col-span-1' : 'xl:col-span-1')}>
+                <Field label={t('settingPanel.field.name')} className={cn('col-span-2', hasGalleryImages ? '2xl:col-span-1' : 'xl:col-span-1')}>
                   <Input className={inputClassName} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
                 </Field>
                 <BooleanSwitchField label={t('settingPanel.field.enabled')} checked={draft.enabled ?? true} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />
@@ -184,6 +229,8 @@ export function LoreEditor({
                   </span>
                 ) : null}
               </div>
+              {uploadError ? <div role="alert" className="text-[11px] text-[var(--nova-danger)]">{uploadError}</div> : null}
+              <div className="text-[10px] leading-4 text-[var(--nova-text-faint)]">{t('settingPanel.loreImage.uploadLimits')}</div>
             </div>
           </div>
           <div className="flex items-center justify-end gap-2 border-b border-[var(--nova-border)] bg-[var(--nova-surface)] px-3 py-1.5 sm:px-4">
@@ -231,28 +278,6 @@ export function LoreEditor({
         draft={draft}
       />
     </>
-  )
-}
-
-function LoreImageCompactControl({
-  imageSrc,
-  title,
-  alt,
-}: {
-  imageSrc: string
-  title: string
-  alt: string
-}) {
-  const { t } = useTranslation()
-
-  return (
-    <div className="flex h-full min-h-48 min-w-0 overflow-hidden rounded-lg border border-[var(--nova-border)] bg-[var(--nova-surface-2)]">
-      <ImagePreviewDialog src={imageSrc} title={title} alt={alt}>
-        <button type="button" className="group h-full w-full overflow-hidden bg-[var(--nova-surface)]" aria-label={t('settingPanel.loreImage.openPreview')} title={t('settingPanel.loreImage.openPreview')}>
-          <img src={imageSrc} alt={alt} className="h-full w-full object-cover transition group-hover:scale-[1.03]" />
-        </button>
-      </ImagePreviewDialog>
-    </div>
   )
 }
 

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- 书籍「本书资料」新增可编辑的书籍总览：独立保存到当前书籍的 `setting/book-overview.md`，AI 仅生成待确认草稿；常驻资料去重，生成期间的后续编辑不会被旧草稿覆盖。
+- Book Lore now includes an editable book overview saved to the current book's `setting/book-overview.md`. AI only drafts for user review; resident items are deduplicated, and a late draft cannot overwrite newer edits.
+- 资料条目支持一次上传多张 PNG/JPEG/GIF/WebP 图片并在图廊中查看；手动移除仅解除关联，不删除图片文件或既有 AI 图片。
+- Lore entries now support multi-file PNG/JPEG/GIF/WebP uploads and a gallery. Removing an uploaded attachment only detaches it; stored image files and existing AI images remain intact.
+
 ### Local integration closeout / 本机集成收口
 - 新增可复用的一键启动入口与阶段总结；18095 的 L3/Kate 集成包改用独立的本机数据目录，避免日常运行依赖临时验收工作树。迁移仅调整新副本中的活动路径，原验收目录保留回退；这不是正式版本标签或四模式同版终验。
 - Add a reusable one-click launcher and stage summary. The local L3/Kate integration on port 18095 now uses a standalone data directory instead of an acceptance worktree. Only active paths in the new copy were adjusted, while the source was retained for rollback; this is not a tagged release or a fresh four-mode acceptance.

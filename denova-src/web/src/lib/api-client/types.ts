@@ -580,6 +580,7 @@ export interface LoreItem {
   created_at: string
   updated_at: string
   image?: LoreItemImage
+  images?: LoreItemImage[]
   provenance?: {
     kind: string
     source_name: string
@@ -625,7 +626,7 @@ export interface LoreTypeApplyResult {
   updated: LoreItem[]
 }
 
-interface LoreItemImage {
+export interface LoreItemImage {
   schema: 'lore_item_image.v1' | string
   image_path: string
   meta_path: string
