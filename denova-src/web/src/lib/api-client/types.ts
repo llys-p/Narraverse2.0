@@ -579,6 +579,8 @@ export interface LoreItem {
   content: string
   created_at: string
   updated_at: string
+  pinned?: boolean
+  pin_order?: number
   image?: LoreItemImage
   images?: LoreItemImage[]
   provenance?: {

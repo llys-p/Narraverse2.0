@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookOverviewPanel } from './BookOverviewPanel'
-import { organizeBookOverview } from '@/lib/api'
+import { organizeBookOverview, updateLoreItem } from '@/lib/api'
 import type { LoreItem } from '@/lib/api'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>
-  return { ...actual, organizeBookOverview: vi.fn() }
+  return { ...actual, organizeBookOverview: vi.fn(), updateLoreItem: vi.fn() }
 })
 
 function mockLoreItem(overrides: Partial<LoreItem> = {}): LoreItem {
@@ -63,6 +63,61 @@ describe('BookOverviewPanel', () => {
     expect(setContent).not.toHaveBeenCalled()
   })
 
+  it('reads the overview as sections and keeps the raw editor behind a toggle', () => {
+    const content = [
+      '# 雾港',
+      '',
+      '> 一座被锈潮吞没的港口。',
+      '',
+      '## 世界概况与时代基调',
+      '低魔海雾与账册。',
+      '',
+      '## 核心矛盾与当前局势',
+      '借钥之争。',
+    ].join('\n')
+    render(<BookOverviewPanel workspace="book-a" content={content} setContent={vi.fn()} items={[mockLoreItem()]} onSave={vi.fn()} />)
+
+    expect(screen.getByText('一座被锈潮吞没的港口。')).toBeInTheDocument()
+    expect(screen.getByText('低魔海雾与账册。')).toBeInTheDocument()
+    expect(screen.getByText('借钥之争。')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /编辑/ }))
+    expect(screen.getByRole('textbox')).toHaveValue(content)
+  })
+
+  it('pins an entry without copying its body and refreshes the list', async () => {
+    vi.mocked(updateLoreItem).mockResolvedValue(mockLoreItem({ pinned: true, pin_order: 0 }))
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
+    render(<BookOverviewPanel workspace="book-a" content="# 雾港" setContent={vi.fn()} items={[mockLoreItem()]} onSave={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择关键条目/ }))
+    fireEvent.click(screen.getByRole('button', { name: '设为关键' }))
+
+    await waitFor(() => expect(updateLoreItem).toHaveBeenCalledWith(
+      'lore-1',
+      expect.objectContaining({ id: 'lore-1', name: '守灯人岚', pinned: true, pin_order: 0 }),
+      'r1',
+      'book-a',
+    ))
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'nova:lore-updated', detail: { workspace: 'book-a' } }))
+  })
+
+  it('moves a pinned entry by swapping orders instead of renumbering the book', async () => {
+    const first = mockLoreItem({ id: 'a', name: '甲', pinned: true, pin_order: 0 })
+    const second = mockLoreItem({ id: 'b', name: '乙', pinned: true, pin_order: 1 })
+    vi.mocked(updateLoreItem).mockImplementation(async (id, item) => ({ ...first, ...item, id }) as never)
+    render(<BookOverviewPanel workspace="book-a" content="# 雾港" setContent={vi.fn()} items={[first, second]} onSave={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择关键条目/ }))
+    // 每行都有「下移」，取第一条精选行
+    fireEvent.click(screen.getAllByRole('button', { name: '下移' })[0])
+
+    await waitFor(() => expect(updateLoreItem).toHaveBeenCalledTimes(2))
+    const calls = vi.mocked(updateLoreItem).mock.calls
+    expect(calls.map((call) => [call[0], call[1].pin_order].join(':')).sort()).toEqual(['a:1', 'b:0'])
+  })
+
   it('renders an organize draft whose usage arrays arrive as null', async () => {
     vi.mocked(organizeBookOverview).mockResolvedValue({ draft: '# 整理草稿', used: nullArrayUsage } as never)
     const setContent = vi.fn()
@@ -113,6 +168,7 @@ describe('BookOverviewPanel', () => {
     }
     render(<Harness />)
 
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
     fireEvent.click(screen.getByRole('button', { name: /AI 整理总览/ }))
     fireEvent.click(screen.getByRole('button', { name: '生成草稿' }))
     await waitFor(() => expect(organizeBookOverview).toHaveBeenCalledWith(expect.objectContaining({ current_draft: '# Original' })))
@@ -124,5 +180,49 @@ describe('BookOverviewPanel', () => {
     expect(applied).toHaveBeenCalledTimes(1)
     expect(applied).toHaveBeenCalledWith('# New user edit')
     expect(screen.getByPlaceholderText(/写下本书/)).toHaveValue('# New user edit')
+  })
+  it('stops the remaining pin writes and refresh events when the book changes', async () => {
+    let finish!: (value: LoreItem) => void
+    vi.mocked(updateLoreItem).mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const first = mockLoreItem({ id: 'a', name: '甲', pinned: true, pin_order: 0 })
+    const second = mockLoreItem({ id: 'b', name: '乙', pinned: true, pin_order: 1 })
+    const events: Event[] = []
+    const listener = (event: Event) => { events.push(event) }
+    window.addEventListener('nova:lore-updated', listener)
+    const props = { content: '', setContent: vi.fn(), items: [first, second], onSave: vi.fn() }
+    const { rerender } = render(<BookOverviewPanel workspace="book-a" {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /选择关键条目/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: '下移' })[0])
+    expect(updateLoreItem).toHaveBeenCalledTimes(1)
+    rerender(<BookOverviewPanel workspace="book-b" {...props} />)
+    await act(async () => { finish(first) })
+    expect(updateLoreItem).toHaveBeenCalledTimes(1)
+    expect(events).toHaveLength(0)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    window.removeEventListener('nova:lore-updated', listener)
+  })
+
+  it('refreshes after a partially failed swap without selecting a lore row', async () => {
+    const first = mockLoreItem({ id: 'a', name: '甲', pinned: true, pin_order: 0 })
+    const second = mockLoreItem({ id: 'b', name: '乙', pinned: true, pin_order: 1 })
+    vi.mocked(updateLoreItem).mockResolvedValueOnce(first).mockRejectedValueOnce(new Error('CAS conflict'))
+    const events: CustomEvent[] = []
+    const listener = (event: Event) => { events.push(event as CustomEvent) }
+    window.addEventListener('nova:lore-updated', listener)
+    render(<BookOverviewPanel workspace="book-a" content="" setContent={vi.fn()} items={[first, second]} onSave={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /选择关键条目/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: '下移' })[0])
+    await waitFor(() => expect(events).toHaveLength(1))
+    expect(events[0].detail).toEqual({ workspace: 'book-a' })
+    expect(screen.getAllByRole('button', { name: '下移' })[0]).toBeEnabled()
+    window.removeEventListener('nova:lore-updated', listener)
+  })
+
+  it('opens the full entry from a key card without changing its loading mode', () => {
+    const open = vi.fn()
+    render(<BookOverviewPanel workspace="book-a" content="" setContent={vi.fn()} items={[mockLoreItem({ pinned: true, load_mode: 'manual' })]} onSave={vi.fn()} onOpenItem={open} />)
+    fireEvent.click(screen.getByRole('button', { name: '查看完整条目' }))
+    expect(open).toHaveBeenCalledWith('lore-1')
+    expect(updateLoreItem).not.toHaveBeenCalled()
   })
 })

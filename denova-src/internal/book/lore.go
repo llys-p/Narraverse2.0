@@ -55,6 +55,8 @@ type LoreItem struct {
 	TypeSource       string          `json:"type_source"`
 	Name             string          `json:"name"`
 	Importance       string          `json:"importance"`
+	Pinned           bool            `json:"pinned"`
+	PinOrder         int             `json:"pin_order"`
 	Tags             []string        `json:"tags"`
 	BriefDescription string          `json:"brief_description"`
 	Keywords         []string        `json:"keywords"`
@@ -74,6 +76,8 @@ type LoreItemInput struct {
 	TypeSource       string          `json:"type_source,omitempty"`
 	Name             string          `json:"name"`
 	Importance       string          `json:"importance"`
+	Pinned           *bool           `json:"pinned,omitempty"`
+	PinOrder         *int            `json:"pin_order,omitempty"`
 	Tags             []string        `json:"tags"`
 	BriefDescription string          `json:"brief_description"`
 	Keywords         []string        `json:"keywords"`
@@ -259,6 +263,8 @@ func (s *LoreStore) Create(input LoreItemInput) (LoreItem, error) {
 		TypeSource:       firstNonEmptyLoreValue(input.TypeSource, LoreTypeSourceManual),
 		Name:             input.Name,
 		Importance:       input.Importance,
+		Pinned:           loreInputPinned(input.Pinned, false),
+		PinOrder:         loreInputPinOrder(input.PinOrder, 0),
 		Tags:             input.Tags,
 		BriefDescription: input.BriefDescription,
 		Keywords:         input.Keywords,
@@ -322,6 +328,8 @@ func (s *LoreStore) Update(id string, input LoreItemInput) (LoreItem, error) {
 			TypeSource:       typeSource,
 			Name:             input.Name,
 			Importance:       input.Importance,
+			Pinned:           loreInputPinned(input.Pinned, previous.Pinned),
+			PinOrder:         loreInputPinOrder(input.PinOrder, previous.PinOrder),
 			Tags:             input.Tags,
 			BriefDescription: input.BriefDescription,
 			Keywords:         input.Keywords,
@@ -437,6 +445,8 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				TypeSource:       firstNonEmptyLoreValue(op.Item.TypeSource, LoreTypeSourceManual),
 				Name:             op.Item.Name,
 				Importance:       op.Item.Importance,
+				Pinned:           loreInputPinned(op.Item.Pinned, false),
+				PinOrder:         loreInputPinOrder(op.Item.PinOrder, 0),
 				Tags:             op.Item.Tags,
 				BriefDescription: op.Item.BriefDescription,
 				Keywords:         op.Item.Keywords,
@@ -482,6 +492,8 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				TypeSource:       typeSource,
 				Name:             firstNonEmptyLoreValue(op.Item.Name, next[idx].Name),
 				Importance:       firstNonEmptyLoreValue(op.Item.Importance, next[idx].Importance),
+				Pinned:           loreInputPinned(op.Item.Pinned, next[idx].Pinned),
+				PinOrder:         loreInputPinOrder(op.Item.PinOrder, next[idx].PinOrder),
 				Tags:             op.Item.Tags,
 				BriefDescription: firstNonEmptyLoreValue(op.Item.BriefDescription, next[idx].BriefDescription),
 				Keywords:         op.Item.Keywords,
@@ -927,6 +939,9 @@ func normalizeLoreItem(item LoreItem) LoreItem {
 	item.Name = strings.TrimSpace(item.Name)
 	item.Importance = normalizeLoreImportance(item.Importance)
 	item.LoadMode = normalizeLoreLoadMode(item.LoadMode, item.Importance)
+	if !item.Pinned || item.PinOrder < 0 {
+		item.PinOrder = 0
+	}
 	item.Content = strings.TrimSpace(item.Content)
 	item.Tags = normalizeLoreTags(item.Tags)
 	item.Keywords = normalizeLoreKeywords(item.Keywords)
@@ -1001,6 +1016,20 @@ func loreInputEnabled(enabled *bool, fallback bool) bool {
 		return fallback
 	}
 	return *enabled
+}
+
+func loreInputPinned(pinned *bool, fallback bool) bool {
+	if pinned == nil {
+		return fallback
+	}
+	return *pinned
+}
+
+func loreInputPinOrder(order *int, fallback int) int {
+	if order == nil {
+		return fallback
+	}
+	return *order
 }
 
 func defaultLoreBriefDescription(item LoreItem) string {

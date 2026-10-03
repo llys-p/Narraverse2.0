@@ -45,14 +45,23 @@ func (h *Handlers) HandleLoreItemUpdate(ctx context.Context, c *app.RequestConte
 	if !h.requireWorkspace(c) {
 		return
 	}
-	var body book.LoreItemInput
+	var body struct {
+		book.LoreItemInput
+		Workspace *string `json:"workspace,omitempty"`
+	}
 	if err := c.BindJSON(&body); err != nil {
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
 		return
 	}
-	item, err := h.app.UpdateLoreItem(c.Param("id"), body)
+	var item book.LoreItem
+	var err error
+	if body.Workspace == nil {
+		item, err = h.app.UpdateLoreItem(c.Param("id"), body.LoreItemInput)
+	} else {
+		item, err = h.app.UpdateLoreItemForWorkspace(c.Param("id"), body.LoreItemInput, *body.Workspace)
+	}
 	if err != nil {
-		if errors.Is(err, book.ErrLoreRevisionConflict) {
+		if errors.Is(err, book.ErrLoreRevisionConflict) || errors.Is(err, novaApp.ErrLoreWorkspaceMismatch) {
 			writeErrorKey(c, consts.StatusConflict, "api.resource.revisionConflict")
 			return
 		}

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- 书籍总览默认按 Markdown 分区阅读，关键资料按类型分组，可选择、调整精选顺序、移出和打开完整条目；编辑与 AI 草稿确认仍使用原保存/revision 链，多图功能保留。精选只影响展示，不改变目录排序或模型加载策略。
+- Book overview now opens as sectioned Markdown with grouped key-entry cards, pin/reorder/unpin controls and full-entry navigation. Editing and AI draft adoption retain the existing save/revision flow, including multi-image attachments. Pinning affects display only, not directory order or model loading.
+- Lore 新增本书范围的 pinned/pin_order；旧数据缺字段视为未精选，普通更新省略字段会继承。精选 PATCH 可携带 workspace，与当前书籍不符返回脱敏 409；旧客户端省略 workspace 保持原行为。切书/卸载停止后续排序请求，部分更新失败也刷新实际状态且不跳走总览。
+- Lore adds per-book pinned/pin_order fields. Legacy entries default to unpinned, and omitted update fields inherit existing values. Pin PATCH requests can include a workspace guard, returning a sanitized 409 on a book mismatch; older requests remain compatible. Book switches/unmount invalidate remaining reorder writes, and partial failures refresh persisted state without leaving the overview.
+
 - 总览 AI 草稿现与当前书籍身份绑定；切书清理草稿和待返回请求，防止相同正文（包括空正文）跨书误应用。
 - Overview AI drafts are now bound to the active book. Switching books clears drafts and invalidates pending responses, preventing cross-book application even when the overview text is identical or empty.
 - 书籍「本书资料」新增可编辑的书籍总览：独立保存到当前书籍的 `setting/book-overview.md`，AI 仅生成待确认草稿；常驻资料去重，生成期间的后续编辑不会被旧草稿覆盖。

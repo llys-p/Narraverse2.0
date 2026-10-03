@@ -43,6 +43,7 @@ type LoreImageProgressEvent struct {
 }
 
 var ErrLoreImageTaskRunning = errors.New("已有资料项图片生成任务正在运行")
+var ErrLoreWorkspaceMismatch = errors.New("lore workspace conflict")
 
 func (a *App) LoreItems() ([]book.LoreItem, error) {
 	return a.lore().LoreItems()
@@ -78,6 +79,20 @@ func (s *LoreAppService) UpdateLoreItem(id string, input book.LoreItemInput) (bo
 		return book.LoreItem{}, ErrNoWorkspace
 	}
 	return book.NewLoreStore(state.Workspace()).Update(id, input)
+}
+
+func (a *App) UpdateLoreItemForWorkspace(id string, input book.LoreItemInput, workspace string) (book.LoreItem, error) {
+	return a.lore().UpdateLoreItemForWorkspace(id, input, workspace)
+}
+
+func (s *LoreAppService) UpdateLoreItemForWorkspace(id string, input book.LoreItemInput, workspace string) (book.LoreItem, error) {
+	a := s.app
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if workspace != a.workspace || a.bookService == nil {
+		return book.LoreItem{}, ErrLoreWorkspaceMismatch
+	}
+	return book.NewLoreStore(workspace).Update(id, input)
 }
 
 func (a *App) DeleteLoreItem(id string) error {
