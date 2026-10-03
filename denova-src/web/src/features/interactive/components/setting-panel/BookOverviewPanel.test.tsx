@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookOverviewPanel } from './BookOverviewPanel'
 import { organizeBookOverview } from '@/lib/api'
@@ -36,10 +36,37 @@ describe('BookOverviewPanel', () => {
     vi.clearAllMocks()
   })
 
+  it('discards an existing draft when switching books with identical content', async () => {
+    vi.mocked(organizeBookOverview).mockResolvedValue({ draft: '# Book A draft', used: nullArrayUsage } as never)
+    const setContent = vi.fn()
+    const { rerender } = render(<BookOverviewPanel workspace="book-a" content="" setContent={setContent} items={[]} onSave={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /AI 整理总览/ }))
+    fireEvent.click(screen.getByRole('button', { name: '生成草稿' }))
+    await waitFor(() => expect(screen.getByText('# Book A draft')).toBeInTheDocument())
+    rerender(<BookOverviewPanel workspace="book-b" content="" setContent={setContent} items={[]} onSave={vi.fn()} />)
+    expect(screen.queryByText('# Book A draft')).not.toBeInTheDocument()
+    expect(setContent).not.toHaveBeenCalled()
+  })
+
+  it('ignores a generation response arriving after a book switch', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof organizeBookOverview>>) => void
+    vi.mocked(organizeBookOverview).mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const setContent = vi.fn()
+    const { rerender } = render(<BookOverviewPanel workspace="book-a" content="" setContent={setContent} items={[]} onSave={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /AI 整理总览/ }))
+    fireEvent.click(screen.getByRole('button', { name: '生成草稿' }))
+    rerender(<BookOverviewPanel workspace="book-b" content="" setContent={setContent} items={[]} onSave={vi.fn()} />)
+    await act(async () => {
+      finish({ draft: '# Late book A draft', used: nullArrayUsage as never })
+    })
+    expect(screen.queryByText('# Late book A draft')).not.toBeInTheDocument()
+    expect(setContent).not.toHaveBeenCalled()
+  })
+
   it('renders an organize draft whose usage arrays arrive as null', async () => {
     vi.mocked(organizeBookOverview).mockResolvedValue({ draft: '# 整理草稿', used: nullArrayUsage } as never)
     const setContent = vi.fn()
-    render(<BookOverviewPanel content="" setContent={setContent} items={[mockLoreItem()]} onSave={vi.fn()} />)
+    render(<BookOverviewPanel workspace="book-a" content="" setContent={setContent} items={[mockLoreItem()]} onSave={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: /AI 整理总览/ }))
     fireEvent.click(screen.getByRole('checkbox', { name: '守灯人岚' }))
@@ -61,7 +88,7 @@ describe('BookOverviewPanel', () => {
       used: { ...nullArrayUsage, resident_count: 1, selected_ids: ['lore-1'], missing: ['无长期大纲'] },
     } as never)
     const setContent = vi.fn()
-    render(<BookOverviewPanel content="# 用户原文" setContent={setContent} items={[mockLoreItem()]} onSave={vi.fn()} />)
+    render(<BookOverviewPanel workspace="book-a" content="# 用户原文" setContent={setContent} items={[mockLoreItem()]} onSave={vi.fn()} />)
 
     fireEvent.click(screen.getByRole('button', { name: /AI 整理总览/ }))
     fireEvent.click(screen.getByRole('button', { name: '生成草稿' }))
@@ -82,7 +109,7 @@ describe('BookOverviewPanel', () => {
     const applied = vi.fn()
     function Harness() {
       const [content, setContent] = useState('# Original')
-      return <BookOverviewPanel content={content} setContent={(value) => { applied(value); setContent(value) }} items={[]} onSave={vi.fn()} />
+      return <BookOverviewPanel workspace="book-a" content={content} setContent={(value) => { applied(value); setContent(value) }} items={[]} onSave={vi.fn()} />
     }
     render(<Harness />)
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Search, Sparkles, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -18,11 +18,13 @@ export const BOOK_OVERVIEW_ENTRY_ID = '__book_overview__'
 const SELECTED_MAX = 50
 
 export function BookOverviewPanel({
+  workspace,
   content,
   setContent,
   items,
   onSave,
 }: {
+  workspace: string
   content: string
   setContent: (value: string) => void
   items: LoreItem[]
@@ -36,6 +38,20 @@ export function BookOverviewPanel({
   const [generating, setGenerating] = useState(false)
   const [result, setResult] = useState<BookOverviewOrganizeResult | null>(null)
   const [resultBaseContent, setResultBaseContent] = useState<string | null>(null)
+  const requestSeq = useRef(0)
+  const activeWorkspace = useRef(workspace)
+  activeWorkspace.current = workspace
+
+  useEffect(() => {
+    requestSeq.current += 1
+    setResult(null)
+    setResultBaseContent(null)
+    setSelectedIds([])
+    setOrganizeQuery('')
+    setOrganizeOpen(false)
+    setGenerating(false)
+    return () => { requestSeq.current += 1 }
+  }, [workspace])
 
   const selectedSet = new Set(selectedIds)
   const query = organizeQuery.trim().toLowerCase()
@@ -55,19 +71,24 @@ export function BookOverviewPanel({
     if (generating) return
     setGenerating(true)
     const sourceContent = content
+    const sourceWorkspace = workspace
+    const seq = ++requestSeq.current
+    const isCurrent = () => seq === requestSeq.current && sourceWorkspace === activeWorkspace.current
     try {
       const next = await organizeBookOverview({
         current_draft: sourceContent,
         selected_lore_ids: selectedIds,
         include_outline: includeOutline,
       })
+      if (!isCurrent()) return
       setResult(next)
       setResultBaseContent(sourceContent)
       setOrganizeOpen(false)
     } catch (error) {
+      if (!isCurrent()) return
       toast.error(error instanceof Error ? error.message : t('editor.saveFailed'))
     } finally {
-      setGenerating(false)
+      if (isCurrent()) setGenerating(false)
     }
   }
 

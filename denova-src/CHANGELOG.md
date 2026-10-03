@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- 总览 AI 草稿现与当前书籍身份绑定；切书清理草稿和待返回请求，防止相同正文（包括空正文）跨书误应用。
+- Overview AI drafts are now bound to the active book. Switching books clears drafts and invalidates pending responses, preventing cross-book application even when the overview text is identical or empty.
 - 书籍「本书资料」新增可编辑的书籍总览：独立保存到当前书籍的 `setting/book-overview.md`，AI 仅生成待确认草稿；常驻资料去重，生成期间的后续编辑不会被旧草稿覆盖。
 - Book Lore now includes an editable book overview saved to the current book's `setting/book-overview.md`. AI only drafts for user review; resident items are deduplicated, and a late draft cannot overwrite newer edits.
 - 资料条目支持一次上传多张 PNG/JPEG/GIF/WebP 图片并在图廊中查看；手动移除仅解除关联，不删除图片文件或既有 AI 图片。
