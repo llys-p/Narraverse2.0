@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- 书籍总览新增关系图谱：节点与关系由本书条目正文中的相互提及本地派生，支持搜索、类型筛选、拖拽、缩放和打开条目。
+- Book overview now includes a relation graph derived locally from mutual mentions in this book's lore entries, with search, type filters, drag, zoom and item navigation.
 - 书籍总览移植已选原型的阅读样式：分区标题、衬线介绍、关键资料卡片及右侧只读资料摘要；宽屏列内滚动、窄屏自动单栏。样式限定在总览，不改普通条目编辑器、多图、模型加载或保存链。
 - Book overview adopts the selected prototype’s reading layout: section headings, a serif introduction, key-entry cards and read-only material summaries. Wide layouts scroll within columns; narrow layouts stack. Styles are scoped to the overview, leaving ordinary entry editors, images, model loading and saving unchanged.
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Bookmark, Check, Eye, Pencil, Search, Sparkles, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bookmark, Check, Eye, Pencil, Search, Sparkles, Waypoints, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/lib/api'
 import { parseOverview } from './book-overview-reading'
 import { BookOverviewReadView } from './BookOverviewReadView'
+import { BookGraphView } from './BookGraphView'
 import './book-overview.css'
 import { isSaveShortcut } from '@/lib/keyboard'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,8 @@ import { loreTypeLabel } from './editor-shared'
 
 export const BOOK_OVERVIEW_PATH = 'setting/book-overview.md'
 export const BOOK_OVERVIEW_ENTRY_ID = '__book_overview__'
+
+type OverviewMode = 'read' | 'graph' | 'edit'
 
 const SELECTED_MAX = 50
 
@@ -50,7 +53,7 @@ export function BookOverviewPanel({
   onSave: () => void
 }) {
   const { t } = useTranslation()
-  const [editing, setEditing] = useState(false)
+  const [mode, setMode] = useState<OverviewMode>('read')
   const [pinOpen, setPinOpen] = useState(false)
   const [pinQuery, setPinQuery] = useState('')
   const [pinnedBusy, setPinnedBusy] = useState(false)
@@ -81,7 +84,7 @@ export function BookOverviewPanel({
     setPinOpen(false)
     setPinQuery('')
     setPinnedBusy(false)
-    setEditing(false)
+    setMode('read')
     return () => { requestSeq.current += 1; pinSeq.current += 1 }
   }, [workspace])
 
@@ -224,11 +227,19 @@ export function BookOverviewPanel({
     <div className="bo-toolbar">
       <p className="bo-toolbar-note">{t('settingPanel.bookOverview.hint')}</p>
       <div className="flex flex-wrap items-center gap-2">
-        <Button className={actionButtonClassName} variant="outline" size="sm" onClick={() => setEditing((current) => !current)}>
-          {editing ? <Eye data-icon="inline-start" /> : <Pencil data-icon="inline-start" />}
-          {editing ? t('settingPanel.bookOverview.readMode') : t('settingPanel.bookOverview.editMode')}
+        <Button className={actionButtonClassName} variant={mode === 'read' ? 'secondary' : 'outline'} size="sm" aria-pressed={mode === 'read'} onClick={() => setMode('read')}>
+          <Eye data-icon="inline-start" />
+          {t('settingPanel.bookOverview.readMode')}
         </Button>
-        {editing ? (
+        <Button className={actionButtonClassName} variant={mode === 'graph' ? 'secondary' : 'outline'} size="sm" aria-pressed={mode === 'graph'} onClick={() => setMode('graph')}>
+          <Waypoints data-icon="inline-start" />
+          {t('settingPanel.bookOverview.graphMode')}
+        </Button>
+        <Button className={actionButtonClassName} variant={mode === 'edit' ? 'secondary' : 'outline'} size="sm" aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>
+          <Pencil data-icon="inline-start" />
+          {t('settingPanel.bookOverview.editMode')}
+        </Button>
+        {mode === 'edit' ? (
           <Button className={actionButtonClassName} variant="outline" size="sm" onClick={onSave}>
             <Check data-icon="inline-start" />
             {t('settingPanel.bookOverview.saveNow')}
@@ -250,7 +261,7 @@ export function BookOverviewPanel({
     <div className="book-overview flex min-h-0 flex-1 flex-col">
       {headerBar}
 
-      {editing ? (
+      {mode === 'edit' ? (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <Textarea
             autoResize={false}
@@ -267,8 +278,10 @@ export function BookOverviewPanel({
             }}
           />
         </div>
+      ) : mode === 'graph' ? (
+        <BookGraphView items={items} onOpenItem={onOpenItem} />
       ) : (
-        <BookOverviewReadView content={content} draft={draft} items={items} grouped={grouped} gaps={gaps} onEdit={() => setEditing(true)} onOpenItem={onOpenItem} />
+        <BookOverviewReadView content={content} draft={draft} items={items} grouped={grouped} gaps={gaps} onEdit={() => setMode('edit')} onOpenItem={onOpenItem} />
       )}
 
       {result ? (
@@ -300,7 +313,7 @@ export function BookOverviewPanel({
                   setContent(result.draft)
                   setResult(null)
                   setResultBaseContent(null)
-                  setEditing(true)
+                  setMode('edit')
                 }}
               >
                 <Check data-icon="inline-start" />

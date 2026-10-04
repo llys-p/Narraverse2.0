@@ -127,6 +127,26 @@ describe('BookOverviewPanel', () => {
     expect(onOpenItem).toHaveBeenCalledWith('lore-1')
   })
 
+  it('switches to the graph and returns to read mode when the workspace changes', () => {
+    const props = {
+      content: '# 雾港总览',
+      setContent: vi.fn(),
+      items: [mockLoreItem()],
+      onSave: vi.fn(),
+    }
+    const { rerender } = render(<BookOverviewPanel workspace="book-a" {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '图谱' }))
+    expect(screen.getByRole('button', { name: '图谱' })).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('canvas')).toBeInTheDocument()
+
+    rerender(<BookOverviewPanel workspace="book-b" {...props} />)
+
+    expect(screen.getByRole('button', { name: '阅读' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '图谱' })).toHaveAttribute('aria-pressed', 'false')
+    expect(document.querySelector('canvas')).not.toBeInTheDocument()
+  })
+
   it('pins an entry without copying its body and refreshes the list', async () => {
     vi.mocked(updateLoreItem).mockResolvedValue(mockLoreItem({ pinned: true, pin_order: 0 }))
     const dispatch = vi.spyOn(window, 'dispatchEvent')
