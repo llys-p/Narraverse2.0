@@ -132,6 +132,14 @@ function requestDenovaModel(messages, options) {
 
 window.requestDenovaModel = requestDenovaModel;
 
+/* 请宿主打开平台自己的模型设置：只是跳转请求，不带凭证，也不改用户当前模式。
+ * 返回 false 表示当前不是可信嵌入环境，调用方需要给出可读提示而不是静默失败。 */
+function requestDenovaModelSettings() {
+  return postNarraverseHostMessage('open-model-settings', {});
+}
+
+window.requestDenovaModelSettings = requestDenovaModelSettings;
+
 function getStandaloneDenovaOrigin() {
   let configured = '';
   try { configured = localStorage.getItem('narraverse:denova-frontend-url') || ''; } catch (e) { /* ignore */ }

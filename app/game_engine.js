@@ -70,10 +70,8 @@ window.GameEngine = (function () {
   var aiCache = {};
   function hasAPI() {
     try {
-      if (typeof callLLM !== 'function') return false;
-      if (typeof state === 'undefined' || !state || !state.apiConfig) return false;
-      var c = state.apiConfig;
-      return !!(c.endpoint && c.apiKey);
+      /* AI 增强只是锦上添花：可用性一律问平台桥接门禁，不看本地凭证（本文件先于 app.js 加载）。 */
+      return typeof canRequestModel === 'function' && canRequestModel();
     } catch (e) { return false; }
   }
   function aiActive() { return !headless && aiEnabled && hasAPI(); }

@@ -789,6 +789,7 @@ function App() {
         openModule4={narraverseModule4Open}
         onOpenModule4={handleOpenModule4}
         onCloseModule4={handleCloseModule4}
+        onOpenModelSettings={() => handleOnboardingNavigate('settings-model')}
         onSetMode={handleSetMode}
         onToggleActivityBarExpanded={() => setActivityBarExpanded((value) => !value)}
         onToggleProjectVisible={() => setProjectVisible((value) => !value)}

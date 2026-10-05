@@ -127,6 +127,23 @@ assert.strictEqual(failed.world.player.energy, beforeFailure.player.energy);
 assert.strictEqual(failed.world.actionLogs.length, beforeFailure.actionLogs.length);
 assert.strictEqual(failed.world.narrativeEntries.length, beforeFailure.narrativeEntries.length);
 
+/* 未连接平台（缺共享客户端 / 缺可信宿主）必须走同一条失败路径：不提交叙事，也不扣时间与精力。 */
+const platformGap = await Interaction.start(world, {
+  type: 'chat',
+  targetNpcId: npcId,
+  text: '未连接平台时发送',
+}, {
+  callLLM: async () => {
+    throw new Error('请从平台（Denova）进入叙界，并在平台设置中配置模型 / Open Narraverse from Denova and configure the model in Denova settings');
+  },
+});
+assert.strictEqual(platformGap.ok, false);
+assert.strictEqual(platformGap.reason, 'interaction-failed');
+assert.deepStrictEqual(plain(platformGap.world.clock), beforeFailure.clock);
+assert.strictEqual(platformGap.world.player.energy, beforeFailure.player.energy);
+assert.strictEqual(platformGap.world.actionLogs.length, beforeFailure.actionLogs.length);
+assert.strictEqual(platformGap.world.narrativeEntries.length, beforeFailure.narrativeEntries.length);
+
 const invalid = await Interaction.start(world, {
   type: 'chat',
   targetNpcId: npcId,

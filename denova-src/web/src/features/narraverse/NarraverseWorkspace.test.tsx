@@ -63,13 +63,22 @@ describe('NarraverseWorkspace', () => {
 
   afterAll(() => vi.unstubAllGlobals())
 
-  function renderWorkspace(overrides: { visible?: boolean; onSwitchMode?: (mode: 'ide' | 'interactive') => void } = {}) {
+  function renderWorkspace(overrides: {
+    visible?: boolean
+    onSwitchMode?: (mode: 'ide' | 'interactive') => void
+    onOpenModelSettings?: () => void
+  } = {}) {
     const onSwitchMode = overrides.onSwitchMode ?? vi.fn()
+    const onOpenModelSettings = overrides.onOpenModelSettings ?? vi.fn()
     const result = render(
-      <NarraverseWorkspace visible={overrides.visible ?? true} onSwitchMode={onSwitchMode} />,
+      <NarraverseWorkspace
+        visible={overrides.visible ?? true}
+        onSwitchMode={onSwitchMode}
+        onOpenModelSettings={onOpenModelSettings}
+      />,
     )
     const iframe = result.container.querySelector('iframe') as HTMLIFrameElement
-    return { ...result, iframe, onSwitchMode }
+    return { ...result, iframe, onSwitchMode, onOpenModelSettings }
   }
 
   function targetOrigin() {
@@ -97,7 +106,7 @@ describe('NarraverseWorkspace', () => {
     expect(url.pathname).toBe('/narraverse/index.html')
     expect(url.searchParams.get('embedded')).toBe('denova')
     expect(url.searchParams.get('host_origin')).toBe(window.location.origin)
-    expect(url.searchParams.get('v')).toBe('20260915-host-proxy-v2')
+    expect(url.searchParams.get('v')).toBe('20261004-platform-model-v3')
     expect(iframe).not.toHaveAttribute('border')
     expect(iframe.className).toContain('h-full')
   })
@@ -138,7 +147,7 @@ describe('NarraverseWorkspace', () => {
     const { iframe, rerender } = renderWorkspace()
     const postMessage = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
 
-    rerender(<NarraverseWorkspace visible openModule4 onModule4Close={onModule4Close} onSwitchMode={vi.fn()} />)
+    rerender(<NarraverseWorkspace visible openModule4 onModule4Close={onModule4Close} onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
     expect(postMessage).toHaveBeenCalledWith({
       source: 'denova', version: 1, type: 'module4-open', payload: { open: true },
     }, targetOrigin())
@@ -151,7 +160,7 @@ describe('NarraverseWorkspace', () => {
     const { iframe, rerender } = renderWorkspace({ visible: false })
     const postMessage = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
 
-    rerender(<NarraverseWorkspace visible onSwitchMode={vi.fn()} />)
+    rerender(<NarraverseWorkspace visible onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
 
     expect(postMessage).toHaveBeenCalledWith({
       source: 'denova', version: 1, type: 'visibility-changed', payload: { visible: true },
@@ -256,6 +265,93 @@ describe('NarraverseWorkspace', () => {
     expect(screen.getByTestId('iframe-world-context-state')).toHaveTextContent('世界背景已连接（只读）')
   })
 
+  it('reports a bilingual generation failure and sends no model call when the host is unavailable', () => {
+    runtimeMocks.hostState = 'unavailable'
+    const { iframe } = renderWorkspace()
+    const postMessage = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
+    vi.mocked(fetch).mockClear()
+
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request',
+      payload: { requestId: 'hostnotready00001', messages: [{ role: 'user', content: '继续' }], options: {} } })
+
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'model-call-result',
+      payload: expect.objectContaining({
+        requestId: 'hostnotready00001', ok: false, code: 'host_unavailable',
+        message: expect.stringMatching(/未生成.*平台连接.*nothing was generated.*platform connection/i),
+      }),
+    }), targetOrigin())
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('/call'), expect.anything())
+  })
+
+  it('opens the platform model settings only for a bare v2 command from the trusted frame', () => {
+    const onOpenModelSettings = vi.fn()
+    const { iframe } = renderWorkspace({ onOpenModelSettings })
+
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'open-model-settings', payload: {} })
+    expect(onOpenModelSettings).toHaveBeenCalledTimes(1)
+
+    // v1 信封不承载这条命令
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 1, type: 'open-model-settings', payload: {} })
+    // 携带任何参数都必须丢弃：跳转目标只能由宿主固定，不能由 iframe 指定
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'open-model-settings', payload: { url: 'https://example.invalid' } })
+    // 跨源与错误信封同样忽略
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'open-model-settings', payload: {} }, 'http://127.0.0.1:9999')
+    dispatchFromIframe(iframe, { source: 'denova', version: 2, type: 'open-model-settings', payload: {} })
+    expect(onOpenModelSettings).toHaveBeenCalledTimes(1)
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('example.invalid'), expect.anything())
+  })
+
+  it('keeps a late answer tied to its own request when the sandbox opens mid-flight', async () => {
+    let resolveNarraverseCall: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/narraverse/call')) {
+        return new Promise<Response>((resolve) => { resolveNarraverseCall = resolve })
+      }
+      if (path.endsWith('/module4/call')) {
+        return new Response(JSON.stringify({ content: '沙盒结果', contextSummary: { state: 'none' } }), { status: 200 })
+      }
+      if (path.endsWith('/bind')) return new Response(JSON.stringify({ contextSummary: { state: 'none' } }), { status: 200 })
+      return new Response('', { status: 204 })
+    }))
+
+    const { iframe, rerender } = renderWorkspace()
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    await act(async () => {})
+    const postMessage = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
+
+    dispatchFromIframe(iframe, {
+      source: 'narraverse', version: 2, type: 'model-call-request',
+      payload: { requestId: 'aaaaaaaaaaaaaaaa', messages: [{ role: 'user', content: '叙界请求' }], options: {} },
+    })
+    await act(async () => {})
+    expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.objectContaining({ method: 'POST' }))
+
+    // 叙界请求仍在途时打开放开沙盒，第二条请求必须走沙盒自己的 consumer
+    rerender(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
+    await act(async () => {})
+    dispatchFromIframe(iframe, {
+      source: 'narraverse', version: 2, type: 'model-call-request',
+      payload: { requestId: 'bbbbbbbbbbbbbbbb', messages: [{ role: 'user', content: '沙盒请求' }], options: {} },
+    })
+    await act(async () => {})
+    expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/call', expect.objectContaining({ method: 'POST' }))
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'model-call-result', payload: expect.objectContaining({ requestId: 'bbbbbbbbbbbbbbbb', ok: true, content: '沙盒结果' }),
+    }), targetOrigin())
+
+    // 迟到的叙界响应只回到叙界自己的 requestId，不会被并入沙盒那一轮
+    await act(async () => { resolveNarraverseCall?.(new Response(JSON.stringify({ content: '叙界结果', contextSummary: { state: 'none' } }), { status: 200 })) })
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'model-call-result', payload: expect.objectContaining({ requestId: 'aaaaaaaaaaaaaaaa', ok: true, content: '叙界结果' }),
+    }), targetOrigin())
+    const results = postMessage.mock.calls
+      .map((call) => call[0] as { payload?: { requestId?: string } })
+      .filter((message) => message.payload && message.payload.requestId)
+    expect(results.map((message) => message.payload?.requestId)).toEqual(['bbbbbbbbbbbbbbbb', 'aaaaaaaaaaaaaaaa'])
+  })
+
   it('waits for the pending host bind before forwarding the first iframe model request', async () => {
     const deferredBind: { resolve?: (response: Response) => void } = {}
     vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
@@ -296,7 +392,7 @@ describe('NarraverseWorkspace', () => {
   })
 
   it('fixes Module4 consumer from host state rather than iframe payload', async () => {
-    const view = render(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} />)
+    const view = render(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
     const frame = view.container.querySelector('iframe') as HTMLIFrameElement
     dispatchFromIframe(frame, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
     vi.mocked(fetch).mockClear()
@@ -386,7 +482,7 @@ describe('NarraverseWorkspace', () => {
       narraverse: null,
       module4: { libraryId: 'lib-4', expectedRevision: 'sha256:r4', manualItemIds: ['m4'], libraryName: '沙盒库', revisionLabel: 'sha256:r4', selectedCount: 1, launchedAt: 150 },
     }
-    const view = render(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} />)
+    const view = render(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
     const iframe = view.container.querySelector('iframe') as HTMLIFrameElement
     dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/bind', expect.any(Object)))

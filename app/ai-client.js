@@ -1,12 +1,14 @@
 /* Narraverse shared model client.
- * Embedded mode delegates credentials and transport to Denova's unified
- * gateway. Standalone mode intentionally leaves its legacy local settings
- * path in app.js for offline/static inspection.
+ * Text generation always delegates credentials and transport to Denova's
+ * unified gateway through the trusted host bridge. There is no standalone
+ * provider-direct path any more: opening these assets on their own can only
+ * read status, never generate text.
  */
 (function (root) {
   'use strict';
 
   var api = root.NarraverseSharedAI = root.NarraverseSharedAI || {};
+  var PLATFORM_REQUIRED = '请从平台（Denova）进入叙界，并在平台设置中配置模型 / Open Narraverse from Denova and configure the model in Denova settings';
 
   function isEmbedded() {
     return typeof window !== 'undefined' && window.location
@@ -50,7 +52,7 @@
   };
 
   api.chat = function (messages, options) {
-    if (!isEmbedded()) return Promise.reject(new Error('当前为静态模式，请使用页面本地 API 设置。'));
+    if (!isEmbedded()) return Promise.reject(new Error(PLATFORM_REQUIRED));
     var opts = options || {};
     var normalizedMessages = Array.isArray(messages) ? messages.map(function (message) {
       return { role: message.role, content: message.content };

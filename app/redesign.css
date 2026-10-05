@@ -70,6 +70,28 @@ body[data-host="denova"] .denova-shell { display: none !important; }
 .embedded-migration-modal .modal-body { display: grid; gap: var(--sp-3); line-height: 1.65; }
 .embedded-migration-en { color: var(--text-muted); font-size: 13px; }
 
+/* 平台模型状态块：叙界与开放沙盒不再填写地址/密钥/模型名，只显示平台读数。
+ * 深浅主题共用既有令牌，状态色由 data-state 切换，不写死颜色值。 */
+.platform-model-group {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-small);
+  padding: var(--sp-3);
+}
+.platform-model-group .platform-model-state { margin: 0; font-weight: 600; line-height: 1.6; }
+.platform-model-group .platform-model-detail {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+.platform-model-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+.platform-model-group[data-state="ready"] .platform-model-state { color: var(--sem-success); }
+.platform-model-group[data-state="loading"] .platform-model-state { color: var(--text-muted); }
+.platform-model-group[data-state="missing"] .platform-model-state,
+.platform-model-group[data-state="unlinked"] .platform-model-state { color: var(--sem-warning); }
+.platform-model-group[data-state="error"] .platform-model-state { color: var(--sem-danger); }
+
 /* 全局焦点态（关键无障碍修复：原平台多数可点元素无可见焦点） */
 :focus-visible {
   outline: none;

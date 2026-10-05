@@ -13,7 +13,7 @@ const MESSAGE_TOTAL_BYTES = 96 * 1024
 type NarraverseInbound = {
   source: 'narraverse'
   version: 1 | 2
-  type: 'ready' | 'switch-mode' | 'module4-closed' | 'model-call-request'
+  type: 'ready' | 'switch-mode' | 'module4-closed' | 'model-call-request' | 'open-model-settings'
   payload?: unknown
 }
 
@@ -24,6 +24,8 @@ interface NarraverseWorkspaceProps {
   openModule4?: boolean
   onModule4Close?: () => void
   onSwitchMode: (mode: 'ide' | 'interactive') => void
+  /** iframe 只能请求"打开平台自己的模型设置"；跳转目标由宿主决定，不改当前模式。 */
+  onOpenModelSettings: () => void
 }
 
 type LoadStatus = 'loading' | 'ready' | 'error'
@@ -44,7 +46,7 @@ function iframeSource(): string {
   const url = new URL('/narraverse/index.html', iframeOrigin())
   url.searchParams.set('embedded', 'denova')
   url.searchParams.set('host_origin', window.location.origin)
-  url.searchParams.set('v', '20260915-host-proxy-v2')
+  url.searchParams.set('v', '20261004-platform-model-v3')
   return url.toString()
 }
 
@@ -89,7 +91,7 @@ async function readJSON(response: Response): Promise<Record<string, unknown>> {
   try { return raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch { return {} }
 }
 
-export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Close = () => {}, onSwitchMode }: NarraverseWorkspaceProps) {
+export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Close = () => {}, onSwitchMode, onOpenModelSettings }: NarraverseWorkspaceProps) {
   const { t, i18n } = useTranslation()
   const { theme, resolvedTheme } = useTheme()
   const host = useWorldContextHost()
@@ -239,6 +241,13 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
         onModule4Close()
         return
       }
+      if (data.type === 'open-model-settings') {
+        // 无参数命令：携带任何字段都按格式无效丢弃，不把未校验内容送进宿主导航。
+        const payload = data.payload as Record<string, unknown> | undefined
+        if (data.version !== 2 || (payload && Object.keys(payload).length > 0)) return
+        onOpenModelSettings()
+        return
+      }
       if (data.version !== 2 || data.type !== 'model-call-request') return
       const request = parseModelCall(data.payload)
       if (!request) {
@@ -249,7 +258,7 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
       }
       if (host.state !== 'ready') {
         setContextState('degraded')
-        postHostMessage('model-call-result', { requestId: request.requestId, ok: false, code: 'host_unavailable', message: '宿主代理不可用，本次将使用无世界背景模式' }, 2)
+        postHostMessage('model-call-result', { requestId: request.requestId, ok: false, code: 'host_unavailable', message: '本次未生成：平台连接尚未就绪，请检查平台连接 / Nothing was generated: the platform connection is not ready. Check the platform connection.' }, 2)
         return
       }
       const consumer: IframeWorldConsumer = openModule4 ? 'module4' : 'narraverse'
@@ -278,7 +287,7 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [bindConsumer, host.state, onModule4Close, onSwitchMode, openModule4, postHostMessage, syncHostContext, targetOrigin])
+  }, [bindConsumer, host.state, onModule4Close, onOpenModelSettings, onSwitchMode, openModule4, postHostMessage, syncHostContext, targetOrigin])
 
   useEffect(() => {
     setStatus('loading')

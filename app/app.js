@@ -17,7 +17,7 @@ if (typeof document !== 'undefined' && document.body) {
 const state = {
   adventures: [],
   currentId: null,
-  apiConfig: { endpoint: '', apiKey: '', model: '', maxTokens: 8000, maxOutputTokens: 4096, temperature: 0.85, streaming: true, autoSave: true, autoSaveEvery: 5, loreScanDepth: 14, loreBudgetPct: 30, macroEnabled: true, ttsEngine: 'native', cosyvoiceEndpoint: 'wss://llm-23ju9mf3n4t0k5dx.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference', cosyvoiceApiKey: '', cosyvoiceRelay: '', cosyvoiceVoice: 'longanyang', imageApiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation', imageApiKey: '', imageModel: 'qwen-image-3.0-pro' },
+  apiConfig: { maxTokens: 8000, maxOutputTokens: 4096, temperature: 0.85, autoSave: true, autoSaveEvery: 5, loreScanDepth: 14, loreBudgetPct: 30, macroEnabled: true, ttsEngine: 'native', cosyvoiceEndpoint: 'wss://llm-23ju9mf3n4t0k5dx.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference', cosyvoiceApiKey: '', cosyvoiceRelay: '', cosyvoiceVoice: 'longanyang', imageApiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation', imageApiKey: '', imageModel: 'qwen-image-3.0-pro' },
   customThemes: [],
   deletedThemes: [],
   uploadedLoadCards: [],
@@ -32,17 +32,16 @@ const state = {
   currentPresetId: null,      // 当前场景预设 id（presets.js 读写）
 };
 
-// Embedded Narraverse uses the Denova host proxy; only standalone mode needs
-// the iframe's own API settings. Never treat local credentials as a fallback
-// when the trusted host origin is missing.
+/* 文本生成只认平台宿主桥：iframe 不持有文本模型凭证，本地残留字段一律不参与判定，
+ * 也没有任何"桥接不可用就直连供应商"的兜底路径。 */
 function canRequestModel() {
-  if (isDenovaEmbedded) {
-    return window.parent !== window &&
-      typeof window.requestDenovaModel === 'function' &&
-      typeof getDenovaHostOrigin === 'function' &&
-      !!getDenovaHostOrigin();
-  }
-  return !!(state.apiConfig.apiKey && state.apiConfig.endpoint);
+  return !!(isDenovaEmbedded &&
+    window.parent !== window &&
+    typeof window.requestDenovaModel === 'function' &&
+    typeof getDenovaHostOrigin === 'function' &&
+    !!getDenovaHostOrigin() &&
+    window.NarraverseSharedAI &&
+    typeof window.NarraverseSharedAI.chat === 'function');
 }
 
 /* 失败消息缓存：用于“重试”按钮 */
@@ -573,10 +572,20 @@ async function loadConversationArchiveBundle(adventure) {
   return { version: 1, recovery_status: meta.recovery_status || 'best_effort', messages: active, events: events, branches: branches };
 }
 
+/* 文本模型的地址/密钥/模型名已归平台设置所有：既不再写进存档与导出，也不从旧存档
+ * 读回内存。图片与语音供应商配置不在迁移范围内，原样保留。 */
+const LEGACY_TEXT_CONNECTION_FIELDS = ['endpoint', 'apiKey', 'model'];
+
+function withoutLegacyTextConnection(config) {
+  const safe = { ...(config || {}) };
+  for (const field of LEGACY_TEXT_CONNECTION_FIELDS) delete safe[field];
+  return safe;
+}
+
 function stateToJson() {
   return JSON.stringify({
     adventures: state.adventures,
-    apiConfig: state.apiConfig,
+    apiConfig: withoutLegacyTextConnection(state.apiConfig),
     currentId: state.currentId,
     customThemes: state.customThemes,
   });
@@ -584,7 +593,7 @@ function stateToJson() {
 
 function applyParsedState(parsed) {
   state.adventures = parsed.adventures || [];
-  state.apiConfig = { ...state.apiConfig, ...(parsed.apiConfig || {}) };
+  state.apiConfig = { ...state.apiConfig, ...withoutLegacyTextConnection(parsed.apiConfig) };
   state.currentId = parsed.currentId || null;
   state.customThemes = parsed.customThemes || [];
   if (state.currentId && !state.adventures.some(a => a.id === state.currentId)) {
@@ -1902,107 +1911,27 @@ function syncSystemPrompt(adventure) {
   return prompt;
 }
 
-/* ==================== API 调用 ==================== */
-const REQUEST_TIMEOUT_MS = 120000;
+/* ==================== 文本生成：统一走平台模型调用 ==================== */
+const PLATFORM_MODEL_REQUIRED = '请从平台（Denova）进入叙界，并在平台设置中配置模型 / Open Narraverse from Denova and configure the model in Denova settings';
 
-async function callLLM(messages, onChunk) {
-  /* 嵌入 Denova 时只走统一模型网关：API Key 留在服务端，四个模块共享同一套
-   * Settings/transport。网关当前返回一段完整正文；对旧的流式调用方一次性
-   * 发送完整 chunk，保持现有 UI 回调协议而不再让浏览器直连供应商。 */
-  if (isDenovaEmbedded && window.NarraverseSharedAI && typeof window.NarraverseSharedAI.chat === 'function') {
-    const module = document.body && document.body.classList.contains('module4-active') ? 'module4' : 'narraverse';
-    const response = await window.NarraverseSharedAI.chat(messages, {
-      module,
-      maxTokens: state.apiConfig.maxOutputTokens || 4096,
-      temperature: state.apiConfig.temperature,
-    });
-    if (!response) throw new Error('共享模型没有返回可用内容，请重试');
-    if (typeof onChunk === 'function') onChunk(response, '');
-    return response;
-  }
-  const config = state.apiConfig;
-  if (!config.endpoint || !config.apiKey) {
-    throw new Error('API 未配置，请先在设置中填写 API 信息');
-  }
-  /* 兼容静态模式：用户可能粘贴完整路径，避免重复 /chat/completions 导致 404。 */
-  const baseUrl = String(config.endpoint || '').trim()
-    .replace(/\/+$/, '')
-    .replace(/\/chat\/completions$/i, '');
-  const url = baseUrl + '/chat/completions';
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const useStream = typeof onChunk === 'function' && config.streaming !== false;
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + config.apiKey,
-      },
-      body: JSON.stringify({
-        model: config.model || 'deepseek-chat',
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
-        temperature: config.temperature ?? 0.85,
-        max_tokens: config.maxOutputTokens || 4096,
-        stream: useStream,
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error('API 错误 (' + response.status + '): ' + errText.substring(0, 300));
-    }
-    if (useStream && response.body && (response.headers.get('content-type') || '').includes('text/event-stream')) {
-      return await readStream(response, onChunk);
-    }
-    /* 接口不支持流式或返回了普通 JSON：走非流式路径 */
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error('请求超时（' + Math.round(REQUEST_TIMEOUT_MS / 1000) + ' 秒），请重试');
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+function normalizeOutputTokenLimit(value) {
+  return Number.isInteger(value) && value >= 1 ? Math.min(8192, value) : 4096;
 }
 
-async function readStream(response, onChunk) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let full = '';
-  let thinkingFull = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
-    for (const line of lines) {
-      const t = line.trim();
-      if (!t.startsWith('data:')) continue;
-      const payload = t.slice(5).trim();
-      if (payload === '[DONE]') continue;
-      try {
-        const json = JSON.parse(payload);
-        const delta = json.choices && json.choices[0] && json.choices[0].delta;
-        if (!delta) continue;
-        let thinkingDelta = '';
-        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) thinkingDelta += delta.reasoning_content;
-        if (typeof delta.thinking === 'string' && delta.thinking) thinkingDelta += delta.thinking;
-        if (typeof delta.content === 'string' && delta.content) {
-          full += delta.content;
-          onChunk(delta.content, thinkingDelta);
-        } else if (thinkingDelta) {
-          onChunk('', thinkingDelta);
-        }
-        if (thinkingDelta) thinkingFull += thinkingDelta;
-      } catch (e) { /* 忽略无法解析的数据帧 */ }
-    }
-  }
-  return full;
+async function callLLM(messages, onChunk) {
+  /* 模型地址、密钥与模型选择全部由平台设置负责；本文件只把请求交给共享客户端，
+   * 再由可信宿主桥接转发到平台网关。客户端缺失、桥接缺失或上游失败都直接抛出，
+   * 不存在"直连供应商"或"裸调平台 chat"的兜底路径。 */
+  const client = window.NarraverseSharedAI;
+  if (!client || typeof client.chat !== 'function') throw new Error(PLATFORM_MODEL_REQUIRED);
+  const content = await client.chat(messages, {
+    maxTokens: normalizeOutputTokenLimit(state.apiConfig.maxOutputTokens),
+    temperature: state.apiConfig.temperature,
+  });
+  if (typeof content !== 'string' || !content.trim()) throw new Error('共享模型没有返回可用内容，请重试');
+  /* 网关一次返回完整正文；单次 onChunk 只是沿用旧的调用方协议，不是真正的流式输出。 */
+  if (typeof onChunk === 'function') onChunk(content, '');
+  return content;
 }
 
 /* ==================== 响应解析 ==================== */
@@ -2401,7 +2330,7 @@ function emptyStateHtml() {
   return '<div class="empty-state" id="emptyState">' +
     '<div class="empty-icon">✦</div>' +
     '<p class="empty-title">叙界 Narraverse</p>' +
-    '<p class="empty-desc">接入 LLM API，AI 实时生成叙事<br>属性变化在文字旁批注显示，上下文跨轮次不丢失</p>' +
+    '<p class="empty-desc">使用平台模型生成叙事 / AI narration powered by the platform model<br>属性变化在文字旁批注显示，上下文跨轮次不丢失</p>' +
     '<button class="btn btn-primary btn-lg" onclick="showNewAdventureModal()">创建第一个冒险</button>' +
     '</div>';
 }
@@ -2643,7 +2572,7 @@ async function generateAdventureIntro(advId, force) {
     return;
   }
   if (!canRequestModel()) {
-    adv.aiIntro = adv.aiIntro || { emoji: '📖', color: '#2EA7FF', title: '', intro: isDenovaEmbedded ? '（Denova 宿主模型代理不可用）' : '（未配置 API，无法生成介绍）', generatedAt: Date.now() };
+    adv.aiIntro = adv.aiIntro || { emoji: '📖', color: '#2EA7FF', title: '', intro: '（未连接平台模型，暂不生成介绍 / Platform model not connected）', generatedAt: Date.now() };
     renderAdventureList();
     return;
   }
@@ -3858,7 +3787,7 @@ function generateSceneImage(messageIndex) {
   var model = cfg.imageModel || 'qwen-image-3.0-pro';
 
   if (!apiKey) {
-    alert('请先在「API 设置 → 场景配图 API」中填写图片 API Key');
+    alert('请先在「模式设置 → 场景配图 API」中填写图片 API Key / Configure the image API key in Mode Settings → Scene image API first.');
     showSettings();
     return;
   }
@@ -4295,7 +4224,7 @@ function exportAllData() {
     version: 1,
     exportedAt: Date.now(),
     adventures: state.adventures,
-    apiConfig: state.apiConfig,
+    apiConfig: withoutLegacyTextConnection(state.apiConfig),
     customThemes: state.customThemes,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -5377,21 +5306,17 @@ async function sendMessage(text) {
 
     await manageContext(adv);
     hideTypingIndicator();
-    const useStream = state.apiConfig.streaming !== false;
     let response = '';
     let thinkingAcc = '';
-    if (useStream) {
-      streamEl = showStreamingBubble();
-      response = await callLLM(adv.conversationHistory, function(chunk, thinkingChunk) {
-        if (thinkingChunk) {
-          thinkingAcc += thinkingChunk;
-          updateThinkingBubble(streamEl, thinkingAcc);
-        }
-        if (chunk) appendStreamChunk(streamEl, chunk);
-      });
-    } else {
-      response = await callLLM(adv.conversationHistory);
-    }
+    /* 平台网关一次返回完整正文：气泡与回调只是沿用旧协议，不是真正的流式接收。 */
+    streamEl = showStreamingBubble();
+    response = await callLLM(adv.conversationHistory, function(chunk, thinkingChunk) {
+      if (thinkingChunk) {
+        thinkingAcc += thinkingChunk;
+        updateThinkingBubble(streamEl, thinkingAcc);
+      }
+      if (chunk) appendStreamChunk(streamEl, chunk);
+    });
     removeStreamBubble(streamEl);
     streamEl = null;
     if (!response || !response.trim()) throw new Error('模型返回了空内容，请重试');
@@ -7465,15 +7390,73 @@ function renderProfessionGrid(theme) {
   });
 }
 
+/* ==================== 平台模型状态（设置页只读，不触发付费测试） ==================== */
+let platformModelStatusSeq = 0;
+
+function setPlatformModelStatus(state, line, detail) {
+  const group = document.getElementById('platformModelGroup');
+  const text = document.getElementById('platformModelState');
+  const box = document.getElementById('platformModelDetail');
+  if (group) group.dataset.state = state;
+  if (text) text.textContent = line;
+  if (box) box.textContent = detail || '';
+}
+
+/* 状态查询带 consumer，只为把平台侧那一份配置的读数显示对；模型调用走哪条 consumer 由宿主决定。 */
+function refreshPlatformModelStatus() {
+  const client = window.NarraverseSharedAI;
+  if (!isDenovaEmbedded) {
+    setPlatformModelStatus('unlinked',
+      '未连接平台 / Not opened from Denova',
+      '请从平台的叙界或开放沙盒入口进入本页 / Open this page from the Denova workbench.');
+    return;
+  }
+  if (!client || typeof client.refresh !== 'function') {
+    setPlatformModelStatus('error', '平台模型客户端不可用 / Shared model client unavailable', '');
+    return;
+  }
+  const consumer = document.body && document.body.classList.contains('module4-active') ? 'module4' : 'narraverse';
+  const seq = ++platformModelStatusSeq;
+  setPlatformModelStatus('loading', '正在读取平台模型状态… / Reading platform model status…', '');
+  Promise.resolve(client.refresh(consumer)).then(function (status) {
+    /* 迟到的状态不得覆盖更晚一次刷新，也不得写进另一入口的读数。 */
+    if (seq !== platformModelStatusSeq) return;
+    const snapshot = status || {};
+    const model = String(snapshot.model || '').trim();
+    const endpoint = String(snapshot.base_url || '').trim();
+    if (snapshot.configured) {
+      setPlatformModelStatus('ready',
+        '已配置，本模式直接使用 / Configured by Denova' + (model ? ' · ' + model : ''),
+        [consumer, endpoint].filter(Boolean).join(' · '));
+      return;
+    }
+    const missing = [];
+    if (!snapshot.endpoint_configured) missing.push('地址 / endpoint');
+    if (!snapshot.credential_configured) missing.push('密钥 / API key');
+    if (!snapshot.model_configured) missing.push('模型名 / model name');
+    setPlatformModelStatus('missing', '平台尚未配置模型 / Model not configured in Denova',
+      missing.length ? '平台设置中缺少 / Missing in platform settings: ' + missing.join('、') : '');
+  }).catch(function (error) {
+    if (seq !== platformModelStatusSeq) return;
+    setPlatformModelStatus('error', '读取平台模型状态失败 / Status check failed',
+      String((error && error.message) || error || ''));
+  });
+}
+
+/* 跳转只做一件事：请宿主打开平台自己的模型设置，不改用户当前模式。 */
+function openPlatformModelSettings() {
+  const sent = typeof requestDenovaModelSettings === 'function' ? requestDenovaModelSettings() : false;
+  if (!sent) {
+    setPlatformModelStatus('unlinked', '无法从这里打开平台设置 / Cannot reach platform settings from here',
+      '请在平台顶栏「设置 → 模型」中配置 / Configure it under Denova settings → Model.');
+  }
+}
+
 function showSettings() {
   closeMobileSidebar();
-  document.getElementById('apiEndpoint').value = state.apiConfig.endpoint || '';
-  document.getElementById('apiKey').value = state.apiConfig.apiKey || '';
-  document.getElementById('modelName').value = state.apiConfig.model || '';
   document.getElementById('maxTokens').value = state.apiConfig.maxTokens || 8000;
   document.getElementById('maxOutputTokens').value = state.apiConfig.maxOutputTokens || 4096;
   document.getElementById('temperature').value = state.apiConfig.temperature ?? 0.85;
-  document.getElementById('streamingToggle').checked = state.apiConfig.streaming !== false;
   document.getElementById('loreScanDepth').value = state.apiConfig.loreScanDepth || 14;
   document.getElementById('loreBudgetPct').value = state.apiConfig.loreBudgetPct != null ? state.apiConfig.loreBudgetPct : 30;
   document.getElementById('macroToggle').checked = state.apiConfig.macroEnabled !== false;
@@ -7493,17 +7476,14 @@ function showSettings() {
   document.getElementById('imageModel').value = state.apiConfig.imageModel || 'qwen-image-3.0-pro';
   document.getElementById('autoSaveToggle').checked = state.apiConfig.autoSave !== false;
   document.getElementById('autoSaveEvery').value = state.apiConfig.autoSaveEvery || 5;
+  refreshPlatformModelStatus();
   showModal('settingsModal');
 }
 
 function saveSettings() {
-  state.apiConfig.endpoint = document.getElementById('apiEndpoint').value.trim();
-  state.apiConfig.apiKey = document.getElementById('apiKey').value.trim();
-  state.apiConfig.model = document.getElementById('modelName').value.trim();
   state.apiConfig.maxTokens = parseInt(document.getElementById('maxTokens').value) || 8000;
-  state.apiConfig.maxOutputTokens = parseInt(document.getElementById('maxOutputTokens').value) || 4096;
+  state.apiConfig.maxOutputTokens = normalizeOutputTokenLimit(Number(document.getElementById('maxOutputTokens').value));
   state.apiConfig.temperature = parseFloat(document.getElementById('temperature').value) || 0.85;
-  state.apiConfig.streaming = document.getElementById('streamingToggle').checked;
   state.apiConfig.loreScanDepth = parseInt(document.getElementById('loreScanDepth').value) || 14;
   state.apiConfig.loreBudgetPct = parseInt(document.getElementById('loreBudgetPct').value);
   if (isNaN(state.apiConfig.loreBudgetPct)) state.apiConfig.loreBudgetPct = 30;
@@ -8718,7 +8698,7 @@ document.addEventListener('DOMContentLoaded', async function () {
           if (!confirm('导入将覆盖当前全部冒险数据，确定继续？')) return;
           state.adventures = data.adventures || [];
           state.customThemes = Array.isArray(data.customThemes) ? data.customThemes : [];
-          if (data.apiConfig) state.apiConfig = { ...state.apiConfig, ...data.apiConfig };
+          if (data.apiConfig) state.apiConfig = { ...state.apiConfig, ...withoutLegacyTextConnection(data.apiConfig) };
           state.currentId = state.adventures.length > 0 ? state.adventures[0].id : null;
           saveState();
           renderAll();

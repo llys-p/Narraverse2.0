@@ -49,22 +49,20 @@
 <div id="settingsModal" class="modal-overlay" style="display:none">
   <div class="modal">
     <div class="modal-header">
-      <h2>⚙️ API 设置</h2>
+      <h2>⚙️ 模式设置 / Mode Settings</h2>
       <button class="modal-close" onclick="closeModal('settingsModal')">&times;</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label>API 端点 (Base URL)</label>
-        <input type="text" id="apiEndpoint" placeholder="https://api.deepseek.com">
-        <small>兼容 OpenAI / DeepSeek / Moonshot / Ollama 等。DeepSeek 填 https://api.deepseek.com</small>
-      </div>
-      <div class="form-group">
-        <label>API Key</label>
-        <input type="password" id="apiKey" placeholder="sk-...">
-      </div>
-      <div class="form-group">
-        <label>模型名称</label>
-        <input type="text" id="modelName" placeholder="deepseek-chat / gpt-4o / qwen-plus">
+      <!-- 文本模型由平台设置统一提供：本页不再收集 API 端点 / Key / 模型名称。 -->
+      <div class="form-group platform-model-group" id="platformModelGroup" data-state="unknown">
+        <label>文本模型 / Text model</label>
+        <p class="platform-model-state" id="platformModelState" data-testid="platform-model-state">正在检查平台模型状态… / Checking platform model status…</p>
+        <p class="platform-model-detail" id="platformModelDetail" data-testid="platform-model-detail"></p>
+        <div class="platform-model-actions">
+          <button class="btn btn-secondary" id="platformModelRefreshBtn" onclick="refreshPlatformModelStatus()">刷新状态 / Check status</button>
+          <button class="btn btn-primary" id="platformModelOpenBtn" onclick="openPlatformModelSettings()">前往平台模型设置 / Open platform model settings</button>
+        </div>
+        <small>叙界与开放沙盒共用平台里的模型配置，无需在这里重复填写地址、密钥和模型名称；这里只保留生成参数与本模式自身的设置。<br />Narraverse and the open sandbox share Denova's model configuration. Only generation parameters and this mode's own settings stay on this page.</small>
       </div>
       <div class="form-group">
         <label>最大上下文 Token</label>
@@ -73,18 +71,15 @@
       </div>
       <div class="form-group">
         <label>单次回复最大 Token</label>
-        <input type="number" id="maxOutputTokens" value="4096" min="512" max="16384">
-        <small>AI 单次回复的最大长度，DeepSeek 建议设 4096-8192</small>
+        <input type="number" id="maxOutputTokens" value="4096" min="1" max="8192">
+        <small>AI 单次回复的最大长度（1–8192）。旧存档超出上限会按 8192 发送，缺失或无效值按 4096 发送。<br />Maximum tokens per reply (1–8192). Legacy values above the host limit are sent as 8192; missing or invalid values use 4096.</small>
       </div>
       <div class="form-group">
         <label>生成温度 (Temperature)</label>
         <input type="number" id="temperature" value="0.85" min="0" max="2" step="0.05">
         <small>0=保守确定性，1=均衡，2=狂野随机。叙事建议 0.7-0.95</small>
       </div>
-      <div class="form-group">
-        <label>流式输出</label>
-        <label class="switch-row"><input type="checkbox" id="streamingToggle" checked> 逐字显示 AI 回复（更沉浸，兼容 OpenAI / DeepSeek / Ollama）</label>
-      </div>
+      <!-- 流式开关随供应商直连一起移除：平台网关一次返回完整正文。 -->
       <!-- 精简角色状态开关已移至「编辑冒险」页（按冒险存储，见 editAdventureModal） -->
       <div class="form-group">
         <label>设定集按需注入（World Info 化，借鉴 SillyTavern）</label>
@@ -578,7 +573,7 @@
       <span class="adventure-count" id="adventureCount">0</span>
     </div>
     <div class="adventure-list" id="adventureList"></div>
-    <button class="settings-btn" onclick="showSettings()">⚙ API 设置</button>
+    <button class="settings-btn" onclick="showSettings()">⚙ 模式设置 / Mode Settings</button>
   </aside>
 
   <!-- Center: Narrative + Annotation + Input -->
@@ -619,7 +614,7 @@
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">🗺️</div>
         <p class="empty-title">叙界 Narraverse</p>
-        <p class="empty-desc">接入 LLM API，AI 实时生成叙事<br>属性变化在文字旁批注显示，上下文跨轮次不丢失</p>
+        <p class="empty-desc">使用平台模型生成叙事 / AI narration powered by the platform model<br>属性变化在文字旁批注显示，上下文跨轮次不丢失</p>
         <button class="btn btn-primary btn-lg" onclick="showNewAdventureModal()">创建第一个冒险</button>
         <button class="btn btn-secondary btn-lg" onclick="GameEngine.open()" style="margin-top:10px">🎮 离线小说游戏（无需 API）</button>
       </div>
@@ -1264,13 +1259,13 @@
 </script>
 
 <script src="stickman.js"></script>
-<script src="game_engine.js"></script>
+<script src="game_engine.js?v=20261004-platform-model-v3"></script>
 <script src="packs/limitless.js"></script>
 <script src="local_library.js"></script>
-<script src="ai-client.js?v=20260915-host-proxy-v2"></script>
-<script src="app.js?v=20260915-origin-migration-v1"></script>
+<script src="ai-client.js?v=20261004-platform-model-v3"></script>
+<script src="app.js?v=20261004-platform-model-v3"></script>
 <script src="presets.js"></script>
-<script src="bridge.js?v=20260915-host-proxy-v2"></script>
+<script src="bridge.js?v=20261004-platform-model-v3"></script>
 <script src="module4/core/world.js?v=20260906-module4-v17"></script>
 <script src="module4/core/clock.js?v=20260906-module4-v17"></script>
 <script src="module4/core/schedule.js?v=20260906-module4-v17"></script>

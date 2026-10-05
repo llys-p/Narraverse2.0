@@ -96,6 +96,8 @@ interface ModeRouterProps {
   openModule4?: boolean
   onOpenModule4?: () => void
   onCloseModule4?: () => void
+  /** 叙界 iframe 请求打开平台自己的模型设置；跳转目标由宿主固定。 */
+  onOpenModelSettings?: () => void
   onSetMode: (mode: WorkspaceMode) => void
   onToggleActivityBarExpanded: () => void
   onToggleProjectVisible: () => void
@@ -196,6 +198,7 @@ export function ModeRouter(props: ModeRouterProps) {
     openModule4 = false,
     onOpenModule4 = () => {},
     onCloseModule4 = () => {},
+    onOpenModelSettings = () => {},
     onSetMode,
     onToggleActivityBarExpanded,
     onToggleProjectVisible,
@@ -708,6 +711,7 @@ export function ModeRouter(props: ModeRouterProps) {
             openModule4={openModule4}
             onModule4Close={onCloseModule4}
             onSwitchMode={(nextMode) => onSetMode(nextMode)}
+            onOpenModelSettings={onOpenModelSettings}
           />
         </MainRouteLayer>
       )}

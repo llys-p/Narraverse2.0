@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- 叙界/开放沙盒发送模型请求时统一将回复上限规范为整数 1–8192；旧存档和导入档的 12000 在发送时收敛为 8192，缺失或无效值使用 4096，不回写原存档。模型状态缺项详情与输出限制说明补齐英文。
+- Narraverse host 未就绪时明确返回“本次未生成”并提示检查平台连接，不再声称会使用无世界背景模式。
+- Narraverse and open sandbox now normalize reply limits to integers from 1 to 8192 at the model request boundary. Legacy values of 12000 are sent as 8192; missing or invalid values use 4096 without rewriting saved archives. Missing model settings and output-limit help now include English.
+- When the Narraverse host is unavailable, the request now clearly reports that nothing was generated and asks the user to check the platform connection.
+
 ### Added
 
 - 书籍总览新增关系图谱：节点与关系由本书条目正文中的相互提及本地派生，支持搜索、类型筛选、拖拽、缩放和打开条目。
@@ -89,6 +96,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Preserve reference ownership, unsaved drafts, response ownership and authoritative cascade timestamps. Reject missing/blank baseUpdatedAt in HTTP item updates to enforce the existing concurrency contract. All 1296 frontend tests and relevant Go gates passed; shell authentication/update-check warnings are recorded separately.
 
 ### Changed
+- 叙界与开放沙盒的文本生成统一改用平台模型配置：移除 iframe 内的 API 端点/密钥/模型名设置与供应商直连分支，设置页改为显示平台模型状态并提供「前往平台模型设置」跳转（宿主新消息 `open-model-settings`，仅可信来源、无参数、不改当前模式）；旧存档的正文、玩法与图片/语音配置保留，但 `endpoint/apiKey/model` 不再读回内存也不随新导出携带。宿主网关返回完整正文，故移除已失效的流式开关，不宣称逐字流式。
+- Narraverse and the open sandbox now use Denova's shared model settings only: the iframe no longer collects an API endpoint, key or model name and no longer dials a provider directly. Its settings dialog shows the platform model status and can ask the host to open platform model settings (new trusted, argument-free `open-model-settings` message that never switches modes). Legacy archives keep their story, gameplay and image/voice settings, while `endpoint/apiKey/model` are neither restored into memory nor written into new exports. Because the gateway returns one complete body, the now-dead streaming toggle was removed and no incremental streaming is claimed.
+- 单次回复上限由 16384 收紧到 8192，与宿主 `parseModelCall` 的既有校验一致，避免设置里能填出一个必然失败的数值。
+- The per-response token cap is tightened from 16384 to 8192 to match the host's existing `parseModelCall` validation, so the settings page can no longer produce a value that is guaranteed to be rejected.
 - PR #3 统一导航语义：顶部保留四个运行模式，世界入口改名为“梳理世界”，移除世界概览中重复的四模式卡片；同步修正页面标题和响应式测试断言。
 - PR #3 clarifies navigation semantics: the top bar keeps the four runtime modes, the world entry is renamed to “Organize World”, duplicate mode cards are removed from the world overview, and the page title and responsive test assertion are aligned.
 

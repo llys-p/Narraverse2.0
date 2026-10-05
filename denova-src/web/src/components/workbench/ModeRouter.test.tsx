@@ -249,7 +249,7 @@ describe('ModeRouter autosave navigation policy', () => {
     expect(iframeURL.pathname).toBe('/narraverse/index.html')
     expect(iframeURL.searchParams.get('embedded')).toBe('denova')
     expect(iframeURL.searchParams.get('host_origin')).toBe(window.location.origin)
-    expect(iframeURL.searchParams.get('v')).toBe('20260915-host-proxy-v2')
+    expect(iframeURL.searchParams.get('v')).toBe('20261004-platform-model-v3')
 
     view.rerender(<ModeRouter {...props} mode="ide" />)
     expect(view.container.querySelector('iframe')).toBe(iframe)
