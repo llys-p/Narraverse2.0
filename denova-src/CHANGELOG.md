@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Narraverse 叙事、离线小说和 Module4 接入本地火柴人动作舞台；书库正文可按规则切为可复核节拍，不触发模型调用。离线游戏入口在空状态重渲染后仍可用。
+- Narraverse stories, offline games and Module4 now include the local stickman stage. Library text can be split into reviewable beats without model calls, and the offline-game entry remains available after empty-state rerendering.
+
+### Fixed
+
+- 修复火柴人舞台折叠后无法重新展开，并在隐藏或关闭宿主时清除节拍计时器；Module4 重开后恢复已展开舞台。
+- Stickman stages can now expand after collapsing. Hiding or closing a host clears beat timers, and an expanded Module4 stage resumes when reopened.
+- 叙界静态资源同步补齐动作库与舞台文件，并在替换旧资源前检查页面引用；深色舞台按钮使用明确的文字颜色。
+- Narraverse asset sync includes the action library and stage, checks page references before replacing the previous payload, and gives dark stage buttons an explicit text color.
+
+
 ### Fixed
 
 - 叙界/开放沙盒发送模型请求时统一将回复上限规范为整数 1–8192；旧存档和导入档的 12000 在发送时收敛为 8192，缺失或无效值使用 4096，不回写原存档。模型状态缺项详情与输出限制说明补齐英文。

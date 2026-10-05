@@ -20,6 +20,8 @@ const runtimeEntries = [
   'presets.js',
   'redesign.css',
   'stickman.js',
+  'stickman_actions.js',
+  'stickman_stage.js',
   'style.css',
   'theme-neutral.css',
   'module4',
@@ -70,6 +72,21 @@ copied.push('local_library.js')
 const indexHtml = await readFile(path.join(stagingDirectory, 'index.html'), 'utf8')
 if (!indexHtml.includes('app.js') || !indexHtml.includes('bridge.js')) {
   throw new Error('叙界 index.html 缺少必要运行时脚本引用。')
+}
+
+const missingReferences = []
+for (const match of indexHtml.matchAll(/(?:src|href)="([^"]+)"/g)) {
+  const reference = match[1].split('?')[0].split('#')[0]
+  if (!reference || /^(?:https?:|data:|about:|mailto:|javascript:|\/\/)/i.test(reference)) continue
+  try {
+    await stat(path.join(stagingDirectory, reference))
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    missingReferences.push(reference)
+  }
+}
+if (missingReferences.length) {
+  throw new Error(`叙界页面引用了 ${missingReferences.length} 个未同步的文件，请补齐 runtimeEntries：${missingReferences.join(', ')}`)
 }
 
 await writeFile(path.join(stagingDirectory, 'narraverse-build.json'), `${JSON.stringify({

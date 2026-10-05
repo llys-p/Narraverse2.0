@@ -38,7 +38,12 @@ window.GameEngine = (function () {
   }
   function byId(id) { return headless ? null : document.getElementById(id); }
 
-  /* ---------------- 火柴人动作识别 ---------------- */
+  /* ---------------- 火柴人：优先共享推断引擎，退回内置词表 ---------------- */
+  var smStage = null;
+  function sm() {
+    if (smStage && smStage.stage) return smStage.stage;
+    return (typeof window !== 'undefined') ? window.Stickman : null;
+  }
   var ACTION_RULES = [
     { n: 'fall', re: /倒下|倒地|死亡|抹杀|昏|晕|失败/ },
     { n: 'attack', re: /攻击|砍|劈|斩|刺|拳|搏斗|迎战|击杀|战斗|强攻|冲锋|砸|一击/ },
@@ -52,18 +57,25 @@ window.GameEngine = (function () {
   ];
   function pickAction(text, explicit) {
     if (explicit && ACTIONS_OK(explicit)) return explicit;
+    if (typeof window !== 'undefined' && window.StickmanActions) {
+      var r = window.StickmanActions.infer(text || '');
+      if (r.source === 'rule' && ACTIONS_OK(r.action)) return r.action;
+    }
     for (var i = 0; i < ACTION_RULES.length; i++) {
       if (ACTION_RULES[i].re.test(text || '')) return ACTION_RULES[i].n;
     }
     return 'idle';
   }
   function ACTIONS_OK(name) {
-    return typeof window !== 'undefined' && window.Stickman &&
-      window.Stickman.actions && window.Stickman.actions[name];
+    var s = sm();
+    return !!(s && s.actions && s.actions[name]);
   }
   function playAction(name) {
-    if (typeof window !== 'undefined' && window.Stickman) window.Stickman.play(name || 'idle');
+    var s = sm();
+    if (s) s.play(name || 'idle');
+    syncStageUI();
   }
+  function syncStageUI() { if (smStage && smStage.sync) smStage.sync(); }
 
   /* ---------------- AI 增强（可选；数值/战斗/结局始终离线，AI 失败自动回退） ---------------- */
   var aiEnabled = false;
@@ -88,13 +100,25 @@ window.GameEngine = (function () {
     if (S.history.length) parts.push('最近事件：' + S.history.slice(-6).join(' → '));
     return parts.join('；');
   }
-  var AI_ACTIONS = ['idle', 'walk', 'run', 'attack', 'cast', 'hit', 'jump', 'dodge', 'fall', 'win', 'search', 'talk'];
+  /* 供 AI 选的动作名：优先用引擎实际注册表，避免提示词与动作库脱节 */
+  var AI_ACTIONS_CORE = ['idle', 'walk', 'run', 'sneak', 'jump', 'attack', 'thrust', 'shoot', 'block', 'dodge', 'hit', 'fall', 'knockdown', 'getup', 'cast', 'heal', 'talk', 'search', 'read', 'open', 'sit', 'bow', 'victory', 'think', 'listen'];
+  function aiActionNames() {
+    var s = sm();
+    if (s && typeof s.listActions === 'function') {
+      var all = s.listActions();
+      var ok = AI_ACTIONS_CORE.filter(function (n) { return all.indexOf(n) >= 0; });
+      if (ok.length) return ok;
+    }
+    return AI_ACTIONS_CORE.slice();
+  }
+  var AI_ACTIONS = aiActionNames();
   function aiActionOut(text, fallback) {
-    var m = String(text).match(/<action:\s*([a-z]+)\s*>\s*$/i);
+    var m = String(text).match(/<action:\s*([a-z_]+)\s*>\s*$/i);
     var action = null;
-    if (m && AI_ACTIONS.indexOf(m[1].toLowerCase()) !== -1) action = m[1].toLowerCase();
-    var cleaned = String(text).replace(/<action:\s*[a-z]+\s*>\s*$/i, '').trim();
-    if (!action) action = fallback;
+    var list = aiActionNames();
+    if (m && list.indexOf(m[1].toLowerCase()) !== -1) action = m[1].toLowerCase();
+    var cleaned = String(text).replace(/<action:\s*[a-z_]+\s*>\s*$/i, '').trim();
+    if (!action) action = pickAction(cleaned, fallback);
     return { text: cleaned, action: action };
   }
   function aiCall(sys, user) {
@@ -119,7 +143,7 @@ window.GameEngine = (function () {
   }
   function aiNarrate(baseText, kind, cacheId) {
     if (cacheId) { var c = aiCached(cacheId); if (c) return Promise.resolve(aiActionOut(c)); }
-    var sys = '你是文字冒险游戏的叙事生成器。基于玩家当前状态，把给定的剧情片段扩写成一段生动、贴合状态的中文叙事（80-160字），保持原意与走向，不改动任何数值与可选分支。在结尾用单独一行输出动作建议：<action:动作名>，动作名只能是 idle/walk/run/attack/cast/hit/jump/dodge/fall/win/search/talk 之一。只输出叙事与这一行，不要其它说明。';
+    var sys = '你是文字冒险游戏的叙事生成器。基于玩家当前状态，把给定的剧情片段扩写成一段生动、贴合状态的中文叙事（80-160字），保持原意与走向，不改动任何数值与可选分支。在结尾用单独一行输出动作建议：<action:动作名>，动作名只能是 '+aiActionNames().join('/')+' 之一。只输出叙事与这一行，不要其它说明。';
     var user = '【玩家状态】\n' + aiStateSummary() + '\n\n【原剧情】\n' + baseText + '\n\n【情境】' + (kind || '');
     return aiCall(sys, user).then(function (full) {
       if (cacheId) aiCachePut(cacheId, full);
@@ -127,7 +151,7 @@ window.GameEngine = (function () {
     });
   }
   function aiNarrateResult(baseText) {
-    var sys = '你是文字冒险游戏的叙事生成器。玩家刚做了一个选择，下面是该选择的基础结果。请扩写成生动、贴合状态的中文描写（60-140字），保持结果走向不变，不改动数值。在结尾用单独一行输出动作建议：<action:动作名>，动作名只能是 idle/walk/run/attack/cast/hit/jump/dodge/fall/win/search/talk 之一。';
+    var sys = '你是文字冒险游戏的叙事生成器。玩家刚做了一个选择，下面是该选择的基础结果。请扩写成生动、贴合状态的中文描写（60-140字），保持结果走向不变，不改动数值。在结尾用单独一行输出动作建议：<action:动作名>，动作名只能是 '+aiActionNames().join('/')+' 之一。';
     var user = '【玩家状态】\n' + aiStateSummary() + '\n\n【选择结果】\n' + baseText;
     return aiCall(sys, user).then(aiActionOut);
   }
@@ -143,14 +167,13 @@ window.GameEngine = (function () {
   }
 
   /* ---------------- 火柴人舞台：角色场景 ---------------- */
-  function stickman() { return (typeof window !== 'undefined') ? window.Stickman : null; }
   function getChar(key) {
     var c = (pack && pack.characters && pack.characters[key]) || {};
     return { color: c.color || '#e8e8e8', scale: c.scale || 1, flip: !!c.flip, alpha: c.alpha };
   }
   function setScene(defs) {
-    var sm = stickman();
-    if (!sm) return;
+    var s = sm();
+    if (!s) return;
     var actors = [];
     for (var i = 0; i < defs.length; i++) {
       var d = defs[i];
@@ -162,7 +185,8 @@ window.GameEngine = (function () {
         alpha: c.alpha, action: d.action || 'idle',
       });
     }
-    sm.scene(actors);
+    s.scene(actors);
+    syncStageUI();
   }
   function storyScene(showKeys, playerAction) {
     var defs = [{ id: 'player', key: 'player', x: 0.32, action: playerAction || 'idle' }];
@@ -174,13 +198,14 @@ window.GameEngine = (function () {
   }
   function combatScene(enemyKey) {
     setScene([
-      { id: 'player', key: 'player', x: 0.28, action: 'idle' },
-      { id: 'enemy', key: enemyKey || 'enemy', x: 0.72, flip: true, action: 'idle' },
+      { id: 'player', key: 'player', x: 0.28, action: 'guard' },
+      { id: 'enemy', key: enemyKey || 'enemy', x: 0.72, flip: true, action: 'guard' },
     ]);
   }
   function sceneAct(id, name) {
-    var sm = stickman();
-    if (sm) sm.actorAction(id, name);
+    var s = sm();
+    if (s) s.actorAction(id, name);
+    syncStageUI();
   }
   function findItem(idOrName) {
     return (pack.items || []).filter(function (it) { return it.id === idOrName || it.name === idOrName; })[0];
@@ -703,21 +728,47 @@ window.GameEngine = (function () {
     var note = byId('ogAiStatus');
     if (note) note.textContent = (aiEnabled && !hasAPI()) ? '（未检测到 API 配置，将自动回退离线）' : '';
   }
+  /* 舞台控制面板：绑到离线游戏已有的画布上，避免两个循环抢同一块画布 */
+  function mountStage() {
+    if (smStage) return smStage;
+    if (typeof window === 'undefined' || typeof document === 'undefined' || headless) return null;
+    var cv = byId('ogCanvas');
+    var host = byId('ogStageCtl');
+    if (!cv) return null;
+    if (host && window.StickmanStage) {
+      try {
+        if (!host._smMounted) {
+          smStage = window.StickmanStage.create(host, {
+            canvas: cv, height: 140, storageKey: 'og', actorPrefix: 'n',
+            title: '火柴人编排', maxBeats: 8,
+          });
+          host._smMounted = true;
+        }
+      } catch (e) {
+        smStage = null;
+        host.innerHTML = '<div class="og-note">舞台控制面板初始化失败：' + (e && e.message ? e.message : e) + '</div>';
+      }
+    }
+    if (!smStage && window.Stickman) window.Stickman.attach(cv, { height: 140 });
+    return smStage;
+  }
   function open() {
     syncPacks();
     if (!Object.keys(packs).length) { alert('未找到游戏设定包'); return; }
     var el = byId('offlineGame');
     if (el) el.style.display = 'flex';
-    if (typeof window !== 'undefined' && window.Stickman) {
-      window.Stickman.attach(byId('ogCanvas'));
-    }
+    mountStage();
+    var s = sm();
+    if (s) { s.resize(); s.start(); }
     syncAiButton();
     renderStart();
   }
   function close() {
     var el = byId('offlineGame');
     if (el) el.style.display = 'none';
-    if (typeof window !== 'undefined' && window.Stickman) window.Stickman.stop();
+    var s = sm();
+    if (smStage && smStage.pause) smStage.pause();
+    else if (s) s.stop();
   }
   function restart() { startRun(S.packId, S.talent ? pack.talents.indexOf(S.talent) : null); }
 
@@ -752,6 +803,9 @@ window.GameEngine = (function () {
     onContinue: onContinue,
     combatAttack: combatAttack,
     toggleAI: toggleAI,
+    stage: function () { return smStage; },
+    mountStage: mountStage,
+    pickAction: pickAction,
     simulate: simulate,
     _state: function () { return S; },
   };

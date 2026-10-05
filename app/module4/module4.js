@@ -43,6 +43,7 @@
 
   Module4.open = function () { setWorkspaceVisible(true); };
   Module4.close = function () {
+    if (Module4.UI && Module4.UI.Stickman && typeof Module4.UI.Stickman.pause === 'function') Module4.UI.Stickman.pause();
     setWorkspaceVisible(false);
     if (typeof root.postNarraverseHostMessage === 'function') root.postNarraverseHostMessage('module4-closed');
   };

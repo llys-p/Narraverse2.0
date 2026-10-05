@@ -2332,6 +2332,7 @@ function emptyStateHtml() {
     '<p class="empty-title">叙界 Narraverse</p>' +
     '<p class="empty-desc">使用平台模型生成叙事 / AI narration powered by the platform model<br>属性变化在文字旁批注显示，上下文跨轮次不丢失</p>' +
     '<button class="btn btn-primary btn-lg" onclick="showNewAdventureModal()">创建第一个冒险</button>' +
+    '<button class="btn btn-secondary btn-lg" onclick="GameEngine.open()" style="margin-top:10px">🎮 离线小说游戏（无需 API）</button>' +
     '</div>';
 }
 
@@ -5326,6 +5327,8 @@ async function sendMessage(text) {
     const parsed = parseGameResponse(response);
     const preLevel = adv.character.level;
     applyParsedResult(adv, parsed);
+    /* 火柴人舞台：把这段叙述喂给本地推断（不额外调用模型） */
+    try { stickmanOnReply(response); } catch (e) { console.warn('舞台推断失败（不影响剧情）', e); }
     /* 升级事件记录到时间轴 */
     if (adv.character.level > preLevel) {
       logEvent(adv, 'levelup', '升级到 Lv.' + adv.character.level, '从 Lv.' + preLevel + ' 提升至 Lv.' + adv.character.level);
@@ -8737,3 +8740,142 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   /* 弹窗不再因点击外部遮罩而关闭，避免误关导致输入丢失。仅可通过关闭/取消/保存按钮关闭。 */
 });
+
+/* =========================================================
+ * 火柴人舞台 · 主冒险集成（v4）
+ * - 顶栏 🕺 开关；打开时才建舞台，不打开就零开销
+ * - 每条 AI 叙述自动推断动作（纯本地规则，不再额外调用模型）
+ * - 若模型自己写了 <action:xxx>，优先采纳它，并在面板上标出来源
+ * ========================================================= */
+var __smAdv = { stage: null, follow: true, queue: [], busy: false };
+
+function smPref() {
+  try { return JSON.parse(localStorage.getItem('sm:adv') || '{}') || {}; } catch (e) { return {}; }
+}
+function smSavePref(o) {
+  try {
+    var p = smPref();
+    for (var k in o) p[k] = o[k];
+    localStorage.setItem('sm:adv', JSON.stringify(p));
+  } catch (e) { /* 无 localStorage 时忽略 */ }
+}
+
+function ensureAdvStage() {
+  if (__smAdv.stage) return __smAdv.stage;
+  if (!window.StickmanStage || !window.StickmanStage.create || !window.Stickman) return null;
+  var host = document.getElementById('advStageHost');
+  if (!host) return null;
+  try {
+    __smAdv.stage = window.StickmanStage.create(host, {
+      title: '火柴人舞台 · 本段冒险', height: 210, storageKey: 'adv', actorPrefix: 'b',
+    });
+    __smAdv.stage.setMode(smPref().follow === false ? 'manual' : 'auto');
+    return __smAdv.stage;
+  } catch (e) {
+    host.innerHTML = '<div class="scene-tag">舞台组件加载失败：' + (e && e.message ? e.message : e) + '</div>';
+    return null;
+  }
+}
+
+function toggleStickmanStage(force) {
+  var wrap = document.getElementById('advStageWrap');
+  if (!wrap) return;
+  var show = force != null ? !!force : wrap.style.display === 'none';
+  wrap.style.display = show ? 'block' : 'none';
+  var btn = document.getElementById('advStageBtn');
+  if (btn) btn.classList.toggle('active', show);
+  if (show) {
+    var st = ensureAdvStage();
+    if (st && st.stage) { st.stage.resize(); st.stage.start(); }
+    if (st && __smAdv.queue.length) { replayAdvQueue(); }
+  } else if (__smAdv.stage) {
+    __smAdv.stage.pause();
+  }
+  smSavePref({ open: show });
+}
+
+/* 从模型文本里取显式动作指令 */
+function smExplicit(text) {
+  var m = String(text || '').match(/<action:\s*([a-zA-Z_]+)\s*>/i);
+  if (!m) return null;
+  var n = m[1].toLowerCase();
+  return (window.Stickman && window.Stickman.actions[n]) ? n : null;
+}
+
+function stickmanOnReply(text) {
+  var clean = String(text || '').replace(/<[^>]+>/g, ' ');
+  var ex = smExplicit(text);
+  var item = { text: clean, explicit: ex };
+  __smAdv.queue.push(item);
+  if (__smAdv.queue.length > 8) __smAdv.queue.shift();
+  var wrap = document.getElementById('advStageWrap');
+  if (!wrap || wrap.style.display === 'none') return;
+  if (!__smAdv.stage) ensureAdvStage();
+  if (!__smAdv.stage || !__smAdv.follow) return;
+  applyAdvQueueItem(item);
+}
+
+function applyAdvQueueItem(item) {
+  var st = __smAdv.stage;
+  if (!st) return;
+  if (st.root && st.root._mode === 'manual') return;
+  if (item.explicit) {
+    var a = st.stage.actors()[0];
+    if (a) st.stage.setActor(a, { action: item.explicit });
+    var cap = document.querySelector('#advStageHost .smst-note');
+    if (cap) cap.textContent = '模型显式给出 <action:' + item.explicit + '>：标签优先于本地规则';
+  } else {
+    st.actFromText(item.text);
+  }
+}
+
+function replayAdvQueue() {
+  if (!__smAdv.queue.length) return;
+  applyAdvQueueItem(__smAdv.queue[__smAdv.queue.length - 1]);
+}
+
+/* =========================================================
+ * 火柴人舞台 · 书库正文演绎（本地规则切节拍，零 API 调用）
+ * ========================================================= */
+var __smRead = { stage: null, text: '' };
+
+function stickmanReadPreview() {
+  var host = document.getElementById('smReadHost');
+  if (!host) return;
+  var txtEl = document.querySelector('#loadPreviewBody .load-preview-text');
+  var text = String(txtEl ? txtEl.textContent : '').trim();
+  __smRead.text = text.slice(0, 1200);
+  var t = document.getElementById('loadPreviewTitle');
+  var rt = document.getElementById('smReadTitle');
+  if (rt) rt.textContent = '🕺 火柴人演绎 · ' + String(t ? t.textContent : '').replace('👁 预览', '').trim();
+  showModal('smReadModal');
+  if (!window.StickmanStage || !window.StickmanStage.create) {
+    host.innerHTML = '<p class="scene-tag">舞台组件未加载（stickman_stage.js）</p>';
+    return;
+  }
+  if (!__smRead.stage) {
+    try {
+      __smRead.stage = window.StickmanStage.create(host, {
+        title: '正文演绎', height: 230, storageKey: 'read', actorPrefix: 'r', maxBeats: 12,
+      });
+    } catch (e) {
+      host.innerHTML = '<p class="scene-tag">舞台初始化失败：' + (e && e.message ? e.message : e) + '</p>';
+      return;
+    }
+  }
+  if (__smRead.stage.stage) { __smRead.stage.stage.resize(); __smRead.stage.stage.start(); }
+  var n = document.getElementById('smReadNote');
+  if (!__smRead.text) { if (n) n.textContent = '这段正文没有可预览的文字。'; return; }
+  var list = __smRead.stage.setText(__smRead.text);
+  if (n) n.textContent = '从正文切出 ' + list.length + ' 拍（点每拍可复核命中依据）· 未调用模型';
+  __smRead.stage.playBeats();
+}
+
+function stickmanReadPlay() {
+  if (__smRead.stage) __smRead.stage.playBeats();
+}
+
+function closeStickmanRead() {
+  closeModal('smReadModal');
+  if (__smRead.stage) __smRead.stage.pause();
+}

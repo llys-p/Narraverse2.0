@@ -121,5 +121,67 @@
     });
     var count = document.getElementById('module4WorldCount');
     if (count) count.textContent = String(worlds.length);
+    try { Module4.UI.Stickman.sync(shell, worldView); } catch (e) { console.warn('模块四舞台未启用', e); }
   };
+
+  /* 火柴人舞台：保持独立挂载，并在宿主被卸载时销毁旧实例。 */
+  Module4.UI.Stickman = (function () {
+    var api = null, host = null, btn = null, owner = null, lastText = '';
+    function ensureHost(shell) {
+      if (host && (host.isConnected === false || (owner && owner !== shell))) {
+        if (api && api.destroy) api.destroy();
+        api = null; host = null; btn = null; owner = null; lastText = '';
+      }
+      if (host) return true;
+      if (!window.StickmanStage || !window.StickmanStage.create || !window.Stickman) return false;
+      owner = shell;
+      var body = shell.querySelector('.module4-shell__body') || shell;
+      host = document.createElement('div');
+      host.id = 'm4StageHost';
+      host.hidden = true;
+      body.appendChild(host);
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn--sm module4-stage-toggle';
+      btn.textContent = '🕺 火柴人舞台';
+      btn.onclick = function () {
+        host.hidden = !host.hidden;
+        btn.classList.toggle('active', !host.hidden);
+        if (!host.hidden) { ensureStage(); if (api) { api.stage.resize(); api.stage.start(); syncLatest(); } }
+        else if (api && api.pause) api.pause();
+      };
+      (shell.querySelector('.module4-shell__bar') || body).appendChild(btn);
+      return true;
+    }
+    function ensureStage() {
+      if (api || !host) return api;
+      api = window.StickmanStage.create(host, {
+        title: '火柴人舞台 · 模块四', height: 200, storageKey: 'm4', actorPrefix: 'm',
+      });
+      return api;
+    }
+    function latestText(worldView) {
+      var timeline = worldView && worldView.querySelector('.module4-timeline');
+      var last = timeline && timeline.lastElementChild;
+      if (!last) return '';
+      var paragraph = last.querySelector('p');
+      return String((paragraph || last).textContent || '').trim();
+    }
+    function syncLatest() {
+      if (!api) return;
+      var text = latestText(document.querySelector('#module4WorldView'));
+      if (text && text !== lastText) { lastText = text; api.actFromText(text); }
+    }
+    return {
+      sync: function (shell, worldView) {
+        if (!shell || !ensureHost(shell) || host.hidden) return;
+        ensureStage();
+        api.stage.resize(); api.stage.start();
+        var text = latestText(worldView);
+        if (text && text !== lastText) { lastText = text; api.actFromText(text); }
+      },
+      pause: function () { if (api && api.pause) api.pause(); },
+      stage: function () { return api; },
+    };
+  }());
 }(window));
