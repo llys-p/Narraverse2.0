@@ -636,6 +636,11 @@ function LoreSettingPanel({
           .then(reconcileCreatorFile)
           .catch((error) => console.warn('[creator-editor] failed to reload external CREATOR.md update', error))
       }
+      if (isBookOverviewActive && (!paths || paths.includes(BOOK_OVERVIEW_PATH))) {
+        void readFile(BOOK_OVERVIEW_PATH)
+          .then(reconcileOverviewFile)
+          .catch((error) => console.warn('[book-overview] failed to reload external book overview update', error))
+      }
       if (
         activeMode === 'lore'
         && activeId === INTERACTIVE_OPENING_PRESET_ENTRY_ID
@@ -648,7 +653,7 @@ function LoreSettingPanel({
     }
     window.addEventListener('nova:workspace-change', onWorkspaceChange)
     return () => window.removeEventListener('nova:workspace-change', onWorkspaceChange)
-  }, [activeId, activeMode, isCreatorActive, reconcileCreatorFile, reconcileOpeningPresetFile, workspace])
+  }, [activeId, activeMode, isBookOverviewActive, isCreatorActive, reconcileCreatorFile, reconcileOpeningPresetFile, reconcileOverviewFile, workspace])
 
   useEffect(() => {
     if (activeMode !== 'lore' || onImagePresetsChange || externalImagePresets.length > 0 || !workspace) return
@@ -689,8 +694,9 @@ function LoreSettingPanel({
 
   useEffect(() => {
     const onLoreUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ item_ids?: string[] }>).detail
-      void refreshItems(detail?.item_ids?.[0])
+      const detail = (event as CustomEvent<{ workspace?: string; item_ids?: string[]; preserve_selection?: boolean }>).detail
+      if (detail?.workspace && detail.workspace !== loreWorkspaceRef.current) return
+      void refreshItems(detail?.preserve_selection ? undefined : detail?.item_ids?.[0])
     }
     window.addEventListener('nova:lore-updated', onLoreUpdated)
     return () => window.removeEventListener('nova:lore-updated', onLoreUpdated)
@@ -1191,9 +1197,9 @@ function LoreSettingPanel({
                           origin="lore"
                           resourceId={LORE_CONFIG_AGENT_ENTRY_ID}
                           context={{ item_count: String(items.length) }}
-                          onMutated={() => {
-                            void refreshItems()
-                            notifyLoreUpdated()
+                          onMutated={(mutation) => {
+                            if (mutation?.toolName === 'write_book_overview') return
+                            notifyLoreUpdated(mutation?.itemIds)
                           }}
                         />
                       </div>

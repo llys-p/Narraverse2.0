@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- 资料管理 Agent 新增书籍总览读取/保存与条目关系工具，内置 book-overview-relations Skill 随资料入口加载；总览沿用编辑器的版本检查与变更记录，明确关系保存在本书 Lore 条目中。关系按稳定 ID 保留，普通编辑不清空，删除条目同时解除入向引用。
+- The resource manager can read and save book overviews and maintain explicit lore relations through a bundled book-overview-relations skill. Overview saves reuse editor revision checks and change tracking; book-local links use stable item IDs, survive ordinary edits, and are detached when a target is deleted.
+- 关系图谱显示明确关系的方向与名称，正文提及连线仍作为推导线索；成功 Agent 写入刷新对应资料并保护未保存总览草稿。旧资料缺 relations 时保持原图谱行为；关系字段为加性扩展，旧版本程序编辑资料可能丢弃该新字段。
+- The graph shows directions and labels for explicit relations while retaining inferred mention links. Successful Agent edits refresh their resource without overwriting unsaved overview drafts. Entries without relations retain the old graph behavior; older binaries may discard the new additive field when editing lore.
+
 - Narraverse 叙事、离线小说和 Module4 接入本地火柴人动作舞台；书库正文可按规则切为可复核节拍，不触发模型调用。离线游戏入口在空状态重渲染后仍可用。
 - Narraverse stories, offline games and Module4 now include the local stickman stage. Library text can be split into reviewable beats without model calls, and the offline-game entry remains available after empty-state rerendering.
 

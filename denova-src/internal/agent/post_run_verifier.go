@@ -129,6 +129,10 @@ func resolveVerifiedMutationTarget(workspace, target string) (absolutePath, rela
 func verifyLoreMutation(workspace string, mutation ToolMutation) []PostRunVerificationCheck {
 	store := book.NewLoreStore(workspace)
 	items, err := store.List()
+	relationsOnly := mutation.ToolName == "write_lore_relations"
+	if relationsOnly {
+		items, err = store.ListAll()
+	}
 	if err != nil {
 		return []PostRunVerificationCheck{{Type: "lore_store", Status: "warning", Message: err.Error()}}
 	}
@@ -141,6 +145,17 @@ func verifyLoreMutation(workspace string, mutation ToolMutation) []PostRunVerifi
 		item, ok := byID[id]
 		if !ok {
 			checks = append(checks, PostRunVerificationCheck{Type: "lore_item", Target: id, Status: "warning", Message: "changed lore item not found after write"})
+			continue
+		}
+		if relationsOnly {
+			check := PostRunVerificationCheck{Type: "lore_relations", Target: id, Status: "ok", Message: "relation source and targets exist"}
+			for _, relation := range item.Relations {
+				if _, exists := byID[relation.TargetID]; !exists || relation.TargetID == id || strings.TrimSpace(relation.Label) == "" {
+					check.Status, check.Message = "warning", "relation target or label is invalid after write"
+					break
+				}
+			}
+			checks = append(checks, check)
 			continue
 		}
 		if strings.TrimSpace(item.BriefDescription) == "" {

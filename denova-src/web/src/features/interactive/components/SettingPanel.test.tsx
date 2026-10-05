@@ -15,7 +15,7 @@ const { configManagerChatProps, monacoEditorActions } = vi.hoisted(() => ({
   configManagerChatProps: [] as Array<{
     origin?: string
     resourceId?: string
-    onMutated?: () => void
+    onMutated?: (mutation?: { toolName: string; itemIds?: string[] }) => void
   }>,
   monacoEditorActions: [] as string[],
 }))
@@ -85,7 +85,7 @@ vi.mock('@/components/Chat/ConfigManagerChat', () => ({
   ConfigManagerChat: (props: {
     origin?: string
     resourceId?: string
-    onMutated?: () => void
+    onMutated?: (mutation?: { toolName: string; itemIds?: string[] }) => void
   }) => {
     configManagerChatProps.push(props)
     return (
@@ -260,6 +260,19 @@ describe('SettingPanel', () => {
     expect(screen.getAllByText('配置管理 Agent').length).toBeGreaterThan(0)
   })
 
+  it('refreshes relation writes without navigating away from the management Agent', async () => {
+    const user = userEvent.setup()
+    render(<SettingPanel mode="lore" workspace="/workspace" imagePresets={[]} />)
+    await user.click(await screen.findByRole('button', { name: '配置管理 Agent' }))
+    const callsBefore = vi.mocked(getLoreItems).mock.calls.length
+    act(() => window.dispatchEvent(new CustomEvent('nova:lore-updated', {
+      detail: { item_ids: ['lin-chuan'], preserve_selection: true },
+    })))
+    await waitFor(() => expect(getLoreItems).toHaveBeenCalledTimes(callsBefore + 1))
+    expect(screen.getByTestId('config-manager-chat')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '配置管理 Agent' })).toHaveAttribute('aria-current', 'true')
+  })
+
   it('does not create a missing CREATOR.md until the user edits it', async () => {
     vi.mocked(readFile).mockRejectedValueOnce(new APIError('not found', { status: 404 }))
     vi.mocked(saveFile).mockResolvedValue({ path: 'CREATOR.md', message: 'ok', revision: 'creator-rev-1' })
@@ -291,6 +304,31 @@ describe('SettingPanel', () => {
     })
 
     await waitFor(() => expect(editor).toHaveValue('Updated externally'))
+    expect(saveFile).not.toHaveBeenCalled()
+  })
+
+  it('reconciles an external book overview write while preserving the local unsaved draft', async () => {
+    const user = userEvent.setup()
+    vi.mocked(readFile)
+      .mockResolvedValueOnce({ workspace: '/workspace', path: 'setting/book-overview.md', content: 'Initial title\nBase line\n', revision: 'r1' })
+      .mockResolvedValueOnce({ workspace: '/workspace', path: 'setting/book-overview.md', content: 'Initial title\nBase line\nExternal line\n', revision: 'r2' })
+    render(<SettingPanel mode="lore" workspace="/workspace" />)
+
+    await user.click(await screen.findByRole('button', { name: '书籍总览' }))
+    const editButton = await screen.findByRole('button', { name: '编辑' })
+    await user.click(editButton)
+    const editor = await screen.findByPlaceholderText('写下本书的整体背景：世界观基调、主线矛盾、关键角色关系、不可违背的设定...')
+    fireEvent.change(editor, { target: { value: 'Local title\nBase line\n' } })
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('nova:workspace-change', {
+        detail: { workspace: '/workspace', paths: ['setting/book-overview.md'] },
+      }))
+      await Promise.resolve()
+    })
+
+    expect(readFile).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(editor).toHaveValue('Local title\nBase line\nExternal line\n'))
     expect(saveFile).not.toHaveBeenCalled()
   })
 

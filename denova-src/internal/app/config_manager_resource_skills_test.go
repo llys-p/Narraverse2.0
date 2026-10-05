@@ -56,7 +56,12 @@ func TestConfigManagerResourceSkillNames(t *testing.T) {
 		{
 			name: "lore origin",
 			req:  ConfigManagerRequest{Origin: "lore", ResourceID: "lore-config-agent"},
-			want: []string{configManagerLoreSkill},
+			want: []string{configManagerLoreSkill, configManagerBookSettingSkill},
+		},
+		{
+			name: "book overview and graph instruction",
+			req:  ConfigManagerRequest{Instruction: "修改书籍总览并设置知识图谱条目关系"},
+			want: []string{configManagerLoreSkill, configManagerBookSettingSkill},
 		},
 		{
 			name: "master library origin",
@@ -66,7 +71,7 @@ func TestConfigManagerResourceSkillNames(t *testing.T) {
 		{
 			name: "master library instruction",
 			req:  ConfigManagerRequest{Origin: "lore", Instruction: "读取总资料库中的艾可原文件"},
-			want: []string{configManagerLoreSkill, configManagerMasterLibrarySkill},
+			want: []string{configManagerLoreSkill, configManagerBookSettingSkill, configManagerMasterLibrarySkill},
 		},
 	}
 
@@ -93,6 +98,17 @@ func TestBuildConfigManagerMessageBoundsRequestContext(t *testing.T) {
 	}
 	if len([]byte(message)) > configManagerRequestContextValueMaxBytes+512 {
 		t.Fatalf("message context should stay bounded, got %d bytes", len([]byte(message)))
+	}
+}
+
+func TestLoadConfigManagerBookSkillFromBuiltinDirectory(t *testing.T) {
+	builtin, err := filepath.Abs(filepath.Join("..", "..", "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded := loadConfigManagerResourceSkills(context.Background(), &config.Config{SkillsDir: builtin}, ConfigManagerRequest{Origin: "lore"})
+	if len(loaded) != 2 || loaded[1].Name != configManagerBookSettingSkill || !strings.Contains(loaded[1].Content, "write_book_overview") || !strings.Contains(loaded[1].Content, "write_lore_relations") {
+		t.Fatalf("book manager did not load the shipped skill: %#v", loaded)
 	}
 }
 

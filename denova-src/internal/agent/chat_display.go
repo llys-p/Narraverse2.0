@@ -507,7 +507,7 @@ func usageCallsForSession(calls []runTokenUsageCall) []session.TokenUsageCall {
 }
 
 func parseWriteLoreItemsToolResult(toolName, content string) ([]string, []string) {
-	if toolName != "write_lore_items" {
+	if toolName != "write_lore_items" && toolName != "write_lore_relations" {
 		return nil, nil
 	}
 	var itemIDs []string

@@ -68,3 +68,26 @@ func TestVerifyPostRunMutationsRejectsAbsolutePathOutsideWorkspace(t *testing.T)
 		t.Fatalf("outside-path diagnostic should explain the boundary: %#v", result.Checks[0])
 	}
 }
+
+func TestVerifyRelationMutationAcceptsDisabledSettingItems(t *testing.T) {
+	workspace := t.TempDir()
+	store := book.NewLoreStore(workspace)
+	disabled := false
+	a, err := store.Create(book.LoreItemInput{ID: "a", Name: "旧人物", Type: "character", Enabled: &disabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(book.LoreItemInput{ID: "b", Name: "城镇", Type: "location"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.WriteRelations([]book.LoreRelationUpdate{{ID: a.ID, BaseRevision: a.UpdatedAt, Relations: []book.LoreRelation{{TargetID: "b", Label: "出生地"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	result := VerifyPostRunMutations(book.NewService(workspace), []ToolMutation{{ToolName: "write_lore_relations", Source: ToolSourceLore, RequiresPostCheck: true, LoreItemIDs: []string{a.ID}}})
+	if result.Status != "ok" {
+		t.Fatalf("valid relation on disabled item failed verification: %#v", result)
+	}
+	if len(result.Checks) != 1 || result.Checks[0].Type != "lore_relations" {
+		t.Fatalf("wrong validation for relation-only edit: %#v", result.Checks)
+	}
+}

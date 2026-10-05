@@ -65,14 +65,19 @@ func ManifestForTool(name string) ToolManifest {
 		manifest.Capability = config.AgentToolImageGeneration
 		manifest.MutatesWorkspace = true
 		manifest.RequiresPostCheck = true
-	case normalized == "write_lore_items":
+	case normalized == "write_lore_items" || normalized == "write_lore_relations":
 		manifest.Source = ToolSourceLore
 		manifest.Capability = config.AgentToolLoreWrite
 		manifest.MutatesWorkspace = true
 		manifest.RequiresPostCheck = true
-	case normalized == "read_lore_items" || normalized == "list_lore_items":
+	case normalized == "read_lore_items" || normalized == "list_lore_items" || normalized == "read_lore_relations" || normalized == "read_book_overview":
 		manifest.Source = ToolSourceLore
 		manifest.Capability = config.AgentToolLoreRead
+	case normalized == "write_book_overview":
+		manifest.Source = ToolSourceWrite
+		manifest.Capability = config.AgentToolLoreWrite
+		manifest.MutatesWorkspace = true
+		manifest.RequiresPostCheck = true
 	case isLibraryReadToolName(normalized):
 		// 库按需读取是受控读取（服务端授权对象），不属于文件系统读取能力。
 		manifest.Source = ToolSourceLibrary

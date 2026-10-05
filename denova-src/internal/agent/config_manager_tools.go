@@ -175,6 +175,11 @@ func newConfigManagerTools(cfg *config.Config, settings config.ResolvedAgentTool
 		return nil, err
 	}
 	tools = append(tools, loreTools...)
+	bookTools, err := newConfigManagerBookTools(workspace)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, bookTools...)
 	masterTools, err := newConfigManagerMasterTools(workspace, settings.LoreRead, settings.LoreRead && settings.LoreWrite)
 	if err != nil {
 		return nil, err

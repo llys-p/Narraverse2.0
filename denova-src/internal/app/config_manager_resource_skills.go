@@ -22,6 +22,7 @@ const (
 	configManagerSkillsSkill        = "skills-creator"
 	configManagerAgentConfigSkill   = "agent-config"
 	configManagerLoreSkill          = "lore"
+	configManagerBookSettingSkill   = "book-overview-relations"
 	configManagerMasterLibrarySkill = "master-library"
 )
 
@@ -97,6 +98,10 @@ func configManagerResourceSkillNames(req ConfigManagerRequest) []string {
 	switch origin {
 	case "lore":
 		add(configManagerLoreSkill)
+		add(configManagerBookSettingSkill)
+	case "book_overview", "book_graph", "lore_relations":
+		add(configManagerLoreSkill)
+		add(configManagerBookSettingSkill)
 	case "master_library", "masterlibrary", "library_master":
 		add(configManagerMasterLibrarySkill)
 	case "automation", "automations":
@@ -122,6 +127,10 @@ func configManagerResourceSkillNames(req ConfigManagerRequest) []string {
 		signals = append(signals, key, value)
 	}
 	text := normalizeConfigManagerSignal(strings.Join(signals, " "))
+	if strings.Contains(text, "book_overview") || strings.Contains(text, "book_graph") || strings.Contains(text, "lore_relations") || strings.Contains(text, "书籍总览") || strings.Contains(text, "关系图谱") || strings.Contains(text, "知识图谱") || strings.Contains(text, "条目关系") {
+		add(configManagerLoreSkill)
+		add(configManagerBookSettingSkill)
+	}
 	isMasterLibrary := strings.Contains(text, "master_item") || strings.Contains(text, "master_library") || strings.Contains(text, "总资料库") || strings.Contains(text, "总库资产")
 	if isMasterLibrary {
 		add(configManagerMasterLibrarySkill)

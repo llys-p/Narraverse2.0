@@ -583,6 +583,7 @@ export interface LoreItem {
   pin_order?: number
   image?: LoreItemImage
   images?: LoreItemImage[]
+  relations?: Array<{ target_id: string; label: string; note?: string }>
   provenance?: {
     kind: string
     source_name: string

@@ -7,9 +7,7 @@ import { Button } from '@/components/ui/button'
 import { presetActionButtonClassName as actionButtonClassName } from '../preset-config/editor-styles'
 import { loreTypeLabel } from './editor-shared'
 
-// 关系图谱：节点是资料条目，连线完全派生自「一个条目的正文提到另一个条目的名称」，
-// 与 Obsidian 图谱同一思路（它由 [[双链]] 派生，这里没有双链字段，用正文提及近似）。
-// 不新增后端字段、不持久化关系数据；纯本地计算 + canvas 自绘力导向布局。
+// 关系图谱节点来自本书 Lore；明确关系与旧版正文提及线都在前端派生，不写回图谱。
 
 export interface LoreGraphNode {
   id: string
@@ -20,14 +18,36 @@ export interface LoreGraphNode {
 }
 
 export interface LoreGraphEdge {
+  id?: string
   source: string
   target: string
   mentions: number
+  confirmed?: true
+  label?: string
+  note?: string
 }
 
 export interface LoreGraph {
   nodes: LoreGraphNode[]
   edges: LoreGraphEdge[]
+}
+
+export function relationControlPoint(
+  source: { id: string; x: number; y: number },
+  target: { id: string; x: number; y: number },
+  edgeIndex: number,
+  edgeCount: number,
+) {
+  // Use one canonical perpendicular for both directions so reciprocal labels do not overlap.
+  const direction = source.id < target.id ? 1 : -1
+  const dx = (target.x - source.x) * direction
+  const dy = (target.y - source.y) * direction
+  const length = Math.hypot(dx, dy) || 1
+  const offset = (edgeIndex - (edgeCount - 1) / 2) * 18
+  return {
+    x: (source.x + target.x) / 2 - dy / length * offset,
+    y: (source.y + target.y) / 2 + dx / length * offset,
+  }
 }
 
 // 一字名（中文名常见单字）太容易误命中，至少两个字才参与连线。
@@ -65,6 +85,28 @@ function countWholeWord(haystack: string, name: string): number {
 export function deriveLoreGraph(items: LoreItem[]): LoreGraph {
   const haystacks = items.map((item) => `${item.name}\n${item.brief_description || ''}\n${item.content || ''}`.toLowerCase())
   const counts = new Map<string, number>()
+  const itemIDs = new Set(items.map((item) => item.id))
+  const relations: LoreGraphEdge[] = []
+  const explicitPairs = new Set<string>()
+  const relationIDs = new Set<string>()
+  for (const item of items) {
+    for (const relation of item.relations || []) {
+      if (!itemIDs.has(relation.target_id) || relation.target_id === item.id || !relation.label.trim()) continue
+      const id = JSON.stringify([item.id, relation.target_id, relation.label, relation.note || ''])
+      if (relationIDs.has(id)) continue
+      relationIDs.add(id)
+      explicitPairs.add([item.id, relation.target_id].sort().join('\u0000'))
+      relations.push({
+        id,
+        source: item.id,
+        target: relation.target_id,
+        mentions: 1,
+        confirmed: true,
+        label: relation.label,
+        note: relation.note,
+      })
+    }
+  }
   for (let i = 0; i < items.length; i += 1) {
     const text = haystacks[i]
     for (let j = 0; j < items.length; j += 1) {
@@ -76,24 +118,28 @@ export function deriveLoreGraph(items: LoreItem[]): LoreGraph {
       const hits = /^[a-z0-9_'’ -]+$/.test(lowered) ? countWholeWord(text, lowered) : countOccurrences(text, lowered)
       if (hits <= 0) continue
       const [a, b] = items[i].id < items[j].id ? [items[i].id, items[j].id] : [items[j].id, items[i].id]
+      if (explicitPairs.has(`${a}\u0000${b}`)) continue
       const key = `${a}\u0000${b}`
       counts.set(key, (counts.get(key) || 0) + Math.min(hits, 5))
     }
   }
-  const degree = new Map<string, number>()
+  const neighbors = new Map<string, Set<string>>()
   const edges: LoreGraphEdge[] = []
   for (const [key, mentions] of counts) {
     const [source, target] = key.split('\u0000')
     edges.push({ source, target, mentions })
-    degree.set(source, (degree.get(source) || 0) + 1)
-    degree.set(target, (degree.get(target) || 0) + 1)
+  }
+  edges.push(...relations)
+  for (const edge of edges) {
+    neighbors.set(edge.source, (neighbors.get(edge.source) || new Set()).add(edge.target))
+    neighbors.set(edge.target, (neighbors.get(edge.target) || new Set()).add(edge.source))
   }
   const nodes: LoreGraphNode[] = items.map((item) => ({
     id: item.id,
     name: item.name,
     type: item.type,
     enabled: item.enabled !== false,
-    degree: degree.get(item.id) || 0,
+    degree: neighbors.get(item.id)?.size || 0,
   }))
   return { nodes, edges }
 }
@@ -246,11 +292,14 @@ export function BookGraphView({
   const graph = useMemo(() => deriveLoreGraph(items), [items])
   const hasNodes = graph.nodes.length > 0
   const visibleNodes = useMemo(() => graph.nodes.filter((node) => !hidden.has(node.type)), [graph, hidden])
+  const visibleNodeIDs = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
+  const visibleEdges = useMemo(
+    () => graph.edges.filter((edge) => visibleNodeIDs.has(edge.source) && visibleNodeIDs.has(edge.target)),
+    [graph, visibleNodeIDs],
+  )
   const stats = useMemo(() => {
-    const visibleIds = new Set(visibleNodes.map((node) => node.id))
-    const edges = graph.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
-    return t('settingPanel.bookOverview.graphStats', { nodes: visibleNodes.length, edges: edges.length })
-  }, [graph, hidden, t, visibleNodes])
+    return t('settingPanel.bookOverview.graphStats', { nodes: visibleNodes.length, edges: visibleEdges.length })
+  }, [t, visibleEdges.length, visibleNodes.length])
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -336,20 +385,67 @@ export function BookGraphView({
     ctx.translate(width / 2 + view.panX, height / 2 + view.panY)
     ctx.scale(view.zoom, view.zoom)
 
+    const edgeGroups = new Map<string, LoreGraphEdge[]>()
+    for (const edge of model.edges) {
+      const pair = [edge.source, edge.target].sort().join('\u0000')
+      const group = edgeGroups.get(pair) || []
+      group.push(edge)
+      edgeGroups.set(pair, group)
+    }
     for (const edge of model.edges) {
       const a = model.byId.get(edge.source)
       const b = model.byId.get(edge.target)
       if (!a || !b) continue
       const highlighted = hovered !== null && (edge.source === hovered || edge.target === hovered)
-      let alpha = 0.12 + Math.min(edge.mentions, 5) * 0.035
+      let alpha = edge.confirmed ? 0.65 : 0.12 + Math.min(edge.mentions, 5) * 0.035
       if (focusIds) alpha = highlighted ? 0.9 : 0.05
       ctx.globalAlpha = alpha
-      ctx.strokeStyle = highlighted ? theme.accent : theme.faint
-      ctx.lineWidth = (highlighted ? 1.6 : 1) / view.zoom
+      ctx.strokeStyle = highlighted || edge.confirmed ? theme.accent : theme.faint
+      ctx.lineWidth = (highlighted ? 1.6 : edge.confirmed ? 1.35 : 1) / view.zoom
+      const pair = [edge.source, edge.target].sort().join('\u0000')
+      const group = edgeGroups.get(pair) || [edge]
+      const edgeIndex = group.indexOf(edge)
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const length = Math.hypot(dx, dy) || 1
+      const control = relationControlPoint(a, b, edge.confirmed ? edgeIndex : 0, edge.confirmed ? group.length : 1)
+      const controlX = control.x
+      const controlY = control.y
+      const startX = edge.confirmed ? a.x + dx / length * a.r : a.x
+      const startY = edge.confirmed ? a.y + dy / length * a.r : a.y
+      const endX = edge.confirmed ? b.x - dx / length * b.r : b.x
+      const endY = edge.confirmed ? b.y - dy / length * b.r : b.y
+      ctx.setLineDash(edge.confirmed ? [] : [3 / view.zoom, 4 / view.zoom])
       ctx.beginPath()
-      ctx.moveTo(a.x, a.y)
-      ctx.lineTo(b.x, b.y)
+      ctx.moveTo(startX, startY)
+      if (edge.confirmed) ctx.quadraticCurveTo(controlX, controlY, endX, endY)
+      else ctx.lineTo(endX, endY)
       ctx.stroke()
+      ctx.setLineDash([])
+      if (edge.confirmed) {
+        const angle = Math.atan2(endY - controlY, endX - controlX)
+        const arrowSize = 7 / view.zoom
+        ctx.beginPath()
+        ctx.moveTo(endX, endY)
+        ctx.lineTo(endX - arrowSize * Math.cos(angle - Math.PI / 6), endY - arrowSize * Math.sin(angle - Math.PI / 6))
+        ctx.lineTo(endX - arrowSize * Math.cos(angle + Math.PI / 6), endY - arrowSize * Math.sin(angle + Math.PI / 6))
+        ctx.closePath()
+        ctx.fillStyle = theme.accent
+        ctx.fill()
+
+        const label = edge.label || ''
+        const sx = (a.x + 2 * controlX + b.x) / 4
+        const sy = (a.y + 2 * controlY + b.y) / 4
+        ctx.globalAlpha = highlighted ? 1 : 0.88
+        ctx.font = `${10 / view.zoom}px system-ui, sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.lineWidth = 3 / view.zoom
+        ctx.strokeStyle = theme.bg
+        ctx.strokeText(label, sx, sy)
+        ctx.fillStyle = theme.text
+        ctx.fillText(label, sx, sy)
+      }
     }
 
     for (const node of model.nodes) {
@@ -701,6 +797,21 @@ export function BookGraphView({
         <div className="mt-auto flex flex-col gap-2">
           <p className="text-[11px] leading-5 text-[var(--nova-text-faint)]">{stats}</p>
           <p className="text-[11px] leading-5 text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.graphHint')}</p>
+          <ul className="sr-only" role="list" aria-label={t('settingPanel.bookOverview.graphRelationList')}>
+            {visibleEdges.map((edge, index) => {
+              const source = graph.nodes.find((node) => node.id === edge.source)
+              const target = graph.nodes.find((node) => node.id === edge.target)
+              if (!source || !target) return null
+              return (
+                <li key={edge.id || `${edge.source}-${edge.target}-${index}`}>
+                  {edge.confirmed
+                    ? t('settingPanel.bookOverview.graphConfirmedRelation', { source: source.name, target: target.name, label: edge.label })
+                    : t('settingPanel.bookOverview.graphDerivedRelation', { source: source.name, target: target.name })}
+                  {edge.note ? ` — ${edge.note}` : ''}
+                </li>
+              )
+            })}
+          </ul>
           <Button className={actionButtonClassName} variant="outline" size="sm" onClick={handleReset}>
             <RotateCcw data-icon="inline-start" />
             {t('settingPanel.bookOverview.graphResetView')}

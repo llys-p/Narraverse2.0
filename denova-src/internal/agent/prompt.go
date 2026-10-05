@@ -788,6 +788,7 @@ func configManagerFlowInstructionFor(workspace, creator string) string {
 		"- 根据用户所在模块和当前资源上下文，优先使用对应模块工具完成管理任务。",
 		"- 每个模块先用 list 工具查看索引；需要详情时再用 read 工具批量读取。",
 		"- 增删改统一使用对应 write 工具批量完成，写入后用简短中文总结实际变更。",
+		"- 本书总览使用 read_book_overview / write_book_overview；条目间明确关系使用 read_lore_relations / write_lore_relations。先读最新 revision 再写，冲突需重新读取；正文提及连线不是已确认关系。",
 		"- Agent 页配置使用 list_agent_configs 一次读取全量配置，再用 write_agent_configs 写入；写入必须显式指定 scope=user 或 scope=workspace。",
 		"- 不要修改端口、主题、远程访问、编辑器外观等非 Agent 页设置。",
 		"- 不要通过文件工具直接改资料库、方案预设、自动化、Skills 或 Agent 配置的底层存储文件。",

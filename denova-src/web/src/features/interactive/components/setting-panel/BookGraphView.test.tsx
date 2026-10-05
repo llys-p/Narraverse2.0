@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { BookGraphView, deriveLoreGraph, pickNodeAt } from './BookGraphView'
+import { BookGraphView, deriveLoreGraph, pickNodeAt, relationControlPoint } from './BookGraphView'
 import type { LoreItem } from '@/lib/api'
 
 function mockLoreItem(overrides: Partial<LoreItem> & { id: string; name: string }): LoreItem {
@@ -54,6 +54,38 @@ describe('deriveLoreGraph', () => {
       { source: 'dock', target: 'y', mentions: 1 },
     ])
   })
+
+  it('derives directed labeled relations by stable item IDs and suppresses duplicate mention links for that pair', () => {
+    const a = mockLoreItem({ id: 'a', name: '北岸', content: '北岸与南港长期往来。', relations: [
+      { target_id: 'b', label: '贸易伙伴', note: '每月互市' },
+      { target_id: 'b', label: '政治盟友' },
+      { target_id: 'missing', label: '失效关系' },
+      { target_id: 'a', label: '自我关系' },
+    ] })
+    const b = mockLoreItem({ id: 'b', name: '南港', content: '南港也提到北岸。', relations: [
+      { target_id: 'a', label: '竞争对手' },
+    ] })
+    const before = structuredClone([a, b])
+
+    const graph = deriveLoreGraph([a, b])
+
+    expect(graph.edges).toEqual([
+      expect.objectContaining({ source: 'a', target: 'b', label: '贸易伙伴', note: '每月互市', confirmed: true }),
+      expect.objectContaining({ source: 'a', target: 'b', label: '政治盟友', confirmed: true }),
+      expect.objectContaining({ source: 'b', target: 'a', label: '竞争对手', confirmed: true }),
+    ])
+    expect(new Set(graph.edges.map((edge) => edge.id)).size).toBe(3)
+    expect(deriveLoreGraph([{ ...a, name: '北境' }, b]).edges.map((edge) => edge.id)).toEqual(graph.edges.map((edge) => edge.id))
+    expect([a, b]).toEqual(before)
+  })
+
+  it('keeps ordinary inferred mention links visibly distinct from confirmed relations', () => {
+    const a = mockLoreItem({ id: 'a', name: '林间旅者', content: '她认识石门村。' })
+    const b = mockLoreItem({ id: 'b', name: '石门村' })
+    const [edge] = deriveLoreGraph([a, b]).edges
+    expect(edge).toMatchObject({ source: 'a', target: 'b', mentions: 1 })
+    expect(edge).not.toHaveProperty('confirmed')
+  })
 })
 
 describe('pickNodeAt', () => {
@@ -65,6 +97,17 @@ describe('pickNodeAt', () => {
     expect(pickNodeAt(nodes, 4, 0)).toBe('a')
     expect(pickNodeAt(nodes, 16, 0)).toBe('b')
     expect(pickNodeAt(nodes, 10, 10)).toBeNull()
+  })
+})
+
+describe('relationControlPoint', () => {
+  it('keeps opposite directions on distinct canonical sides of the same pair', () => {
+    const forward = relationControlPoint({ id: 'a', x: 0, y: 0 }, { id: 'b', x: 100, y: 0 }, 0, 2)
+    const reverse = relationControlPoint({ id: 'b', x: 100, y: 0 }, { id: 'a', x: 0, y: 0 }, 1, 2)
+
+    expect(forward.y).toBeLessThan(0)
+    expect(reverse.y).toBeGreaterThan(0)
+    expect(forward).not.toEqual(reverse)
   })
 })
 
@@ -90,11 +133,23 @@ describe('BookGraphView', () => {
     render(<BookGraphView items={[a, b]} />)
 
     expect(screen.getByText('2 个条目 · 1 条关系')).toBeInTheDocument()
+    const relationList = screen.getByRole('list', { name: '图谱关系说明' })
+    expect(within(relationList).getAllByRole('listitem')).toHaveLength(1)
     const characterBox = screen.getByRole('checkbox', { name: '角色' }) as HTMLInputElement
     expect(characterBox).toBeChecked()
     fireEvent.click(characterBox)
     expect(characterBox).not.toBeChecked()
     expect(screen.getByText('1 个条目 · 0 条关系')).toBeInTheDocument()
+    expect(within(relationList).queryAllByRole('listitem')).toHaveLength(0)
+  })
+
+  it('renders explicit relation labels and notes in an accessible DOM list', () => {
+    const a = mockLoreItem({ id: 'a', name: '北岸', relations: [{ target_id: 'b', label: '贸易伙伴', note: '每月互市' }] })
+    const b = mockLoreItem({ id: 'b', name: '南港' })
+    render(<BookGraphView items={[a, b]} />)
+
+    const relations = screen.getByRole('list', { name: '图谱关系说明' })
+    expect(within(relations).getByRole('listitem')).toHaveTextContent('北岸 → 南港：贸易伙伴 — 每月互市')
   })
 
   it('exposes a search field and a reset control', () => {

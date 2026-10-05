@@ -98,7 +98,7 @@ func toolResultBody(content string) string {
 
 func isWorkspaceChangeReceiptTool(toolName string) bool {
 	switch normalizeToolName(toolName) {
-	case "edit_file", "write_file":
+	case "edit_file", "write_file", "write_book_overview":
 		return true
 	default:
 		return false

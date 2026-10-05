@@ -67,6 +67,7 @@ type LoreItem struct {
 	Image            *LoreItemImage  `json:"image,omitempty"`
 	Images           []LoreItemImage `json:"images,omitempty"` // Manual attachments; changed only by attachment operations.
 	Provenance       *LoreProvenance `json:"provenance,omitempty"`
+	Relations        []LoreRelation  `json:"relations,omitempty"` // Explicit, book-local links; ordinary item edits preserve them.
 }
 
 type LoreItemInput struct {
@@ -340,6 +341,7 @@ func (s *LoreStore) Update(id string, input LoreItemInput) (LoreItem, error) {
 			Image:            firstLoreImage(input.Image, collection.Items[i].Image),
 			Images:           collection.Items[i].Images,
 			Provenance:       collection.Items[i].Provenance,
+			Relations:        previous.Relations,
 		})
 		if updated.Name == "" {
 			return LoreItem{}, errors.New("资料名称不能为空")
@@ -416,7 +418,7 @@ func (s *LoreStore) Delete(id string) error {
 	if !found {
 		return fmt.Errorf("资料不存在: %s", id)
 	}
-	collection.Items = next
+	collection.Items = pruneDeletedLoreRelations(next)
 	return s.save(collection)
 }
 
@@ -504,6 +506,7 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				Image:            firstLoreImage(op.Item.Image, next[idx].Image),
 				Images:           next[idx].Images,
 				Provenance:       firstLoreProvenance(op.Item.Provenance, next[idx].Provenance),
+				Relations:        next[idx].Relations,
 			})
 			if op.Item.Tags == nil {
 				updated.Tags = append([]string(nil), next[idx].Tags...)
@@ -532,6 +535,28 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 			result.DeletedIDs = append(result.DeletedIDs, id)
 		default:
 			return LoreApplyResult{}, fmt.Errorf("不支持的资料库操作: %s", op.Op)
+		}
+	}
+	if len(result.DeletedIDs) > 0 {
+		previousRevisions := make(map[string]string, len(next))
+		for _, item := range next {
+			previousRevisions[item.ID] = item.UpdatedAt
+		}
+		next = pruneDeletedLoreRelations(next)
+		for _, item := range next {
+			if previousRevisions[item.ID] == item.UpdatedAt {
+				continue
+			}
+			found := false
+			for i := range result.Updated {
+				if result.Updated[i].ID == item.ID {
+					result.Updated[i], found = item, true
+					break
+				}
+			}
+			if !found {
+				result.Updated = append(result.Updated, item)
+			}
 		}
 	}
 	collection.Items = next
