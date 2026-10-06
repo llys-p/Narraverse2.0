@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- 开放沙盒进入统一资料库时保留已打开的沙盒状态，关闭资料库后回到原沙盒及同一 iframe，避免返回时误落回叙界。
+- Keep Open Sandbox active while visiting the shared library, so closing it restores the same sandbox and iframe instead of returning to Narraverse.
+
 - 本书资料新建、删除、AI 生图与清图统一校验目标书籍；批量任务固定接收时的书籍，切书撤销旧确认和选区，阻止跨书误写。切书及关闭资料页先保存条目和总览，失败保留草稿并停止导航。
 - Book lore creation, deletion and AI image changes now validate the target workspace. Batch tasks retain their accepted book; switching cancels stale confirmations and selections. Leaving or switching waits for item and overview saves, preserving drafts and blocking navigation on failure.
 - 保留批量生图旧任务尚未退出时的拒绝优先级，避免新增书籍核验覆盖原任务占用错误。

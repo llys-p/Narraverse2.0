@@ -602,7 +602,9 @@ function App() {
   }, [isStreaming, send])
 
   const handleSetMode = useCallback((nextMode: WorkspaceMode) => {
-    if (nextMode !== 'narraverse') setNarraverseModule4Open(false)
+    // The shared library temporarily hides the sandbox; returning must restore
+    // its mode as well as the persistent iframe.
+    if (nextMode !== 'narraverse' && nextMode !== 'library') setNarraverseModule4Open(false)
     if (nextMode === 'books' || nextMode === 'worlds' || nextMode === 'library' || nextMode === 'skills' || nextMode === 'agents' || nextMode === 'automations') {
       const returnMode = mode === 'ide' || mode === 'interactive' || mode === 'narraverse' ? mode : booksReturnModeRef.current
       booksReturnModeRef.current = returnMode
