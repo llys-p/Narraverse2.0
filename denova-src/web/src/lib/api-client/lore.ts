@@ -6,11 +6,11 @@ export async function getLoreItems(): Promise<LoreItem[]> {
   return data.items || []
 }
 
-export async function createLoreItem(item: Partial<LoreItemInput>): Promise<LoreItem> {
+export async function createLoreItem(item: Partial<LoreItemInput>, workspace?: string): Promise<LoreItem> {
   return requestJSON('/api/lore/items', {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify(item),
+    body: JSON.stringify({ ...item, ...(workspace ? { workspace } : {}) }),
   })
 }
 
@@ -22,8 +22,15 @@ export async function updateLoreItem(id: string, item: Partial<LoreItemInput>, b
   })
 }
 
-export async function deleteLoreItem(id: string): Promise<void> {
-  await requestJSON(`/api/lore/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
+/**
+ * 删除可携带目标书籍身份：服务端在当前书与请求书籍不一致时返回 409，
+ * 避免切书后仍在途的删除请求写到另一本书。省略 workspace 时保持既有行为。
+ */
+export async function deleteLoreItem(id: string, workspace?: string): Promise<void> {
+  await requestJSON(`/api/lore/items/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    ...(workspace ? { headers: jsonHeaders, body: JSON.stringify({ workspace }) } : {}),
+  })
 }
 
 export async function previewLoreClassification(input: LoreClassificationPreviewRequest = {}): Promise<LoreClassificationPreview> {
@@ -69,16 +76,19 @@ export async function organizeBookOverview(input: {
   })
 }
 
-export async function generateLoreItemImage(id: string, input: LoreItemImageGenerateRequest = {}): Promise<LoreItem> {
+export async function generateLoreItemImage(id: string, input: LoreItemImageGenerateRequest = {}, workspace?: string): Promise<LoreItem> {
   return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/image/generate`, {
     method: 'POST',
     headers: jsonHeaders,
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, ...(workspace ? { workspace } : {}) }),
   })
 }
 
-export async function clearLoreItemImage(id: string): Promise<LoreItem> {
-  return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/image`, { method: 'DELETE' })
+export async function clearLoreItemImage(id: string, workspace?: string): Promise<LoreItem> {
+  return requestJSON(`/api/lore/items/${encodeURIComponent(id)}/image`, {
+    method: 'DELETE',
+    ...(workspace ? { headers: jsonHeaders, body: JSON.stringify({ workspace }) } : {}),
+  })
 }
 
 export async function uploadLoreItemImages(id: string, workspace: string, files: File[]): Promise<LoreItem> {

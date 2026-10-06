@@ -1,283 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { RotateCcw, Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { LoreItem } from '@/lib/api'
+import { pickRelationAt, type RelationHitArea } from './graph-edge-hover'
+
+import {
+  TYPE_COLORS, GOLDEN_ANGLE, SIM, deriveLoreGraph, matchesCharacterTier,
+  relationControlPoint, nodeRadius, stepSimulation, themeColors, pickNodeAt,
+} from './book-graph-model'
+import type { CharacterTierFilter, SimNode, VisibleModel, PointerState, LoreGraph, LoreGraphEdge } from './book-graph-model'
+import { BookGraphControls } from './BookGraphControls'
+import { projectGraphView } from './book-graph-view-model'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { presetActionButtonClassName as actionButtonClassName } from '../preset-config/editor-styles'
-import { loreTypeLabel } from './editor-shared'
-
-// 关系图谱节点来自本书 Lore；明确关系与旧版正文提及线都在前端派生，不写回图谱。
-
-export interface LoreGraphNode {
-  id: string
-  name: string
-  type: LoreItem['type']
-  enabled: boolean
-  degree: number
-}
-
-export interface LoreGraphEdge {
-  id?: string
-  source: string
-  target: string
-  mentions: number
-  confirmed?: true
-  label?: string
-  note?: string
-}
-
-export interface LoreGraph {
-  nodes: LoreGraphNode[]
-  edges: LoreGraphEdge[]
-}
-
-export function relationControlPoint(
-  source: { id: string; x: number; y: number },
-  target: { id: string; x: number; y: number },
-  edgeIndex: number,
-  edgeCount: number,
-) {
-  // Use one canonical perpendicular for both directions so reciprocal labels do not overlap.
-  const direction = source.id < target.id ? 1 : -1
-  const dx = (target.x - source.x) * direction
-  const dy = (target.y - source.y) * direction
-  const length = Math.hypot(dx, dy) || 1
-  const offset = (edgeIndex - (edgeCount - 1) / 2) * 18
-  return {
-    x: (source.x + target.x) / 2 - dy / length * offset,
-    y: (source.y + target.y) / 2 + dx / length * offset,
-  }
-}
-
-// 一字名（中文名常见单字）太容易误命中，至少两个字才参与连线。
-const MIN_MENTION_NAME_LENGTH = 2
-
-const GRAPH_TYPE_ORDER: LoreItem['type'][] = ['character', 'location', 'faction', 'rule', 'item', 'world', 'other']
-
-const TYPE_COLORS: Record<LoreItem['type'], string> = {
-  character: '#ef6f6c',
-  location: '#4cc38a',
-  faction: '#e0af68',
-  rule: '#7aa2f7',
-  item: '#bb9af7',
-  world: '#4fd6c8',
-  other: '#9aa3b2',
-}
-
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
-
-// 纯 ASCII 名（如 Ed）要求整词命中，避免 "Ed" 吃进 "Edmund"；
-// 中文名按子串命中。入参 haystack / name 都已小写。
-function countWholeWord(haystack: string, name: string): number {
-  let count = 0
-  let index = haystack.indexOf(name)
-  while (index >= 0) {
-    const before = index > 0 ? haystack[index - 1] : ''
-    const after = haystack[index + name.length] || ''
-    const isWordChar = (ch: string) => /[a-z0-9]/.test(ch)
-    if (!isWordChar(before) && !isWordChar(after)) count += 1
-    index = haystack.indexOf(name, index + 1)
-  }
-  return count
-}
-
-export function deriveLoreGraph(items: LoreItem[]): LoreGraph {
-  const haystacks = items.map((item) => `${item.name}\n${item.brief_description || ''}\n${item.content || ''}`.toLowerCase())
-  const counts = new Map<string, number>()
-  const itemIDs = new Set(items.map((item) => item.id))
-  const relations: LoreGraphEdge[] = []
-  const explicitPairs = new Set<string>()
-  const relationIDs = new Set<string>()
-  for (const item of items) {
-    for (const relation of item.relations || []) {
-      if (!itemIDs.has(relation.target_id) || relation.target_id === item.id || !relation.label.trim()) continue
-      const id = JSON.stringify([item.id, relation.target_id, relation.label, relation.note || ''])
-      if (relationIDs.has(id)) continue
-      relationIDs.add(id)
-      explicitPairs.add([item.id, relation.target_id].sort().join('\u0000'))
-      relations.push({
-        id,
-        source: item.id,
-        target: relation.target_id,
-        mentions: 1,
-        confirmed: true,
-        label: relation.label,
-        note: relation.note,
-      })
-    }
-  }
-  for (let i = 0; i < items.length; i += 1) {
-    const text = haystacks[i]
-    for (let j = 0; j < items.length; j += 1) {
-      if (i === j) continue
-      const name = items[j].name.trim()
-      if (name.length < MIN_MENTION_NAME_LENGTH) continue
-      const lowered = name.toLowerCase()
-      // 用小写形式判定 ASCII（'Ed' 含大写，需先归一）。
-      const hits = /^[a-z0-9_'’ -]+$/.test(lowered) ? countWholeWord(text, lowered) : countOccurrences(text, lowered)
-      if (hits <= 0) continue
-      const [a, b] = items[i].id < items[j].id ? [items[i].id, items[j].id] : [items[j].id, items[i].id]
-      if (explicitPairs.has(`${a}\u0000${b}`)) continue
-      const key = `${a}\u0000${b}`
-      counts.set(key, (counts.get(key) || 0) + Math.min(hits, 5))
-    }
-  }
-  const neighbors = new Map<string, Set<string>>()
-  const edges: LoreGraphEdge[] = []
-  for (const [key, mentions] of counts) {
-    const [source, target] = key.split('\u0000')
-    edges.push({ source, target, mentions })
-  }
-  edges.push(...relations)
-  for (const edge of edges) {
-    neighbors.set(edge.source, (neighbors.get(edge.source) || new Set()).add(edge.target))
-    neighbors.set(edge.target, (neighbors.get(edge.target) || new Set()).add(edge.source))
-  }
-  const nodes: LoreGraphNode[] = items.map((item) => ({
-    id: item.id,
-    name: item.name,
-    type: item.type,
-    enabled: item.enabled !== false,
-    degree: neighbors.get(item.id)?.size || 0,
-  }))
-  return { nodes, edges }
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-  let count = 0
-  let index = haystack.indexOf(needle)
-  while (index >= 0) {
-    count += 1
-    index = haystack.indexOf(needle, index + needle.length)
-  }
-  return count
-}
-
-export interface PickingNode {
-  id: string
-  x: number
-  y: number
-  r: number
-}
-
-export function pickNodeAt(nodes: PickingNode[], x: number, y: number, pad = 0): string | null {
-  // 后画的节点在上层：从数组尾部向前找。
-  for (let i = nodes.length - 1; i >= 0; i -= 1) {
-    const node = nodes[i]
-    const dx = node.x - x
-    const dy = node.y - y
-    const reach = node.r + pad
-    if (dx * dx + dy * dy <= reach * reach) return node.id
-  }
-  return null
-}
-
-interface SimNode {
-  id: string
-  name: string
-  type: LoreItem['type']
-  enabled: boolean
-  r: number
-  x: number
-  y: number
-  vx: number
-  vy: number
-}
-
-interface VisibleModel {
-  nodes: SimNode[]
-  byId: Map<string, SimNode>
-  edges: LoreGraphEdge[]
-  adjacency: Map<string, Set<string>>
-}
-
-// 力学参数：斥力与引力的比值决定节点间距，弹簧把有关系的节点拉近。
-const SIM = {
-  repulsion: 3600,
-  restLength: 90,
-  spring: 0.05,
-  gravity: 0.008,
-  damping: 0.82,
-  maxSpeed: 14,
-  decay: 0.985,
-  stop: 0.015,
-  reheat: 0.45,
-}
-
-function nodeRadius(degree: number) {
-  return Math.min(16, 3.5 + Math.sqrt(degree) * 1.8)
-}
-
-function stepSimulation(model: VisibleModel, alpha: number) {
-  const nodes = model.nodes
-  for (let i = 0; i < nodes.length; i += 1) {
-    const a = nodes[i]
-    for (let j = i + 1; j < nodes.length; j += 1) {
-      const b = nodes[j]
-      let dx = b.x - a.x
-      let dy = b.y - a.y
-      let d2 = dx * dx + dy * dy
-      if (d2 < 1) {
-        // 完全重叠时给一个确定性的扰动方向，避免除零与 NaN。
-        dx = ((i * 7 + j * 13) % 10) / 10 + 0.1
-        dy = ((i * 11 + j * 3) % 10) / 10 + 0.1
-        d2 = dx * dx + dy * dy
-      }
-      const force = (SIM.repulsion * alpha) / d2
-      const inv = 1 / Math.sqrt(d2)
-      a.vx -= dx * inv * force
-      a.vy -= dy * inv * force
-      b.vx += dx * inv * force
-      b.vy += dy * inv * force
-    }
-  }
-  for (const edge of model.edges) {
-    const a = model.byId.get(edge.source)
-    const b = model.byId.get(edge.target)
-    if (!a || !b) continue
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const d = Math.sqrt(dx * dx + dy * dy) || 0.01
-    const force = (d - SIM.restLength) * SIM.spring * alpha
-    const inv = 1 / d
-    a.vx += dx * inv * force
-    a.vy += dy * inv * force
-    b.vx -= dx * inv * force
-    b.vy -= dy * inv * force
-  }
-  for (const node of nodes) {
-    node.vx -= node.x * SIM.gravity * alpha
-    node.vy -= node.y * SIM.gravity * alpha
-    node.vx *= SIM.damping
-    node.vy *= SIM.damping
-    const speed2 = node.vx * node.vx + node.vy * node.vy
-    if (speed2 > SIM.maxSpeed * SIM.maxSpeed) {
-      const scale = SIM.maxSpeed / Math.sqrt(speed2)
-      node.vx *= scale
-      node.vy *= scale
-    }
-    node.x += node.vx
-    node.y += node.vy
-  }
-}
-
-function themeColors(container: HTMLElement) {
-  const style = getComputedStyle(container)
-  const read = (name: string, fallback: string) => (style.getPropertyValue(name) || '').trim() || fallback
-  return {
-    text: read('--nova-text', '#1f2328'),
-    faint: read('--nova-text-faint', '#8b949e'),
-    bg: read('--nova-surface-2', '#ffffff'),
-    accent: read('--nova-accent', '#4c7ef3'),
-  }
-}
-
-type PointerState =
-  | { kind: 'idle' }
-  | { kind: 'pan'; lastX: number; lastY: number }
-  | { kind: 'node'; id: string; moved: boolean; startClientX: number; startClientY: number }
-
+export { deriveLoreGraph, pickNodeAt, relationControlPoint } from './book-graph-model'
+export type { LoreGraphNode, LoreGraphEdge, LoreGraph, PickingNode } from './book-graph-model'
 export function BookGraphView({
   items,
   onOpenItem,
@@ -288,26 +25,45 @@ export function BookGraphView({
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
+  const [characterTierFilter, setCharacterTierFilter] = useState<CharacterTierFilter>('all')
 
-  const graph = useMemo(() => deriveLoreGraph(items), [items])
-  const hasNodes = graph.nodes.length > 0
-  const visibleNodes = useMemo(() => graph.nodes.filter((node) => !hidden.has(node.type)), [graph, hidden])
-  const visibleNodeIDs = useMemo(() => new Set(visibleNodes.map((node) => node.id)), [visibleNodes])
-  const visibleEdges = useMemo(
-    () => graph.edges.filter((edge) => visibleNodeIDs.has(edge.source) && visibleNodeIDs.has(edge.target)),
-    [graph, visibleNodeIDs],
+  const [showInferred, setShowInferred] = useState(false)
+  const [relationLabel, setRelationLabel] = useState<string | null>(null)
+  const [focusId, setFocusId] = useState<string | null>(null)
+  const [depth, setDepth] = useState<1 | 2>(1)
+  const [spacing, setSpacing] = useState(1)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null)
+  const visibleItems = useMemo(
+    () => items.filter((item) => !hidden.has(item.type) && matchesCharacterTier(item, characterTierFilter)),
+    [items, hidden, characterTierFilter],
   )
-  const stats = useMemo(() => {
-    return t('settingPanel.bookOverview.graphStats', { nodes: visibleNodes.length, edges: visibleEdges.length })
-  }, [t, visibleEdges.length, visibleNodes.length])
+  const baseGraph = useMemo(() => deriveLoreGraph(visibleItems), [visibleItems])
+  const activeFocusId = baseGraph.nodes.some((node) => node.id === focusId) ? focusId : null
+  const relationLabels = useMemo(() => [...new Set(baseGraph.edges.filter((edge) => edge.confirmed).map((edge) => edge.label!.trim()))].sort(), [baseGraph])
+  const activeRelationLabel = relationLabel && relationLabels.includes(relationLabel) ? relationLabel : null
+  const graph = useMemo(() => projectGraphView(baseGraph, {
+    showInferred, relationLabel: activeRelationLabel, focusId: activeFocusId, depth,
+  }), [baseGraph, showInferred, activeRelationLabel, activeFocusId, depth])
+  const hasNodes = graph.nodes.length > 0
+  const visibleNodes = graph.nodes
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const bindCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
+    canvasRef.current = canvas
+    setCanvasElement(canvas)
+  }, [])
+  const spacingRef = useRef(spacing)
+  const fitAfterLayoutRef = useRef(true)
   const mountedRef = useRef(true)
   const frameRef = useRef(0)
   const frameTypeRef = useRef<'animation' | 'timeout' | null>(null)
   const alphaRef = useRef(1)
   const hoverRef = useRef<string | null>(null)
+  const hoverEdgeRef = useRef<string | null>(null)
+  const hoverPointRef = useRef<{ x: number; y: number } | null>(null)
+  const relationHitAreasRef = useRef<RelationHitArea[]>([])
   const queryRef = useRef('')
   const viewRef = useRef({ zoom: 1, panX: 0, panY: 0 })
   const modelRef = useRef<VisibleModel>({ nodes: [], byId: new Map(), edges: [], adjacency: new Map() })
@@ -386,6 +142,7 @@ export function BookGraphView({
     ctx.scale(view.zoom, view.zoom)
 
     const edgeGroups = new Map<string, LoreGraphEdge[]>()
+    const relationHitAreas: RelationHitArea[] = []
     for (const edge of model.edges) {
       const pair = [edge.source, edge.target].sort().join('\u0000')
       const group = edgeGroups.get(pair) || []
@@ -396,7 +153,8 @@ export function BookGraphView({
       const a = model.byId.get(edge.source)
       const b = model.byId.get(edge.target)
       if (!a || !b) continue
-      const highlighted = hovered !== null && (edge.source === hovered || edge.target === hovered)
+      const highlighted = (hovered !== null && (edge.source === hovered || edge.target === hovered))
+        || (edge.id !== undefined && edge.id === hoverEdgeRef.current)
       let alpha = edge.confirmed ? 0.65 : 0.12 + Math.min(edge.mentions, 5) * 0.035
       if (focusIds) alpha = highlighted ? 0.9 : 0.05
       ctx.globalAlpha = alpha
@@ -415,6 +173,8 @@ export function BookGraphView({
       const startY = edge.confirmed ? a.y + dy / length * a.r : a.y
       const endX = edge.confirmed ? b.x - dx / length * b.r : b.x
       const endY = edge.confirmed ? b.y - dy / length * b.r : b.y
+      if (edge.confirmed && edge.id) relationHitAreas.push({ id: edge.id, source: edge.source, target: edge.target,
+        start: { x: startX, y: startY }, control, end: { x: endX, y: endY } })
       ctx.setLineDash(edge.confirmed ? [] : [3 / view.zoom, 4 / view.zoom])
       ctx.beginPath()
       ctx.moveTo(startX, startY)
@@ -433,20 +193,23 @@ export function BookGraphView({
         ctx.fillStyle = theme.accent
         ctx.fill()
 
-        const label = edge.label || ''
-        const sx = (a.x + 2 * controlX + b.x) / 4
-        const sy = (a.y + 2 * controlY + b.y) / 4
-        ctx.globalAlpha = highlighted ? 1 : 0.88
-        ctx.font = `${10 / view.zoom}px system-ui, sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.lineWidth = 3 / view.zoom
-        ctx.strokeStyle = theme.bg
-        ctx.strokeText(label, sx, sy)
-        ctx.fillStyle = theme.text
-        ctx.fillText(label, sx, sy)
+        if (highlighted) {
+          const label = edge.label || ''
+          const sx = (startX + 2 * controlX + endX) / 4
+          const sy = (startY + 2 * controlY + endY) / 4
+          ctx.globalAlpha = 1
+          ctx.font = `${10 / view.zoom}px system-ui, sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.lineWidth = 3 / view.zoom
+          ctx.strokeStyle = theme.bg
+          ctx.strokeText(label, sx, sy)
+          ctx.fillStyle = theme.text
+          ctx.fillText(label, sx, sy)
+        }
       }
     }
+    relationHitAreasRef.current = relationHitAreas
 
     for (const node of model.nodes) {
       const alpha = focusIds ? (focusIds.has(node.id) ? 1 : 0.12) : 0.95
@@ -478,25 +241,37 @@ export function BookGraphView({
     }
     ctx.restore()
 
-    // 标签画在屏幕空间，字号不随缩放变化。
-    if (focusIds) {
-      ctx.globalAlpha = 1
-      ctx.font = '11px system-ui, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'top'
-      for (const node of model.nodes) {
-        if (!focusIds.has(node.id)) continue
-        const sx = node.x * view.zoom + width / 2 + view.panX
-        const sy = node.y * view.zoom + height / 2 + view.panY + node.r * view.zoom + 4
-        const label = node.name.length > 18 ? `${node.name.slice(0, 17)}…` : node.name
-        ctx.lineWidth = 3
-        ctx.strokeStyle = theme.bg
-        ctx.strokeText(label, sx, sy)
-        ctx.fillStyle = theme.text
-        ctx.fillText(label, sx, sy)
-      }
+    // 所有节点名称常显，屏幕空间字号不随缩放变化；悬停显示完整长名称。
+    ctx.globalAlpha = 1
+    ctx.font = '11px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    for (const node of model.nodes) {
+      const sx = node.x * view.zoom + width / 2 + view.panX
+      const sy = node.y * view.zoom + height / 2 + view.panY + node.r * view.zoom + 4
+      const characters = Array.from(node.name)
+      const label = node.id !== hovered && characters.length > 18 ? `${characters.slice(0, 17).join('')}…` : node.name
+      ctx.lineWidth = 3
+      ctx.strokeStyle = theme.bg
+      ctx.strokeText(label, sx, sy)
+      ctx.fillStyle = theme.text
+      ctx.fillText(label, sx, sy)
     }
     ctx.globalAlpha = 1
+    // 力学布局移动后重新命中，避免鼠标静止时留下已移走的关系标签。
+    const point = hoverPointRef.current
+    if (point && pointerRef.current.kind === 'idle') {
+      const x = (point.x - width / 2 - view.panX) / view.zoom
+      const y = (point.y - height / 2 - view.panY) / view.zoom
+      const nodeID = pickNodeAt(model.nodes, x, y, 3 / view.zoom)
+      const edgeID = nodeID ? null : pickRelationAt(relationHitAreas, x, y, 6 / view.zoom)
+      if (nodeID !== hoverRef.current || edgeID !== hoverEdgeRef.current) {
+        hoverRef.current = nodeID
+        hoverEdgeRef.current = edgeID
+        canvas.style.cursor = nodeID || edgeID ? 'pointer' : 'grab'
+        scheduleRef.current()
+      }
+    }
   }
   drawRef.current = draw
 
@@ -506,12 +281,16 @@ export function BookGraphView({
     if (!mountedRef.current) return
     const alpha = alphaRef.current
     if (alpha > SIM.stop) {
-      stepSimulation(modelRef.current, alpha)
+      stepSimulation(modelRef.current, alpha, spacingRef.current)
       alphaRef.current = alpha * SIM.decay
+    }
+    if (fitAfterLayoutRef.current && alphaRef.current <= SIM.stop) {
+      fitView()
+      fitAfterLayoutRef.current = false
     }
     drawRef.current()
     if (alphaRef.current > SIM.stop) scheduleRef.current()
-  }, [])
+  }, [fitView])
 
   const schedule = useCallback(() => {
     if (frameRef.current) return
@@ -531,6 +310,7 @@ export function BookGraphView({
   scheduleRef.current = schedule
 
   const prevGraphRef = useRef<LoreGraph | null>(null)
+  const prevCanvasRef = useRef<HTMLCanvasElement | null>(null)
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -574,15 +354,21 @@ export function BookGraphView({
       }
     }
     modelRef.current = { nodes, byId, edges, adjacency }
-    if (prevGraphRef.current !== graph) {
+    hoverRef.current = null
+    hoverEdgeRef.current = null
+    hoverPointRef.current = null
+    relationHitAreasRef.current = []
+    if (prevGraphRef.current !== graph || prevCanvasRef.current !== canvasElement) {
       prevGraphRef.current = graph
+      prevCanvasRef.current = canvasElement
       fitView()
       alphaRef.current = 1
+      fitAfterLayoutRef.current = true
     } else {
       alphaRef.current = Math.max(alphaRef.current, SIM.reheat)
     }
     schedule()
-  }, [fitView, graph, hidden, schedule, visibleNodes])
+  }, [fitView, graph, schedule, visibleNodes, canvasElement])
 
   useEffect(() => {
     queryRef.current = query
@@ -601,14 +387,14 @@ export function BookGraphView({
       window.removeEventListener('resize', onResize)
       observer?.disconnect()
     }
-  }, [hasNodes])
+  }, [hasNodes, canvasElement])
 
   useEffect(() => {
     if (!hasNodes) return
     const observer = new MutationObserver(() => scheduleRef.current())
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => observer.disconnect()
-  }, [hasNodes])
+  }, [hasNodes, canvasElement])
 
   // 滚轮缩放要 preventDefault，React 的合成 onWheel 是 passive 的，必须挂原生监听。
   useEffect(() => {
@@ -617,6 +403,7 @@ export function BookGraphView({
     if (!canvas) return
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault()
+      fitAfterLayoutRef.current = false
       const container = containerRef.current
       if (!container) return
       const rect = canvas.getBoundingClientRect()
@@ -635,7 +422,7 @@ export function BookGraphView({
     }
     canvas.addEventListener('wheel', handleWheel, { passive: false })
     return () => canvas.removeEventListener('wheel', handleWheel)
-  }, [hasNodes])
+  }, [hasNodes, canvasElement])
 
   const toCanvasPoint = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -652,6 +439,7 @@ export function BookGraphView({
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (event.button !== 0) return
+    fitAfterLayoutRef.current = false
     const point = toCanvasPoint(event)
     const world = worldFromScreen(point.x, point.y)
     const id = pickNodeAt(modelRef.current.nodes, world.x, world.y, 3 / viewRef.current.zoom)
@@ -692,12 +480,12 @@ export function BookGraphView({
       pointer.lastX = point.x
       pointer.lastY = point.y
     } else {
+      hoverPointRef.current = point
       const world = worldFromScreen(point.x, point.y)
       const id = pickNodeAt(modelRef.current.nodes, world.x, world.y, 3 / viewRef.current.zoom)
-      if (id !== hoverRef.current) {
-        hoverRef.current = id
-        if (canvasRef.current) canvasRef.current.style.cursor = id ? 'pointer' : 'grab'
-      }
+      hoverRef.current = id
+      hoverEdgeRef.current = id ? null : pickRelationAt(relationHitAreasRef.current, world.x, world.y, 6 / viewRef.current.zoom)
+      if (canvasRef.current) canvasRef.current.style.cursor = id || hoverEdgeRef.current ? 'pointer' : 'grab'
     }
     schedule()
   }
@@ -715,16 +503,15 @@ export function BookGraphView({
 
   const handlePointerLeave = () => {
     pointerRef.current = { kind: 'idle' }
-    if (hoverRef.current) {
-      hoverRef.current = null
-      if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
-    }
+    hoverRef.current = null
+    hoverEdgeRef.current = null
+    hoverPointRef.current = null
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grab'
     schedule()
   }
 
   const handlePointerCancel = () => {
-    pointerRef.current = { kind: 'idle' }
-    schedule()
+    handlePointerLeave()
   }
 
   const handleDoubleClick = () => {
@@ -732,12 +519,19 @@ export function BookGraphView({
     schedule()
   }
 
+  useEffect(() => {
+    spacingRef.current = spacing
+    alphaRef.current = 1
+    fitAfterLayoutRef.current = true
+    schedule()
+  }, [spacing, schedule])
+
   const handleReset = () => {
     fitView()
     schedule()
   }
 
-  if (graph.nodes.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <p className="max-w-[420px] text-center text-xs leading-6 text-[var(--nova-text-faint)]">
@@ -747,81 +541,22 @@ export function BookGraphView({
     )
   }
 
-  return (
-    <div className="flex min-h-0 flex-1">
-      <aside className="flex w-56 shrink-0 flex-col gap-3 border-r border-[var(--nova-border)] p-3">
-        <div className="nova-field flex h-8 items-center gap-2 rounded-[var(--nova-radius)] px-2 text-xs text-[var(--nova-text-faint)]">
-          <Search className="h-3.5 w-3.5" />
-          <input
-            className="min-w-0 flex-1 bg-transparent text-[var(--nova-text-muted)] outline-none placeholder:text-[var(--nova-text-faint)]"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('settingPanel.bookOverview.graphSearch')}
-            aria-label={t('settingPanel.bookOverview.graphSearch')}
-          />
-        </div>
+  const content = (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+      <BookGraphControls
+        items={items} graph={graph} baseNodes={baseGraph.nodes}
+        query={query} setQuery={setQuery} hidden={hidden} setHidden={setHidden}
+        characterTierFilter={characterTierFilter} setCharacterTierFilter={setCharacterTierFilter}
+        showInferred={showInferred} setShowInferred={setShowInferred}
+        relationLabel={activeRelationLabel} setRelationLabel={setRelationLabel} relationLabels={relationLabels}
+        focusId={activeFocusId} setFocusId={setFocusId} depth={depth} setDepth={setDepth}
+        spacing={spacing} setSpacing={setSpacing} fullscreen={fullscreen}
+        onFullscreen={() => setFullscreen((value) => !value)} onOpenItem={onOpenItem} handleReset={handleReset}
+      />
 
-        <div className="flex flex-col gap-0.5">
-          <p className="mb-1 text-[11px] text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.graphFilterTitle')}</p>
-          {GRAPH_TYPE_ORDER.map((type) => {
-            const count = items.filter((item) => item.type === type).length
-            if (!count) return null
-            const checked = !hidden.has(type)
-            return (
-              <label
-                key={type}
-                className="flex min-h-7 cursor-pointer items-center gap-2 rounded px-1 text-xs text-[var(--nova-text-muted)] hover:bg-[var(--nova-hover)]"
-              >
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 accent-[var(--nova-accent)]"
-                  checked={checked}
-                  onChange={() => {
-                    setHidden((current) => {
-                      const next = new Set(current)
-                      if (next.has(type)) next.delete(type)
-                      else next.add(type)
-                      return next
-                    })
-                  }}
-                  aria-label={loreTypeLabel(type, t)}
-                />
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: TYPE_COLORS[type] }} />
-                <span className="min-w-0 flex-1 truncate">{loreTypeLabel(type, t)}</span>
-                <span className="text-[11px] text-[var(--nova-text-faint)]">{count}</span>
-              </label>
-            )
-          })}
-        </div>
-
-        <div className="mt-auto flex flex-col gap-2">
-          <p className="text-[11px] leading-5 text-[var(--nova-text-faint)]">{stats}</p>
-          <p className="text-[11px] leading-5 text-[var(--nova-text-faint)]">{t('settingPanel.bookOverview.graphHint')}</p>
-          <ul className="sr-only" role="list" aria-label={t('settingPanel.bookOverview.graphRelationList')}>
-            {visibleEdges.map((edge, index) => {
-              const source = graph.nodes.find((node) => node.id === edge.source)
-              const target = graph.nodes.find((node) => node.id === edge.target)
-              if (!source || !target) return null
-              return (
-                <li key={edge.id || `${edge.source}-${edge.target}-${index}`}>
-                  {edge.confirmed
-                    ? t('settingPanel.bookOverview.graphConfirmedRelation', { source: source.name, target: target.name, label: edge.label })
-                    : t('settingPanel.bookOverview.graphDerivedRelation', { source: source.name, target: target.name })}
-                  {edge.note ? ` — ${edge.note}` : ''}
-                </li>
-              )
-            })}
-          </ul>
-          <Button className={actionButtonClassName} variant="outline" size="sm" onClick={handleReset}>
-            <RotateCcw data-icon="inline-start" />
-            {t('settingPanel.bookOverview.graphResetView')}
-          </Button>
-        </div>
-      </aside>
-
-      <div ref={containerRef} className="relative min-h-0 min-w-0 flex-1">
+      <div ref={containerRef} className="relative min-h-64 min-w-0 flex-1 md:min-h-0">
         <canvas
-          ref={canvasRef}
+          ref={bindCanvas}
           className="absolute inset-0 h-full w-full touch-none"
           aria-label={t('settingPanel.bookOverview.graphMode')}
           onPointerDown={handlePointerDown}
@@ -835,4 +570,19 @@ export function BookGraphView({
       </div>
     </div>
   )
+  return fullscreen ? (
+    <Dialog open onOpenChange={setFullscreen}>
+      <DialogContent
+        className="flex h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-2 p-3 max-md:max-h-[calc(100dvh-2rem)]"
+        showCloseButton={false}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <DialogTitle>{t('settingPanel.bookOverview.graphFullscreenTitle')}</DialogTitle>
+          <Button variant="outline" size="sm" onClick={() => setFullscreen(false)}>{t('settingPanel.bookOverview.graphExitFullscreen')}</Button>
+        </div>
+        <DialogDescription className="sr-only">{t('settingPanel.bookOverview.graphHint')}</DialogDescription>
+        {content}
+      </DialogContent>
+    </Dialog>
+  ) : content
 }

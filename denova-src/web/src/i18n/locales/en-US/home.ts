@@ -16,6 +16,7 @@ const home = {
   'home.currentWorkspaceUnset': 'No workspace set',
   'home.createAndGenerateCover': 'Create and Generate Cover',
   'home.createBook': 'New Book',
+  'home.ideateBook': 'Ideate with AI',
   'home.createError': 'Create failed',
   'home.createIn': 'New book will be created in',
   'home.deleteBook': 'Delete Book',

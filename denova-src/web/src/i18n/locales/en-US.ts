@@ -40,6 +40,8 @@ import changes from './en-US/changes'
 import library from './en-US/library'
 import worldWorkspace from './en-US/worldWorkspace'
 import workLibrary from './en-US/workLibrary'
+import bookIdeation from './en-US/bookIdeation'
+import bookLibrary from './en-US/bookLibrary'
 
 const enUS = {
   ...common,
@@ -84,6 +86,8 @@ const enUS = {
   ...library,
   ...worldWorkspace,
   ...workLibrary,
+  ...bookIdeation,
+  ...bookLibrary,
 } as const
 
 export default enUS

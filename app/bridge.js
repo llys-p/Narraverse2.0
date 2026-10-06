@@ -8,6 +8,7 @@
 
 const NARRAVERSE_BRIDGE_VERSION = 2;
 const denovaModelRequests = new Map();
+const denovaBookLoreRequests = new Map();
 
 function isEmbeddedInDenova() {
   return window.parent !== window &&
@@ -64,11 +65,15 @@ function handleDenovaHostMessage(event) {
     applyDenovaTheme(message.payload && message.payload.theme);
   } else if (message.type === 'locale-changed') {
     applyDenovaLocale(message.payload && message.payload.locale);
+    window.dispatchEvent(new CustomEvent('narraverse-locale-changed'));
   } else if (message.type === 'module4-open') {
     if (typeof Module4 !== 'undefined' && Module4) {
       if (message.payload && message.payload.open) Module4.open();
       else Module4.close();
     }
+    window.dispatchEvent(new CustomEvent('narraverse-module4-state-changed', {
+      detail: { open: !!(message.payload && message.payload.open) }
+    }));
   } else if (message.type === 'visibility-changed' && message.payload && message.payload.visible) {
     if (typeof pullCurrentAdventureSync === 'function') pullCurrentAdventureSync();
   } else if (message.version === 2 && message.type === 'world-context-changed') {
@@ -88,6 +93,13 @@ function handleDenovaHostMessage(event) {
       error.code = String(payload.code || 'upstream_error');
       pending.reject(error);
     }
+  } else if (message.version === 2 && message.type === 'book-lore-result') {
+    const payload = message.payload || {};
+    const pending = denovaBookLoreRequests.get(String(payload.requestId || ''));
+    if (!pending) return;
+    denovaBookLoreRequests.delete(String(payload.requestId));
+    window.clearTimeout(pending.timer);
+    pending.resolve(payload);
   }
 }
 
@@ -112,7 +124,7 @@ function requestDenovaModel(messages, options) {
       reject(new Error('共享模型请求超时'));
     }, 125000);
     denovaModelRequests.set(requestId, { resolve: resolve, reject: reject, timer: timer });
-    const sent = postNarraverseHostMessage('model-call-request', {
+    const payload = {
       requestId: requestId,
       messages: Array.isArray(messages) ? messages.map(function (message) {
         return { role: message.role, content: message.content };
@@ -121,7 +133,18 @@ function requestDenovaModel(messages, options) {
         maxTokens: options && options.maxTokens,
         temperature: options && options.temperature
       }
-    });
+    };
+    const status = window.NarraverseWorldContextStatus || {};
+    if (status.consumer === 'narraverse' && status.bookBound === true && status.bookKey &&
+        !document.body.classList.contains('module4-active') && Array.isArray(options && options.selectedLoreIds)) {
+      payload.selectedLoreIds = options.selectedLoreIds.slice(0, 50);
+    }
+    if (status.consumer === 'narraverse' && status.bookBound === true && status.bookKey &&
+        !document.body.classList.contains('module4-active') && options && options.loreActivation &&
+        typeof options.loreActivation === 'object' && !Array.isArray(options.loreActivation)) {
+      payload.loreActivation = options.loreActivation;
+    }
+    const sent = postNarraverseHostMessage('model-call-request', payload);
     if (!sent) {
       window.clearTimeout(timer);
       denovaModelRequests.delete(requestId);
@@ -130,7 +153,30 @@ function requestDenovaModel(messages, options) {
   });
 }
 
+function requestDenovaBookLore() {
+  if (!isEmbeddedInDenova() || !getDenovaHostOrigin()) return Promise.reject(new Error('Denova 宿主不可用'));
+  const requestId = randomBridgeRequestId();
+  return new Promise(function (resolve, reject) {
+    const timer = window.setTimeout(function () {
+      denovaBookLoreRequests.delete(requestId);
+      reject(new Error('读取本书资料目录超时'));
+    }, 15000);
+    denovaBookLoreRequests.set(requestId, { resolve: resolve, reject: reject, timer: timer });
+    if (!postNarraverseHostMessage('book-lore-request', { requestId: requestId })) {
+      window.clearTimeout(timer);
+      denovaBookLoreRequests.delete(requestId);
+      reject(new Error('Denova 宿主不可用'));
+    }
+  });
+}
+
+function requestDenovaOpenBookLore() {
+  return postNarraverseHostMessage('open-book-lore', {});
+}
+
 window.requestDenovaModel = requestDenovaModel;
+window.requestDenovaBookLore = requestDenovaBookLore;
+window.requestDenovaOpenBookLore = requestDenovaOpenBookLore;
 
 /* 请宿主打开平台自己的模型设置：只是跳转请求，不带凭证，也不改用户当前模式。
  * 返回 false 表示当前不是可信嵌入环境，调用方需要给出可读提示而不是静默失败。 */

@@ -45,6 +45,7 @@ type hostFrameBinding struct {
 	libraryRun     *libraryruntime.Run
 	libraryLeading string
 	librarySummary HostContextState
+	book           *hostBookContext
 }
 
 type hostSession struct {
@@ -57,11 +58,16 @@ type hostSession struct {
 // HostContextState is the sanitized host/iframe status DTO. It never contains
 // a token, World Ref, scope key, run context id, fingerprint, or ModelView.
 type HostContextState struct {
-	State         string `json:"state"`
-	WorldName     string `json:"worldName,omitempty"`
-	LibraryName   string `json:"libraryName,omitempty"`
-	RevisionLabel string `json:"revisionLabel,omitempty"`
-	SelectedCount int    `json:"selectedCount,omitempty"`
+	State           string `json:"state"`
+	WorldName       string `json:"worldName,omitempty"`
+	LibraryName     string `json:"libraryName,omitempty"`
+	RevisionLabel   string `json:"revisionLabel,omitempty"`
+	SelectedCount   int    `json:"selectedCount,omitempty"`
+	BookBound       bool   `json:"bookBound,omitempty"`
+	BookKey         string `json:"bookKey,omitempty"`
+	BookName        string `json:"bookName,omitempty"`
+	BookRevision    string `json:"bookRevision,omitempty"`
+	OverviewPresent bool   `json:"overviewPresent,omitempty"`
 }
 
 // HostFrameLibraryControl 是受控 iframe 一次 library bind 的载体（B4a/L3.3）。
@@ -285,6 +291,17 @@ func (a *App) BindWorldContextHostFrame(ctx context.Context, token string, consu
 }
 
 func (s *WorldContextHostService) bind(ctx context.Context, token string, consumer worldcontext.Consumer, frame string, ref *worldcontext.Ref) (HostContextState, error) {
+	return s.bindContext(ctx, token, consumer, frame, ref, false)
+}
+
+func (a *App) BindBookHostFrame(ctx context.Context, token string, consumer worldcontext.Consumer, frame string) (HostContextState, error) {
+	if consumer != worldcontext.ConsumerNarraverse {
+		return HostContextState{}, bookContextError(worldcontext.ErrInvalidRequest, "本书背景仅用于叙界 / Book context is only supported in Narraverse")
+	}
+	return a.worldContextHost().bindContext(ctx, token, consumer, frame, nil, true)
+}
+
+func (s *WorldContextHostService) bindContext(ctx context.Context, token string, consumer worldcontext.Consumer, frame string, ref *worldcontext.Ref, useBook bool) (HostContextState, error) {
 	if !validHostConsumer(consumer) || !validFrameInstance(frame) {
 		return HostContextState{}, trustedHostError()
 	}
@@ -298,6 +315,13 @@ func (s *WorldContextHostService) bind(ctx context.Context, token string, consum
 	}
 	key := hostBindingKey(consumer, frame)
 	scopeKey := hostFrameScopeKey(hash, frame, consumer)
+	var bookContext *hostBookContext
+	if useBook {
+		bookContext, err = s.captureBookContext()
+		if err != nil {
+			return HostContextState{}, err
+		}
+	}
 	var rc *worldcontext.RunContext
 	if ref != nil {
 		rc, _, err = s.world.BindWorldRun(ctx, consumer, scopeKey, *ref)
@@ -323,8 +347,11 @@ func (s *WorldContextHostService) bind(ctx context.Context, token string, consum
 		return HostContextState{}, &worldcontext.DomainError{Code: worldcontext.ErrContextUnavailable, Message: "宿主 frame 数量超过上限"}
 	}
 	previous := session.bindings[key]
-	binding := &hostFrameBinding{consumer: consumer, frame: frame, scopeKey: scopeKey}
+	binding := &hostFrameBinding{consumer: consumer, frame: frame, scopeKey: scopeKey, book: bookContext}
 	state := HostContextState{State: "none"}
+	if bookContext != nil {
+		state = bookContext.state()
+	}
 	if rc != nil {
 		binding.runContextID = rc.ID()
 		binding.summary = rc.UISummary()
@@ -502,6 +529,7 @@ func (s *WorldContextHostService) generate(ctx context.Context, token string, co
 	libraryRun := binding.libraryRun
 	libraryLeading := binding.libraryLeading
 	librarySummary := binding.librarySummary
+	bookContext := binding.book
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -515,6 +543,22 @@ func (s *WorldContextHostService) generate(ctx context.Context, token string, co
 
 	state := HostContextState{State: "none"}
 	switch {
+	case bookContext != nil:
+		if err := s.verifyBookContext(bookContext); err != nil {
+			return ModelGatewayChatResult{}, HostContextState{}, err
+		}
+		block, err := s.assembleBookBackgroundWithActivation(bookContext, req.SelectedLoreIDs, req.Messages, req.LoreActivation)
+		if err != nil {
+			return ModelGatewayChatResult{}, HostContextState{}, err
+		}
+		// This branch excludes any old World ModelView even when the book is empty.
+		if block != "" {
+			req.Messages = append([]ModelGatewayMessage{{Role: "user", Content: block}}, req.Messages...)
+		}
+		if err := s.verifyBookContext(bookContext); err != nil {
+			return ModelGatewayChatResult{}, HostContextState{}, err
+		}
+		state = bookContext.state()
 	case libraryRun != nil:
 		// 库载体：临时背景在绑定期装配（并经 AssembleInitial 计费）；
 		// 每次调用先核对来源版本，再计入本回合预算并送模。
@@ -556,6 +600,19 @@ func (s *WorldContextHostService) generate(ctx context.Context, token string, co
 		req.Module = ModelModuleNarraverse
 	}
 	result, err := s.app.GenerateModel(ctx, req)
+	if bookContext != nil && err == nil {
+		if verifyErr := s.verifyBookContext(bookContext); verifyErr != nil {
+			// Upstream already ran: this response must not trigger the client's stale retry.
+			return ModelGatewayChatResult{}, HostContextState{}, bookContextError(worldcontext.ErrBookChanged, "生成期间书籍资料发生变化，回复未采用，请重试 / Book context changed during generation; the response was discarded")
+		}
+		s.mu.Lock()
+		current := s.sessions[hash]
+		stillBound := current != nil && current.bindings[key] == binding
+		s.mu.Unlock()
+		if !stillBound {
+			return ModelGatewayChatResult{}, HostContextState{}, bookContextError(worldcontext.ErrBookChanged, "本次书籍绑定已失效，回复未采用 / The book binding expired; the response was discarded")
+		}
+	}
 	return result, state, err
 }
 

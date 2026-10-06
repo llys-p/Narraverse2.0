@@ -572,6 +572,8 @@ export interface LoreItem {
   type_source: 'heuristic' | 'semantic' | 'manual' | 'legacy'
   name: string
   importance: 'major' | 'important' | 'minor'
+  /** Book-local display grouping, independent of importance and load mode. */
+  character_tier?: 'major' | 'minor' | 'unclassified'
   load_mode: 'resident' | 'auto' | 'manual'
   tags: string[]
   brief_description: string
@@ -654,6 +656,7 @@ export interface LoreItemImageGenerateRequest {
 }
 
 export interface LoreImagesGenerateRequest extends LoreItemImageGenerateRequest {
+  workspace?: string
   item_ids: string[]
   overwrite_existing?: boolean
 }

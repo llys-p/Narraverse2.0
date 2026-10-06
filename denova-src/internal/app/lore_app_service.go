@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"denova/config"
@@ -23,6 +24,7 @@ type LoreItemImageGenerateRequest struct {
 	Instruction   string `json:"instruction,omitempty"`
 	ImagePresetID string `json:"image_preset_id,omitempty"`
 	ProfileID     string `json:"profile_id,omitempty"`
+	Workspace     string `json:"workspace,omitempty"`
 }
 
 type LoreImagesGenerateRequest struct {
@@ -31,6 +33,7 @@ type LoreImagesGenerateRequest struct {
 	OverwriteExisting bool     `json:"overwrite_existing,omitempty"`
 	ImagePresetID     string   `json:"image_preset_id,omitempty"`
 	ProfileID         string   `json:"profile_id,omitempty"`
+	Workspace         string   `json:"workspace,omitempty"`
 }
 
 type LoreImageProgressEvent struct {
@@ -67,6 +70,22 @@ func (s *LoreAppService) CreateLoreItem(input book.LoreItemInput) (book.LoreItem
 		return book.LoreItem{}, ErrNoWorkspace
 	}
 	return book.NewLoreStore(state.Workspace()).Create(input)
+}
+
+// CreateLoreItemForWorkspace 只允许写入调用方指定的那本书。
+// 客户端切书后仍在途的新建请求会在写入边界被拒，而不是落到切换后的当前书。
+func (a *App) CreateLoreItemForWorkspace(input book.LoreItemInput, workspace string) (book.LoreItem, error) {
+	return a.lore().CreateLoreItemForWorkspace(input, workspace)
+}
+
+func (s *LoreAppService) CreateLoreItemForWorkspace(input book.LoreItemInput, workspace string) (book.LoreItem, error) {
+	a := s.app
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if !loreTargetsCurrentWorkspace(workspace, a.workspace) || a.bookService == nil {
+		return book.LoreItem{}, ErrLoreWorkspaceMismatch
+	}
+	return book.NewLoreStore(a.workspace).Create(input)
 }
 
 func (a *App) UpdateLoreItem(id string, input book.LoreItemInput) (book.LoreItem, error) {
@@ -107,6 +126,31 @@ func (s *LoreAppService) DeleteLoreItem(id string) error {
 	return book.NewLoreStore(state.Workspace()).Delete(id)
 }
 
+// DeleteLoreItemForWorkspace 是删除的书籍守卫：目标书与服务端当前书不一致时拒绝写入。
+// 删除没有可回放的 base_revision，所以书籍身份必须在写入边界单独核对。
+func (a *App) DeleteLoreItemForWorkspace(id string, workspace string) error {
+	return a.lore().DeleteLoreItemForWorkspace(id, workspace)
+}
+
+func (s *LoreAppService) DeleteLoreItemForWorkspace(id string, workspace string) error {
+	a := s.app
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if !loreTargetsCurrentWorkspace(workspace, a.workspace) || a.bookService == nil {
+		return ErrLoreWorkspaceMismatch
+	}
+	return book.NewLoreStore(a.workspace).Delete(id)
+}
+
+// loreTargetsCurrentWorkspace 按与 document review / workspace change 相同的方式比较书籍身份：
+// 先 Clean 再比较，避免只有分隔符或尾斜杠差异时把合法写入误判成跨书。
+func loreTargetsCurrentWorkspace(target, current string) bool {
+	if target == "" || current == "" {
+		return false
+	}
+	return filepath.Clean(target) == filepath.Clean(current)
+}
+
 func (a *App) GenerateLoreItemImage(ctx context.Context, id string, request LoreItemImageGenerateRequest) (book.LoreItem, error) {
 	return a.lore().GenerateLoreItemImage(ctx, id, request)
 }
@@ -127,6 +171,20 @@ func (s *LoreAppService) ClearLoreItemImage(id string) (book.LoreItem, error) {
 	return book.NewLoreStore(state.Workspace()).SetImage(id, nil)
 }
 
+func (a *App) ClearLoreItemImageForWorkspace(id, workspace string) (book.LoreItem, error) {
+	return a.lore().ClearLoreItemImageForWorkspace(id, workspace)
+}
+
+func (s *LoreAppService) ClearLoreItemImageForWorkspace(id, workspace string) (book.LoreItem, error) {
+	a := s.app
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if !loreTargetsCurrentWorkspace(workspace, a.workspace) || a.bookService == nil {
+		return book.LoreItem{}, ErrLoreWorkspaceMismatch
+	}
+	return book.NewLoreStore(a.workspace).SetImage(id, nil)
+}
+
 func (a *App) StartLoreImagesGenerateTask(request LoreImagesGenerateRequest) (*Task, error) {
 	return a.lore().StartLoreImagesGenerateTask(request)
 }
@@ -145,6 +203,15 @@ func (s *LoreAppService) StartLoreImagesGenerateTask(request LoreImagesGenerateR
 		}
 		a.activeLoreImageTask = nil
 	}
+	if a.workspace == "" || a.bookService == nil || a.bookState == nil {
+		return nil, ErrNoWorkspace
+	}
+	if request.Workspace != "" && !loreTargetsCurrentWorkspace(request.Workspace, a.workspace) {
+		return nil, ErrLoreWorkspaceMismatch
+	}
+	// Freeze even legacy requests at acceptance so the background task cannot
+	// drift into whichever workspace is active when its goroutine starts.
+	request.Workspace = a.workspace
 
 	task := NewTask(func(ctx context.Context, task *Task, emit func(agent.Event)) {
 		defer s.clearLoreImageTask(task)
@@ -194,7 +261,7 @@ func (s *LoreAppService) runLoreImagesGenerateBatch(ctx context.Context, request
 		emit(agent.Event{Type: "error", Data: map[string]string{"message": "请选择需要生成图片的资料项"}})
 		return 0, 0, 1
 	}
-	store, _, _, err := s.loreImageRuntimeSnapshot()
+	store, _, _, err := s.loreImageRuntimeSnapshot(request.Workspace)
 	if err != nil {
 		emit(agent.Event{Type: "error", Data: map[string]string{"message": err.Error()}})
 		return 0, 0, total
@@ -220,6 +287,7 @@ func (s *LoreAppService) runLoreImagesGenerateBatch(ctx context.Context, request
 			Instruction:   request.Instruction,
 			ImagePresetID: request.ImagePresetID,
 			ProfileID:     request.ProfileID,
+			Workspace:     request.Workspace,
 		})
 		if err != nil {
 			failed++
@@ -234,7 +302,7 @@ func (s *LoreAppService) runLoreImagesGenerateBatch(ctx context.Context, request
 }
 
 func (s *LoreAppService) generateLoreItemImage(ctx context.Context, id string, request LoreItemImageGenerateRequest) (book.LoreItem, error) {
-	store, cfg, bookService, err := s.loreImageRuntimeSnapshot()
+	store, cfg, bookService, err := s.loreImageRuntimeSnapshot(request.Workspace)
 	if err != nil {
 		return book.LoreItem{}, err
 	}
@@ -267,12 +335,16 @@ func (s *LoreAppService) generateLoreItemImage(ctx context.Context, id string, r
 	return updated, nil
 }
 
-func (s *LoreAppService) loreImageRuntimeSnapshot() (*book.LoreStore, config.Config, *book.Service, error) {
+func (s *LoreAppService) loreImageRuntimeSnapshot(expectedWorkspace string) (*book.LoreStore, config.Config, *book.Service, error) {
 	a := s.app
 	a.mu.RLock()
 	if a.workspace == "" || a.bookService == nil || a.bookState == nil {
 		a.mu.RUnlock()
 		return nil, config.Config{}, nil, ErrNoWorkspace
+	}
+	if expectedWorkspace != "" && !loreTargetsCurrentWorkspace(expectedWorkspace, a.workspace) {
+		a.mu.RUnlock()
+		return nil, config.Config{}, nil, ErrLoreWorkspaceMismatch
 	}
 	if a.cfg == nil {
 		a.mu.RUnlock()

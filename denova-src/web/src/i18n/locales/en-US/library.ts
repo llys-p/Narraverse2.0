@@ -1,5 +1,5 @@
 const library = {
-  'library.title': 'Master Library',
+  'library.title': 'Public material library',
   'library.subtitle': 'Inspect archived Master assets and processing status',
   'library.search': 'Search asset name or source',
   'library.recordKind': 'Asset type',

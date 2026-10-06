@@ -14,6 +14,7 @@ const runtimeEntries = [
   'ai-client.js',
   'app.js',
   'bridge.js',
+  'book-context.js',
   'migration.html',
   'origin-migration.js',
   'game_engine.js',

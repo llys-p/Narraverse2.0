@@ -64,6 +64,8 @@ describe('NarraverseWorkspace', () => {
   afterAll(() => vi.unstubAllGlobals())
 
   function renderWorkspace(overrides: {
+    workspace?: string
+    onOpenBookLore?: () => void
     visible?: boolean
     onSwitchMode?: (mode: 'ide' | 'interactive') => void
     onOpenModelSettings?: () => void
@@ -72,6 +74,8 @@ describe('NarraverseWorkspace', () => {
     const onOpenModelSettings = overrides.onOpenModelSettings ?? vi.fn()
     const result = render(
       <NarraverseWorkspace
+        workspace={overrides.workspace}
+        onOpenBookLore={overrides.onOpenBookLore}
         visible={overrides.visible ?? true}
         onSwitchMode={onSwitchMode}
         onOpenModelSettings={onOpenModelSettings}
@@ -106,7 +110,7 @@ describe('NarraverseWorkspace', () => {
     expect(url.pathname).toBe('/narraverse/index.html')
     expect(url.searchParams.get('embedded')).toBe('denova')
     expect(url.searchParams.get('host_origin')).toBe(window.location.origin)
-    expect(url.searchParams.get('v')).toBe('20261004-platform-model-v3')
+    expect(url.searchParams.get('v')).toBe('20261006-book-lore-v2')
     expect(iframe).not.toHaveAttribute('border')
     expect(iframe.className).toContain('h-full')
   })
@@ -119,7 +123,16 @@ describe('NarraverseWorkspace', () => {
     dispatchFromIframe(iframe, { source: 'narraverse', version: 1, type: 'ready' })
 
     await waitFor(() => expect(screen.queryByText('正在进入叙界…')).not.toBeInTheDocument())
-    await waitFor(() => expect(screen.getByTestId('iframe-world-context-state')).toBeInTheDocument())
+    expect(screen.queryByTestId('iframe-world-context-state')).not.toBeInTheDocument()
+  })
+
+  it('does not overlay a world background badge when the platform connection is unavailable', () => {
+    runtimeMocks.hostState = 'unavailable'
+    const { iframe } = renderWorkspace()
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 1, type: 'ready' })
+    expect(screen.queryByTestId('iframe-world-context-state')).not.toBeInTheDocument()
+    expect(screen.queryByText('世界背景不可用，已降级运行')).not.toBeInTheDocument()
+    expect(iframe).toBeInTheDocument()
   })
 
   it('sends the current theme and locale whenever the iframe loads', () => {
@@ -262,7 +275,10 @@ describe('NarraverseWorkspace', () => {
     expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
       source: 'denova', version: 2, type: 'model-call-result', payload: expect.objectContaining({ requestId: 'abcdefghijklmnop', ok: true, content: '生成结果' }),
     }), targetOrigin())
-    expect(screen.getByTestId('iframe-world-context-state')).toHaveTextContent('世界背景已连接（只读）')
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'model-call-result', payload: expect.objectContaining({ contextSummary: { state: 'active' } }),
+    }), targetOrigin())
+    expect(screen.queryByTestId('iframe-world-context-state')).not.toBeInTheDocument()
   })
 
   it('reports a bilingual generation failure and sends no model call when the host is unavailable', () => {
@@ -499,6 +515,126 @@ describe('NarraverseWorkspace', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/call', expect.any(Object)))
     const callBody = JSON.parse(String((vi.mocked(fetch).mock.calls.find(([input]) => String(input).endsWith('/module4/call'))?.[1] as RequestInit).body))
     expect(JSON.stringify(callBody)).not.toContain('lib-4')
+  })
+
+  it('binds ordinary book lore and forwards selected IDs without borrowing the sandbox consumer', async () => {
+    const { iframe } = renderWorkspace({ workspace: 'D:/books/A' })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/bind', expect.any(Object)))
+    const bind = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/narraverse/bind'))
+    expect(JSON.parse(String(bind?.[1]?.body))).toEqual(expect.objectContaining({ book_context: true }))
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request', payload: {
+      requestId: 'book_request_abcdefghijklmnop', messages: [{ role: 'user', content: '去灯塔' }], options: {}, selectedLoreIds: ['tower'],
+    } })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.any(Object)))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/call'))
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual(expect.objectContaining({ selected_lore_ids: ['tower'] }))
+  })
+
+  it('forwards a bounded lore activation beside selected IDs only on Narraverse calls', async () => {
+    const { iframe } = renderWorkspace({ workspace: 'D:/books/A' })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request', payload: {
+      requestId: 'lore_activation_abcdefghijkl', messages: [{ role: 'user', content: '去灯塔' }], options: {},
+      selectedLoreIds: ['tower'], loreActivation: { scanDepth: 14, contextText: '阿青\n杭州' },
+    } })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.any(Object)))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/call'))
+    const body = JSON.parse(String(call?.[1]?.body))
+    expect(body.selected_lore_ids).toEqual(['tower'])
+    expect(body.lore_activation).toEqual({ scan_depth: 14, context_text: '阿青\n杭州' })
+    expect(body.options).not.toHaveProperty('lore_activation')
+  })
+
+  it.each([
+    ['null', null],
+    ['array', []],
+    ['unknown key', { scanDepth: 14, contextText: 'x', extra: true }],
+    ['low depth', { scanDepth: 0, contextText: 'x' }],
+    ['high depth', { scanDepth: 61, contextText: 'x' }],
+    ['fractional depth', { scanDepth: 1.5, contextText: 'x' }],
+    ['non-string context', { scanDepth: 14, contextText: 123 }],
+    ['Unicode overflow', { scanDepth: 14, contextText: '😀'.repeat(257) }],
+  ])('rejects invalid loreActivation: %s', async (_label, loreActivation) => {
+    const { iframe } = renderWorkspace()
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request', payload: {
+      requestId: 'invalid_lore_abcdefghijkl', messages: [{ role: 'user', content: 'query' }], options: {}, loreActivation,
+    } })
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/call'))).toHaveLength(0))
+  })
+
+  it('never forwards loreActivation to Module4 even if a valid iframe payload includes it', async () => {
+    const view = render(<NarraverseWorkspace visible openModule4 onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
+    const iframe = view.container.querySelector('iframe') as HTMLIFrameElement
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request', payload: {
+      requestId: 'module4_lore_abcdefghijkl', messages: [{ role: 'user', content: 'play' }], options: {},
+      loreActivation: { scanDepth: 14, contextText: 'must not pass' },
+    } })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/module4/call', expect.any(Object)))
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/module4/call'))
+    const body = JSON.parse(String(call?.[1]?.body))
+    expect(body).not.toHaveProperty('lore_activation')
+  })
+
+  it.each([['book_stale', 2], ['book_changed', 1]] as const)('retries %s exactly within its book boundary', async (code, count) => {
+    let calls = 0
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const path = String(input)
+      if (path.endsWith('/call')) {
+        calls++
+        return calls === 1 ? new Response(JSON.stringify({ code, error: code }), { status: 409 })
+          : new Response(JSON.stringify({ content: 'ok' }), { status: 200 })
+      }
+      if (path.endsWith('/bind')) return new Response(JSON.stringify({ contextSummary: { state: 'active', bookBound: true, bookKey: 'A' } }), { status: 200 })
+      return new Response('', { status: 204 })
+    })
+    const { iframe } = renderWorkspace({ workspace: 'D:/books/A' })
+    const post = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request', payload: {
+      requestId: 'retry_request_abcdefghijklmnop', messages: [{ role: 'user', content: '继续' }], options: {},
+    } })
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'model-call-result' }), targetOrigin()))
+    expect(calls).toBe(count)
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/bind'))).toHaveLength(count)
+  })
+
+  it('serves the book directory through the trusted host and opens the existing book panel', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input).endsWith('/lore')) return new Response(JSON.stringify({ items: [{ id: 'tower', name: '灯塔' }], contextSummary: { bookKey: 'A' } }), { status: 200 })
+      return new Response(JSON.stringify({ contextSummary: { state: 'active', bookBound: true, bookKey: 'A' } }), { status: 200 })
+    })
+    const open = vi.fn()
+    const { iframe } = renderWorkspace({ workspace: 'D:/books/A', onOpenBookLore: open })
+    const post = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'book-lore-request', payload: { requestId: 'catalog_request_abcdefghijklmnop' } })
+    await waitFor(() => expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'book-lore-result', payload: expect.objectContaining({ ok: true, bookKey: 'A', items: [{ id: 'tower', name: '灯塔' }] }) }), targetOrigin()))
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'open-book-lore', payload: {} })
+    expect(open).toHaveBeenCalledTimes(1)
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'open-book-lore', payload: { path: 'D:/other' } })
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops an A1 model reply after switching A to B to A', async () => {
+    let finish: (response: Response) => void = () => {}
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input).endsWith('/call')) return new Promise<Response>((resolve) => { finish = resolve })
+      return new Response(JSON.stringify({ contextSummary: { state: 'active', bookBound: true, bookKey: 'A' } }), { status: 200 })
+    })
+    const { iframe, rerender } = renderWorkspace({ workspace: 'A' })
+    const post = vi.spyOn(iframe.contentWindow as Window, 'postMessage')
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'ready', payload: {} })
+    dispatchFromIframe(iframe, { source: 'narraverse', version: 2, type: 'model-call-request', payload: {
+      requestId: 'aba_request_abcdefghijklmnop', messages: [{ role: 'user', content: 'A1' }], options: {},
+    } })
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/world-context/host/narraverse/call', expect.any(Object)))
+    rerender(<NarraverseWorkspace visible workspace="B" onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
+    rerender(<NarraverseWorkspace visible workspace="A" onSwitchMode={vi.fn()} onOpenModelSettings={vi.fn()} />)
+    await act(async () => { finish(new Response(JSON.stringify({ content: 'STALE_A1' }), { status: 200 })); await Promise.resolve() })
+    expect(post).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'model-call-result', payload: expect.objectContaining({ content: 'STALE_A1' }) }), targetOrigin())
   })
 
   function dispatchFromIfaceCrossOrigin(iframe: HTMLIFrameElement) {

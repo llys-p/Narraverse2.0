@@ -11,6 +11,11 @@ export type WorkspaceMode = 'ide' | 'interactive' | 'narraverse' | 'books' | 'wo
 /** 内容模式：写作、游戏、叙界三选一的顶层导航目标。 */
 export type ContentMode = 'ide' | 'interactive' | 'narraverse'
 /**
+ * 资料库分区。本书资料以当前 workspace 身份为作用域，作品设定库与公共素材各自独立，
+ * 三者共用同一个资料库入口，所以分区选择需要能在模式切换之间保持。
+ */
+export type LibrarySection = 'book' | 'mine' | 'public'
+/**
  * 不依赖「当前书籍」即可进入的模式。
  *
  * books / worlds / library / skills / agents / automations 都是自包含的共享模式：
@@ -28,6 +33,7 @@ export const WORKSPACE_FREE_MODES: readonly WorkspaceMode[] = [
 const MODE_STORAGE_KEY = 'nova:mode'
 const CONTENT_MODE_STORAGE_KEY = 'nova:content-mode'
 const RIGHT_PANEL_STORAGE_KEY = 'nova:right-panel'
+const LIBRARY_SECTION_STORAGE_KEY = 'nova:library-section'
 
 function readInitialMode(): WorkspaceMode {
   if (typeof window === 'undefined') return 'ide'
@@ -47,6 +53,22 @@ function readInitialRightPanel(): RightPanel {
   // Beta migration: Change Review moved from the right panel into the editor.
   if (stored === 'review') return 'ai'
   return isRightPanel(stored) ? stored : 'ai'
+}
+
+/**
+ * 资料库分区默认值。
+ *
+ * 本书分区依赖当前书籍，启动时还不知道有没有书，所以这里只恢复用户上次显式
+ * 选择过的分区；ModeRouter 在没有记录且当前有书时把默认落到本书。
+ */
+function readInitialLibrarySection(): LibrarySection | null {
+  if (typeof window === 'undefined') return null
+  const stored = window.localStorage.getItem(LIBRARY_SECTION_STORAGE_KEY)
+  return isLibrarySection(stored) ? stored : null
+}
+
+function isLibrarySection(value: unknown): value is LibrarySection {
+  return value === 'book' || value === 'mine' || value === 'public'
 }
 
 function isWorkspaceMode(value: unknown): value is WorkspaceMode {
@@ -80,12 +102,15 @@ type WorkspaceStore = {
   rightPanel: RightPanel
   bottomPanel: BottomPanel
   commandOpen: boolean
+  /** 资料库当前分区；null 表示还没被用户显式选择过，由入口按是否有书决定默认。 */
+  librarySection: LibrarySection | null
   setMode: (mode: WorkspaceMode) => void
   setSelectedProjectId: (id?: string) => void
   setSelectedChapterId: (id?: string) => void
   setRightPanel: (panel: RightPanel) => void
   setBottomPanel: (panel: BottomPanel) => void
   setCommandOpen: (open: boolean) => void
+  setLibrarySection: (section: LibrarySection) => void
 }
 
 /** 工作区 UI 状态 Store，仅保存本地界面状态，不存放服务端数据。 */
@@ -96,6 +121,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   rightPanel: readInitialRightPanel(),
   bottomPanel: null,
   commandOpen: false,
+  librarySection: readInitialLibrarySection(),
   setMode: (mode) => {
     persistMode(mode)
     set({ mode })
@@ -108,4 +134,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set) => ({
   },
   setBottomPanel: (panel) => set({ bottomPanel: panel }),
   setCommandOpen: (open) => set({ commandOpen: open }),
+  setLibrarySection: (section) => {
+    if (typeof window !== 'undefined') window.localStorage.setItem(LIBRARY_SECTION_STORAGE_KEY, section)
+    set({ librarySection: section })
+  },
 }))

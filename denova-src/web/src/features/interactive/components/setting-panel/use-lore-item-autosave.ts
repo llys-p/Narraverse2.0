@@ -44,7 +44,9 @@ export function useLoreItemAutosave({
     makePayload: loreAutosavePayload,
     baselineFromSaved: (saved) => loreAutosaveDraft(saved),
     signature: loreResourceSignature,
-    save: updateLoreItem,
+    // 每次写入都带上发起时的书籍身份：服务端在当前书已切换时返回冲突，
+    // 而不是把这条 PATCH 落到切换后的另一本书上。
+    save: (id, payload, baseRevision) => updateLoreItem(id, payload, baseRevision, workspace),
     resolveConflict: async ({ error, baseline: previous, draft: submitted, baseRevision }) => {
       if (!isRevisionConflict(error)) return null
       const latest = (await getLoreItems()).find((item) => item.id === submitted.id)

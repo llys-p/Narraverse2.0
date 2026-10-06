@@ -29,6 +29,7 @@ import type { ImagePreset, StoryDirector, Teller } from '../types'
 import { CreatorDirectory, CreatorEditor } from './setting-panel/CreatorEditor'
 import { BOOK_OVERVIEW_ENTRY_ID, BOOK_OVERVIEW_PATH, BookOverviewPanel } from './setting-panel/BookOverviewPanel'
 import { LoreEditor } from './setting-panel/LoreEditor'
+import { CharacterTierBatchDialog } from './setting-panel/CharacterTierBatchDialog'
 import { LoreBatchTranslationDialog } from './setting-panel/LoreBatchTranslationDialog'
 import { MaterialImportDialog } from './setting-panel/MaterialImportDialog'
 import { OpeningPresetEditor } from './setting-panel/OpeningPresetEditor'
@@ -61,6 +62,9 @@ interface SettingPanelProps {
   onStoryDirectorsChange?: (directors: StoryDirector[]) => void
   onImagePresetsChange?: (presets: ImagePreset[]) => void
   embedded?: boolean
+  showBookOverview?: boolean
+  onFlushHandlerChange?: (handler: (() => Promise<boolean>) | null) => void
+  onDirtyChange?: (dirty: boolean) => void
   onClose?: () => void
 }
 
@@ -75,6 +79,9 @@ export function SettingPanel({
   onStoryDirectorsChange,
   onImagePresetsChange,
   embedded = false,
+  showBookOverview = true,
+  onFlushHandlerChange,
+  onDirtyChange,
   onClose,
 }: SettingPanelProps) {
   const activeMode = mode || 'lore'
@@ -94,7 +101,7 @@ export function SettingPanel({
       />
     )
   }
-  return <LoreSettingPanel mode={activeMode} workspace={workspace} imagePresets={imagePresets} onImagePresetsChange={onImagePresetsChange} embedded={embedded} onClose={onClose} />
+  return <LoreSettingPanel mode={activeMode} workspace={workspace} imagePresets={imagePresets} onImagePresetsChange={onImagePresetsChange} embedded={embedded} showBookOverview={showBookOverview} onFlushHandlerChange={onFlushHandlerChange} onDirtyChange={onDirtyChange} onClose={onClose} />
 }
 
 function LoreSettingPanel({
@@ -103,6 +110,9 @@ function LoreSettingPanel({
   imagePresets: externalImagePresets,
   onImagePresetsChange,
   embedded,
+  showBookOverview,
+  onFlushHandlerChange,
+  onDirtyChange,
   onClose,
 }: {
   mode: Exclude<SettingPanelMode, 'teller'>
@@ -110,6 +120,9 @@ function LoreSettingPanel({
   imagePresets: ImagePreset[]
   onImagePresetsChange?: (presets: ImagePreset[]) => void
   embedded: boolean
+  showBookOverview: boolean
+  onFlushHandlerChange?: (handler: (() => Promise<boolean>) | null) => void
+  onDirtyChange?: (dirty: boolean) => void
   onClose?: () => void
 }) {
   const { t } = useTranslation()
@@ -138,6 +151,7 @@ function LoreSettingPanel({
   const [loreImageGeneratingId, setLoreImageGeneratingId] = useState('')
   const [loreImageAttachmentBusyId, setLoreImageAttachmentBusyId] = useState('')
   const [loreImageBatchOpen, setLoreImageBatchOpen] = useState(false)
+  const [loreImageBatchWorkspace, setLoreImageBatchWorkspace] = useState('')
   const [loreClassificationOpen, setLoreClassificationOpen] = useState(false)
   const [loreBatchTranslationOpen, setLoreBatchTranslationOpen] = useState(false)
   const [materialImportOpen, setMaterialImportOpen] = useState(false)
@@ -149,7 +163,7 @@ function LoreSettingPanel({
   const [loreImageBatchOverwrite, setLoreImageBatchOverwrite] = useState(false)
   const [loreImageBatchRunning, setLoreImageBatchRunning] = useState(false)
   const [loreImageBatchProgress, setLoreImageBatchProgress] = useState<Record<string, LoreImageProgressEvent>>({})
-  const [deleteLoreTarget, setDeleteLoreTarget] = useState<LoreItem | null>(null)
+  const [deleteLoreTarget, setDeleteLoreTarget] = useState<(LoreItem & { workspace: string }) | null>(null)
   const [saving, setSaving] = useState(false)
   const loreDraftRef = useRef<LoreItem | null>(null)
   const activeLoreIdRef = useRef(activeId)
@@ -168,7 +182,7 @@ function LoreSettingPanel({
   const loreRebaseSequenceRef = useRef(0)
   const loreImageBatchAbortRef = useRef<AbortController | null>(null)
   const isCreatorActive = activeMode === 'creator' || (activeMode === 'lore' && activeId === CREATOR_ENTRY_ID)
-  const isBookOverviewActive = activeMode === 'lore' && activeId === BOOK_OVERVIEW_ENTRY_ID
+  const isBookOverviewActive = showBookOverview && activeMode === 'lore' && activeId === BOOK_OVERVIEW_ENTRY_ID
   creatorContentRef.current = creatorContent
   activeLoreIdRef.current = activeId
   loreWorkspaceRef.current = workspace
@@ -398,6 +412,14 @@ function LoreSettingPanel({
     setActiveId('')
     setDraft(null)
     setTagDraft('')
+    setDeleteLoreTarget(null)
+    setLoreImageBatchOpen(false)
+    setLoreImageBatchWorkspace('')
+    setLoreImageBatchSelectedIds([])
+    setLoreImageBatchProgress({})
+    loreImageBatchAbortRef.current?.abort()
+    loreImageBatchAbortRef.current = null
+    setLoreImageBatchRunning(false)
     loreBaselineDraftRef.current = null
     setQuery('')
     void loadLoreItems()
@@ -745,13 +767,15 @@ function LoreSettingPanel({
       const item = await createLoreItem({
         enabled: true,
         type: section.createType,
+        ...(section.characterTier ? { character_tier: section.characterTier } : {}),
         name: createName,
         importance: section.createType === 'character' ? 'major' : 'important',
         load_mode: section.createType === 'character' ? 'resident' : 'auto',
         tags: section.tag ? [section.tag] : [],
         brief_description: `${loreTypeLabel(section.createType, t)} ${createName}。用 3-5 句概括本项的身份、别名、关键事实、适用场景和触发词。`,
         content: `## ${createName}\n\n`,
-      })
+      }, workspace)
+      if (loreWorkspaceRef.current !== workspace) return
       await refreshItems(item.id)
       notifyLoreUpdated([item.id])
     } finally {
@@ -761,16 +785,20 @@ function LoreSettingPanel({
 
   const handleDelete = () => {
     if (!draft) return
-    setDeleteLoreTarget(draft)
+    setDeleteLoreTarget({ ...draft, workspace })
   }
 
   const confirmDeleteLoreTarget = async () => {
     if (!deleteLoreTarget) return
+    const target = { id: deleteLoreTarget.id, workspace: deleteLoreTarget.workspace }
+    if (loreWorkspaceRef.current !== target.workspace) return
     setSaving(true)
     try {
       await flushLoreAutosave()
+      if (loreWorkspaceRef.current !== target.workspace) return
       loreAutosave.cancelPending()
-      await deleteLoreItem(deleteLoreTarget.id)
+      await deleteLoreItem(target.id, target.workspace)
+      if (loreWorkspaceRef.current !== target.workspace) return
       await refreshItems()
       notifyLoreUpdated([deleteLoreTarget.id])
       setDeleteLoreTarget(null)
@@ -816,6 +844,14 @@ function LoreSettingPanel({
     onClose()
   }
 
+  // 内嵌资料工具复用原保存通道，父工作台离开视图或切书前统一等待它。
+  const flushHandlerRef = useRef(flushActiveAutosave)
+  flushHandlerRef.current = flushActiveAutosave
+  useEffect(() => {
+    onFlushHandlerChange?.(() => flushHandlerRef.current())
+    return () => onFlushHandlerChange?.(null)
+  }, [onFlushHandlerChange, workspace])
+
   const handleSelectLore = async (id: string) => {
     if (id === activeId) return
     try {
@@ -848,7 +884,7 @@ function LoreSettingPanel({
       const item = await generateLoreItemImage(target.id, {
         instruction: loreImageInstruction,
         image_preset_id: selectedLoreImagePresetId(),
-      })
+      }, target.workspace)
       if (!mergeSavedLoreItem(item, target, baseline)) return
       notifyLoreUpdated([item.id])
       toast.success(t('settingPanel.loreImage.generated'))
@@ -867,7 +903,7 @@ function LoreSettingPanel({
       const saved = await flushLoreAutosave()
       if (!isCurrentLoreTarget(target)) return
       const baseline = saved ? loreAutosaveDraft(saved) : loreBaselineDraftRef.current
-      const item = await clearLoreItemImage(target.id)
+      const item = await clearLoreItemImage(target.id, target.workspace)
       if (!mergeSavedLoreItem(item, target, baseline)) return
       notifyLoreUpdated([item.id])
       toast.success(t('settingPanel.loreImage.cleared'))
@@ -915,6 +951,7 @@ function LoreSettingPanel({
   }
 
   const handleOpenLoreImageBatch = () => {
+    setLoreImageBatchWorkspace(workspace)
     setLoreImageBatchSelectedIds([])
     setLoreImageBatchProgress({})
     setLoreImageBatchPresetId(selectedLoreImagePresetId())
@@ -922,6 +959,8 @@ function LoreSettingPanel({
   }
 
   const handleRunLoreImageBatch = async () => {
+    const targetWorkspace = loreImageBatchWorkspace
+    if (!targetWorkspace || loreWorkspaceRef.current !== targetWorkspace) return
     if (loreImageBatchSelectedIds.length === 0 || loreImageBatchRunning) {
       toast.error(t('settingPanel.loreImage.noSelection'))
       return
@@ -932,6 +971,7 @@ function LoreSettingPanel({
     setLoreImageBatchProgress({})
     try {
       const stream = await streamLoreImagesGenerate({
+        workspace: targetWorkspace,
         item_ids: loreImageBatchSelectedIds,
         instruction: loreImageBatchInstruction,
         overwrite_existing: loreImageBatchOverwrite,
@@ -941,6 +981,7 @@ function LoreSettingPanel({
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
+        if (loreImageBatchAbortRef.current !== controller || loreWorkspaceRef.current !== targetWorkspace) break
         handleLoreImageBatchEvent(value)
       }
     } catch (err) {
@@ -948,8 +989,10 @@ function LoreSettingPanel({
         toast.error((err as Error).message || t('settingPanel.loreImage.failed'))
       }
     } finally {
-      loreImageBatchAbortRef.current = null
-      setLoreImageBatchRunning(false)
+      if (loreImageBatchAbortRef.current === controller) {
+        loreImageBatchAbortRef.current = null
+        setLoreImageBatchRunning(false)
+      }
     }
   }
 
@@ -1013,6 +1056,10 @@ function LoreSettingPanel({
       : isBookOverviewActive
         ? overviewAutosave.error
         : loreAutosave.error
+  useEffect(() => {
+    onDirtyChange?.(activeAutosaveStatus === 'pending' || activeAutosaveStatus === 'saving'
+      || activeAutosaveStatus === 'blocked' || activeAutosaveStatus === 'error')
+  }, [activeAutosaveStatus, onDirtyChange])
   const editorHeaderIcon = isCreatorActive ? BookMarked : isOpeningPresetActive ? Sparkles : isLoreConfigAgentActive ? Bot : isBookOverviewActive ? BookOpen : Database
   const editorHeaderTitle = isLoreConfigAgentActive
     ? t('settingPanel.loreAgent.title')
@@ -1042,6 +1089,7 @@ function LoreSettingPanel({
     id: section.id,
     label: t(section.labelKey),
     icon: section.icon,
+    defaultCollapsed: section.defaultCollapsed,
     items: sectionItems(items, section, query, loadModeFilter).map((item) => loreItemToDirectoryItem(item, t)),
     onCreate: () => void handleCreateLore(section),
     createLabel: `${t('chat.new')}${t(section.labelKey)}`,
@@ -1108,7 +1156,7 @@ function LoreSettingPanel({
             onSelect={handleSelectLore}
             saving={saving}
             pinnedEntries={[
-              { id: BOOK_OVERVIEW_ENTRY_ID, label: t('settingPanel.bookOverview.title'), icon: BookOpen },
+              ...(showBookOverview ? [{ id: BOOK_OVERVIEW_ENTRY_ID, label: t('settingPanel.bookOverview.title'), icon: BookOpen }] : []),
               { id: LORE_CONFIG_AGENT_ENTRY_ID, label: t('settingPanel.loreAgent.title'), icon: Bot },
               { id: CREATOR_ENTRY_ID, label: CREATOR_PATH, icon: BookMarked },
               { id: INTERACTIVE_OPENING_PRESET_ENTRY_ID, label: t('settingPanel.openingPreset.title'), icon: Sparkles },
@@ -1119,6 +1167,19 @@ function LoreSettingPanel({
             filterItem={() => true}
             searchAccessory={loreLoadModeFilterControl}
             headerActions={loreDirectoryActions}
+            headerContent={(
+              <CharacterTierBatchDialog
+                key={workspace}
+                workspace={workspace}
+                items={items}
+                disabled={saving || !workspace || !items.some((item) => item.type === 'character')}
+                onBeforeWrite={flushActiveAutosave}
+                onSaved={mergeBackgroundLoreItem}
+                onChanged={(ids) => window.dispatchEvent(new CustomEvent('nova:lore-updated', {
+                  detail: { workspace, item_ids: ids, preserve_selection: true },
+                }))}
+              />
+            )}
             emptySectionsLast
           />
         )

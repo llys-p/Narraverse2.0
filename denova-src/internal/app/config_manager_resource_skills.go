@@ -127,7 +127,7 @@ func configManagerResourceSkillNames(req ConfigManagerRequest) []string {
 		signals = append(signals, key, value)
 	}
 	text := normalizeConfigManagerSignal(strings.Join(signals, " "))
-	if strings.Contains(text, "book_overview") || strings.Contains(text, "book_graph") || strings.Contains(text, "lore_relations") || strings.Contains(text, "书籍总览") || strings.Contains(text, "关系图谱") || strings.Contains(text, "知识图谱") || strings.Contains(text, "条目关系") {
+	if strings.Contains(text, "book_overview") || strings.Contains(text, "book_graph") || strings.Contains(text, "lore_relations") || strings.Contains(text, "书籍总览") || strings.Contains(text, "关系图谱") || strings.Contains(text, "知识图谱") || strings.Contains(text, "条目关系") || strings.Contains(text, "character_tier") || strings.Contains(text, "主次人物") || strings.Contains(text, "人物层级") || strings.Contains(text, "主要人物") || strings.Contains(text, "次要人物") {
 		add(configManagerLoreSkill)
 		add(configManagerBookSettingSkill)
 	}

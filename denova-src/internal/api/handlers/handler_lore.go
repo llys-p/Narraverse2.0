@@ -28,13 +28,26 @@ func (h *Handlers) HandleLoreItemCreate(ctx context.Context, c *app.RequestConte
 	if !h.requireWorkspace(c) {
 		return
 	}
-	var body book.LoreItemInput
+	var body struct {
+		book.LoreItemInput
+		Workspace *string `json:"workspace,omitempty"`
+	}
 	if err := c.BindJSON(&body); err != nil {
 		writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
 		return
 	}
-	item, err := h.app.CreateLoreItem(body)
+	var item book.LoreItem
+	var err error
+	if body.Workspace == nil {
+		item, err = h.app.CreateLoreItem(body.LoreItemInput)
+	} else {
+		item, err = h.app.CreateLoreItemForWorkspace(body.LoreItemInput, *body.Workspace)
+	}
 	if err != nil {
+		if errors.Is(err, novaApp.ErrLoreWorkspaceMismatch) {
+			writeErrorKey(c, consts.StatusConflict, "api.resource.revisionConflict")
+			return
+		}
 		writeError(c, consts.StatusBadRequest, err.Error())
 		return
 	}
@@ -75,7 +88,27 @@ func (h *Handlers) HandleLoreItemDelete(ctx context.Context, c *app.RequestConte
 	if !h.requireWorkspace(c) {
 		return
 	}
-	if err := h.app.DeleteLoreItem(c.Param("id")); err != nil {
+	// 可选的 JSON body 携带目标书籍身份；没有 body 时保持旧行为，供既有调用方使用。
+	var body struct {
+		Workspace string `json:"workspace,omitempty"`
+	}
+	if length := len(c.Request.Body()); length > 0 {
+		if err := c.BindJSON(&body); err != nil {
+			writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
+			return
+		}
+	}
+	var err error
+	if body.Workspace == "" {
+		err = h.app.DeleteLoreItem(c.Param("id"))
+	} else {
+		err = h.app.DeleteLoreItemForWorkspace(c.Param("id"), body.Workspace)
+	}
+	if err != nil {
+		if errors.Is(err, novaApp.ErrLoreWorkspaceMismatch) {
+			writeErrorKey(c, consts.StatusConflict, "api.resource.revisionConflict")
+			return
+		}
 		writeError(c, consts.StatusBadRequest, err.Error())
 		return
 	}
@@ -131,6 +164,10 @@ func (h *Handlers) HandleLoreItemImageGenerate(ctx context.Context, c *app.Reque
 	}
 	item, err := h.app.GenerateLoreItemImage(ctx, c.Param("id"), body)
 	if err != nil {
+		if errors.Is(err, novaApp.ErrLoreWorkspaceMismatch) {
+			writeErrorKey(c, consts.StatusConflict, "api.resource.revisionConflict")
+			return
+		}
 		if err == novaApp.ErrNoWorkspace {
 			writeErrorKey(c, consts.StatusBadRequest, "api.settings.workspaceMissing")
 			return
@@ -152,6 +189,10 @@ func (h *Handlers) HandleLoreImagesGenerateStream(ctx context.Context, c *app.Re
 	}
 	task, err := h.app.StartLoreImagesGenerateTask(body)
 	if err != nil {
+		if errors.Is(err, novaApp.ErrLoreWorkspaceMismatch) {
+			writeErrorKey(c, consts.StatusConflict, "api.resource.revisionConflict")
+			return
+		}
 		if errors.Is(err, novaApp.ErrLoreImageTaskRunning) {
 			writeError(c, consts.StatusConflict, err.Error())
 			return
@@ -171,8 +212,27 @@ func (h *Handlers) HandleLoreItemImageDelete(ctx context.Context, c *app.Request
 	if !h.requireWorkspace(c) {
 		return
 	}
-	item, err := h.app.ClearLoreItemImage(c.Param("id"))
+	var body struct {
+		Workspace string `json:"workspace,omitempty"`
+	}
+	if length := len(c.Request.Body()); length > 0 {
+		if err := c.BindJSON(&body); err != nil {
+			writeErrorKey(c, consts.StatusBadRequest, "api.common.invalidRequestWithDetail", "detail", err.Error())
+			return
+		}
+	}
+	var item book.LoreItem
+	var err error
+	if body.Workspace == "" {
+		item, err = h.app.ClearLoreItemImage(c.Param("id"))
+	} else {
+		item, err = h.app.ClearLoreItemImageForWorkspace(c.Param("id"), body.Workspace)
+	}
 	if err != nil {
+		if errors.Is(err, novaApp.ErrLoreWorkspaceMismatch) {
+			writeErrorKey(c, consts.StatusConflict, "api.resource.revisionConflict")
+			return
+		}
 		writeError(c, consts.StatusBadRequest, err.Error())
 		return
 	}

@@ -1,12 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState, type ComponentProps, type ReactNode } from 'react'
+import { useEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import { ModeRouter } from './ModeRouter'
+import { useWorkspaceStore } from '@/stores/workspace-store'
 
 const toastMock = vi.hoisted(() => ({ warning: vi.fn() }))
 const useDocumentReviewMock = vi.hoisted(() => vi.fn())
+const bookDraftFlush = vi.hoisted(() => vi.fn(async () => true))
 
 vi.mock('sonner', () => ({ toast: toastMock }))
 
@@ -84,6 +86,23 @@ vi.mock('@/features/library-workspace/LibraryWorkspacePage', () => ({
   LibraryWorkspacePage: () => <div data-testid="library-workspace-page">work library</div>,
 }))
 vi.mock('@/features/library/LibraryView', () => ({ LibraryView: () => <div>public materials</div> }))
+vi.mock('@/features/book-library/BookLibraryWorkspace', () => ({
+  BookLibraryWorkspace: ({ onFlushHandlerChange, onClose }: { onFlushHandlerChange?: (handler: (() => Promise<boolean>) | null) => void; onClose?: () => void }) => {
+    useEffect(() => {
+      onFlushHandlerChange?.(bookDraftFlush)
+      return () => onFlushHandlerChange?.(null)
+    }, [onFlushHandlerChange])
+    return <div data-testid="book-library-draft">book draft<button type="button" onClick={onClose}>close unified library</button></div>
+  },
+}))
+
+vi.mock('@/features/interactive/components/SettingPanel', () => ({
+  SettingPanel: ({ mode, workspace, onClose }: { mode: string; workspace: string; onClose: () => void }) => (
+    <div data-testid="book-lore-panel" data-mode={mode} data-workspace={workspace}>
+      <button type="button" onClick={onClose}>close book lore</button>
+    </div>
+  ),
+}))
 
 vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () => ({
   useIframeWorldContextLaunch: () => ({
@@ -95,8 +114,9 @@ vi.mock('@/features/world-context-runtime/IframeWorldContextLaunchProvider', () 
 }))
 
 vi.mock('./WorkbenchShell', () => ({
-  WorkbenchShell: ({ onQuickSwitchBook, main, rightPanelContent }: {
+  WorkbenchShell: ({ onQuickSwitchBook, onSetRightPanel, main, rightPanelContent }: {
     onQuickSwitchBook: (path: string) => Promise<boolean>
+    onSetRightPanel: (panel: 'lore' | null) => void
     main: ReactNode
     rightPanelContent: ReactNode
   }) => (
@@ -104,6 +124,7 @@ vi.mock('./WorkbenchShell', () => ({
       <button type="button" onClick={() => { void onQuickSwitchBook('/book-b') }}>
         quick switch
       </button>
+      <button type="button" onClick={() => onSetRightPanel('lore')}>open book lore</button>
       {main}
       {rightPanelContent}
     </>
@@ -112,6 +133,8 @@ vi.mock('./WorkbenchShell', () => ({
 
 describe('ModeRouter autosave navigation policy', () => {
   beforeEach(() => {
+    useWorkspaceStore.setState({ librarySection: null })
+    bookDraftFlush.mockReset().mockResolvedValue(true)
     toastMock.warning.mockReset()
     useDocumentReviewMock.mockReset()
     useDocumentReviewMock.mockReturnValue({
@@ -249,7 +272,7 @@ describe('ModeRouter autosave navigation policy', () => {
     expect(iframeURL.pathname).toBe('/narraverse/index.html')
     expect(iframeURL.searchParams.get('embedded')).toBe('denova')
     expect(iframeURL.searchParams.get('host_origin')).toBe(window.location.origin)
-    expect(iframeURL.searchParams.get('v')).toBe('20261004-platform-model-v3')
+    expect(iframeURL.searchParams.get('v')).toBe('20261006-book-lore-v2')
 
     view.rerender(<ModeRouter {...props} mode="ide" />)
     expect(view.container.querySelector('iframe')).toBe(iframe)
@@ -258,6 +281,60 @@ describe('ModeRouter autosave navigation policy', () => {
     view.rerender(<ModeRouter {...props} mode="narraverse" />)
     expect(view.container.querySelector('iframe')).toBe(iframe)
     expect(iframe?.closest('section')).not.toHaveAttribute('hidden')
+  })
+
+  it('waits for the book overview save before the desktop quick switch', async () => {
+    const user = userEvent.setup()
+    let resolveSave!: (ok: boolean) => void
+    bookDraftFlush.mockImplementation(() => new Promise<boolean>((resolve) => { resolveSave = resolve }))
+    const onQuickSwitchBook = vi.fn(async () => true)
+    render(<ModeRouter {...modeRouterProps({ mode: 'library', onQuickSwitchBook })} />)
+    await screen.findByTestId('book-library-draft')
+    await user.click(screen.getByRole('button', { name: 'quick switch' }))
+    expect(bookDraftFlush).toHaveBeenCalledOnce()
+    expect(onQuickSwitchBook).not.toHaveBeenCalled()
+    resolveSave(true)
+    await waitFor(() => expect(onQuickSwitchBook).toHaveBeenCalledWith('/book-b'))
+  })
+
+  it('does not switch books when the book overview save fails', async () => {
+    const user = userEvent.setup()
+    bookDraftFlush.mockResolvedValue(false)
+    const onQuickSwitchBook = vi.fn(async () => true)
+    render(<ModeRouter {...modeRouterProps({ mode: 'library', onQuickSwitchBook })} />)
+    await screen.findByTestId('book-library-draft')
+    await user.click(screen.getByRole('button', { name: 'quick switch' }))
+    await waitFor(() => expect(bookDraftFlush).toHaveBeenCalledOnce())
+    expect(onQuickSwitchBook).not.toHaveBeenCalled()
+  })
+
+  it('opens and closes the unified library from Module4 without unloading its iframe', async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [rightPanel, setRightPanel] = useState<ComponentProps<typeof ModeRouter>['rightPanel']>(null)
+      const [mode, setMode] = useState<ComponentProps<typeof ModeRouter>['mode']>('narraverse')
+      return (
+        <ModeRouter
+          {...modeRouterProps({ mode, onSetMode: setMode, booksReturnMode: 'narraverse', openModule4: true, rightPanel, onSetRightPanel: setRightPanel })}
+        />
+      )
+    }
+
+    const view = render(<Harness />)
+    const iframe = view.container.querySelector('iframe')
+    expect(iframe).toBeInTheDocument()
+    expect(iframe?.closest('section')).not.toHaveAttribute('hidden')
+
+    await user.click(screen.getByRole('button', { name: 'open book lore' }))
+    await screen.findByTestId('book-library-draft')
+    expect(screen.queryByTestId('book-lore-panel')).not.toBeInTheDocument()
+    expect(iframe?.closest('section')).toHaveAttribute('hidden')
+    expect(view.container.querySelector('iframe')).toBe(iframe)
+
+    await user.click(screen.getByRole('button', { name: 'close unified library' }))
+    await waitFor(() => expect(iframe?.closest('section')).not.toHaveAttribute('hidden'))
+    expect(view.container.querySelector('iframe')).toBe(iframe)
   })
 
   it('shows the work library page without an open book', async () => {

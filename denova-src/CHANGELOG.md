@@ -6,7 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- 本书资料新建、删除、AI 生图与清图统一校验目标书籍；批量任务固定接收时的书籍，切书撤销旧确认和选区，阻止跨书误写。切书及关闭资料页先保存条目和总览，失败保留草稿并停止导航。
+- Book lore creation, deletion and AI image changes now validate the target workspace. Batch tasks retain their accepted book; switching cancels stale confirmations and selections. Leaving or switching waits for item and overview saves, preserving drafts and blocking navigation on failure.
+- 保留批量生图旧任务尚未退出时的拒绝优先级，避免新增书籍核验覆盖原任务占用错误。
+- Preserve the existing busy-task rejection while an aborted image batch worker is still exiting, before applying new workspace validation.
+
+- 修复本书资料内书籍总览因容器宽度塌陷导致文字与按钮挤成竖条；页面填满可用宽度并保留居中上限，电脑端三种窗口及深浅主题通过验证。
+- Fix collapsed container width in the book library overview that squeezed text and controls into a vertical strip. The page now fills the available width while retaining its centered maximum; verified at three desktop sizes in light and dark themes.
+
+- 修复整合前端启动时 ProseMirror GapCursor 继承未初始化 Selection 的崩溃：Tiptap/ProseMirror 依赖采用同一构建分组，避免 vendor 体积分片形成初始化环；真实隔离 Edge 启动与模块三资料链通过。
+- Fix the integrated frontend startup crash where ProseMirror GapCursor extended an uninitialized Selection. Tiptap/ProseMirror now share one build group to avoid initialization cycles caused by vendor size splitting; verified in isolated Edge with the Narraverse book lore flow.
+
 ### Added
+
+- 本书资料工作台新增总览、条目列表/卡片、人物分组分页和复用的 Canvas 关系图；统一从各模式的「资料库」进入，旧面板的批量与导入能力保留在「资料工具」。
+- The book library workbench adds an overview, entry list/cards, paginated character groups and the existing Canvas relationship graph. All modes share the Library entry, with batch and import capabilities retained under Data Tools.
+
+- 叙界本书资料支持按名称/关键词触发自动加载：仅扫描近期对话及有限的当前玩家/场景宏值，保留常驻和手动勾选，按ID去重；系统模板、停用与手动未选条目不触发，开放沙盒行为保持。
+- Narraverse book lore now activates automatic entries by names/keywords from recent conversation and bounded current player/scene macro values. Resident and manual selections remain and are deduplicated by ID; system templates, disabled entries and unselected manual entries do not trigger, while Open Sandbox behavior is unchanged.
+
+- 叙界与开放沙盒新增本书资料库入口，复用现有资料编辑页并保留冒险 iframe；叙界生成可选择本书词条，由宿主只读装配总览、常驻和选定正文，校验书籍/资料版本并隔离跨书存档及迟到回复。开放沙盒原模型上下文读取方式保持不变。
+- Narraverse and Open Sandbox can now open the existing book lore editor without unmounting the adventure iframe. Narraverse can select book entries for host-side read-only overview/resident/selected context, with book revision checks and isolation for saves and late replies. Open Sandbox model context behavior is unchanged.
+
+- 书籍图谱新增一/二层局部邻居、关系名称筛选、正文提及线索开关、节点间距与全屏视图；默认仅展示明确关系，节点名称常显，关系文字悬停显示。全部为只读前端投影，不改资料正文、关系、加载或模型输入。
+- Book graphs now support one/two-hop local views, relation-label filters, optional text-mention clues, node spacing and full-screen viewing. Confirmed relations are shown by default; node names stay visible and edge labels appear on hover. These are read-only UI projections with no resource, relation, loading or model-input changes.
+
+- 本书人物新增可保存的主要/次要/未分类层级，支持单条编辑和搜索多选批量分类；目录按层级分组，次要人物默认折叠。图谱可隐藏次要人物或按层级筛选，仅影响节点和连线展示，不改变重要度、资料加载、正文或关系数据。
+- Book-local characters now support persistent major/minor/unclassified tiers, individual edits, and searchable bulk classification. The directory groups characters and collapses minor characters by default; graph tier filters only change visible nodes and edges, not importance, loading, content, or stored relations.
+- 旧人物不自动推断层级，普通编辑及 Agent 操作省略字段时保留原分类。新增 character_tier 为加性字段，旧二进制再次编辑同一资料可能丢失分类，请勿交叉写入。
+- Legacy characters remain unclassified. Ordinary edits and Agent operations preserve omitted character_tier values; older binaries may discard this additive field when editing the same data, so do not alternate writers.
 
 - 资料管理 Agent 新增书籍总览读取/保存与条目关系工具，内置 book-overview-relations Skill 随资料入口加载；总览沿用编辑器的版本检查与变更记录，明确关系保存在本书 Lore 条目中。关系按稳定 ID 保留，普通编辑不清空，删除条目同时解除入向引用。
 - The resource manager can read and save book overviews and maintain explicit lore relations through a bundled book-overview-relations skill. Overview saves reuse editor revision checks and change tracking; book-local links use stable item IDs, survive ordinary edits, and are detached when a target is deleted.
@@ -16,7 +46,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Narraverse 叙事、离线小说和 Module4 接入本地火柴人动作舞台；书库正文可按规则切为可复核节拍，不触发模型调用。离线游戏入口在空状态重渲染后仍可用。
 - Narraverse stories, offline games and Module4 now include the local stickman stage. Library text can be split into reviewable beats without model calls, and the offline-game entry remains available after empty-state rerendering.
 
+### Removed
+
+- 仅移除书架的「和 AI 一起构思」入口，保留草稿 API、客户端能力与已有模块三/四模型和资料接入。普通新建书籍、导入、资料库及已有书籍和草稿数据保留。
+- Removed only the bookshelf entry for "Ideate with AI". Draft APIs, client capabilities, and existing model/context integrations for Narraverse and Module4 remain available, along with standard book creation, imports, lore, books, and draft data.
+
 ### Fixed
+
+- 书籍图谱所有节点名称默认常显，缩放不隐藏；长名称缩略并在悬停节点时完整显示。明确关系的文字默认隐藏，悬停节点或关系曲线才显示，移开/取消后隐藏；只调整展示，不改条目或关系数据。
+- Book graph node names stay visible at every zoom level, with long names expanded on hover. Explicit relation labels appear only when hovering a node or relation curve and hide on leave/cancel; stored items and relations remain unchanged.
+
+- 修复管理 Agent 把 importance 重要度误当作人物主次分层：资料工具现在读取并实际保存 character_tier，支持仅按 ID 更新层级且写后核对；主次人物指令加载对应 Skill，目录与图谱仍共用同一条目字段，不改变正文、加载策略或关系。
+- The manager now reads and persists character_tier instead of mistaking importance for character grouping. Tier-only updates preserve other lore fields, classification instructions load the matching skill, and read-back confirms the saved value shared by the directory and graph.
 
 - 修复火柴人舞台折叠后无法重新展开，并在隐藏或关闭宿主时清除节拍计时器；Module4 重开后恢复已展开舞台。
 - Stickman stages can now expand after collapsing. Hiding or closing a host clears beat timers, and an expanded Module4 stage resumes when reopened.

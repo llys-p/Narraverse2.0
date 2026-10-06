@@ -52,11 +52,11 @@ describe('useLoreItemAutosave', () => {
     expect(updateLoreItem).toHaveBeenNthCalledWith(1, 'lore-1', expect.objectContaining({
       name: 'Local name',
       content: 'Old body',
-    }), 'r1')
+    }), 'r1', '/books/demo')
     expect(updateLoreItem).toHaveBeenNthCalledWith(2, 'lore-1', expect.objectContaining({
       name: 'Local name',
       content: 'External body',
-    }), 'r2')
+    }), 'r2', '/books/demo')
     expect(vi.mocked(updateLoreItem).mock.calls[1]?.[1]).not.toHaveProperty('updated_at')
     expect(onSaved).toHaveBeenCalledWith(saved, expect.objectContaining({ name: 'Local name' }))
   })
@@ -95,6 +95,7 @@ describe('useLoreItemAutosave', () => {
       'lore-1',
       expect.objectContaining({ name: 'Local name' }),
       'r2',
+      '/books/demo',
     )
   })
 })

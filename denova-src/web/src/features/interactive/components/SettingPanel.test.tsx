@@ -164,6 +164,12 @@ vi.mock('../api', () => ({
 }))
 
 describe('SettingPanel', () => {
+  it('资料工具不再另开书籍总览，保留原有管理入口', async () => {
+    render(<SettingPanel mode="lore" workspace="/workspace" showBookOverview={false} />)
+    await screen.findByRole('button', { name: 'CREATOR.md' })
+    expect(screen.queryByRole('button', { name: '书籍总览' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '书籍预设开场白' })).toBeInTheDocument()
+  })
   beforeEach(() => {
     window.localStorage.clear()
     configManagerChatProps.length = 0
@@ -1280,7 +1286,7 @@ describe('SettingPanel', () => {
     await user.click(within(generateDialog).getByRole('button', { name: '生成图片' }))
 
     await waitFor(() => {
-      expect(generateLoreItemImage).toHaveBeenCalledWith('lin-chuan', expect.objectContaining({ image_preset_id: 'game-cg' }))
+      expect(generateLoreItemImage).toHaveBeenCalledWith('lin-chuan', expect.objectContaining({ image_preset_id: 'game-cg' }), '/workspace')
     })
     await user.click(within(generateDialog).getByRole('button', { name: '关闭' }))
     await waitFor(() => {
@@ -1386,10 +1392,12 @@ describe('SettingPanel', () => {
     expect(name).toHaveValue('本地改名')
     flushSettingPanelAutosave()
 
+    // 每次条目写入都带上目标书籍身份，服务端才能在切书后拒绝跨书写入。
     await waitFor(() => expect(updateLoreItem).toHaveBeenCalledWith(
       'lin-chuan',
       expect.objectContaining({ name: '本地改名', content: '## 外部正文' }),
       '2026-01-01T00:00:01Z',
+      '/workspace',
     ))
   })
 
@@ -1452,6 +1460,7 @@ describe('SettingPanel', () => {
       'lin-chuan',
       expect.objectContaining({ enabled: false }),
       '2026-01-01T00:00:00Z',
+      '/workspace',
     )
   })
 
@@ -1466,6 +1475,35 @@ describe('SettingPanel', () => {
     expect(screen.getByText('当前常驻资料约 33 KB，超过 32 KB 建议值；不会阻止保存或使用。')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('所有更改均已保存')
+  })
+
+  it('groups characters by tier, collapses minor characters and saves a manual tier without changing loading', async () => {
+    const user = userEvent.setup()
+    const hero = { ...loreItem('hero', '核心人物'), character_tier: 'major' as const }
+    const minor = { ...loreItem('minor', '背景配角'), character_tier: 'minor' as const, load_mode: 'manual' as const }
+    const old = loreItem('old', '旧人物')
+    vi.mocked(getLoreItems).mockResolvedValue([hero, minor, old])
+    vi.mocked(updateLoreItem).mockResolvedValue({ ...minor, character_tier: 'major' })
+    render(<SettingPanel mode="lore" workspace="/workspace" imagePresets={[imagePreset('game-cg', '游戏 CG')]} />)
+
+    expect(await screen.findByRole('button', { name: /核心人物/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /旧人物/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /背景配角/ })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '展开次要人物' }))
+    await user.click(screen.getByRole('button', { name: /背景配角/ }))
+    await user.click(screen.getByRole('combobox', { name: '人物层级' }))
+    await user.click(screen.getByRole('option', { name: '主要人物' }))
+    flushSettingPanelAutosave()
+    await waitFor(() => expect(updateLoreItem).toHaveBeenCalledWith('minor', expect.objectContaining({
+      character_tier: 'major', importance: minor.importance, load_mode: 'manual', content: minor.content,
+    }), minor.updated_at, '/workspace'))
+    expect(screen.getByRole('button', { name: /背景配角/ })).toBeInTheDocument()
+  })
+
+  it('exposes bulk tier classification in the book directory', async () => {
+    vi.mocked(getLoreItems).mockResolvedValue([loreItem('old', '旧人物')])
+    render(<SettingPanel mode="lore" workspace="/workspace" imagePresets={[imagePreset('game-cg', '游戏 CG')]} />)
+    expect(await screen.findByRole('button', { name: '批量设置人物层级' })).toBeInTheDocument()
   })
 
   it('filters lore by load strategy and labels each directory item', async () => {
@@ -1521,9 +1559,34 @@ describe('SettingPanel', () => {
     await user.click(within(dialog).getByRole('button', { name: '删除' }))
 
     await waitFor(() => {
-      expect(deleteLoreItem).toHaveBeenCalledWith('lin-chuan')
+      expect(deleteLoreItem).toHaveBeenCalledWith('lin-chuan', '/workspace')
     })
     confirmSpy.mockRestore()
+  })
+
+  it('invalidates lore deletion confirmation when switching books', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getLoreItems).mockResolvedValue([loreItem('shared', '同名角色')])
+    const view = render(<SettingPanel mode="lore" workspace="/book-a" imagePresets={[]} />)
+    await user.click(await screen.findByRole('button', { name: /同名角色/ }))
+    await user.click(screen.getByRole('button', { name: '删除资料' }))
+    expect(await screen.findByRole('alertdialog', { name: '删除资料' })).toBeInTheDocument()
+    view.rerender(<SettingPanel mode="lore" workspace="/book-b" imagePresets={[]} />)
+    await waitFor(() => expect(screen.queryByRole('alertdialog', { name: '删除资料' })).not.toBeInTheDocument())
+    expect(deleteLoreItem).not.toHaveBeenCalled()
+  })
+
+  it('invalidates batch image selection when switching books', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getLoreItems).mockResolvedValue([loreItem('shared', '同名角色')])
+    const view = render(<SettingPanel mode="lore" workspace="/book-a" imagePresets={[]} />)
+    await user.click(await screen.findByRole('button', { name: '批量生成资料图片' }))
+    await user.click(screen.getByRole('button', { name: '全选当前结果' }))
+    view.rerender(<SettingPanel mode="lore" workspace="/book-b" imagePresets={[]} />)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '批量生成资料图片' })).not.toBeInTheDocument())
+    expect(streamLoreImagesGenerate).not.toHaveBeenCalled()
+    await user.click(await screen.findByRole('button', { name: '批量生成资料图片' }))
+    expect(screen.getByRole('button', { name: '开始生成' })).toBeDisabled()
   })
 
   it('confirms narrative style deletion with an in-app dialog', async () => {
@@ -1585,6 +1648,7 @@ describe('SettingPanel', () => {
     await waitFor(() => {
       expect(streamLoreImagesGenerate).toHaveBeenCalledWith(expect.objectContaining({
         item_ids: ['lin-chuan'],
+        workspace: '/workspace',
         overwrite_existing: false,
         image_preset_id: 'ink-wash',
       }), expect.any(AbortSignal))

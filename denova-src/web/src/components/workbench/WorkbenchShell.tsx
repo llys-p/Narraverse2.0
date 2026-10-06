@@ -6,7 +6,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { BookOpen, Bot, Clock3, Database, Globe2, History, MessageSquareText, PanelLeft, PenLine, Search, Settings, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { BookOpen, Bot, Clock3, Globe2, History, Library, MessageSquareText, PanelLeft, PenLine, Search, Settings, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import { WorkspaceLayout } from '@/components/layout/workspace-layout'
 import { WorkspaceMobileLayout, type MobileNavItem } from '@/components/layout/workspace-mobile-layout'
@@ -63,7 +63,7 @@ interface WorkbenchShellProps {
   onDismissNotice?: () => void
 }
 
-type ActivityItemId = 'writing' | 'story' | 'timeline' | 'lore' | 'teller' | 'versions' | 'worlds' | 'books' | 'library' | 'skills' | 'agents' | 'automations'
+type ActivityItemId = 'writing' | 'story' | 'timeline' | 'teller' | 'versions' | 'worlds' | 'books' | 'library' | 'skills' | 'agents' | 'automations'
 type ActivityOrderScope = 'ide' | 'interactive'
 type SortableActivityItemId = `${ActivityOrderScope}:${ActivityItemId}`
 
@@ -84,8 +84,8 @@ const ACTIVITY_ORDER_STORAGE_KEYS: Record<ActivityOrderScope, string> = {
   ide: 'nova.activity.order.ide.v2',
   interactive: 'nova.activity.order.interactive.v2',
 }
-const DEFAULT_IDE_ACTIVITY_ORDER: ActivityItemId[] = ['writing', 'lore', 'teller', 'versions', 'worlds', 'books', 'library', 'skills', 'agents', 'automations']
-const DEFAULT_INTERACTIVE_ACTIVITY_ORDER: ActivityItemId[] = ['story', 'timeline', 'lore', 'teller', 'versions', 'worlds', 'books', 'library', 'skills', 'agents', 'automations']
+const DEFAULT_IDE_ACTIVITY_ORDER: ActivityItemId[] = ['writing', 'library', 'teller', 'versions', 'worlds', 'books', 'skills', 'agents', 'automations']
+const DEFAULT_INTERACTIVE_ACTIVITY_ORDER: ActivityItemId[] = ['story', 'timeline', 'library', 'teller', 'versions', 'worlds', 'books', 'skills', 'agents', 'automations']
 const ACTIVITY_BAR_WIDTH_STORAGE_KEY = 'nova.layout.activityBarWidth'
 const ACTIVITY_BAR_COLLAPSED_WIDTH = 64
 const ACTIVITY_BAR_MIN_WIDTH = 112
@@ -144,6 +144,7 @@ export function WorkbenchShell({
   const { t } = useTranslation()
   const isMobile = useIsMobile()
   const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen)
+  const setLibrarySection = useWorkspaceStore((state) => state.setLibrarySection)
   const [activityOrders, setActivityOrders] = useState<Record<ActivityOrderScope, ActivityItemId[]>>(readStoredActivityOrders)
   const [activityBarWidth, setActivityBarWidth] = useState(readStoredActivityBarWidth)
   const [automationInboxUnread, setAutomationInboxUnread] = useState(0)
@@ -295,13 +296,20 @@ export function WorkbenchShell({
     onSetMode('books')
   }
 
-  const openLibrary = () => {
+  /**
+   * 本书资料快捷入口：写作 / 游戏 / 叙界都跳到资料库的本书分区这一个控制器。
+   *
+   * 只切顶层模式，不动 rightPanel 与 interactiveSubmode，也不重启内容模式——
+   * ModeRouter 的路由层是常驻挂载的，返回时原上下文仍在原位。
+   */
+  const openBookLibrary = () => {
     if (mode === 'library' && !settingsOpen) {
       returnFromBooks()
       return
     }
     closeSettingsIfOpen()
     if (versionsVisible) onSetRightPanel(null)
+    setLibrarySection(workspace ? 'book' : 'mine')
     onSetMode('library')
   }
 
@@ -361,13 +369,6 @@ export function WorkbenchShell({
       icon: <PenLine className="h-4 w-4" />,
     },
     {
-      id: 'lore',
-      label: t('workbench.activity.lore'),
-      onClick: () => toggleIdePanel('lore'),
-      active: ideModeActive && loreVisible,
-      icon: <Database className="h-4 w-4" />,
-    },
-    {
       id: 'teller',
       label: t('workbench.activity.teller'),
       onClick: () => toggleIdePanel('teller'),
@@ -392,13 +393,6 @@ export function WorkbenchShell({
       icon: <History className="h-4 w-4" />,
     },
     {
-      id: 'lore',
-      label: t('workbench.activity.lore'),
-      onClick: () => openInteractiveSubmode('lore'),
-      active: interactiveModeActive && interactiveSubmode === 'lore',
-      icon: <Database className="h-4 w-4" />,
-    },
-    {
       id: 'teller',
       label: t('workbench.activity.teller'),
       onClick: () => openInteractiveSubmode('teller'),
@@ -406,6 +400,8 @@ export function WorkbenchShell({
       icon: <SlidersHorizontal className="h-4 w-4" />,
     },
   ]
+
+  const narraverseActivityItems: ActivityItem[] = []
 
   const sharedActivityItems: ActivityItem[] = [
     {
@@ -432,9 +428,9 @@ export function WorkbenchShell({
     {
       id: 'library',
       label: t('workbench.activity.library'),
-      onClick: openLibrary,
+      onClick: openBookLibrary,
       active: mode === 'library' && !settingsOpen,
-      icon: <Database className="h-4 w-4" />,
+      icon: <Library className="h-4 w-4" />,
     },
     {
       id: 'skills',
@@ -463,10 +459,10 @@ export function WorkbenchShell({
     () => sortActivityItems([
       // 叙界模式下不展示写作/游戏专属活动项，避免与叙界自身的侧栏形成两层侧栏；
       // 仅保留共享入口（书库/版本/Skills/Agents/自动化）与设置。
-      ...(navigationMode === 'interactive' ? interactiveActivityItems : navigationMode === 'ide' ? ideActivityItems : []),
+      ...(navigationMode === 'interactive' ? interactiveActivityItems : navigationMode === 'ide' ? ideActivityItems : navigationMode === 'narraverse' ? narraverseActivityItems : []),
       ...sharedActivityItems,
     ], activityOrder, defaultActivityOrderForScope(activityOrderScope)),
-    [activityOrder, activityOrderScope, agentsActive, automationInboxUnread, automationRunning, automationsActive, booksReturnMode, ideModeActive, interactiveModeActive, interactiveSubmode, loreVisible, mode, navigationMode, settingsOpen, skillsActive, tellerVisible, versionsVisible, worldsActive],
+    [activityOrder, activityOrderScope, agentsActive, automationInboxUnread, automationRunning, automationsActive, booksReturnMode, ideModeActive, interactiveModeActive, interactiveSubmode, loreVisible, mode, navigationMode, settingsOpen, skillsActive, tellerVisible, versionsVisible, workspace, worldsActive],
   )
 
   const handleActivityDragEnd = (event: DragEndEvent) => {
@@ -783,7 +779,7 @@ export function WorkbenchShell({
       </header>
     )
     const mobileActivityItems: MobileNavItem[] = [
-      ...(navigationMode === 'interactive' ? interactiveActivityItems : navigationMode === 'ide' ? ideActivityItems : []),
+      ...(navigationMode === 'interactive' ? interactiveActivityItems : navigationMode === 'ide' ? ideActivityItems : navigationMode === 'narraverse' ? narraverseActivityItems : []),
       ...sharedActivityItems,
     ]
       .filter((item) => item.id !== 'writing')
@@ -1016,8 +1012,14 @@ function readStoredActivityOrder(scope: ActivityOrderScope): ActivityItemId[] {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return defaultOrder
     const validIds = new Set(defaultOrder)
-    const stored = parsed.filter((id): id is ActivityItemId => validIds.has(id))
-    const storedSet = new Set(stored)
+    const stored: ActivityItemId[] = []
+    const storedSet = new Set<ActivityItemId>()
+    for (const legacyId of parsed) {
+      const id = legacyId === 'lore' || legacyId === 'book-library' ? 'library' : legacyId
+      if (typeof id !== 'string' || !validIds.has(id as ActivityItemId) || storedSet.has(id as ActivityItemId)) continue
+      stored.push(id as ActivityItemId)
+      storedSet.add(id as ActivityItemId)
+    }
     return [...stored, ...defaultOrder.filter((id) => !storedSet.has(id))]
   } catch {
     return defaultOrder

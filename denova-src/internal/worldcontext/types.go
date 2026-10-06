@@ -54,6 +54,8 @@ const (
 	ErrContextUnavailable ErrorCode = "context_unavailable"
 	ErrContextRefMismatch ErrorCode = "context_ref_mismatch"
 	ErrConsumerNotTrusted ErrorCode = "consumer_not_trusted"
+	ErrBookChanged        ErrorCode = "book_changed"
+	ErrBookStale          ErrorCode = "book_stale"
 )
 
 // DomainError 是世界上下文领域错误；Invalid 只回传客户端提交过的安全 id 清单（不含内部路径）。

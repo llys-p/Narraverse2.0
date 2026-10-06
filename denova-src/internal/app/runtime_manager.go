@@ -248,7 +248,23 @@ func (a *App) CreateBook(ctx context.Context, parentDir, title, author, descript
 	return a.runtime().CreateBook(ctx, parentDir, title, author, description)
 }
 
+// CreateBookDetached 与 CreateBook 相同，但不切换当前工作区。新建书籍的构思草稿
+// 在确认创建时需要先落总览与资料，只有全部阶段成功才由前端切到该书，避免半建成
+// 的书籍成为运行时工作区。
+func (a *App) CreateBookDetached(ctx context.Context, parentDir, title, author, description string) (string, book.BookMeta, error) {
+	return a.runtime().CreateBookDetached(ctx, parentDir, title, author, description)
+}
+
 func (s *WorkspaceRuntimeManager) CreateBook(ctx context.Context, parentDir, title, author, description string) (string, book.BookMeta, error) {
+	return s.createBook(ctx, parentDir, title, author, description, true)
+}
+
+// CreateBookDetached creates and initialises the workspace and metadata only.
+func (s *WorkspaceRuntimeManager) CreateBookDetached(ctx context.Context, parentDir, title, author, description string) (string, book.BookMeta, error) {
+	return s.createBook(ctx, parentDir, title, author, description, false)
+}
+
+func (s *WorkspaceRuntimeManager) createBook(ctx context.Context, parentDir, title, author, description string, switchAfter bool) (string, book.BookMeta, error) {
 	a := s.app
 	novaDir := ""
 	if a.cfg != nil {
@@ -289,6 +305,10 @@ func (s *WorkspaceRuntimeManager) CreateBook(ctx context.Context, parentDir, tit
 
 	if _, err := interactive.NewStore(dir).CreateStory(interactive.CreateStoryRequest{}); err != nil {
 		return "", book.BookMeta{}, fmt.Errorf("初始化默认故事线失败: %w", err)
+	}
+
+	if !switchAfter {
+		return dir, meta, nil
 	}
 
 	workspace, switchErr := s.SwitchWorkspace(ctx, dir)

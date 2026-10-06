@@ -18,6 +18,7 @@ import type { AgentUIMessage } from '@/lib/agent-ui'
 import type { ChatSendOptions } from '@/hooks/useAgentChat'
 import { usePersistedUserSettings } from '@/hooks/usePersistedUserSettings'
 import type { AgentPartRef } from '@/lib/agent-message-view'
+import { useWorkspaceStore } from '@/stores/workspace-store'
 import type { ContentMode, RightPanel, WorkspaceMode } from '@/stores/workspace-store'
 import { workspaceFileKind } from '@/lib/workspace-file-kind'
 import { useWritingChangeReview } from '@/features/changes/use-writing-change-review'
@@ -45,7 +46,7 @@ const SettingsView = lazy(() => import('@/features/settings/SettingsView').then(
 // 叙界以持久 iframe 嵌入工作区，模式切换只改变可见性、不卸载。
 // 直接导入（非 lazy）：iframe 必须只创建一次，避免被 Suspense 重建导致状态丢失。
 import { NarraverseWorkspace } from '@/features/narraverse/NarraverseWorkspace'
-type MainRouteId = 'settings' | 'skills' | 'agents' | 'automations' | 'library' | 'books' | 'worlds' | 'interactive' | 'narraverse' | 'versions' | 'ide-lore' | 'ide-teller' | 'ide-writing'
+type MainRouteId = 'settings' | 'skills' | 'agents' | 'automations' | 'library' | 'books' | 'worlds' | 'interactive' | 'narraverse' | 'narraverse-lore' | 'versions' | 'ide-lore' | 'ide-teller' | 'ide-writing'
 type PlanningDocumentIcon = 'ideas' | 'outline' | 'plan' | 'creator' | 'progress' | 'characterState'
 
 interface ModeRouterProps {
@@ -251,6 +252,10 @@ export function ModeRouter(props: ModeRouterProps) {
 
   const activeTab = openTabs.find((tab) => tabKey(tab) === activeTabKey) ?? null
   const activeFileKind = selectedFile ? workspaceFileKind(selectedFile) : null
+  // 资料库分区是跨模式共享的界面状态：写作/游戏的本书资料快捷入口只需写这个值，
+  // 不必把控制权一层层传到 ModeRouter。
+  const librarySection = useWorkspaceStore((state) => state.librarySection)
+  const setLibrarySection = useWorkspaceStore((state) => state.setLibrarySection)
   const ideContext = useMemo(() => ({
     currentFile: selectedFile || undefined,
     openFiles: openTabs.map((tab) => tab.path),
@@ -269,6 +274,10 @@ export function ModeRouter(props: ModeRouterProps) {
   const [documentReviewNavigationTarget, setDocumentReviewNavigationTarget] = useState<(DocumentReviewNavigationIntent & { path: string }) | null>(null)
   const documentReviewNavigationRequestRef = useRef(0)
   const documentReviewNavigationNonceRef = useRef(0)
+  const bookDraftFlushRef = useRef<(() => Promise<boolean>) | null>(null)
+  const registerBookDraftFlush = useCallback((handler: (() => Promise<boolean>) | null) => {
+    bookDraftFlushRef.current = handler
+  }, [])
   const [editorLine, setEditorLine] = useState(1)
   // The router is the lifecycle owner: the settings lane survives AgentPanel close/unmount.
   const composerSettings = usePersistedUserSettings({ workspace, defaults: WRITING_COMPOSER_SETTING_DEFAULTS })
@@ -289,14 +298,17 @@ export function ModeRouter(props: ModeRouterProps) {
   }, [flushComposerSettings, t])
 
   const flushBeforeWorkspaceSwitch = useCallback(async (): Promise<boolean> => {
+    if (bookDraftFlushRef.current && !(await bookDraftFlushRef.current())) return false
     flushComposerSettingsBestEffort()
     return onBeforeWorkspaceSwitch()
   }, [flushComposerSettingsBestEffort, onBeforeWorkspaceSwitch])
 
   const quickSwitchBook = useCallback(async (path: string): Promise<boolean> => {
+    if (path === workspace) return true
+    if (bookDraftFlushRef.current && !(await bookDraftFlushRef.current())) return false
     flushComposerSettingsBestEffort()
     return onQuickSwitchBook(path)
-  }, [flushComposerSettingsBestEffort, onQuickSwitchBook])
+  }, [flushComposerSettingsBestEffort, onQuickSwitchBook, workspace])
 
   useEffect(() => {
     setEditorLine(1)
@@ -349,10 +361,22 @@ export function ModeRouter(props: ModeRouterProps) {
   const loreEmpty = Boolean(workspace) && loreItems.length === 0
   const showSidebarLoading = loading && tree.length === 0 && !summary
 
-  const requestLoreInit = () => {
-    onSetMode('interactive')
-    setInteractiveSubmode('lore')
-  }
+  const openBookLibrary = useCallback(() => {
+    setLibrarySection(workspace ? 'book' : 'mine')
+    onSetMode('library')
+  }, [onSetMode, setLibrarySection, workspace])
+  const requestLoreInit = openBookLibrary
+
+  // 兼容旧会话保存的资料面板位置，迁移到统一入口后不再返回旧页面。
+  useEffect(() => {
+    if ((mode === 'ide' || mode === 'narraverse') && rightPanel === 'lore') {
+      onSetRightPanel(null)
+      openBookLibrary()
+    } else if (mode === 'interactive' && interactiveSubmode === 'lore') {
+      setInteractiveSubmode('story')
+      openBookLibrary()
+    }
+  }, [interactiveSubmode, mode, onSetRightPanel, openBookLibrary, rightPanel, setInteractiveSubmode])
   const requestWritingInit = () => {
     onSetMode('ide')
     onSetRightPanel('ai')
@@ -519,7 +543,7 @@ export function ModeRouter(props: ModeRouterProps) {
               : mode === 'interactive'
                 ? 'interactive'
                 : mode === 'narraverse'
-                  ? 'narraverse'
+                  ? rightPanel === 'lore' ? 'narraverse-lore' : 'narraverse'
                   : ideWorkspacePanel
                     ? `ide-${ideWorkspacePanel}`
                     : 'ide-writing'
@@ -709,10 +733,17 @@ export function ModeRouter(props: ModeRouterProps) {
           <NarraverseWorkspace
             visible={visibleMainRoute === 'narraverse'}
             openModule4={openModule4}
+            workspace={workspace}
             onModule4Close={onCloseModule4}
             onSwitchMode={(nextMode) => onSetMode(nextMode)}
+            onOpenBookLore={openBookLibrary}
             onOpenModelSettings={onOpenModelSettings}
           />
+        </MainRouteLayer>
+      )}
+      {mountedRoutes.has('narraverse-lore') && (
+        <MainRouteLayer visible={visibleMainRoute === 'narraverse-lore'}>
+          <SettingPanel mode="lore" workspace={workspace} showBookOverview={false} onClose={() => onSetRightPanel(null)} />
         </MainRouteLayer>
       )}
 
@@ -728,7 +759,7 @@ export function ModeRouter(props: ModeRouterProps) {
       )}
       {mountedRoutes.has('ide-lore') && (
         <MainRouteLayer visible={visibleMainRoute === 'ide-lore'}>
-          <SettingPanel mode="lore" workspace={workspace} onClose={() => onSetRightPanel(null)} />
+          <SettingPanel mode="lore" workspace={workspace} showBookOverview={false} onClose={() => onSetRightPanel(null)} />
         </MainRouteLayer>
       )}
       {mountedRoutes.has('ide-teller') && (
@@ -762,6 +793,10 @@ export function ModeRouter(props: ModeRouterProps) {
           <Suspense fallback={null}>
             <LibraryWorkspaceRoute
               workspace={workspace}
+              bookName={currentBookName}
+              section={librarySection ?? (workspace ? 'book' : 'mine')}
+              onSectionChange={setLibrarySection}
+              onBookFlushHandlerChange={registerBookDraftFlush}
               onClose={() => onSetMode(booksReturnMode)}
               onLaunchWriting={() => onSetMode('ide')}
               onLaunchGame={() => onSetMode('interactive')}
@@ -887,7 +922,7 @@ export function ModeRouter(props: ModeRouterProps) {
       onSetMode={onSetMode}
       onToggleActivityBarExpanded={onToggleActivityBarExpanded}
       onSetInteractiveSubmode={setInteractiveSubmode}
-      onSetRightPanel={onSetRightPanel}
+      onSetRightPanel={(panel) => { if (panel === 'lore') openBookLibrary(); else onSetRightPanel(panel) }}
       onToggleSettings={onToggleSettings}
       onCloseSettings={onCloseSettings}
       onQuickSwitchBook={quickSwitchBook}

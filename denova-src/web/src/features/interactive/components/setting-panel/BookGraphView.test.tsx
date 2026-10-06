@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BookGraphView, deriveLoreGraph, pickNodeAt, relationControlPoint } from './BookGraphView'
 import type { LoreItem } from '@/lib/api'
 
-function mockLoreItem(overrides: Partial<LoreItem> & { id: string; name: string }): LoreItem {
+function mockLoreItem(overrides: Partial<LoreItem> & { id: string; name: string; character_tier?: 'major' | 'minor' | 'unclassified' }): LoreItem {
   return {
     enabled: true, type: 'character', type_source: 'manual',
     importance: 'major', pinned: false, pin_order: 0, load_mode: 'auto', tags: [],
@@ -132,6 +132,7 @@ describe('BookGraphView', () => {
     const b = mockLoreItem({ id: 'b', name: '第七灯塔', type: 'location', content: '岚住在塔里。' })
     render(<BookGraphView items={[a, b]} />)
 
+    fireEvent.click(screen.getByRole('checkbox', { name: '显示正文提及线索' }))
     expect(screen.getByText('2 个条目 · 1 条关系')).toBeInTheDocument()
     const relationList = screen.getByRole('list', { name: '图谱关系说明' })
     expect(within(relationList).getAllByRole('listitem')).toHaveLength(1)
@@ -141,6 +142,50 @@ describe('BookGraphView', () => {
     expect(characterBox).not.toBeChecked()
     expect(screen.getByText('1 个条目 · 0 条关系')).toBeInTheDocument()
     expect(within(relationList).queryAllByRole('listitem')).toHaveLength(0)
+  })
+
+  it('filters character tiers and their relation closure without changing items or persisting the selection', () => {
+    const major = mockLoreItem({ id: 'major', name: '主要人物', character_tier: 'major', relations: [{ target_id: 'minor', label: '相识' }] })
+    const minor = mockLoreItem({ id: 'minor', name: '次要人物', character_tier: 'minor', relations: [{ target_id: 'place', label: '居住' }] })
+    const legacy = mockLoreItem({ id: 'legacy', name: '旧人物' })
+    const place = mockLoreItem({ id: 'place', name: '旧城', type: 'location' })
+    const items = [major, minor, legacy, place]
+    const before = structuredClone(items)
+    const { unmount } = render(<BookGraphView items={items} />)
+    const tierFilter = screen.getByRole('combobox', { name: '图谱人物筛选' })
+    const chooseTier = (value: string) => {
+      fireEvent.click(tierFilter)
+      const filterOrder = ['all', 'core', 'major', 'minor', 'unclassified']
+      fireEvent.click(screen.getAllByRole('option')[filterOrder.indexOf(value)])
+    }
+
+    expect(screen.getByText('4 个条目 · 2 条关系')).toBeInTheDocument()
+    chooseTier('core')
+    expect(screen.getByText('3 个条目 · 0 条关系')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: '图谱关系说明' })).queryAllByRole('listitem')).toHaveLength(0)
+
+    chooseTier('major')
+    expect(screen.getByText('2 个条目 · 0 条关系')).toBeInTheDocument()
+
+    chooseTier('minor')
+    expect(screen.getByText('2 个条目 · 1 条关系')).toBeInTheDocument()
+    expect(within(screen.getByRole('list', { name: '图谱关系说明' })).getByRole('listitem')).toHaveTextContent('次要人物 → 旧城：居住')
+    const locationBox = screen.getByRole('checkbox', { name: '地点' })
+    fireEvent.click(locationBox)
+    expect(screen.getByText('1 个条目 · 0 条关系')).toBeInTheDocument()
+    fireEvent.click(locationBox)
+    expect(screen.getByText('2 个条目 · 1 条关系')).toBeInTheDocument()
+
+    chooseTier('unclassified')
+    expect(screen.getByText('2 个条目 · 0 条关系')).toBeInTheDocument()
+
+    chooseTier('all')
+    expect(screen.getByText('4 个条目 · 2 条关系')).toBeInTheDocument()
+    expect(items).toEqual(before)
+    unmount()
+
+    render(<BookGraphView items={items} />)
+    expect(screen.getByText('4 个条目 · 2 条关系')).toBeInTheDocument()
   })
 
   it('renders explicit relation labels and notes in an accessible DOM list', () => {

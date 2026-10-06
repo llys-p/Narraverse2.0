@@ -16,6 +16,7 @@ const home = {
   'home.currentWorkspaceUnset': '未设置工作区',
   'home.createAndGenerateCover': '新建并生成封面',
   'home.createBook': '新建书籍',
+  'home.ideateBook': '和 AI 一起构思',
   'home.createError': '创建失败',
   'home.createIn': '新书将创建在',
   'home.deleteBook': '删除书籍',

@@ -53,6 +53,8 @@ export default defineConfig({
           minSize: 20 * 1024,
           groups: [
             { name: 'shiki', test: /node_modules[\\/](?:shiki|@shikijs)[\\/]/, priority: 40 },
+            // GapCursor extends Selection at module load; splitting the editor SDK can create an initialization cycle.
+            { name: 'rich-text', test: /node_modules[\\/](?:@tiptap[\\/]|prosemirror-[^\\/]+[\\/])/, priority: 35 },
             { name: 'monaco', test: /node_modules[\\/](?:monaco-editor|@monaco-editor)[\\/]/, priority: 30 },
             { name: 'ai-sdk', test: /node_modules[\\/](?:ai|@ai-sdk)[\\/]/, priority: 20 },
             { name: 'markdown', test: /node_modules[\\/](?:react-markdown|remark-|rehype-|micromark|mdast|hast|unified)[^\\/]*[\\/]/, priority: 10 },

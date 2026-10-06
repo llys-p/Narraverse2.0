@@ -55,6 +55,7 @@ type LoreItem struct {
 	TypeSource       string          `json:"type_source"`
 	Name             string          `json:"name"`
 	Importance       string          `json:"importance"`
+	CharacterTier    string          `json:"character_tier,omitempty"` // Display grouping only; never changes loading or model priority.
 	Pinned           bool            `json:"pinned"`
 	PinOrder         int             `json:"pin_order"`
 	Tags             []string        `json:"tags"`
@@ -77,6 +78,7 @@ type LoreItemInput struct {
 	TypeSource       string          `json:"type_source,omitempty"`
 	Name             string          `json:"name"`
 	Importance       string          `json:"importance"`
+	CharacterTier    *string         `json:"character_tier,omitempty"` // Omitted preserves existing grouping; unclassified explicitly clears it.
 	Pinned           *bool           `json:"pinned,omitempty"`
 	PinOrder         *int            `json:"pin_order,omitempty"`
 	Tags             []string        `json:"tags"`
@@ -150,16 +152,17 @@ type loreNameAllocator struct {
 // LoreIndexOptions controls model-visible lore index rendering. Keywords are
 // matched independently; Match selects OR (any) or AND (all) semantics.
 type LoreIndexOptions struct {
-	Keywords        []string
-	Match           string
-	Types           []string
-	LoadModes       []string
-	Limit           int
-	Offset          int
-	Paginate        bool
-	MaxBytes        int
-	ExcludeResident bool
-	OmitTitle       bool
+	IncludeCharacterTier bool // Opt-in tool metadata; not added to automatic background.
+	Keywords             []string
+	Match                string
+	Types                []string
+	LoadModes            []string
+	Limit                int
+	Offset               int
+	Paginate             bool
+	MaxBytes             int
+	ExcludeResident      bool
+	OmitTitle            bool
 }
 
 var ErrLoreRevisionConflict = errors.New("资料已被其他操作更新，请重新加载后再保存")
@@ -249,6 +252,9 @@ func (s *LoreStore) list(includeDisabled bool) ([]LoreItem, error) {
 }
 
 func (s *LoreStore) Create(input LoreItemInput) (LoreItem, error) {
+	if err := validateLoreCharacterTier(input.CharacterTier, input.Type); err != nil {
+		return LoreItem{}, err
+	}
 	s.mutationMu.Lock()
 	defer s.mutationMu.Unlock()
 
@@ -264,6 +270,7 @@ func (s *LoreStore) Create(input LoreItemInput) (LoreItem, error) {
 		TypeSource:       firstNonEmptyLoreValue(input.TypeSource, LoreTypeSourceManual),
 		Name:             input.Name,
 		Importance:       input.Importance,
+		CharacterTier:    loreInputCharacterTier(input.CharacterTier, ""),
 		Pinned:           loreInputPinned(input.Pinned, false),
 		PinOrder:         loreInputPinOrder(input.PinOrder, 0),
 		Tags:             input.Tags,
@@ -299,6 +306,9 @@ func (s *LoreStore) Create(input LoreItemInput) (LoreItem, error) {
 }
 
 func (s *LoreStore) Update(id string, input LoreItemInput) (LoreItem, error) {
+	if err := validateLoreCharacterTier(input.CharacterTier, input.Type); err != nil {
+		return LoreItem{}, err
+	}
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return LoreItem{}, errors.New("资料 ID 不能为空")
@@ -329,6 +339,7 @@ func (s *LoreStore) Update(id string, input LoreItemInput) (LoreItem, error) {
 			TypeSource:       typeSource,
 			Name:             input.Name,
 			Importance:       input.Importance,
+			CharacterTier:    loreInputCharacterTier(input.CharacterTier, previous.CharacterTier),
 			Pinned:           loreInputPinned(input.Pinned, previous.Pinned),
 			PinOrder:         loreInputPinOrder(input.PinOrder, previous.PinOrder),
 			Tags:             input.Tags,
@@ -439,6 +450,9 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 	for _, op := range ops {
 		switch strings.TrimSpace(op.Op) {
 		case "create":
+			if err := validateLoreCharacterTier(op.Item.CharacterTier, op.Item.Type); err != nil {
+				return LoreApplyResult{}, err
+			}
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			item := normalizeLoreItem(LoreItem{
 				ID:               op.Item.ID,
@@ -447,6 +461,7 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				TypeSource:       firstNonEmptyLoreValue(op.Item.TypeSource, LoreTypeSourceManual),
 				Name:             op.Item.Name,
 				Importance:       op.Item.Importance,
+				CharacterTier:    loreInputCharacterTier(op.Item.CharacterTier, ""),
 				Pinned:           loreInputPinned(op.Item.Pinned, false),
 				PinOrder:         loreInputPinOrder(op.Item.PinOrder, 0),
 				Tags:             op.Item.Tags,
@@ -483,6 +498,9 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				return LoreApplyResult{}, fmt.Errorf("资料不存在: %s", id)
 			}
 			typeName := firstNonEmptyLoreValue(op.Item.Type, next[idx].Type)
+			if err := validateLoreCharacterTier(op.Item.CharacterTier, typeName); err != nil {
+				return LoreApplyResult{}, err
+			}
 			typeSource := next[idx].TypeSource
 			if normalizeLoreType(typeName) != next[idx].Type {
 				typeSource = LoreTypeSourceManual
@@ -494,6 +512,7 @@ func (s *LoreStore) ApplyOperations(message string, ops []LoreOperation) (LoreAp
 				TypeSource:       typeSource,
 				Name:             firstNonEmptyLoreValue(op.Item.Name, next[idx].Name),
 				Importance:       firstNonEmptyLoreValue(op.Item.Importance, next[idx].Importance),
+				CharacterTier:    loreInputCharacterTier(op.Item.CharacterTier, next[idx].CharacterTier),
 				Pinned:           loreInputPinned(op.Item.Pinned, next[idx].Pinned),
 				PinOrder:         loreInputPinOrder(op.Item.PinOrder, next[idx].PinOrder),
 				Tags:             op.Item.Tags,
@@ -960,6 +979,9 @@ func normalizeLoreItems(items []LoreItem) []LoreItem {
 func normalizeLoreItem(item LoreItem) LoreItem {
 	item.ID = normalizeLoreID(item.ID)
 	item.Type = normalizeLoreType(item.Type)
+	if item.Type != "character" {
+		item.CharacterTier = ""
+	}
 	item.TypeSource = normalizeLoreTypeSource(item.TypeSource)
 	item.Name = strings.TrimSpace(item.Name)
 	item.Importance = normalizeLoreImportance(item.Importance)
@@ -1688,7 +1710,7 @@ func renderLoreIndexCandidate(entries []loreIndexEntry, matchedTotal, libraryTot
 		sb.WriteString("\n\n")
 	}
 	for _, entry := range entries {
-		sb.WriteString(formatCompactLoreIndexEntry(entry, briefRunes, nameOnly))
+		sb.WriteString(formatLoreIndexEntryWithOptions(entry, briefRunes, nameOnly, options))
 	}
 	return strings.TrimSpace(sb.String())
 }
@@ -1752,6 +1774,14 @@ func formatCompactLoreIndexEntry(entry loreIndexEntry, briefRunes int, nameOnly 
 	return sb.String()
 }
 
+func formatLoreIndexEntryWithOptions(entry loreIndexEntry, briefRunes int, nameOnly bool, options LoreIndexOptions) string {
+	text := formatCompactLoreIndexEntry(entry, briefRunes, nameOnly)
+	if options.IncludeCharacterTier && entry.Item.Type == "character" {
+		text += fmt.Sprintf("  character_tier: %s\n", LoreCharacterTierForDisplay(entry.Item))
+	}
+	return text
+}
+
 func compactLoreBrief(brief string, limit int) string {
 	brief = strings.Join(strings.Fields(strings.TrimSpace(brief)), " ")
 	if brief == "" {
@@ -1773,7 +1803,7 @@ func renderBoundedLoreNameIndex(entries []loreIndexEntry, matchedTotal, libraryT
 	appendLoreContextPart(&sb, hint, maxBytes)
 	omitted := 0
 	for idx, entry := range entries {
-		line := formatCompactLoreIndexEntry(entry, 0, true)
+		line := formatLoreIndexEntryWithOptions(entry, 0, true, options)
 		if sb.Len()+len([]byte(line)) > maxBytes {
 			omitted = len(entries) - idx
 			break

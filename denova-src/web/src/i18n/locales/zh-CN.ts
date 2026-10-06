@@ -40,6 +40,8 @@ import changes from './zh-CN/changes'
 import library from './zh-CN/library'
 import worldWorkspace from './zh-CN/worldWorkspace'
 import workLibrary from './zh-CN/workLibrary'
+import bookIdeation from './zh-CN/bookIdeation'
+import bookLibrary from './zh-CN/bookLibrary'
 
 const zhCN = {
   ...common,
@@ -84,6 +86,8 @@ const zhCN = {
   ...library,
   ...worldWorkspace,
   ...workLibrary,
+  ...bookIdeation,
+  ...bookLibrary,
 } as const
 
 export default zhCN

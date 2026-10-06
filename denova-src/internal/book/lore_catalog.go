@@ -9,10 +9,11 @@ import (
 // LoreNameCatalogOptions controls the compact, model-visible name catalog.
 // The catalog is derived from lore/items.json and is never persisted separately.
 type LoreNameCatalogOptions struct {
-	Offset          int
-	MaxBytes        int
-	ExcludeResident bool
-	OmitWhenEmpty   bool
+	Offset               int
+	MaxBytes             int
+	ExcludeResident      bool
+	OmitWhenEmpty        bool
+	IncludeCharacterTier bool // Management-tool metadata only; runtime catalogs remain unchanged.
 }
 
 // LoreNameCatalogMarkdown returns a bounded catalog for candidate discovery.
@@ -58,7 +59,11 @@ func (s *LoreStore) LoreNameCatalogMarkdown(options LoreNameCatalogOptions) (str
 	for _, entry := range entries[offset:] {
 		item := entry.Item
 		name := boundedLoreCatalogName(item.Name, 512)
-		lines = append(lines, fmt.Sprintf("- [%s/%s] %s\n", item.Type, item.Importance, name))
+		line := fmt.Sprintf("- [%s/%s] %s\n", item.Type, item.Importance, name)
+		if options.IncludeCharacterTier && item.Type == "character" {
+			line += fmt.Sprintf("  id: %s\n  character_tier: %s\n", item.ID, LoreCharacterTierForDisplay(item))
+		}
+		lines = append(lines, line)
 	}
 
 	shown := 0

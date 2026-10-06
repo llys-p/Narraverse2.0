@@ -639,6 +639,7 @@ async function loadState() {
     }
   }
   if (parsed) applyParsedState(parsed);
+  reconcileNarraverseAdventureBook();
   const currentAdventure = getCurrentAdventure();
   if (currentAdventure) queueConversationArchiveSeed(currentAdventure);
   ensureProfile();  // v4 P0-3: 本地 Profile 默认值兜底（无云端）
@@ -787,6 +788,74 @@ function getCurrentAdventure() {
   return state.adventures.find(a => a.id === state.currentId);
 }
 
+function isNarraverseBookBound() {
+  const status = window.NarraverseWorldContextStatus || {};
+  return status.consumer === 'narraverse' && status.bookBound === true && !!status.bookKey &&
+    !document.body.classList.contains('module4-active');
+}
+
+function getNarraverseBoundBookKey() {
+  const status = window.NarraverseWorldContextStatus || {};
+  return isNarraverseBookBound() ? String(status.bookKey) : '';
+}
+
+function isNarraverseAdventureBookCompatible(adventure) {
+  if (!adventure) return true;
+  const activeBookKey = getNarraverseBoundBookKey();
+  return !((activeBookKey || adventure.bookKey) && adventure.bookKey !== activeBookKey);
+}
+
+function getNarraverseBookContextToken() {
+  const selection = window.NarraverseBookSelection;
+  return isNarraverseBookBound() && selection && typeof selection.token === 'function' ? selection.token() : '';
+}
+
+function isCurrentNarraverseBookContextToken(token) {
+  const selection = window.NarraverseBookSelection;
+  return !token || (isNarraverseBookBound() && selection && typeof selection.isCurrentToken === 'function' && selection.isCurrentToken(token));
+}
+
+function getNarraverseModule4Token() {
+  const selection = window.NarraverseBookSelection;
+  return selection && typeof selection.module4Token === 'function' ? selection.module4Token() : 0;
+}
+
+function isAdventureBoundToBook(adv) {
+  const selection = window.NarraverseBookSelection;
+  return selection && typeof selection.isBookBoundAdventure === 'function'
+    ? selection.isBookBoundAdventure(adv)
+    : !!(adv && typeof adv.bookKey === 'string' && adv.bookKey);
+}
+
+function getBoundBookWorldDescription() {
+  return document.documentElement.dataset.locale === 'en-US'
+    ? 'World setting is provided by the host book lore.'
+    : '世界设定以宿主提供的本书资料为准。';
+}
+
+function reconcileNarraverseAdventureBook() {
+  if (!isNarraverseBookBound()) return;
+  const bookKey = getNarraverseBoundBookKey();
+  const current = state.adventures.find(function (adventure) { return adventure && adventure.id === state.currentId; });
+  const matched = current && current.bookKey === bookKey
+    ? current : state.adventures.find(function (adventure) { return adventure && adventure.bookKey === bookKey; });
+  if (matched) {
+    if (state.currentId !== matched.id) loadAdventure(matched.id, { skipSync: true, skipSideEffects: true });
+    return;
+  }
+  state.currentId = null;
+  saveState();
+  resetMainUI();
+  document.getElementById('storyArea').innerHTML = emptyStateHtml();
+  document.getElementById('inputArea').style.display = 'none';
+  document.getElementById('headerActions').style.display = 'none';
+  renderAdventureList();
+}
+
+window.addEventListener('narraverse-world-context-changed', function (event) {
+  if (event && event.detail && event.detail.consumer === 'narraverse') reconcileNarraverseAdventureBook();
+});
+
 function createAdventureSyncId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return 'narraverse_' + crypto.randomUUID().replace(/-/g, '');
@@ -844,7 +913,7 @@ function buildAdventureSyncPayload(adv) {
 }
 
 function scheduleAdventureSync(adv) {
-  if (!adv || !adv.syncMeta || !adv.syncMeta.enabled || !adv.syncMeta.id) return;
+  if (!adv || isAdventureBoundToBook(adv) || !adv.syncMeta || !adv.syncMeta.enabled || !adv.syncMeta.id) return;
   if (adventureSyncInFlight[adv.id]) {
     adventureSyncPending[adv.id] = true;
     return;
@@ -854,7 +923,7 @@ function scheduleAdventureSync(adv) {
 }
 
 async function pushAdventureSync(adv) {
-  if (!adv || !adv.syncMeta || adventureSyncInFlight[adv.id]) return;
+  if (!adv || isAdventureBoundToBook(adv) || !adv.syncMeta || adventureSyncInFlight[adv.id]) return;
   const payload = buildAdventureSyncPayload(adv);
   const fingerprint = JSON.stringify(payload);
   if (adventureSyncFingerprints[adv.id] === fingerprint && adv.syncMeta.status === 'synced') return;
@@ -889,6 +958,7 @@ async function pushAdventureSync(adv) {
 }
 
 function applyDenovaSyncResult(adv, result) {
+  if (!adv || isAdventureBoundToBook(adv)) return;
   const shared = result.shared || {};
   if (shared.name) adv.title = String(shared.name);
   adv.setting = [
@@ -920,7 +990,7 @@ function applyDenovaSyncResult(adv, result) {
 }
 
 async function pullAdventureSync(adv) {
-  if (!adv || !adv.syncMeta || !adv.syncMeta.enabled || !adv.syncMeta.id) return;
+  if (!adv || isAdventureBoundToBook(adv) || !adv.syncMeta || !adv.syncMeta.enabled || !adv.syncMeta.id) return;
   try {
     const response = await fetch(DENOVA_SYNC_URL + '?id=' + encodeURIComponent(adv.syncMeta.id));
     if (response.status === 404) { scheduleAdventureSync(adv); return; }
@@ -947,6 +1017,7 @@ function createAdventure(theme, name, setting, professionName, opts) {
 
   const adventure = {
     id: 'adv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    bookKey: getNarraverseBoundBookKey(),
     title: '',
     theme: opts.themeKey || theme,
     setting: setting || '',
@@ -1004,7 +1075,12 @@ function createAdventure(theme, name, setting, professionName, opts) {
   return adventure;
 }
 
-function loadAdventure(id) {
+function loadAdventure(id, options) {
+  const target = state.adventures.find(function (item) { return item && item.id === id; });
+  if (target && isNarraverseBookBound() && target.bookKey !== getNarraverseBoundBookKey()) {
+    alert('这场冒险不属于当前绑定的书籍，无法在本书中继续生成。');
+    return;
+  }
   state.currentId = id;
   saveState();
   closeMobileSidebar();
@@ -1017,10 +1093,10 @@ function loadAdventure(id) {
     document.getElementById('inputArea').style.display = 'flex';
     document.getElementById('emptyState')?.remove();
     document.getElementById('headerActions').style.display = 'flex';
-    pullAdventureSync(adv);
+    if (!(options && options.skipSync)) pullAdventureSync(adv);
   }
   /* 进入冒险后：仅在「尚无介绍 + 已有压缩上下文」时自动生成一次（省算力） */
-  maybeGenerateAdventureIntro(adv);
+  if (!(options && options.skipSideEffects)) maybeGenerateAdventureIntro(adv);
 }
 
 function deleteAdventure(id) {
@@ -1137,6 +1213,7 @@ const MANDALA_LABEL_TO_KEY = (function() {
 })();
 
 function buildCharacterCardsBlock(adventure) {
+  if (isNarraverseBookBound() || isAdventureBoundToBook(adventure)) return '';
   let s = '';
   if (adventure.characterCards && adventure.characterCards.length > 0) {
     s += '## 角色卡（NPC 设定）\n';
@@ -1161,6 +1238,7 @@ function buildCharacterCardsBlock(adventure) {
 
 /* 分组 NPC 同场：列出当前在场角色及其话痨度，给出群像对话/插话指令（借鉴 SillyTavern group chat） */
 function buildActiveSceneBlock(adventure) {
+  if (isNarraverseBookBound() || isAdventureBoundToBook(adventure)) return '';
   const present = (adventure.characterCards || []).filter(c => c.present !== false);
   if (present.length === 0) return '';
   const lines = present.map(c => {
@@ -1211,6 +1289,7 @@ function setNpcTalkativeness(name, val) {
 
 /* 角色卡 V3：system_prompt（专属系统指令，借鉴 SillyTavern Character V3） */
 function buildCardSystemDirectives(adventure) {
+  if (isNarraverseBookBound() || isAdventureBoundToBook(adventure)) return '';
   const cards = adventure.characterCards || [];
   const parts = [];
   for (const card of cards) {
@@ -1223,6 +1302,7 @@ function buildCardSystemDirectives(adventure) {
 
 /* 角色卡 V3：post_history_instructions（结尾指令，置于提示词最后）+ character_note @depth 重注入 */
 function buildPostHistoryTail(adventure) {
+  if (isNarraverseBookBound() || isAdventureBoundToBook(adventure)) return '';
   const cards = adventure.characterCards || [];
   const lines = [];
   for (const card of cards) {
@@ -1515,6 +1595,7 @@ function parseBookEntries(book) {
 }
 
 function buildLorebookBlock(adventure) {
+  if (isNarraverseBookBound() || isAdventureBoundToBook(adventure)) return '';
   const books = adventure.backgroundBooks || [];
   if (!books.length) return '';
   const cfg = (state && state.apiConfig) || {};
@@ -1570,11 +1651,13 @@ function buildLorebookBlock(adventure) {
 }
 
 function buildTavernSystemPrompt(adventure, c, td) {
+  const worldDescription = (isNarraverseBookBound() || isAdventureBoundToBook(adventure))
+    ? getBoundBookWorldDescription() : (td.desc || '自由剧情');
   let prompt = `你是「酒馆故事」——一个沉浸式角色扮演（文字对话/剧情）AI。你负责扮演角色、推动剧情、维护人设与人物关系，侧重对话与心理互动；默认不涉及属性、数值战斗或骰子检定。
 
 ## 世界设定
 主题：${adventure.theme}
-背景：${td.desc || '自由剧情'}
+背景：${worldDescription}
 ${adventure.setting ? '玩家设定：' + adventure.setting : ''}
 
 `;
@@ -1690,12 +1773,14 @@ function buildSystemPrompt(adventure) {
   c.items = Array.isArray(c.items) ? c.items : [];
   const td = adventure.customTheme || themeData[adventure.theme] || {};
   if (adventure.mode === 'tavern') return buildTavernSystemPrompt(adventure, c, td);
+  const worldDescription = (isNarraverseBookBound() || isAdventureBoundToBook(adventure))
+    ? getBoundBookWorldDescription() : (td.desc || '自由冒险');
 
   let prompt = `你是「叙界 Narraverse」——一个文字冒险游戏的 AI 叙事者（Game Master）。
 
 ## 世界设定
 主题：${adventure.theme}
-背景：${td.desc || '自由冒险'}
+背景：${worldDescription}
 ${adventure.setting ? '玩家设定：' + adventure.setting : ''}
 
 `;
@@ -1918,15 +2003,39 @@ function normalizeOutputTokenLimit(value) {
   return Number.isInteger(value) && value >= 1 ? Math.min(8192, value) : 4096;
 }
 
-async function callLLM(messages, onChunk) {
+function buildLoreActivation(adventure) {
+  if (!isNarraverseBookBound()) return undefined;
+  const configuredDepth = state && state.apiConfig && state.apiConfig.loreScanDepth;
+  const scanDepth = Number.isFinite(configuredDepth)
+    ? Math.max(1, Math.min(60, Math.trunc(configuredDepth))) : 14;
+  let contextText = '';
+  if (adventure && isNarraverseAdventureBookCompatible(adventure) && adventure.bookKey === getNarraverseBoundBookKey()) {
+    const character = adventure.character || {};
+    const name = resolvePromptMacros(typeof character.name === 'string' ? character.name : '', adventure);
+    const location = resolvePromptMacros(typeof character.location === 'string' ? character.location : '', adventure);
+    contextText = Array.from(name + '\n' + location).slice(0, 512).join('');
+  }
+  return { scanDepth: scanDepth, contextText: contextText };
+}
+
+async function callLLM(messages, onChunk, requestOptions) {
   /* 模型地址、密钥与模型选择全部由平台设置负责；本文件只把请求交给共享客户端，
    * 再由可信宿主桥接转发到平台网关。客户端缺失、桥接缺失或上游失败都直接抛出，
    * 不存在"直连供应商"或"裸调平台 chat"的兜底路径。 */
   const client = window.NarraverseSharedAI;
   if (!client || typeof client.chat !== 'function') throw new Error(PLATFORM_MODEL_REQUIRED);
+  const activeAdventure = getCurrentAdventure();
+  if (activeAdventure && !isNarraverseAdventureBookCompatible(activeAdventure)) {
+    throw new Error('这场冒险需要重新绑定所属书籍后才能继续生成。');
+  }
   const content = await client.chat(messages, {
     maxTokens: normalizeOutputTokenLimit(state.apiConfig.maxOutputTokens),
     temperature: state.apiConfig.temperature,
+    selectedLoreIds: requestOptions && Array.isArray(requestOptions.selectedLoreIds)
+      ? requestOptions.selectedLoreIds
+      : (isNarraverseBookBound() && window.NarraverseBookSelection && typeof window.NarraverseBookSelection.ids === 'function'
+        ? window.NarraverseBookSelection.ids() : undefined),
+    loreActivation: buildLoreActivation(activeAdventure),
   });
   if (typeof content !== 'string' || !content.trim()) throw new Error('共享模型没有返回可用内容，请重试');
   /* 网关一次返回完整正文；单次 onChunk 只是沿用旧的调用方协议，不是真正的流式输出。 */
@@ -5286,6 +5395,12 @@ async function sendMessage(text) {
 
   const adv = getCurrentAdventure();
   if (!adv || (adv.character && adv.character.hp <= 0)) return;
+  if (!isNarraverseAdventureBookCompatible(adv)) {
+    alert('这场冒险需要重新绑定所属书籍后才能继续生成。');
+    return;
+  }
+  const requestBookContextToken = getNarraverseBookContextToken();
+  const requestModule4Token = getNarraverseModule4Token();
 
   await queueConversationArchiveSeed(adv);
 
@@ -5318,6 +5433,12 @@ async function sendMessage(text) {
       }
       if (chunk) appendStreamChunk(streamEl, chunk);
     });
+    if (state.currentId !== adv.id || !isCurrentNarraverseBookContextToken(requestBookContextToken) ||
+        requestModule4Token !== getNarraverseModule4Token()) {
+      const stale = new Error('本书上下文已切换');
+      stale.code = 'book_context_changed';
+      throw stale;
+    }
     removeStreamBubble(streamEl);
     streamEl = null;
     if (!response || !response.trim()) throw new Error('模型返回了空内容，请重试');
@@ -5374,6 +5495,11 @@ async function sendMessage(text) {
     removeStreamBubble(streamEl);
     state.isGenerating = false;
     setInputButtonsDisabled(false);
+    if (e && e.code === 'book_context_changed') {
+      adv.conversationHistory.pop();
+      saveState();
+      return;
+    }
     console.error('API 调用失败:', e);
     const storyArea = document.getElementById('storyArea');
     const errDiv = document.createElement('div');

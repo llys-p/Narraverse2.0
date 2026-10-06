@@ -302,7 +302,7 @@ func contextPreviewErrorStatus(code worldcontext.ErrorCode) int {
 		return consts.StatusForbidden
 	case worldcontext.ErrWorldNotFound:
 		return consts.StatusNotFound
-	case worldcontext.ErrRevisionConflict, worldcontext.ErrWorldArchived, worldcontext.ErrContextRefMismatch:
+	case worldcontext.ErrRevisionConflict, worldcontext.ErrWorldArchived, worldcontext.ErrContextRefMismatch, worldcontext.ErrBookChanged, worldcontext.ErrBookStale:
 		return consts.StatusConflict
 	case worldcontext.ErrBudgetExceeded:
 		return consts.StatusRequestEntityTooLarge

@@ -1,5 +1,5 @@
 const library = {
-  'library.title': '总资料库',
+  'library.title': '公共素材库',
   'library.subtitle': '查看已归档的 Master 资产与处理状态',
   'library.search': '搜索资产名称或来源',
   'library.recordKind': '资产类型',

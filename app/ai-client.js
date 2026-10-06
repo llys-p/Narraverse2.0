@@ -60,9 +60,21 @@
     if (typeof root.requestDenovaModel !== 'function') {
       return Promise.reject(new Error('Denova 宿主模型代理不可用'));
     }
-    return root.requestDenovaModel(normalizedMessages, {
+    var requestOptions = {
       maxTokens: opts.maxTokens,
       temperature: typeof opts.temperature === 'number' ? opts.temperature : undefined
-    });
+    };
+    var status = root.NarraverseWorldContextStatus || {};
+    if (status.consumer === 'narraverse' && status.bookBound === true && status.bookKey &&
+        !(root.document && root.document.body && root.document.body.classList.contains('module4-active')) &&
+        Array.isArray(opts.selectedLoreIds)) {
+      requestOptions.selectedLoreIds = opts.selectedLoreIds.slice(0, 50);
+    }
+    if (status.consumer === 'narraverse' && status.bookBound === true && status.bookKey &&
+        !(root.document && root.document.body && root.document.body.classList.contains('module4-active')) &&
+        opts.loreActivation && typeof opts.loreActivation === 'object' && !Array.isArray(opts.loreActivation)) {
+      requestOptions.loreActivation = opts.loreActivation;
+    }
+    return root.requestDenovaModel(normalizedMessages, requestOptions);
   };
 }(window));

@@ -97,6 +97,18 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.PUT("/books/info", apiHandlers.HandleUpdateBookInfo)
 		// 书籍总览（P1）：AI 整理草稿；读取/保存复用 /api/workspace/file（setting/book-overview.md）。
 		api.POST("/book/overview/organize", apiHandlers.HandleBookOverviewOrganize)
+		// 新建书籍构思（阶段 A）：草稿存于数据目录 book-ideation/，确认前不建书、不切工作区。
+		api.POST("/book-ideation/drafts", apiHandlers.HandleBookIdeationCreateDraft)
+		api.GET("/book-ideation/drafts", apiHandlers.HandleBookIdeationListDrafts)
+		api.GET("/book-ideation/drafts/:draftId", apiHandlers.HandleBookIdeationGetDraft)
+		api.PATCH("/book-ideation/drafts/:draftId", apiHandlers.HandleBookIdeationUpdateDraft)
+		api.POST("/book-ideation/drafts/:draftId/sources", apiHandlers.HandleBookIdeationAddSource)
+		api.POST("/book-ideation/drafts/:draftId/sources/:sourceId/remove", apiHandlers.HandleBookIdeationRemoveSource)
+		api.POST("/book-ideation/drafts/:draftId/messages", apiHandlers.HandleBookIdeationMessage)
+		api.POST("/book-ideation/drafts/:draftId/generate", apiHandlers.HandleBookIdeationGenerate)
+		api.PUT("/book-ideation/drafts/:draftId/candidates", apiHandlers.HandleBookIdeationUpdateCandidates)
+		api.POST("/book-ideation/drafts/:draftId/commit", apiHandlers.HandleBookIdeationCommit)
+		api.POST("/book-ideation/drafts/:draftId/abandon", apiHandlers.HandleBookIdeationAbandon)
 		// World Workspace：世界工作区（跨书，存储于全局数据目录 worlds/）。
 		api.GET("/worlds", apiHandlers.HandleWorldList)
 		api.POST("/worlds", apiHandlers.HandleWorldCreate)
@@ -273,6 +285,7 @@ func (s *Server) registerRoutes(h *hertzserver.Hertz) {
 		api.POST("/world-context/host/status", apiHandlers.HandleWorldContextHostStatus)
 		api.POST("/world-context/host/revoke", apiHandlers.HandleWorldContextHostRevoke)
 		api.POST("/world-context/host/narraverse/bind", apiHandlers.HandleWorldContextHostNarraverseBind)
+		api.POST("/world-context/host/narraverse/lore", apiHandlers.HandleWorldContextHostNarraverseLore)
 		api.POST("/world-context/host/narraverse/call", apiHandlers.HandleWorldContextHostNarraverseCall)
 		api.POST("/world-context/host/narraverse/unbind", apiHandlers.HandleWorldContextHostNarraverseUnbind)
 		api.POST("/world-context/host/module4/bind", apiHandlers.HandleWorldContextHostModule4Bind)

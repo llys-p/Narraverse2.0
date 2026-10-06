@@ -13,13 +13,15 @@ const MESSAGE_TOTAL_BYTES = 96 * 1024
 type NarraverseInbound = {
   source: 'narraverse'
   version: 1 | 2
-  type: 'ready' | 'switch-mode' | 'module4-closed' | 'model-call-request' | 'open-model-settings'
+  type: 'ready' | 'switch-mode' | 'module4-closed' | 'model-call-request' | 'open-model-settings' | 'book-lore-request' | 'open-book-lore'
   payload?: unknown
 }
 
-type HostOutboundType = 'theme-changed' | 'locale-changed' | 'visibility-changed' | 'module4-open' | 'model-call-result' | 'world-context-changed'
+type HostOutboundType = 'theme-changed' | 'locale-changed' | 'visibility-changed' | 'module4-open' | 'model-call-result' | 'world-context-changed' | 'book-lore-result'
 
 interface NarraverseWorkspaceProps {
+  workspace?: string
+  onOpenBookLore?: () => void
   visible: boolean
   openModule4?: boolean
   onModule4Close?: () => void
@@ -29,8 +31,9 @@ interface NarraverseWorkspaceProps {
 }
 
 type LoadStatus = 'loading' | 'ready' | 'error'
-type ContextState = 'none' | 'active' | 'degraded'
 type ModelCall = {
+  selectedLoreIds?: string[]
+  loreActivation?: { scanDepth: number; contextText: string }
   requestId: string
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
   options: { maxTokens?: number; temperature?: number }
@@ -46,7 +49,7 @@ function iframeSource(): string {
   const url = new URL('/narraverse/index.html', iframeOrigin())
   url.searchParams.set('embedded', 'denova')
   url.searchParams.set('host_origin', window.location.origin)
-  url.searchParams.set('v', '20261004-platform-model-v3')
+  url.searchParams.set('v', '20261006-book-lore-v2')
   return url.toString()
 }
 
@@ -63,7 +66,7 @@ function exactKeys(value: Record<string, unknown>, allowed: readonly string[]): 
 function parseModelCall(payload: unknown): ModelCall | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
   const wire = payload as Record<string, unknown>
-  if (!exactKeys(wire, ['requestId', 'messages', 'options'])) return null
+  if (!exactKeys(wire, ['requestId', 'messages', 'options', 'selectedLoreIds', 'loreActivation'])) return null
   if (typeof wire.requestId !== 'string' || wire.requestId.length < 16 || wire.requestId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(wire.requestId)) return null
   if (!Array.isArray(wire.messages) || wire.messages.length < 1 || wire.messages.length > 64) return null
   let totalBytes = 0
@@ -83,7 +86,19 @@ function parseModelCall(payload: unknown): ModelCall | null {
   const options = optionsWire as Record<string, unknown>
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || Number(options.maxTokens) < 1 || Number(options.maxTokens) > 8192)) return null
   if (options.temperature !== undefined && (typeof options.temperature !== 'number' || !Number.isFinite(options.temperature) || options.temperature < 0 || options.temperature > 2)) return null
-  return { requestId: wire.requestId, messages, options: { maxTokens: options.maxTokens as number | undefined, temperature: options.temperature as number | undefined } }
+  if (wire.selectedLoreIds !== undefined && (!Array.isArray(wire.selectedLoreIds) || wire.selectedLoreIds.length > 50
+    || wire.selectedLoreIds.some((id) => typeof id !== 'string' || id.trim().length === 0 || id.length > 128))) return null
+  let loreActivation: ModelCall['loreActivation']
+  if (wire.loreActivation !== undefined) {
+    if (!wire.loreActivation || typeof wire.loreActivation !== 'object' || Array.isArray(wire.loreActivation)) return null
+    const loreWire = wire.loreActivation as Record<string, unknown>
+    if (!exactKeys(loreWire, ['scanDepth', 'contextText']) || !Number.isInteger(loreWire.scanDepth)
+      || Number(loreWire.scanDepth) < 1 || Number(loreWire.scanDepth) > 60
+      || typeof loreWire.contextText !== 'string' || Array.from(loreWire.contextText).length > 512) return null
+    loreActivation = { scanDepth: Number(loreWire.scanDepth), contextText: loreWire.contextText }
+  }
+  return { requestId: wire.requestId, messages, selectedLoreIds: wire.selectedLoreIds as string[] | undefined, loreActivation,
+    options: { maxTokens: options.maxTokens as number | undefined, temperature: options.temperature as number | undefined } }
 }
 
 async function readJSON(response: Response): Promise<Record<string, unknown>> {
@@ -91,7 +106,7 @@ async function readJSON(response: Response): Promise<Record<string, unknown>> {
   try { return raw ? JSON.parse(raw) as Record<string, unknown> : {} } catch { return {} }
 }
 
-export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Close = () => {}, onSwitchMode, onOpenModelSettings }: NarraverseWorkspaceProps) {
+export function NarraverseWorkspace({ visible, workspace = '', onOpenBookLore = () => {}, openModule4 = false, onModule4Close = () => {}, onSwitchMode, onOpenModelSettings }: NarraverseWorkspaceProps) {
   const { t, i18n } = useTranslation()
   const { theme, resolvedTheme } = useTheme()
   const host = useWorldContextHost()
@@ -102,10 +117,19 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
   const frameInstanceRef = useRef(randomFrameInstance())
   const boundRef = useRef<Record<IframeWorldConsumer, boolean>>({ narraverse: false, module4: false })
   const bindInFlightRef = useRef<Record<IframeWorldConsumer, Promise<boolean> | null>>({ narraverse: null, module4: null })
+  const workspaceRef = useRef(workspace)
+  const bookSeqRef = useRef(0)
+  const bookSummaryRef = useRef<Record<string, unknown> | null>(null)
+  // Identity changes invalidate old async work before effects start, including A→B→A.
+  if (workspaceRef.current !== workspace) {
+    workspaceRef.current = workspace
+    bookSeqRef.current++
+    boundRef.current.narraverse = false
+    bookSummaryRef.current = null
+  }
   const [status, setStatus] = useState<LoadStatus>('loading')
   const [retryNonce, setRetryNonce] = useState(0)
   const [ready, setReady] = useState(false)
-  const [contextState, setContextState] = useState<ContextState>('none')
   const targetOrigin = useMemo(iframeOrigin, [])
   const src = useMemo(iframeSource, [retryNonce])
 
@@ -142,6 +166,7 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
       return bindConsumer(consumer, forceBare)
     }
     const operation = (async () => {
+    const bookSeq = bookSeqRef.current
     // B4a：世界与库背景互斥——后带入者获胜（launchedAt 裁决），败者 pending 在绑定成功后清除。
     const worldLaunch = forceBare ? null : launches.pending[consumer]
     const libraryLaunch = forceBare ? null : libraryLaunches.pending[consumer]
@@ -164,13 +189,14 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
       // consumer/scopeKey 由服务端派生，iframe 与响应都拿不到 Ref 与运行身份。
       body.library_context = { libraryId: library.libraryId, expectedRevision: library.expectedRevision, manualItemIds: library.manualItemIds }
     }
+    if (consumer === 'narraverse' && !launch && !library && workspaceRef.current) body.book_context = true
     try {
       const response = await fetch(`/api/world-context/host/${consumer}/bind`, {
         method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
       const data = await readJSON(response)
+      if (consumer === 'narraverse' && bookSeq !== bookSeqRef.current) return false
       if (!response.ok) {
-        setContextState('degraded')
         postHostMessage('world-context-changed', { consumer, state: 'degraded', code: String(data.code || 'context_unavailable') }, 2)
         return false
       }
@@ -184,12 +210,10 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
       }
       const summary = (data.contextSummary && typeof data.contextSummary === 'object')
         ? data.contextSummary as { state?: unknown } : { state: 'none' }
-      const nextState = summary.state === 'active' || summary.state === 'degraded' ? summary.state : 'none'
-      setContextState(nextState)
+      if (consumer === 'narraverse') bookSummaryRef.current = summary
       postHostMessage('world-context-changed', { consumer, ...summary }, 2)
       return true
     } catch {
-      setContextState('degraded')
       postHostMessage('world-context-changed', { consumer, state: 'degraded', code: 'host_unavailable' }, 2)
       return false
     }
@@ -204,17 +228,27 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
 
   useEffect(() => {
     if (ready && host.state === 'ready') void bindConsumer('narraverse')
-  }, [bindConsumer, host.state, launches.pending.narraverse, libraryLaunches.pending.narraverse, ready])
+  }, [bindConsumer, host.state, launches.pending.narraverse, libraryLaunches.pending.narraverse, ready, workspace])
+
+  useEffect(() => {
+    postHostMessage('world-context-changed', { consumer: 'narraverse', state: 'none' }, 2)
+    if (ready && host.state === 'ready') void bindConsumer('narraverse').then((bound) => {
+      if (bound && !openModule4 && bookSummaryRef.current) postHostMessage('world-context-changed', { consumer: 'narraverse', ...bookSummaryRef.current }, 2)
+    })
+  }, [workspace]) // The sequence ref above is the actual async ownership guard.
 
   useEffect(() => {
     if (ready && host.state === 'ready' && openModule4) void bindConsumer('module4')
   }, [bindConsumer, host.state, launches.pending.module4, libraryLaunches.pending.module4, openModule4, ready])
 
   useEffect(() => {
-    if (openModule4 || !boundRef.current.module4) return
-    boundRef.current.module4 = false
-    unbindFrame(frameInstanceRef.current, ['module4'])
-  }, [openModule4, unbindFrame])
+    if (openModule4) return
+    if (boundRef.current.module4) {
+      boundRef.current.module4 = false
+      unbindFrame(frameInstanceRef.current, ['module4'])
+    }
+    if (bookSummaryRef.current) postHostMessage('world-context-changed', { consumer: 'narraverse', ...bookSummaryRef.current }, 2)
+  }, [openModule4, unbindFrame, postHostMessage])
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -248,6 +282,39 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
         onOpenModelSettings()
         return
       }
+      if (data.version === 2 && data.type === 'open-book-lore') {
+        const payload = data.payload as Record<string, unknown> | undefined
+        if (!payload || (typeof payload === 'object' && !Array.isArray(payload) && Object.keys(payload).length === 0)) onOpenBookLore()
+        return
+      }
+      if (data.version === 2 && data.type === 'book-lore-request') {
+        const payload = data.payload as Record<string, unknown> | undefined
+        if (!payload || typeof payload !== 'object' || !exactKeys(payload, ['requestId']) || typeof payload.requestId !== 'string'
+          || !/^[A-Za-z0-9_-]{16,128}$/.test(payload.requestId) || openModule4) return
+        const requestId = payload.requestId
+        const seq = bookSeqRef.current
+        void (async () => {
+          if (!await bindConsumer('narraverse') || seq !== bookSeqRef.current) return
+          for (let retry = 0; retry < 2; retry++) {
+            const response = await fetch('/api/world-context/host/narraverse/lore', {
+              method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ frameInstance: frameInstanceRef.current }),
+            })
+            const result = await readJSON(response)
+            if (seq !== bookSeqRef.current) return
+            if (result.code === 'book_stale' && retry === 0) {
+              boundRef.current.narraverse = false
+              if (await bindConsumer('narraverse')) continue
+            }
+            const summary = result.contextSummary as Record<string, unknown> | undefined
+            postHostMessage('book-lore-result', { requestId, ok: response.ok, items: result.items || [], bookKey: summary?.bookKey || bookSummaryRef.current?.bookKey || '' }, 2)
+            return
+          }
+        })().catch(() => {
+          if (seq === bookSeqRef.current) postHostMessage('book-lore-result', { requestId, ok: false, items: [], bookKey: bookSummaryRef.current?.bookKey || '' }, 2)
+        })
+        return
+      }
       if (data.version !== 2 || data.type !== 'model-call-request') return
       const request = parseModelCall(data.payload)
       if (!request) {
@@ -257,42 +324,43 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
         return
       }
       if (host.state !== 'ready') {
-        setContextState('degraded')
         postHostMessage('model-call-result', { requestId: request.requestId, ok: false, code: 'host_unavailable', message: '本次未生成：平台连接尚未就绪，请检查平台连接 / Nothing was generated: the platform connection is not ready. Check the platform connection.' }, 2)
         return
       }
       const consumer: IframeWorldConsumer = openModule4 ? 'module4' : 'narraverse'
-      void bindConsumer(consumer).then((bound) => {
-        if (!bound) {
-          postHostMessage('model-call-result', { requestId: request.requestId, ok: false, code: 'host_unavailable', message: '宿主代理不可用' }, 2)
-          return null
+      const seq = bookSeqRef.current
+      void (async () => {
+        if (!await bindConsumer(consumer)) throw new Error('host unavailable')
+        for (let retry = 0; retry < 2; retry++) {
+          if (consumer === 'narraverse' && seq !== bookSeqRef.current) return
+          const response = await fetch(`/api/world-context/host/${consumer}/call`, {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ frameInstance: frameInstanceRef.current, messages: request.messages, options: request.options,
+              ...(consumer === 'narraverse' && request.selectedLoreIds ? { selected_lore_ids: request.selectedLoreIds } : {}),
+              ...(consumer === 'narraverse' && request.loreActivation ? { lore_activation: { scan_depth: request.loreActivation.scanDepth, context_text: request.loreActivation.contextText } } : {}) }),
+          })
+          const result = await readJSON(response)
+          if (consumer === 'narraverse' && seq !== bookSeqRef.current) return
+          if (consumer === 'narraverse' && result.code === 'book_stale' && retry === 0) {
+            boundRef.current.narraverse = false
+            if (await bindConsumer(consumer)) continue
+          }
+          postHostMessage('model-call-result', response.ok
+            ? { requestId: request.requestId, ok: true, content: String(result.content || ''), contextSummary: result.contextSummary }
+            : { requestId: request.requestId, ok: false, code: String(result.code || 'upstream_error'), message: String(result.error || '共享模型请求失败') }, 2)
+          return
         }
-        return fetch(`/api/world-context/host/${consumer}/call`, {
-          method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ frameInstance: frameInstanceRef.current, messages: request.messages, options: request.options }),
-        })
-      }).then(async (response) => {
-        if (!response) return
-        const result = await readJSON(response)
-        const summary = result.contextSummary && typeof result.contextSummary === 'object'
-          ? result.contextSummary as { state?: unknown } : null
-        if (summary) setContextState(summary.state === 'active' || summary.state === 'degraded' ? summary.state : 'none')
-        postHostMessage('model-call-result', response.ok
-          ? { requestId: request.requestId, ok: true, content: String(result.content || ''), contextSummary: result.contextSummary }
-          : { requestId: request.requestId, ok: false, code: String(result.code || 'upstream_error'), message: String(result.error || '共享模型请求失败') }, 2)
-      }).catch(() => {
-        setContextState('degraded')
-        postHostMessage('model-call-result', { requestId: request.requestId, ok: false, code: 'host_unavailable', message: '宿主代理不可用' }, 2)
+      })().catch(() => {
+        if (consumer !== 'narraverse' || seq === bookSeqRef.current) postHostMessage('model-call-result', { requestId: request.requestId, ok: false, code: 'host_unavailable', message: '宿主代理不可用' }, 2)
       })
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [bindConsumer, host.state, onModule4Close, onOpenModelSettings, onSwitchMode, openModule4, postHostMessage, syncHostContext, targetOrigin])
+  }, [bindConsumer, host.state, onModule4Close, onOpenModelSettings, onOpenBookLore, onSwitchMode, openModule4, postHostMessage, syncHostContext, targetOrigin])
 
   useEffect(() => {
     setStatus('loading')
     setReady(false)
-    setContextState('none')
     boundRef.current = { narraverse: false, module4: false }
     if (readyTimerRef.current !== null) window.clearTimeout(readyTimerRef.current)
     readyTimerRef.current = window.setTimeout(() => {
@@ -301,10 +369,6 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
     }, READY_TIMEOUT_MS)
     return () => { if (readyTimerRef.current !== null) window.clearTimeout(readyTimerRef.current) }
   }, [retryNonce])
-
-  useEffect(() => {
-    if (host.state === 'unavailable') setContextState('degraded')
-  }, [host.state])
 
   useEffect(() => { if (effectiveTheme === 'light' || effectiveTheme === 'dark') postHostMessage('theme-changed', { theme: effectiveTheme }) }, [effectiveTheme, postHostMessage])
   useEffect(() => { postHostMessage('locale-changed', { locale }) }, [locale, postHostMessage])
@@ -330,14 +394,6 @@ export function NarraverseWorkspace({ visible, openModule4 = false, onModule4Clo
       <iframe key={retryNonce} ref={iframeRef} src={src} title={t('workbench.narraverse.workspaceLabel')}
         aria-label={t('workbench.narraverse.workspaceLabel')} onLoad={syncHostContext} onError={() => setStatus('error')}
         className="h-full w-full border-0" />
-      {status === 'ready' ? (
-        <div
-          data-testid="iframe-world-context-state"
-          className="pointer-events-none absolute right-3 top-3 rounded-full border border-[var(--nova-border)] bg-[var(--nova-surface)]/90 px-2.5 py-1 text-[11px] text-[var(--nova-text-muted)] shadow-sm backdrop-blur"
-        >
-          {t(`workbench.narraverse.context.${contextState}`)}
-        </div>
-      ) : null}
       {status === 'loading' && (
         <div aria-hidden={!visible} className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-xs text-[var(--nova-text-muted)]">
           <Loader2 className="h-4 w-4 animate-spin" /><span>{t('workbench.narraverse.loading')}</span>

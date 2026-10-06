@@ -15,11 +15,15 @@ export interface KnowledgeSection {
   createNameKey: string
   tag?: string
   excludeTag?: string
+  characterTier?: NonNullable<LoreItem['character_tier']>
+  defaultCollapsed?: boolean
 }
 
 /** 资料库目录的固定分组定义，SettingPanel 与目录组件共用这一份。 */
 export const KNOWLEDGE_SECTIONS: KnowledgeSection[] = [
-  { id: 'characters', labelKey: 'lore.type.character', icon: UserRound, types: ['character'], createType: 'character', createNameKey: 'settingPanel.lore.newCharacter' },
+  { id: 'characters-major', labelKey: 'settingPanel.characterTier.major', icon: UserRound, types: ['character'], createType: 'character', createNameKey: 'settingPanel.lore.newCharacter', characterTier: 'major', defaultCollapsed: false },
+  { id: 'characters-minor', labelKey: 'settingPanel.characterTier.minor', icon: UserRound, types: ['character'], createType: 'character', createNameKey: 'settingPanel.lore.newCharacter', characterTier: 'minor', defaultCollapsed: true },
+  { id: 'characters', labelKey: 'settingPanel.characterTier.unclassified', icon: UserRound, types: ['character'], createType: 'character', createNameKey: 'settingPanel.lore.newCharacter', characterTier: 'unclassified', defaultCollapsed: false },
   { id: 'locations', labelKey: 'lore.type.location', icon: MapPin, types: ['location'], createType: 'location', createNameKey: 'settingPanel.lore.newLocation' },
   { id: 'factions', labelKey: 'lore.type.faction', icon: Building2, types: ['faction'], createType: 'faction', createNameKey: 'settingPanel.lore.newFaction' },
   { id: 'rules', labelKey: 'lore.type.rule', icon: ScrollText, types: ['world', 'rule'], createType: 'rule', createNameKey: 'settingPanel.lore.newRule' },
@@ -32,6 +36,7 @@ export function sectionItems(items: LoreItem[], section: KnowledgeSection, query
   const normalizedQuery = query.trim().toLowerCase()
   return items.filter((item) => {
     if (!section.types.includes(item.type)) return false
+    if (section.characterTier && (item.character_tier || 'unclassified') !== section.characterTier) return false
     if (loadModeFilter === 'resident' && item.load_mode !== 'resident') return false
     if (loadModeFilter === 'on_demand' && item.load_mode === 'resident') return false
     const tags = item.tags || []

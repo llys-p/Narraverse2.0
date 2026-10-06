@@ -164,7 +164,7 @@ export function LoreEditor({
                 </Field>
                 <BooleanSwitchField label={t('settingPanel.field.enabled')} checked={draft.enabled ?? true} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />
                 <Field label={t('settingPanel.field.type')}>
-                  <Select value={draft.type} onValueChange={(value) => setDraft({ ...draft, type: value as LoreItem['type'] })}>
+                  <Select value={draft.type} onValueChange={(value) => setDraft({ ...draft, type: value as LoreItem['type'], character_tier: value === 'character' ? draft.character_tier : undefined })}>
                     <SelectTrigger size="sm" className={selectClassName}>
                       <SelectValue />
                     </SelectTrigger>
@@ -177,6 +177,20 @@ export function LoreEditor({
                     </SelectContent>
                   </Select>
                 </Field>
+                {draft.type === 'character' && (
+                  <Field label={t('settingPanel.characterTier.field')}>
+                    <Select value={draft.character_tier || 'unclassified'} onValueChange={(value) => setDraft({ ...draft, character_tier: value as LoreItem['character_tier'] })}>
+                      <SelectTrigger size="sm" className={selectClassName} aria-label={t('settingPanel.characterTier.field')}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="nova-panel border text-[var(--nova-text)]">
+                        {(['major', 'minor', 'unclassified'] as const).map((tier) => (
+                          <SelectItem key={tier} value={tier}>{t(`settingPanel.characterTier.${tier}`)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
                 <Field label={t('settingPanel.field.importance')}>
                   <Select value={draft.importance} onValueChange={(value) => setDraft({ ...draft, importance: value as LoreItem['importance'] })}>
                     <SelectTrigger size="sm" className={selectClassName}>

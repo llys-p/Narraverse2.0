@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol"
@@ -31,6 +32,7 @@ type hostBindWire struct {
 	FrameInstance  string          `json:"frameInstance"`
 	WorldContext   json.RawMessage `json:"world_context"`
 	LibraryContext json.RawMessage `json:"library_context"`
+	BookContext    bool            `json:"book_context,omitempty"`
 }
 
 // hostLibraryContextWire 是受控 iframe 的库载体（camelCase，与 L2 预览 DTO 一致）；
@@ -83,12 +85,27 @@ type hostModelOptionsWire struct {
 }
 
 type hostModelCallWire struct {
-	FrameInstance string                        `json:"frameInstance"`
-	Messages      []novaApp.ModelGatewayMessage `json:"messages"`
-	Options       hostModelOptionsWire          `json:"options"`
+	FrameInstance   string                        `json:"frameInstance"`
+	Messages        []novaApp.ModelGatewayMessage `json:"messages"`
+	Options         hostModelOptionsWire          `json:"options"`
+	SelectedLoreIDs []string                      `json:"selected_lore_ids,omitempty"`
+	LoreActivation  *novaApp.BookLoreActivation   `json:"lore_activation,omitempty"`
 }
 
 func validateHostModelCall(wire hostModelCallWire) error {
+	if len(wire.SelectedLoreIDs) > 50 {
+		return errors.New("too many lore IDs")
+	}
+	for _, id := range wire.SelectedLoreIDs {
+		if strings.TrimSpace(id) == "" || len(id) > 128 {
+			return errors.New("invalid lore ID")
+		}
+	}
+	if wire.LoreActivation != nil {
+		if wire.LoreActivation.ScanDepth < 1 || wire.LoreActivation.ScanDepth > 60 || utf8.RuneCountInString(wire.LoreActivation.ContextText) > 512 {
+			return errors.New("invalid lore activation")
+		}
+	}
 	if len(wire.Messages) == 0 || len(wire.Messages) > hostModelMaxMessages || wire.Options.MaxTokens < 0 || wire.Options.MaxTokens > 8192 {
 		return errors.New("host model request exceeds limits")
 	}
@@ -119,6 +136,27 @@ func exactObjectKeys(body []byte, allowed map[string]struct{}) error {
 		if _, ok := allowed[key]; !ok {
 			return errors.New("request contains unknown field")
 		}
+	}
+	return nil
+}
+
+func validateHostLoreActivationRaw(raw []byte) error {
+	if exactObjectKeys(raw, map[string]struct{}{"scan_depth": {}, "context_text": {}}) != nil {
+		return errors.New("lore activation must contain only scan_depth and context_text")
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || len(fields) != 2 {
+		return errors.New("lore activation requires both fields")
+	}
+	depthRaw, hasDepth := fields["scan_depth"]
+	textRaw, hasText := fields["context_text"]
+	if !hasDepth || !hasText || bytes.Equal(bytes.TrimSpace(depthRaw), []byte("null")) || bytes.Equal(bytes.TrimSpace(textRaw), []byte("null")) {
+		return errors.New("lore activation requires non-null fields")
+	}
+	var depth int
+	var contextText string
+	if json.Unmarshal(depthRaw, &depth) != nil || json.Unmarshal(textRaw, &contextText) != nil {
+		return errors.New("lore activation fields have invalid types")
 	}
 	return nil
 }
@@ -218,13 +256,26 @@ func (h *Handlers) handleWorldContextHostBind(ctx context.Context, c *app.Reques
 		return
 	}
 	body, err := hostRequestBody(c, 64*1024)
-	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}, "world_context": {}, "library_context": {}}) != nil {
+	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}, "world_context": {}, "library_context": {}, "book_context": {}}) != nil {
 		writeContextPreviewRequestError(c, "iframe 绑定请求格式无效")
 		return
 	}
 	var wire hostBindWire
 	if err := decodeStrictJSON(body, &wire); err != nil {
 		writeContextPreviewRequestError(c, "iframe 绑定请求格式无效")
+		return
+	}
+	if wire.BookContext {
+		if consumer != worldcontext.ConsumerNarraverse || hostRawPresent(wire.WorldContext) || hostRawPresent(wire.LibraryContext) {
+			writeContextPreviewRequestError(c, "本书背景不能与其他背景混用 / Book context cannot be combined with another background")
+			return
+		}
+		state, bindErr := h.app.BindBookHostFrame(ctx, hostToken(c), consumer, wire.FrameInstance)
+		if bindErr != nil {
+			writeContextPreviewError(c, bindErr)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"contextSummary": state})
 		return
 	}
 	// 背景载体互斥（B4a/L3.3）：一次 bind 只承载 world 或 library 一种背景，
@@ -278,6 +329,31 @@ func (h *Handlers) HandleWorldContextHostNarraverseBind(ctx context.Context, c *
 	h.handleWorldContextHostBind(ctx, c, worldcontext.ConsumerNarraverse)
 }
 
+func (h *Handlers) HandleWorldContextHostNarraverseLore(ctx context.Context, c *app.RequestContext) {
+	if !h.trustedWorldContextHostRequest(c) {
+		writeHostTrustError(c)
+		return
+	}
+	body, err := hostRequestBody(c, 1024)
+	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}}) != nil {
+		writeContextPreviewRequestError(c, "本书目录请求格式无效 / Invalid book directory request")
+		return
+	}
+	var wire struct {
+		FrameInstance string `json:"frameInstance"`
+	}
+	if decodeStrictJSON(body, &wire) != nil {
+		writeContextPreviewRequestError(c, "本书目录请求格式无效 / Invalid book directory request")
+		return
+	}
+	items, state, err := h.app.HostBookLore(hostToken(c), wire.FrameInstance)
+	if err != nil {
+		writeContextPreviewError(c, err)
+		return
+	}
+	c.JSON(consts.StatusOK, map[string]any{"items": items, "contextSummary": state})
+}
+
 func (h *Handlers) HandleWorldContextHostModule4Bind(ctx context.Context, c *app.RequestContext) {
 	h.handleWorldContextHostBind(ctx, c, worldcontext.ConsumerModule4)
 }
@@ -288,12 +364,22 @@ func (h *Handlers) handleWorldContextHostCall(ctx context.Context, c *app.Reques
 		return
 	}
 	body, err := hostRequestBody(c, hostModelMaxBodyBytes)
-	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}, "messages": {}, "options": {}}) != nil {
+	if err != nil || exactObjectKeys(body, map[string]struct{}{"frameInstance": {}, "messages": {}, "options": {}, "selected_lore_ids": {}, "lore_activation": {}}) != nil {
 		writeContextPreviewRequestError(c, "宿主模型请求格式无效")
 		return
 	}
 	var raw map[string]json.RawMessage
 	_ = json.Unmarshal(body, &raw)
+	if _, provided := raw["lore_activation"]; provided && consumer == worldcontext.ConsumerModule4 {
+		writeContextPreviewRequestError(c, "开放沙盒不接受本书关键词控制 / Book lore activation is not supported by Open Sandbox")
+		return
+	}
+	if activation, provided := raw["lore_activation"]; provided {
+		if validateHostLoreActivationRaw(activation) != nil {
+			writeContextPreviewRequestError(c, "宿主本书关键词控制格式无效 / Invalid host book lore activation")
+			return
+		}
+	}
 	if options := raw["options"]; len(bytes.TrimSpace(options)) > 0 && !bytes.Equal(bytes.TrimSpace(options), []byte("null")) {
 		if exactObjectKeys(options, map[string]struct{}{"maxTokens": {}, "temperature": {}}) != nil {
 			writeContextPreviewRequestError(c, "宿主模型 options 包含未知字段")
@@ -309,7 +395,11 @@ func (h *Handlers) handleWorldContextHostCall(ctx context.Context, c *app.Reques
 		writeContextPreviewRequestError(c, "宿主模型请求超出限制")
 		return
 	}
-	req := novaApp.ModelGatewayChatRequest{Messages: wire.Messages, MaxTokens: wire.Options.MaxTokens, Temperature: wire.Options.Temperature}
+	if consumer == worldcontext.ConsumerModule4 && len(wire.SelectedLoreIDs) > 0 {
+		writeContextPreviewRequestError(c, "开放沙盒不接受本书选择 / Book selections are not supported by Open Sandbox")
+		return
+	}
+	req := novaApp.ModelGatewayChatRequest{Messages: wire.Messages, MaxTokens: wire.Options.MaxTokens, Temperature: wire.Options.Temperature, SelectedLoreIDs: wire.SelectedLoreIDs, LoreActivation: wire.LoreActivation}
 	result, state, err := h.app.GenerateHostModel(ctx, hostToken(c), consumer, wire.FrameInstance, req)
 	if err == nil {
 		c.JSON(consts.StatusOK, map[string]any{"content": result.Content, "contextSummary": state})

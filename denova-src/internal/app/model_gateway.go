@@ -40,10 +40,19 @@ type ModelGatewayMessage struct {
 // ModelGatewayChatRequest is the one-shot request used by the legacy
 // Narraverse iframe and any future module client.
 type ModelGatewayChatRequest struct {
-	Module      string                `json:"module"`
-	Messages    []ModelGatewayMessage `json:"messages"`
-	MaxTokens   int                   `json:"max_tokens,omitempty"`
-	Temperature *float32              `json:"temperature,omitempty"`
+	Module          string                `json:"module"`
+	Messages        []ModelGatewayMessage `json:"messages"`
+	MaxTokens       int                   `json:"max_tokens,omitempty"`
+	Temperature     *float32              `json:"temperature,omitempty"`
+	SelectedLoreIDs []string              `json:"selected_lore_ids,omitempty"`
+	LoreActivation  *BookLoreActivation   `json:"lore_activation,omitempty"`
+}
+
+// BookLoreActivation bounds automatic lore lookup to recent dialogue and
+// caller-provided current context. ContextText is search input, never lore body.
+type BookLoreActivation struct {
+	ScanDepth   int    `json:"scan_depth"`
+	ContextText string `json:"context_text"`
 }
 
 type ModelGatewayChatResult struct {

@@ -789,6 +789,7 @@ func configManagerFlowInstructionFor(workspace, creator string) string {
 		"- 每个模块先用 list 工具查看索引；需要详情时再用 read 工具批量读取。",
 		"- 增删改统一使用对应 write 工具批量完成，写入后用简短中文总结实际变更。",
 		"- 本书总览使用 read_book_overview / write_book_overview；条目间明确关系使用 read_lore_relations / write_lore_relations。先读最新 revision 再写，冲突需重新读取；正文提及连线不是已确认关系。",
+		"- 人物目录分组与图谱主次筛选统一使用角色条目的 character_tier：major=主要人物、minor=次要人物、unclassified=未分类；importance 是独立重要度，不能代替人物层级或作为已分类证明。用户要求保存分类时用 write_lore_items 仅更新 id 和 character_tier，保留其它字段，再用 read_lore_items 核对实际值；不能只回复分类名单。",
 		"- Agent 页配置使用 list_agent_configs 一次读取全量配置，再用 write_agent_configs 写入；写入必须显式指定 scope=user 或 scope=workspace。",
 		"- 不要修改端口、主题、远程访问、编辑器外观等非 Agent 页设置。",
 		"- 不要通过文件工具直接改资料库、方案预设、自动化、Skills 或 Agent 配置的底层存储文件。",

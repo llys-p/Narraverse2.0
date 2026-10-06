@@ -1,6 +1,6 @@
 ---
 name: book-overview-relations
-description: 管理当前书籍的总览和资料条目间明确关系；用于总览整理、关系图谱、人物关系、隶属与地点关联的读取和保存。
+description: 管理当前书籍的总览、人物主次分层和资料条目间明确关系；用于总览整理、目录分组、图谱筛选、人物关系、隶属与地点关联的读取和保存。
 agent: config_manager
 ---
 
@@ -14,6 +14,14 @@ agent: config_manager
 2. 按需求用 `list_lore_items` 查看目录、`read_lore_items` 读取相关条目。只读取需要的资料，不扫描整部小说。不把模型推测写成原资料已经确认的事实。
 3. 用户要求修改并保存时，以原文为基础完成局部整理，调用 `write_book_overview`，参数为完整 `content` 和刚读取的 `base_revision`。保留未要求改变的段落，不为了关系变更重写整篇总览。
 4. revision 冲突表示总览已被其它操作修改；重读并合并，不自动用旧稿强行覆盖。工具返回 rejected/error 时不得报告已保存。
+
+## 人物层级与目录分组
+
+人物目录和图谱共用 Lore 条目的 `character_tier`：`major`=主要人物，`minor`=次要人物，`unclassified`=未分类。`importance`（major/important/minor）是独立的重要度，不是目录分层；不能根据它宣称人物已分类。缺少 character_tier 视为未分类，不自动从重要度推导。
+
+1. 用 `list_lore_items` 查真实 ID 与 character_tier；按分页继续，不必为分类读取全部正文。依据用户已确认的名单或资料提出方案，模糊的“重要人物”先明确映射规则。
+2. 用户要求保存主次时调用 `write_lore_items`，例如 `{"message":"将林冲设为次要人物","items":[{"id":"真实人物ID","character_tier":"minor"}]}`。更新只传 ID 和该字段，不顺带改变 importance、load_mode、正文、精选或关系。
+3. 成功后调用 `read_lore_items` 核对实际 character_tier，再报告真实保存数量、未分类数量和失败项。工具失败不得称已保存；只输出名单不算完成。分层不需再向图谱保存一份数据。
 
 ## 设置明确关系
 

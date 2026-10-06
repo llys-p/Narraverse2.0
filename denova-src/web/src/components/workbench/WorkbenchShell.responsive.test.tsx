@@ -160,6 +160,27 @@ describe('WorkbenchShell responsive main content', () => {
     expect(screen.getByRole('button', { name: /开放沙盒|Open Sandbox/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('opens the shared Library from Narraverse without changing iframe panel state', () => {
+    const onSetRightPanel = vi.fn()
+    const props = workbenchProps(<div />)
+    const { rerender } = render(<WorkbenchShell {...props} mode="narraverse" booksReturnMode="narraverse" openModule4 onSetRightPanel={onSetRightPanel} />)
+
+    const libraryButton = document.querySelector<HTMLButtonElement>('button[data-activity-id="library"]')!
+    expect(libraryButton).not.toHaveClass('is-active')
+    expect(document.querySelectorAll('button[data-activity-id="library"]')).toHaveLength(1)
+    fireEvent.click(libraryButton)
+    expect(props.onSetMode).toHaveBeenCalledWith('library')
+    expect(onSetRightPanel).not.toHaveBeenCalled()
+
+    rerender(<WorkbenchShell {...props} mode="library" booksReturnMode="narraverse" openModule4 onSetRightPanel={onSetRightPanel} />)
+    expect(document.querySelector('button[data-activity-id="library"]')).toHaveClass('is-active')
+    expect(document.querySelectorAll('.nova-activity-bar button.is-active')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: /开放沙盒|Open Sandbox/ })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(document.querySelector('button[data-activity-id="library"]')!)
+    expect(props.onSetMode).toHaveBeenLastCalledWith('narraverse')
+    expect(onSetRightPanel).not.toHaveBeenCalled()
+  })
+
   it('shows editor updated time and line in the global bottom status bar', () => {
     const updatedAt = '2026-07-11 22:00'
     render(<WorkbenchShell {...workbenchProps(<div />)}
